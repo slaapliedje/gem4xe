@@ -1,7 +1,7 @@
 # tools/ccbug — the cc65816 bugs gem4xe works around
 
-Eighteen defects in Calypsi cc65816, seventeen found against **5.18**
-here and one (B17) reported from another project — twelve in
+Nineteen defects in Calypsi cc65816, eighteen found against **5.18**
+here and one (B17) reported from another project — thirteen in
 code generation, two crashes, one compile that never finishes (B18), one
 in the front end's arithmetic and one in the run-time library's division
 — each reproduced from a shape
@@ -29,7 +29,8 @@ listing read:
       B6 indexed direct-page array                       compiles   still present
       B11 near <-> far struct copy over 8 bytes          compiles   still present
       B16 byte spin loop, rep before its back edge         compiles   still present
-    check-cc: PASSED -- every workaround shape is right; 16 of 20 bug shapes still present
+      B19 pointer difference against a far array           compiles   still present
+    check-cc: PASSED -- every workaround shape is right; 17 of 22 bug shapes still present
 
 The run **fails only if a workaround shape stops compiling right**, because
 that is what would break gem4xe. A bug that has gone away is reported as
