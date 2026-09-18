@@ -205,7 +205,17 @@ static WORD menu_down(OBJECT FAR *tree, WORD ititle)
  * is up (event.c). */
 WORD mn_do(WORD *ptitle, WORD *pitem)
 {
-    OBJECT  *tree;
+    /* FAR, because gl_mntree is: a menu tree can live in far memory now
+     * (docs/far-trees.md), and a near slot here truncated it to sixteen
+     * bits SILENTLY.  Every tree in this tree's own world is in the
+     * bank-$00 pool, where the truncation loses nothing, so it went
+     * unseen through step 1 and forty gates; QED is the first program
+     * whose resource -- and so whose menu bar -- is in far memory, and
+     * its menu would not drop: the bar drew (objc_draw takes FAR), then
+     * ob_find and rect_change here were handed a bank-$00 address that
+     * was never a tree.  Everything this passes tree to already takes
+     * OBJECT FAR *. */
+    OBJECT FAR *tree;
     uint32_t buparm;
     WORD    mnu_flags, done, main_rect;
     WORD    cur_menu, cur_item, last_item;
