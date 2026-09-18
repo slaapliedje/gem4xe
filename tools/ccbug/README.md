@@ -888,7 +888,8 @@ pointers instead of subtracting them. The failure arrives at link time,
 in a message that names a symbol rather than a line, which is a long way
 from the `p - arr` that caused it.
 
-Not yet reported upstream.
+Reported as [Calypsi #91](https://github.com/hth313/Calypsi-tool-chains/issues/91)
+on 2026-09-18; the standalone reproducer the report links is in `b19/`.
 
 ## Another project's ledger: MicroPython on the SNES
 
