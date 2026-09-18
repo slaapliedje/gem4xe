@@ -71,6 +71,7 @@ an optimiser fault, and saying which saves a vendor a bisect.
 | B12 | yes | yes | yes | |
 | B16 | no | no | yes | |
 | B18 | no | yes | yes | the compiler never finishes; `--data-model=large` is clean at every level |
+| B19 | yes | yes | yes | the same instruction in both data models; a defect only where the symbol is far |
 
 `--no-inline` is a useful second axis: it clears B3 and B10, which is
 expected, and it must NOT clear anything else.  It was `--no-inline` that
@@ -837,6 +838,57 @@ reads `FIXED upstream`, which the matrix above records deliberately.
 
 Reported as [Calypsi #90](https://github.com/hth313/Calypsi-tool-chains/issues/90)
 on 2026-09-18, with the reproducer inline and the matrix above.
+
+## B19 — a pointer difference against a far array cannot be linked
+
+`tools/ccbug/b19_ptrdiff.c`. The shape is the most ordinary way in C to
+turn a pointer back into a subscript:
+
+    extern char arr[4096];
+    short b19_index(const char *p) { return (short)(p - arr); }
+
+Under `--data-model=large` `arr` is in far memory, and a far pointer's
+arithmetic is 16-bit within its bank, so the difference only needs the
+array's LOW WORD. What comes out asks for the whole address in sixteen
+bits:
+
+    sec
+    lda     dp:.tiny _Dp        ; p, low word
+    sbc     ##arr               ; the WHOLE address in a 16-bit field
+
+and the linker refuses, correctly and at the very end of the build:
+
+    symbol 'arr' referenced from section 'farcode' at offset 00006a in
+    block.o: value 542819 is out of range, allowed range is -32768 to 65535
+
+`##.word0 arr` is the instruction that was wanted, and the compiler
+already emits exactly that everywhere it loads a far address as a VALUE
+(`lda ##.word0 sym` / `ldx ##.word2 sym`, which is how `arr + i` comes
+out). **Only the difference gets it wrong.**
+
+**A cast does not help**, which is worth knowing before anyone tries one:
+`(unsigned long)p - (unsigned long)arr` folds back to the same 16-bit
+subtraction with the same immediate — verified in the reproducer, whose
+second function is exactly that and whose listing is identical.
+
+The instruction is the same in both data models and at every `-O` level;
+it is a *defect* only where the symbol is far, because in the small model
+the address genuinely fits. So `check.py` compiles this one
+`--data-model=large`, and `far_ptrdiff_bug()` reads the listing for a
+`sbc`/`adc` whose immediate is a bare symbol rather than a `.word0`. The
+detector was made to speak both ways before it was believed: it answers
+False on a listing containing `arr + i` and a difference between two
+runtime pointers, neither of which needs a symbol immediate.
+
+**Found by porting qed.** Three of its globals tripped it — two 11-byte
+`char` arrays and a 12 KB struct array — and the workarounds show the
+shape of the problem: a small array can go in bank `$00` (`__near`), which
+the 12 KB one cannot afford, so its index had to be recovered by comparing
+pointers instead of subtracting them. The failure arrives at link time,
+in a message that names a symbol rather than a line, which is a long way
+from the `p - arr` that caused it.
+
+Not yet reported upstream.
 
 ## Another project's ledger: MicroPython on the SNES
 

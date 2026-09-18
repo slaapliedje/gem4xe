@@ -67,9 +67,14 @@ CRASHES = {
 REFUSALS = {
     "b7_bound": "B7 sizeof in an array bound, padded (second test)",
 }
-# file stem: note -- the shapes that compile to something that cannot be run
+# file stem: (note, data model) -- the shapes that compile to something
+# that cannot be run, or cannot be LINKED, and whose defect is visible in
+# the generated code.  Each has its own detector in the loop below, and
+# each names the data model that shows it: B19 is a far-memory shape and
+# says nothing under --data-model=small.
 LISTINGS = {
-    "b16": "B16 byte spin loop, rep before its back edge",
+    "b16": ("B16 byte spin loop, rep before its back edge", "small"),
+    "b19_ptrdiff": ("B19 pointer difference against a far array", "large"),
 }
 # file stem: note -- the shapes the compiler NEVER FINISHES compiling.  The
 # only report a bug of this kind can make is the timeout that kills it, so
@@ -113,6 +118,22 @@ def simulate(db, elf, names):
     if len(vals) != len(names):
         sys.exit(f"expected {len(names)} values, got {len(vals)}:\n{out}")
     return dict(zip(names, map(int, vals)))
+
+
+def far_ptrdiff_bug(listing):
+    """True if the listing subtracts a SYMBOL as a bare 16-bit immediate
+    (B19).  Under --data-model=large the symbol is in far memory, so
+    `sbc ##sym` asks the linker to put a 24-bit address in a 16-bit
+    field and it refuses the whole link.  `##.word0 sym` is the
+    instruction that was wanted, and the compiler emits exactly that
+    everywhere it loads a far address as a value -- only the pointer
+    difference gets it wrong, so a `.word0`/`.word2` operand here is the
+    FIXED shape and a bare name is the bug."""
+    for line in open(listing):
+        m = re.match(r"\s*\\ [0-9a-f]{6} \S*\s+(?:sbc|adc)\s+##(\S+)", line)
+        if m and not m.group(1).startswith((".word0", ".word2", "0", "$")):
+            return True
+    return False
 
 
 def loop_width_bug(listing):
@@ -238,12 +259,13 @@ def main():
             crashes[note] = True
     # B16 compiles, to code that derails on its second pass: compile the
     # file alone and read its listing for the shape
-    for tag, note in LISTINGS.items():
+    for tag, (note, model) in LISTINGS.items():
         lst = os.path.join(a.out, f"{tag}.lst")
-        run([cc, "--code-model=large", "--data-model=small", f"-O{a.O}",
+        run([cc, "--code-model=large", f"--data-model={model}", f"-O{a.O}",
              "-o", os.path.join(a.out, f"{tag}.o"), "--list-file", lst,
              os.path.join(ROOT, "tools", "ccbug", f"{tag}.c")])
-        crashes[note] = loop_width_bug(lst)
+        crashes[note] = (far_ptrdiff_bug(lst) if tag == "b19_ptrdiff"
+                         else loop_width_bug(lst))
 
     print(f"{version}, -O{a.O}, {os.path.relpath(scm, a.calypsi)}")
     bad = 0
