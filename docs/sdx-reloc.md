@@ -1,8 +1,11 @@
 # SpartaDOS X relocatable 65C816 binaries — can gem4xe ship as one?
 
-Asked 2026-09-18.  **Answer: no, and the reason is structural rather than
-a matter of effort.**  What gem4xe *should* take from SDX 4.5x's 65C816
-support is a different thing entirely, and it is small — the last section.
+Asked 2026-09-18.  **Answer: not with the toolchain this tree uses.**  The
+three blockers below are all properties of *Calypsi*, not of the 65C816
+and not of SDX — which is a materially different statement from the one
+this note first made, and the amendment at the end says why it matters.
+What gem4xe *should* take from SDX 4.5x's 65C816 support is a different
+thing entirely, and it is small — the section before that.
 
 Everything below is read out of the **SpartaDOS X Programming Guide
 v4.50** (`~/Documents/Atari/SDX/SDX450_Programming_Guide.pdf`, §2 and
@@ -149,11 +152,58 @@ two including a gate that boots with `65816.SYS` loaded and asserts
 gem4xe does not overlap it.  Both are additive and neither changes the
 file format.
 
+## Amendment, the same day: the blockers are Calypsi's, not the machine's
+
+Written first as "no, structurally", which was too strong.  Read the three
+blockers again and every one of them is a sentence about **Calypsi**:
+
+- it emits **no relocations at all** — which is precisely why
+  `tools/mkg4a.py` has to link the program three times and diff the bytes
+  that moved, and why `.G4A` carries fixup lists gem4xe derived itself;
+- it materialises an address as **two immediates** (`##.word0` /
+  `##.word2`), the construction §2.4 forbids;
+- it lays sections across banks by the `.scm` map rather than cutting an
+  image into ≤64 KB, bank-contained blocks with SDX's internal-short /
+  external-long discipline.
+
+None of that is true of the 65C816, and none of it is true of SDX.  It is
+true of one compiler.
+
+**And there is a 65C816 toolchain that does emit relocations: ORCA.**
+ORCA/C (Byte Works; maintained now by Stephen Heumann, 2.2.0 covering
+nearly all of C17) with the ORCA linker produces **OMF**, the Apple IIGS
+object module format — a genuinely relocatable format with real
+relocation records, for both 16-bit and 24-bit references, because the
+IIGS loader places segments anywhere and fixes them up.  That is
+structurally the same problem SDX's `$FFFD` fix-ups solve, and the same
+information Calypsi denies us.  **Golden Gate** (Kelvin Sherlock) runs
+ORCA/C and the linker as a cross-compiler on Linux, so this is reachable
+from this machine rather than only from a IIGS.
+
+What that does NOT mean is that OMF is SDX-compatible: SDX has its own
+block types and its own rules (§19.1.3.2 still wants internal references
+short and external ones long, and blocks bank-contained).  What it means
+is that an **OMF -> `$FFFE`/`$FFFD`/`$FFF9` converter is a conceivable
+tool**, the way `mkxex.py` converts ELF to `.xex`, because the relocation
+information would exist to convert.  With Calypsi there is nothing to
+convert from.
+
+So the honest verdict is scoped, not absolute.
+
 ## Verdict
 
-Shipping gem4xe as an SDX relocatable 65C816 binary is blocked by the
-compiler, not by the packager, and the benefit — letting SDX place the
-image — is small for a system that switches to native mode and takes the
-machine anyway.  **Not recommended.**  The coexistence work above is the
-part of SDX 4.5x's 65C816 support that gem4xe actually wants, and it is
-worth doing on its own.
+**Not with Calypsi**, and that is the whole of it: the benefit — letting
+SDX place the image — is small for a system that switches to native mode
+and takes the machine anyway, and the cost against this toolchain is a
+compiler requirement rather than a packaging one.  Not recommended *now*.
+
+It is worth keeping on the list of **things gem4xe wants from a 65C816 C
+compiler**, beside the far-pointer defects this port has been paying for
+all along (`tools/ccbug`, B1-B18, and the pointer-difference bug that made
+QED need a source patch).  Relocatable output is a feature request with a
+working precedent, not a wish.
+
+The coexistence work in the section above — bounding the far-RAM probe
+from `COMTAB2`, and allocating through `MALLOC` index `$03` when
+`65816.SYS` is loaded — is the part of SDX 4.5x's 65C816 support gem4xe
+actually wants, and it is worth doing on its own whatever the compiler.
