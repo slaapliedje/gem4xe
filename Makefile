@@ -448,7 +448,8 @@ build/scrap.o: src/aes/scrap.c src/aes/aes.h src/sys/farmem.h
 # GPLv2 tree (docs/licence.md).  It is part of the LIBRARY and not of a
 # program, so the kit ships it and anybody's application gets it.
 G4A_LIB = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o \
-          build/app/gemstat.o build/app/gemstub.o build/app/clib.o
+          build/app/gemstat.o build/app/gemtime.o build/app/gemstub.o \
+          build/app/clib.o
 
 # ...and the same three for an application compiled --data-model=large.
 # The linker refuses to mix runtime models, so a large-data program needs
@@ -456,7 +457,8 @@ G4A_LIB = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o \
 # than clib-lc-sd.a.  The SOURCES are the same files: only the model
 # differs (docs/gacs.md).
 G4A_LIB_LD = build/appld/crt_gemapp.o build/appld/gemabi.o build/appld/gemlib.o \
-             build/appld/gemstat.o build/appld/gemstub.o build/appld/clib.o
+             build/appld/gemstat.o build/appld/gemtime.o build/appld/gemstub.o \
+             build/appld/clib.o
 LIB_LD     = clib-lc-ld.a
 
 build/app/clib.o: src/sys/clib.c
@@ -490,6 +492,22 @@ build/appld/gemstub.o: src/app/gemstub.c src/app/gem.h
 	@mkdir -p build/appld
 	$(CC) --code-model=large --data-model=large -O2 --no-interprocedural-cross-jump \
 	    -I src -I src/app -o $@ $<
+# The kit's calendar, AT -O0, and this is measured rather than cautious.
+# At -O1 and above the compiler mangles civil_from_days (src/app/gemtime.c
+# says which two shapes and what they produced): the month came back 0, a
+# comparison used as a number added 255 instead of 1, and a plain 32-bit
+# store through a pointer wrote 0.  The same source compiled by gcc agrees
+# with Python on every case tests/host/test_gemtime.py checks, and -O0
+# agrees too, so it is the optimiser.  The price is 589 bytes -- 3,932
+# against 3,343 -- on a file that formats a date, and a wrong date is not
+# worth 589 bytes.  tests/host/test_gemtime.py checks that this line still
+# says -O0, so it cannot be "tidied" back without the gate saying so.
+build/appld/gemtime.o: src/app/gemtime.c src/app/gem.h src/app/time.h
+	@mkdir -p build/appld
+	$(CC) --code-model=large --data-model=large -O0 -I src -I src/app -o $@ $<
+build/app/gemtime.o: src/app/gemtime.c src/app/gem.h src/app/time.h
+	@mkdir -p build/app
+	$(CC) --code-model=large --data-model=small -O0 -I src -I src/app -o $@ $<
 # $(8), when given, is the runtime library: a --data-model=large program
 # needs clib-lc-ld.a and the large-data half of the application library,
 # because the linker refuses to mix runtime models.
