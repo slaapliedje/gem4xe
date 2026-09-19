@@ -398,6 +398,14 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         clip.g_w = int_in[4]; clip.g_h = int_in[5];
         objc_change(tree, int_in[0], &clip, (UWORD)int_in[6], int_in[7]);
         break;
+    /* objc_sysvar takes NO TREE, which is why it is not in the list at the
+     * top of this function that fetches addr_in[0]: its four words are the
+     * whole of its input (Compendium 6.121, and the AES's own binding table
+     * gives it as 48, 4 in, 3 out, 0 addresses). */
+    case 48:                        /* objc_sysvar: mode, which, in1, in2 */
+        ret = ob_sysvar(int_in[0], int_in[1], int_in[2], int_in[3],
+                        &int_out[1], &int_out[2]);
+        break;
 
     /* Form manager */
     case 50:                        /* form_do: start */

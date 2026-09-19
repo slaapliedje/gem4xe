@@ -37,6 +37,16 @@ WORD ncalls;
 WORD dosres[8];
 WORD ndos;
 WORD foreign;               /* Y after a COP that is not gem4xe's: m11_cop.s */
+/* objc_sysvar's answers.  NOT recorded into results[]: every entry there
+ * is compared against tools/aesref.py, and this call's answers are
+ * constants a specification fixes (Compendium 6.121) rather than
+ * behaviour a model computes -- so the gate reads them here and asserts
+ * them directly, and the compared sequence is left alone. */
+WORD sv_ad3d, sv_ad3d1, sv_ad3d2;   /* AD3DVALUE: return, and the two values */
+WORD sv_lk3d, sv_lk3d1, sv_lk3d2;   /* LK3DIND: the same */
+WORD sv_col1;                       /* INDBUTCOL's colour */
+WORD sv_set;                        /* a SV_SET: must be refused */
+WORD sv_junk;                       /* a `which` that is not one of the six */
 static DTA dta;
 
 extern WORD m11_cop01(void);
@@ -152,6 +162,14 @@ int main(void)
     /* And one COP that is not gem4xe's at all: Rapidus OS's COP #$01,
      * which gem4xe must pass to the OS when it is running and refuse when
      * it is not (src/sys/abi.s). */
+    /* objc_sysvar (opcode 48): what the AES says about 3D objects, which
+     * here is that there are none.  AD3DVALUE is the one cflib asks. */
+    sv_ad3d = objc_sysvar(SV_INQUIRE, AD3DVALUE, 0, 0, &sv_ad3d1, &sv_ad3d2);
+    sv_lk3d = objc_sysvar(SV_INQUIRE, LK3DIND, 0, 0, &sv_lk3d1, &sv_lk3d2);
+    objc_sysvar(SV_INQUIRE, INDBUTCOL, 0, 0, &sv_col1, &k);
+    sv_set  = objc_sysvar(SV_SET, INDBUTCOL, 1, 0, &k, &k);
+    sv_junk = objc_sysvar(SV_INQUIRE, 99, 0, 0, &k, &k);
+
     foreign = m11_cop01();
     return ncalls;
 }

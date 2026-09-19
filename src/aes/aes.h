@@ -261,6 +261,19 @@ typedef struct {
 
 /* Object colours (the colour word's nibbles) */
 #define WHITE       0
+
+/* objc_sysvar: what a program is told about 3D object rendering.  The
+ * Compendium's names (6.121).  gem4xe draws no 3D objects, so the
+ * inquiry answers zero throughout and setting is refused -- see
+ * ob_sysvar in objc.c for why zero is the TRUE answer and not a stub. */
+#define SV_INQUIRE  0
+#define SV_SET      1
+#define LK3DIND     1           /* indicator: does its text move, its colour change */
+#define LK3DACT     2           /* activator: the same two */
+#define INDBUTCOL   3           /* an indicator's default colour */
+#define ACTBUTCOL   4           /* an activator's */
+#define BACKGRCOL   5           /* a background object's */
+#define AD3DVALUE   6           /* extra pixels each side for the 3D effect */
 #define BLACK       1
 #define LWHITE      8
 #define LBLACK      9
@@ -606,6 +619,8 @@ void ob_center(OBJECT FAR *tree, GRECT *pt);
 void ob_change(OBJECT FAR *tree, WORD obj, UWORD new_state, WORD redraw);
 WORD ob_find(OBJECT FAR *tree, WORD currobj, WORD depth, WORD mx, WORD my);
 WORD ob_edit(OBJECT FAR *tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
+WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
+               WORD *out1, WORD *out2);
 
 void objc_draw(OBJECT FAR *tree, WORD start, WORD depth, const GRECT *clip);
 WORD objc_find(OBJECT FAR *tree, WORD start, WORD depth, WORD mx, WORD my);

@@ -63,6 +63,14 @@ LOAD_RUN = 3004
 APP_OK = 0
 REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
+# AES calls src/m11_app.c makes WITHOUT a record_aes(): the five
+# objc_sysvar probes.  They are deliberately outside results[], because
+# every entry there is compared against tools/aesref.py and this call's
+# answers are constants a specification fixes rather than behaviour a
+# model computes.  They still cost a COP each, so the reconciliation
+# below has to know how many -- naming them keeps it able to catch a
+# call nobody meant to make.
+UNRECORDED_AES = 5
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 
@@ -269,6 +277,37 @@ def main(argv):
         # untouched.  Passed to Rapidus OS: it never reaches gem_entry, and
         # the OS answers.  Either way the application's calls number the same.
         foreign = struct.unpack("<h", b.memdump(app["foreign"] + base, 2))[0]
+
+        # objc_sysvar (AES 48), read straight out of the application's
+        # words.  gem4xe draws no 3D objects, so ZERO is the answer and
+        # not a placeholder: AD3DVALUE says how many pixels an object
+        # needs each side for its 3D border, and cflib lays every dialog
+        # out by it -- EmuTOS answers 2 there because it draws a
+        # two-pixel border, and answering 2 here would reserve room for
+        # something never painted (Compendium 6.121).
+        sv = {n: struct.unpack("<h", b.memdump(app[n] + base, 2))[0]
+              for n in ("sv_ad3d", "sv_ad3d1", "sv_ad3d2", "sv_lk3d",
+                        "sv_lk3d1", "sv_lk3d2", "sv_col1", "sv_set",
+                        "sv_junk")}
+        print(f"  objc_sysvar: AD3DVALUE -> {sv['sv_ad3d']} ({sv['sv_ad3d1']},"
+              f"{sv['sv_ad3d2']}), LK3DIND -> {sv['sv_lk3d']} "
+              f"({sv['sv_lk3d1']},{sv['sv_lk3d2']}), INDBUTCOL {sv['sv_col1']}, "
+              f"set {sv['sv_set']}, junk {sv['sv_junk']}")
+        check(sv["sv_ad3d"] == 1 and sv["sv_ad3d1"] == 0 and sv["sv_ad3d2"] == 0,
+              f"objc_sysvar(AD3DVALUE) answered {sv['sv_ad3d']} "
+              f"({sv['sv_ad3d1']},{sv['sv_ad3d2']}); a system that draws no 3D "
+              f"border needs no pixels for one, so it must succeed with 0,0")
+        check(sv["sv_lk3d"] == 1 and sv["sv_lk3d1"] == 0 and sv["sv_lk3d2"] == 0,
+              "objc_sysvar(LK3DIND) must succeed with 0,0: an indicator's text "
+              "does not move here and its colour does not change")
+        check(sv["sv_col1"] == 0,
+              f"objc_sysvar(INDBUTCOL) answered colour {sv['sv_col1']}, not "
+              f"white -- the ground an object is actually drawn on")
+        check(sv["sv_set"] == 0,
+              "objc_sysvar(SV_SET) must be REFUSED: there is nothing behind "
+              "these settings to change")
+        check(sv["sv_junk"] == 0,
+              "objc_sysvar with a `which` outside the six must answer 0")
         passed = b.peek(syms["gem_cop_pass"])
         want_foreign, want_bad, extra = ((FOREIGN_OS, 0, 0) if os_rom
                                          else (FOREIGN_REFUSED, 1, 0))
@@ -279,9 +318,11 @@ def main(argv):
               f"the foreign COP left Y {foreign}, not {want_foreign}"
               + (": it did not reach the OS" if os_rom else ": gem4xe touched it"))
         check(bad == want_bad, f"the ABI refused {bad} call(s), not {want_bad}")
-        check(main_ret == ncalls and calls == ncalls + ndos + extra,
-              f"main() returned {main_ret}, {ncalls} records, {ndos} GEMDOS calls, "
-              f"{calls} COP calls: they should reconcile")
+        check(main_ret == ncalls
+              and calls == ncalls + ndos + extra + UNRECORDED_AES,
+              f"main() returned {main_ret}, {ncalls} records, {ndos} GEMDOS "
+              f"calls, {UNRECORDED_AES} unrecorded, {calls} COP calls: they "
+              f"should reconcile")
 
         # -- GEMDOS through COP #$44 ------------------------------------------
         dosres = list(struct.unpack("<8h", b.memdump(app["dosres"] + base, 16)))

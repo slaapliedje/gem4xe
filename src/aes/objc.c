@@ -1064,3 +1064,53 @@ WORD objc_edit(OBJECT FAR *tree, WORD obj, WORD kchar, WORD *idx, WORD kind)
     gsx_sclip(&gl_rfull);
     return ob_edit(tree, obj, kchar, idx, kind);
 }
+
+/* objc_sysvar -- what a program is told about 3D object rendering.
+ *
+ * THERE ARE NO 3D OBJECTS HERE, and this call is how a program finds
+ * that out without guessing.  The AES draws an object the flat way the
+ * ST's own did before AES 3.40: no raised border, no text that shifts
+ * when a button is pressed, no colour that changes under it.
+ *
+ * SO THE ANSWERS ARE ZERO, AND ZERO IS THE TRUE ANSWER rather than a
+ * stub's.  The one that matters is AD3DVALUE, which asks how many extra
+ * pixels an indicator or activator needs on each side to make room for
+ * the 3D effect.  EmuTOS answers 2 (ADJ3DSTD) because it really does
+ * draw a two-pixel border; a system that draws none needs none, and
+ * answering 2 here would have every dialog reserve space for something
+ * that is never painted.  cflib asks exactly this (obgframe.c, AD3DVAL)
+ * and lays its objects out by the answer.
+ *
+ * SETTING IS REFUSED, all of it.  The Compendium says an application
+ * should not be changing these anyway -- they are global, and for a CPX
+ * or an accessory to set -- and here there is nothing behind them to
+ * change.  0 is "unsuccessful", which is the documented way to say so.
+ *
+ * A program that wants to know whether this call exists at all asks
+ * appl_getinfo, whose ap_gout1 is "3D objects supported" (0 here) and
+ * ap_gout2 is "objc_sysvar present" (1).  The two answers agree: the
+ * call is here, the effects are not.
+ */
+WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
+               WORD *out1, WORD *out2)
+{
+    (void)in1;
+    (void)in2;
+    if (mode != SV_INQUIRE)
+        return 0;                   /* nothing here is settable */
+    *out1 = *out2 = 0;
+    switch (which) {
+    case LK3DIND:                   /* an indicator's text does not move, */
+    case LK3DACT:                   /* an activator's does not either,    */
+    case AD3DVALUE:                 /* and neither needs room to do it    */
+        break;
+    case INDBUTCOL:                 /* the ground an object is drawn on */
+    case ACTBUTCOL:
+    case BACKGRCOL:
+        *out1 = WHITE;
+        break;
+    default:
+        return 0;                   /* not one of the six */
+    }
+    return 1;
+}

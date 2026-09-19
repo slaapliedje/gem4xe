@@ -967,6 +967,32 @@ WORD objc_change(OBJECT *tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WOR
     return aes(47, 8, 1, 1, 0);
 }
 
+/* objc_sysvar -- what the AES will tell you about 3D object rendering.
+ * Four words in, three out, and NO TREE: the Compendium's binding
+ * (6.121) and the AES's own table agree, 48 with 4/3/0.
+ *
+ * gem4xe draws no 3D objects, so an inquiry answers zero throughout and
+ * a set is refused with 0.  That is the useful answer and not an empty
+ * one: AD3DVALUE says how much room an object needs for its 3D border,
+ * and a system that draws none needs none -- cflib lays its objects out
+ * by exactly this. */
+WORD objc_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
+                 WORD *out1, WORD *out2)
+{
+    WORD r;
+    int_in[0] = mode;
+    int_in[1] = which;
+    int_in[2] = in1;
+    int_in[3] = in2;
+    r = aes(48, 4, 3, 0, 0);
+    if (out1)
+        *out1 = int_out[1];
+    if (out2)
+        *out2 = int_out[2];
+    return r;
+}
+
+
 WORD objc_order(OBJECT *tree, WORD obj, WORD newpos)
 {
     int_in[0] = obj;

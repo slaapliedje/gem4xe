@@ -153,6 +153,7 @@ EXPECT = [
     ("objc_order",       AES, 45, 2, 1, 1, 0),
     ("objc_edit",        AES, 46, 4, 2, 1, 0),
     ("objc_change",      AES, 47, 8, 1, 1, 0),
+    ("objc_sysvar",      AES, 48, 4, 3, 0, 0),
     ("form_do",          AES, 50, 1, 1, 1, 0),
     ("form_dial",        AES, 51, 9, 1, 0, 0),
     ("form_dial_grect",  AES, 51, 9, 1, 0, 0),

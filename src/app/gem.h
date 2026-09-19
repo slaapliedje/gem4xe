@@ -217,6 +217,19 @@ typedef struct {
 #define G_MAGENTA   7
 #define G_LWHITE    8
 #define G_LBLACK    9
+
+/* objc_sysvar: what a program is told about 3D object rendering.  The
+ * Compendium's names (6.121).  gem4xe draws no 3D objects, so the
+ * inquiry answers zero throughout and setting is refused -- see
+ * ob_sysvar in objc.c for why zero is the TRUE answer and not a stub. */
+#define SV_INQUIRE  0
+#define SV_SET      1
+#define LK3DIND     1           /* indicator: does its text move, its colour change */
+#define LK3DACT     2           /* activator: the same two */
+#define INDBUTCOL   3           /* an indicator's default colour */
+#define ACTBUTCOL   4           /* an activator's */
+#define BACKGRCOL   5           /* a background object's */
+#define AD3DVALUE   6           /* extra pixels each side for the 3D effect */
 #define G_LRED     10
 #define G_LGREEN   11
 #define G_LBLUE    12
@@ -720,6 +733,8 @@ WORD objc_find(OBJECT *tree, WORD start, WORD depth, WORD mx, WORD my);
 WORD objc_offset(OBJECT *tree, WORD obj, WORD *x, WORD *y);
 WORD objc_change(OBJECT *tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WORD h,
                  WORD state, WORD redraw);
+WORD objc_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
+                 WORD *out1, WORD *out2);
 /* newpos: 0 puts the object first among its siblings (the bottom of the
  * stack), NIL last (the top), n after the nth. */
 WORD objc_order(OBJECT *tree, WORD obj, WORD newpos);

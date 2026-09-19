@@ -223,6 +223,7 @@ int main(void)
     a = 0;
     objc_edit(tree, 1, 'x', &a, 1);
     objc_change(tree, 1, 0, 1, 2, 3, 4, 1, 1);
+    objc_sysvar(SV_INQUIRE, AD3DVALUE, 0, 0, &a, &b);
     form_do(tree, 0);
     form_dial(0, 1, 2, 3, 4, 5, 6, 7, 8);
     r2.g_x = 5; r2.g_y = 6; r2.g_w = 7; r2.g_h = 8;
