@@ -22,6 +22,9 @@ import vbxeref
 # that device: VramForm, the AES's save buffer in VRAM.  The RASTERISER
 # below does not use them -- it reads self.dev (tools/devref.py), the
 # way src/vdi/vdi.c reads `vdev`.
+# The DEFAULT screen, for the callers that have nothing to say about it.
+# A model drawing at another width takes it from its device (vdi.dev.w),
+# which is where the width actually lives -- see tools/vbxeref.py.
 SCR_W, SCR_H, STRIDE = vbxeref.SCR_W, vbxeref.SCR_H, vbxeref.STRIDE
 
 # opcodes
@@ -1504,10 +1507,13 @@ class VramForm:
         self.wdwidth, self.planes, self.mfdb_addr = wdwidth, planes, mfdb_addr
 
     @classmethod
-    def save_buffer(cls, mfdb_addr=0):
-        """The AES's: a whole screen at VR_SAVE, laid out like the screen."""
-        return cls(vram_symbol("VR_SAVE"), SCR_W, SCR_H, SCR_W // 16, 4,
-                   mfdb_addr)
+    def save_buffer(cls, mfdb_addr=0, w=SCR_W, h=SCR_H):
+        """The AES's: a whole screen at VR_SAVE, laid out like the screen
+        -- so it is the screen's width, and a caller drawing at another
+        one has to say so.  VR_SAVE itself does not move: the VRAM map is
+        laid out for the widest overlay whatever is being shown
+        (src/vbxe/vbxe.h)."""
+        return cls(vram_symbol("VR_SAVE"), w, h, w // 16, 4, mfdb_addr)
 
     @property
     def stride(self):

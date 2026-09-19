@@ -88,6 +88,14 @@
 #define VB_WIDE_WIDE       2
 #define VB_WIDTHS          3
 #define VB_HEIGHTS         3    /* 240, 224, 200: GEM4XE.CFG's SCREENH */
+/* The picture's width and its bytes-per-row, from the OVATT code.  BOTH
+ * the drawing and the DISPLAY have to step by the same number: the XDL's
+ * OVSTEP was VB_STRIDE whatever the width, which showed up as a shear at
+ * 512 and as the next row's left edge appearing at x >= 640 at 672. */
+#define VB_W_OF(code)      ((code) == OVATT_WIDTH_NARROW ? VB_W_NARROW : \
+                            (code) == OVATT_WIDTH_WIDE   ? VB_W_WIDE   : \
+                                                           VB_W_NORMAL)
+#define VB_STRIDE_OF(code) (VB_W_OF(code) / 2)
 /* OVATT byte 1 is the priority mask.  ALWAYS $FF: bits 6/7 changed meaning
  * between FX 1.24 and 1.26, and a priority of $00 renders normally on 1.24
  * but makes the overlay VANISH on 1.26 (bit 7 became COLBAK).            */

@@ -19,6 +19,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from a8test.launcher import launch     # noqa: E402
 import vbxeref                         # noqa: E402
+import devref                          # noqa: E402
 import vdiref                          # noqa: E402
 import symfile                         # noqa: E402
 from vdiref import (V_CLRWK, V_PLINE, VSL_TYPE, VSL_COLOR, VSF_INTERIOR,      # noqa: E402
@@ -957,9 +958,38 @@ def wait_done(b, timeout_frames=4000):
     return False
 
 
+# Sys op 17: the screen again, at another width (src/m3_vdi.c).  intin[0]
+# is the width index; it answers 0 and the w/h/stride it came up with.
+SCREEN_OP = 3017
+
+
+def run_sys(b, script_addr, op, ints=()):
+    """One sys op, on its own, and its record back.  None if it hung."""
+    poke_script(b, script_addr, [(op, (), tuple(ints), None, 0)])
+    b.poke(STATUS + ST_DONE, 0)
+    b.poke(STATUS + ST_GO, 1)
+    if not wait_done(b):
+        return None
+    b.frames(4)
+    n = b.peek16(_COUNT_ADDR[0])
+    if n < 1:
+        return None
+    return vdiref.decode(
+        b.memdump(_RESULTS_ADDR[0], n * vdiref.RESULT_WORDS * 2), n)[0]
+
+
+# Filled by main(); run_sys is called from there and from run_cases and
+# would otherwise want four more arguments to say the same thing.
+_RESULTS_ADDR, _COUNT_ADDR = [0], [0]
+
+
 def main(argv):
     only = None
     keep_shots = "--shot" in argv
+    # Every width by default.  --width 640 runs one, for a bisect.
+    widths = None
+    if "--width" in argv:
+        widths = {int(argv[argv.index("--width") + 1])}
     if "--case" in argv:
         only = int(argv[argv.index("--case") + 1])
     os.makedirs(SHOTDIR, exist_ok=True)
@@ -971,10 +1001,8 @@ def main(argv):
     results_addr = syms["vdi_results"]
     count_addr = syms["vdi_result_count"]
     scratch_room = min(a for a in syms.values() if a > scratch_addr) - scratch_addr
+    _RESULTS_ADDR[0], _COUNT_ADDR[0] = results_addr, count_addr
     assert 552 + 20 <= scratch_room, "the MFDBs must fit vdi_scratch"
-    save = vdiref.VramForm.save_buffer(scratch_addr + 552)
-    FORMS = {"icon": (ICON_BITS, ICON_WDW),
-             "to_save": (None, save), "from_save": (save, None)}
 
     emu = launch(tag="m3", memsize="1088K", extra_args=["--disk", DISK])
     b = emu.bridge
@@ -1004,6 +1032,50 @@ def main(argv):
             print("FAIL: runner did not come up")
             return 1
 
+        # EVERY CASE AT EVERY WIDTH.  The overlay has three
+        # (src/vbxe/vbxe.h) and a 4bpp rasteriser's hard parts -- the
+        # partial byte at each end of a rectangle, the clip, the stride a
+        # blit steps by -- are exactly the parts a different width
+        # moves.  Sys op 3017 re-brings the screen up at one, which is
+        # what main() does at boot and not a mode switch; every case
+        # opens its own workstation after it.  One pass is ~40 seconds.
+        for wi, px in enumerate(vbxeref.SCR_WIDTHS):
+            if widths is not None and px not in widths:
+                continue
+            rec = run_sys(b, script_addr, SCREEN_OP, (wi,))
+            # A record is [contrl[2], contrl[4], intout[0..14], ptsout...]
+            # (src/m3_vdi.c record_vdi), so intout[n] is at n + 2.
+            if rec is None or rec[2 + 6] != 0:
+                results.append((-1, f"screen {px}", "the runner refused it"))
+                break
+            gw, gh, gstride = rec[2 + 7], rec[2 + 8], rec[2 + 9]
+            if (gw, gstride) != (px, px // 2):
+                results.append((-1, f"screen {px}",
+                                f"the runner came up {gw}x{gh} stride {gstride}"))
+                break
+            print(f"  -- {gw}x{gh}, stride {gstride} "
+                  f"(shot column {vbxeref.shot_x0(gw)} on) --")
+            save = vdiref.VramForm.save_buffer(scratch_addr + 552, w=gw, h=gh)
+            FORMS = {"icon": (ICON_BITS, ICON_WDW),
+                     "to_save": (None, save), "from_save": (save, None)}
+            run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
+                      script_addr, scratch_addr, results_addr, count_addr,
+                      script_room)
+    finally:
+        emu.stop()
+
+    fails = [r for r in results if r[2]]
+    print()
+    for idx, name, err in fails:
+        print(f"   FAIL [{idx}] {name}: {err}")
+    print(f"gem4xe-m3: {len(results) - len(fails)}/{len(results)} VDI cases passed")
+    return 1 if fails else 0
+
+
+def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
+              script_addr, scratch_addr, results_addr, count_addr, script_room):
+    """The whole suite once, on whatever screen is up."""
+    if True:
         for idx, (name, script) in enumerate(CASES):
             if only is not None and idx != only:
                 continue
@@ -1017,7 +1089,7 @@ def main(argv):
                  FORMS[r[3]] if len(r) > 3 and r[3] is not None else None,
                  r[4] if len(r) > 4 else 0)
                 for r in full]
-            ref = vdiref.VDI()
+            ref = vdiref.VDI(devref.Vbxe(width=gw, height=gh))
             ref.run(resolved)
 
             # Stage the forms' MFDBs where the driver will read them: the
@@ -1052,24 +1124,15 @@ def main(argv):
                                f"expected {ref.results[i]}")
                         break
 
-            shot = os.path.join(SHOTDIR, f"m3-{idx:02d}.png")
+            shot = os.path.join(SHOTDIR, f"m3-{px}-{idx:02d}.png")
             b.screenshot(shot)
             bad, shown = vbxeref.compare_to_shot(ref.to_rgb(), shot)
             if bad and not err:
                 err = f"{bad} px differ; first {shown[:3]}"
-            results.append((idx, name, err))
+            results.append((idx, f"{name} @{px}", err))
             if not err and not keep_shots:
                 os.remove(shot)
             print(f"  [{idx:2d}] {name:<38s} {'ok' if not err else 'FAIL'}")
-    finally:
-        emu.stop()
-
-    fails = [r for r in results if r[2]]
-    print()
-    for idx, name, err in fails:
-        print(f"   FAIL [{idx}] {name}: {err}")
-    print(f"gem4xe-m3: {len(results) - len(fails)}/{len(results)} VDI cases passed")
-    return 1 if fails else 0
 
 
 if __name__ == "__main__":

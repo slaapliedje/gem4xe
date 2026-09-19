@@ -95,9 +95,22 @@
 #  define FONT_POINT    8
 #else
 #  include "../vbxe/vbxe.h"
-#  define SCR_W       VB_W
+/* THE ONLY DEVICE WHOSE GEOMETRY IS NOT COMPILE-TIME, and it is the
+ * width that forces it: the overlay has three (512, 640, 672) and one
+ * device file answers for all of them, so VB_W and VB_STRIDE are the
+ * NORMAL screen and not this one.  A far read per primitive, which is
+ * nothing beside the VRAM write it is computing an address for.
+ *
+ * SCR_H stays compile-time and that is not an oversight: it is the
+ * BUFFER's bound, 240 whatever is shown, a safe superset that
+ * everything above the seam has already clipped to vdev->h.  A stride
+ * is not a bound -- it is the step from one row to the next -- so the
+ * same argument does not reach it, and using 320 on a 672-pixel screen
+ * puts every row after the first in the wrong place.  test-m3 running
+ * the conformance suite at all three widths is what said so. */
+#  define SCR_W       (vdev->w)
 #  define SCR_H       VB_H
-#  define SCR_STRIDE  VB_STRIDE
+#  define SCR_STRIDE  (vdev->stride)
 #  define FONT_W        8
 #  define FONT_H        8
 #  define FONT_TOP      6     /* Fonthead.top: baseline to top of cell */
@@ -402,7 +415,11 @@ void    pr_page_close(void);
 #  define SCR_STRIDE    (vdev->stride)
 /* The widest row either device can hand back, for the one buffer that
  * has to be an array rather than a pointer (vdi.c, the paint bucket). */
-#  define SCR_STRIDE_MAX 320
+/* 336 is the widest overlay's stride -- VB_W_WIDE / 2 in
+ * src/vbxe/vbxe.h -- written out because nothing above the seam
+ * includes that header.  Too small and the paint bucket reads a row
+ * into a buffer shorter than the row. */
+#  define SCR_STRIDE_MAX 336
 
 #  define FONT_W        (vdev->font_w)
 #  define FONT_H        (vdev->font_h)

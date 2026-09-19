@@ -73,8 +73,10 @@ class Vbxe:
     """
 
     # -- the surface -----------------------------------------------------
-    w, h = vbxeref.SCR_W, vbxeref.SCR_H
-    stride = vbxeref.STRIDE
+    # Set per INSTANCE in __init__, not per class: the overlay has three
+    # widths (src/vbxe/vbxe.h) and the target has a device table for each
+    # (src/vdi/dev_vbxe.c, nine of them with the heights).  These are the
+    # defaults, which is the normal 640-pixel screen.
 
     # -- the system font's cell, and the rest of its head ----------------
     font_w, font_h, font_top = 8, 8, 6
@@ -87,8 +89,12 @@ class Vbxe:
     # loaded in hardware order (src/vdi/dev_vbxe.c, map_col).
     MAP_COL = (0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13)
 
-    def __init__(self, face=None, pal=None):
-        self.s = vbxeref.Surface()      # all 512 KB: forms live above the screen
+    def __init__(self, face=None, pal=None, width=vbxeref.SCR_W,
+                 height=vbxeref.SCR_H):
+        self.w, self.h = width, height
+        self.stride = width // 2        # HR is 4bpp: two pixels to a byte
+        # all 512 KB: forms live above the screen
+        self.s = vbxeref.Surface(width=width, height=height)
         self.base = 0
         self.face = fontref.FONT_8X8 if face is None else face
         self.hw_pal = bytearray(48)

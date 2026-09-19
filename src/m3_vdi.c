@@ -422,6 +422,37 @@ static void sys_op(WORD op)
         intout[11] = (WORD)gem_bad;
         c4 = 12;
         break;
+    case 17: {
+        /* THE SCREEN, AGAIN, AT ANOTHER WIDTH.  The overlay has three
+         * (src/vbxe/vbxe.h) and the conformance suite should answer for
+         * all of them, but `vdev` is set before main() reaches anything
+         * the harness can talk to -- so this does over what main() did,
+         * in the same order, rather than the harness getting a word in
+         * earlier.  It is a re-bring-up and not a mode switch: the seam
+         * says vdev is set once and never moves, and every case opens
+         * its own workstation afterwards, so what this leaves behind is
+         * a machine that has just booted at a different size.
+         *
+         * intin[0] is the width INDEX, which is also the OVATT code. */
+        WORD wi = intin[0];
+        if (wi < 0 || wi >= VB_WIDTHS) {
+            intout[6] = -1;
+            c4 = 7;
+            break;
+        }
+        vram_fill(VR_XDL, 0x00, 0x1000);
+        vdev = &vdev_vbxe_tab[wi][0];
+        vbxe_xdl_hr(VR_SCREEN0, (uint16_t)vdev->h, 0, (uint8_t)wi);
+        vdi_font_default();
+        vdi_init();
+        ptr_init(PTR_NONE, (WORD)(vdev->w / 2), (WORD)(vdev->h / 2));
+        intout[6] = 0;
+        intout[7] = (WORD)vdev->w;
+        intout[8] = (WORD)vdev->h;
+        intout[9] = (WORD)vdev->stride;
+        c4 = 10;
+        break;
+    }
     default:
         break;
     }

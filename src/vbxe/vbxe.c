@@ -222,8 +222,11 @@ void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin,
     xdl[n++] = (uint8_t)(screen);                 /* OVADR, 3 bytes         */
     xdl[n++] = (uint8_t)(screen >> 8);
     xdl[n++] = (uint8_t)(screen >> 16);
-    xdl[n++] = (uint8_t)(VB_STRIDE);             /* OVSTEP, 12 bits        */
-    xdl[n++] = (uint8_t)(VB_STRIDE >> 8);
+    /* OVSTEP is the SCREEN's bytes per row, not the normal screen's:
+     * the display and the rasteriser have to agree on where row y+1
+     * starts or the picture shears. */
+    xdl[n++] = (uint8_t)(VB_STRIDE_OF(ovatt_width));  /* OVSTEP, 12 bits   */
+    xdl[n++] = (uint8_t)(VB_STRIDE_OF(ovatt_width) >> 8);
     xdl[n++] = OVATT_OVPAL(1) | ovatt_width;
     xdl[n++] = OVATT_PRI_OVER_ALL;                /* $FF -- see vbxe.h      */
     xdl[n++] = (uint8_t)((XDLC_OVOFF | XDLC_END) & 0xFF);

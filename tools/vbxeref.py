@@ -26,12 +26,33 @@ def vram_symbol(name):
     return int(m.group(1), 16)
 
 
+# The DEFAULT screen: the VBXE's normal overlay, which is what every
+# gate that has nothing to say about the width gets.  The width is not a
+# global that anything rebinds -- it travels through construction, from
+# devref.Vbxe(width=...) into the Surface -- because a module constant
+# that changes underneath a `from vbxeref import SCR_W` somewhere else
+# is exactly the silent disagreement this model exists to prevent.
 SCR_W, SCR_H = 640, 240
 STRIDE = SCR_W // 2                       # 320 bytes per row
+# The three the overlay has: 128, 160 and 168 colour clocks at four HR
+# pixels each (src/vbxe/vbxe.h).
+SCR_WIDTHS = (512, 640, 672)
 
-# Where the overlay lands in an Altirra screenshot, measured, not assumed:
-# a 672x240 shot with the 640-pixel overlay starting at column 16, 1:1.
-SHOT_X0, SHOT_Y0, SHOT_W, SHOT_H = 16, 0, 640, 240
+# Where the overlay lands in an Altirra screenshot, MEASURED at all three
+# widths, not assumed: a 672-wide capture holds the wide overlay exactly
+# (columns 0..671), the normal one at 16..655 and the narrow one at
+# 80..591.  All three are centred in it, so the crop follows the width
+# rather than being three constants that could disagree with each other.
+SHOT_FULL_W, SHOT_FULL_H = 672, 240
+SHOT_Y0, SHOT_H = 0, SCR_H
+
+
+def shot_x0(width):
+    """The first column of a `width`-pixel overlay in a full capture."""
+    return (SHOT_FULL_W - width) // 2
+
+
+SHOT_X0, SHOT_W = shot_x0(SCR_W), SCR_W
 
 
 def dac(v):
@@ -47,7 +68,12 @@ def dac(v):
 class Surface:
     """A VBXE VRAM region addressed as bytes; 4bpp pixels are packed 2/byte."""
 
-    def __init__(self, size=0x80000):
+    def __init__(self, size=0x80000, width=SCR_W, height=SCR_H):
+        # The screen this VRAM is showing.  Everything above the blitter
+        # is bytes and knows nothing about it; pixel() and to_rgb() are
+        # the two that have to.
+        self.w, self.h = width, height
+        self.stride = width // 2        # HR is 4bpp: two pixels to a byte
         self.mem = bytearray(size)
 
     # -- blitter ---------------------------------------------------------
@@ -118,14 +144,14 @@ class Surface:
 
     # -- rendering -------------------------------------------------------
     def pixel(self, base, x, y):
-        b = self.mem[base + y * STRIDE + x // 2]
+        b = self.mem[base + y * self.stride + x // 2]
         return (b >> 4) if (x & 1) == 0 else (b & 0x0F)
 
     def to_rgb(self, base, palette):
         """Return [[(r,g,b), ...] ...] as the DAC would drive it."""
         pal = [tuple(dac(c) for c in palette[i * 3:i * 3 + 3]) for i in range(16)]
-        return [[pal[self.pixel(base, x, y)] for x in range(SCR_W)]
-                for y in range(SCR_H)]
+        return [[pal[self.pixel(base, x, y)] for x in range(self.w)]
+                for y in range(self.h)]
 
 
 def save_rgb(expected_rgb, path):
@@ -134,7 +160,7 @@ def save_rgb(expected_rgb, path):
     differ says nothing about WHAT differs; this is how the two are put
     side by side."""
     from PIL import Image
-    im = Image.new("RGB", (SCR_W, SCR_H))
+    im = Image.new("RGB", (len(expected_rgb[0]), len(expected_rgb)))
     im.putdata([px for row in expected_rgb for px in row])
     im.save(path)
     return path
@@ -148,10 +174,17 @@ def compare_to_shot(expected_rgb, shot_path, max_report=8):
     from PIL import Image
     im = Image.open(shot_path).convert("RGB")
     px = im.load()
+    # The crop follows the picture the model produced: a narrower overlay
+    # sits further into the capture, and the capture is the same size
+    # whatever the width.  Taken from the data rather than from a
+    # parameter so that a caller cannot compare a 512-pixel model against
+    # a 640-pixel crop and be told the whole screen is wrong.
+    h, w = len(expected_rgb), len(expected_rgb[0])
+    x0 = shot_x0(w)
     bad, shown = 0, []
-    for y in range(SCR_H):
-        for x in range(SCR_W):
-            got = px[SHOT_X0 + x, SHOT_Y0 + y]
+    for y in range(h):
+        for x in range(w):
+            got = px[x0 + x, SHOT_Y0 + y]
             want = expected_rgb[y][x]
             if got != want:
                 bad += 1
