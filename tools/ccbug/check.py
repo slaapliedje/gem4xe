@@ -84,6 +84,15 @@ HANGS = {
     "b18_farloop": "B18 far byte loop, cast and ++ in one expression",
 }
 HANG_SECONDS = 20                   # a clean compile of any of these is < 1 s
+# directory: (note, data model, library suffix) -- the shapes whose defect
+# is in what the LINKER placed, which no compiler listing can show.  B20's
+# _Div64 is eight bytes that fall through and the routine they fall into
+# is never linked, so the test is to link the reproducer and ask the map
+# whether `_UDiv64` is in it.
+LINKS = {
+    "b20": ("B20 signed 64-bit division falls through into data",
+            "large", "ld"),
+}
 BRANCHES = ("bcc", "bcs", "beq", "bne", "bmi", "bpl", "bvc", "bvs")
 
 
@@ -118,6 +127,38 @@ def simulate(db, elf, names):
     if len(vals) != len(names):
         sys.exit(f"expected {len(names)} values, got {len(vals)}:\n{out}")
     return dict(zip(names, map(int, vals)))
+
+
+def div64_falls_through(mapfile):
+    """True if _Div64 is not followed by the section it falls into (B20).
+
+    _Div64 is eight bytes that end in `clc` and continue into the NEXT
+    section; if anything else is placed there, a signed 64-bit division
+    executes it.  The tempting test -- "is _UDiv64 linked?" -- is WRONG,
+    and qed proved it: its map has _UDiv64 (strtoull drags it in) and it
+    still crashed, because _Div64 had a string literal after it.  So ask
+    the only question that matters: does a farcode section from the same
+    object start where _Div64 ends?"""
+    placed = []
+    div = None
+    with open(mapfile, errors="ignore") as f:
+        lines = f.readlines()
+    for i, line in enumerate(lines):
+        m = re.search(r"placed at address ([0-9a-f]+)-([0-9a-f]+)", line)
+        if not m:
+            continue
+        lo, hi = int(m.group(1), 16), int(m.group(2), 16)
+        owner = lines[i + 1] if i + 1 < len(lines) else ""
+        placed.append((lo, hi, line, owner))
+        if "_Div64 in section" in line:
+            div = (lo, hi)
+    if div is None:
+        return False                        # not linked: nothing to say
+    nxt = [p for p in placed if p[0] == div[1] + 1]
+    if not nxt:
+        return True                         # nothing follows it at all
+    line, owner = nxt[0][2], nxt[0][3]
+    return not ("'farcode'" in line and "integer.o" in owner)
 
 
 def far_ptrdiff_bug(listing):
@@ -266,6 +307,18 @@ def main():
              os.path.join(ROOT, "tools", "ccbug", f"{tag}.c")])
         crashes[note] = (far_ptrdiff_bug(lst) if tag == "b19_ptrdiff"
                          else loop_width_bug(lst))
+    # B20 links -- successfully -- to a _Div64 that runs off its own end.
+    # The map is the only place it shows.
+    for tag, (note, model, suffix) in LINKS.items():
+        d = os.path.join(ROOT, "tools", "ccbug", tag)
+        lobj = os.path.join(a.out, f"{tag}.o")
+        mp = os.path.join(a.out, f"{tag}.map")
+        run([cc, "--code-model=large", f"--data-model={model}", f"-O{a.O}",
+             "--target", "atari", "-o", lobj, os.path.join(d, f"{tag}.c")])
+        run([ld, os.path.join(d, "linker.scm"), lobj,
+             f"clib-lc-{suffix}-atari.a", "--rtattr", "exit=simplified",
+             "-o", os.path.join(a.out, f"{tag}.elf"), "--list-file", mp])
+        crashes[note] = div64_falls_through(mp)
 
     print(f"{version}, -O{a.O}, {os.path.relpath(scm, a.calypsi)}")
     bad = 0
@@ -310,7 +363,7 @@ def main():
                   "they exist to find, so their silence means nothing")
         return 1
     print(f"check-cc: PASSED -- every workaround shape is right; "
-          f"{present} of {sum(1 for v in RESULTS.values() if v[1] == 'bug') + len(CRASHES) + len(LISTINGS) + len(REFUSALS) + len(HANGS)} "
+          f"{present} of {sum(1 for v in RESULTS.values() if v[1] == 'bug') + len(CRASHES) + len(LISTINGS) + len(LINKS) + len(REFUSALS) + len(HANGS)} "
           f"bug shapes still present")
     return 0
 

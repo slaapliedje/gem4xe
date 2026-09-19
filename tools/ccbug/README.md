@@ -1,10 +1,10 @@
 # tools/ccbug — the cc65816 bugs gem4xe works around
 
-Nineteen defects in Calypsi cc65816, eighteen found against **5.18**
+Twenty defects in Calypsi cc65816, nineteen found against **5.18**
 here and one (B17) reported from another project — thirteen in
 code generation, two crashes, one compile that never finishes (B18), one
-in the front end's arithmetic and one in the run-time library's division
-— each reproduced from a shape
+in the front end's arithmetic, one in the run-time library's division and
+one (B20) in what the LINKER placed — each reproduced from a shape
 lifted out of gem4xe or out of the vendor's own C library, each with the
 shape the sources use instead.
 
@@ -1098,3 +1098,41 @@ optimisation for a library a program uses a fraction of. And `make`
 tracks a rule's sources, not its recipe: adding the flag to an existing
 rule rebuilds nothing, the gate re-runs the old image and reports the
 old number — delete the object or make the Makefile a prerequisite.
+## B20 — a signed 64-bit division falls through into whatever follows
+
+`_Div64` is **eight bytes** and they do not end in a return:
+
+    a0 06 00   ldy ##6
+    b7 04      lda [dp:04],y
+    57 08      eor [dp:08],y      ; the sign of the quotient
+    18         clc
+
+No `rtl`, no `bra`, no `jsl`.  It computes the sign and **falls through**
+into the next section — and the linker does not keep that section after
+it.  In `b20/`'s twelve-line reproducer the map says
+
+    _Div64 in section 'farcode'  placed at address 030159-030160 of size 000008
+    Section 'ifar'  placed at address 030161-030168 of size 000008
+
+so `a / b` executes `b`'s own initialiser, `07 00 00 00 00 00 00 00`, as
+instructions.  Under `db65816` the program never terminates.
+
+**BOTH DATA MODELS**, so nothing about it is far-pointer specific.
+
+**The obvious test is the wrong one.**  "Is `_UDiv64` linked?" looks like
+the question and is not: qed's map HAS `_UDiv64` — `strtoull` drags it in
+— and qed still died, because `_Div64` had a cflib string literal after
+it and `_UDiv64` was 76 KB away.  `check.py`'s `div64_falls_through()`
+asks the only question that decides it: does a `farcode` section from
+`integer.o` start where `_Div64` ends?
+
+FOUND BY: **qed on gem4xe, saving a file.**  QED asks for the time,
+Calypsi's `localtime()` divides a 64-bit `time_t`, and the Atari took a
+native-mode BRK with the program counter inside the string `"scrap.*"`.
+Nothing in either program's source is anywhere near a division.  gem4xe
+itself is not exposed: `GEM.COM` links no `_Div64` at all.
+
+No workaround is possible in C — the shape is `a / b` on a `long long`.
+What a program can do is not have one: keep 64-bit values out of
+division, or supply the library function itself.
+
