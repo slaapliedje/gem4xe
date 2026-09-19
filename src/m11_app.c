@@ -57,6 +57,7 @@ WORD ag_font[5];                    /* AES_LARGEFONT */
 WORD ag_shell[5];                   /* AES_SHELL */
 WORD ag_obj[5];                     /* AES_OBJECT */
 WORD ag_sys[5];                     /* AES_SYSTEM */
+WORD ay_ret;                        /* appl_yield's answer */
 WORD ag_lang;                       /* AES_LANGUAGE: the return alone */
 WORD ag_junk;                       /* a subject this AES does not know */
 static DTA dta;
@@ -207,6 +208,15 @@ int main(void)
                                &ag_obj[3], &ag_obj[4]);
     ag_sys[0]   = appl_getinfo(AES_SYSTEM, &ag_sys[1], &ag_sys[2],
                                &ag_sys[3], &ag_sys[4]);
+
+    /* appl_yield (17): somebody else's turn.  There IS nobody else here
+     * -- one program, no accessory -- so what this proves is the half
+     * that could hang: it must answer, and answer at once, rather than
+     * waiting for a process that is never going to run.  The gate reads
+     * the scheduler's own counter either side of it and requires that
+     * nothing was handed over, which is the other half of the same
+     * statement. */
+    ay_ret = appl_yield();
     ag_lang     = appl_getinfo(AES_LANGUAGE, &k, &k, &k, &k);
     ag_junk     = appl_getinfo(99, &k, &k, &k, &k);
 

@@ -156,8 +156,14 @@ void  proc_drop(PROC *p);
 void  proc_name(PROC *p, const char *path);
 PROC *proc_byname(const char *name);
 
-/* Somebody else's turn, if anybody else can go.  ev_poll() calls it. */
+/* Somebody else's turn, if anybody else can go.  ev_poll() calls it,
+ * and it does nothing for a process that is not parked on an event --
+ * see the body. */
 void  proc_yield(void);
+
+/* ...and the same handover for a process that is NOT parked, which is
+ * what appl_yield (17) asks for.  TRUE if a turn was given away. */
+WORD  proc_handover(void);
 
 /* Turns to everybody with a message waiting, until nobody has one or
  * `rounds` have gone by: the barrier the shell puts between AC_CLOSE and

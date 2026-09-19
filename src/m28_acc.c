@@ -34,8 +34,13 @@ WORD acc_ticks;                 /* timer waits completed: it is alive */
 WORD acc_ws;                    /* a workstation, opened once and KEPT */
 WORD acc_find;                  /* appl_find on its OWN name: its pid */
 WORD acc_findapp;               /* ...and on the desktop's, refreshed */
+WORD acc_yields;                /* appl_yield calls made: see the loop */
 
 static char acc_title[] = "  Gate accessory";
+
+/* Enough that the scheduler's counter cannot advance this far from the
+ * handful of turns a tick's own evnt_multi hands over. */
+#define YIELDS_PER_TICK 32
 
 /* v_opnvwk's parameter block, the one every GEM program opens with. */
 static WORD work_in[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2 };
@@ -89,6 +94,17 @@ int main(void)
              * again on every tick because the answer CHANGES: an
              * accessory is loaded before any program runs. */
             acc_findapp = appl_find("DESKTOP ");
+            /* appl_yield (17), MANY of them, and the number is the
+             * point.  The gate reads the scheduler's own count of turns
+             * handed over and requires it to have advanced by at least
+             * this many -- which nothing else in a tick could account
+             * for, so an appl_yield that did not actually hand over
+             * cannot pass.  The application is always ready to run
+             * (src/aes/proc.h: the input owner is), so every one of
+             * these finds somebody to give the turn to. */
+            for (i = 0; i < YIELDS_PER_TICK; i++)
+                appl_yield();
+            acc_yields = (WORD)(acc_yields + YIELDS_PER_TICK);
         }
         if (!(what & MU_MESAG))
             continue;

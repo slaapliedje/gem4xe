@@ -708,6 +708,11 @@ WORD vqt_name(WORD handle, WORD element, char *name);   /* name[33] */
 
 WORD appl_init(void);
 WORD appl_exit(void);
+/* appl_yield -- give the other processes a turn.  This AES schedules
+ * cooperatively, so a program that works for a long time between evnt_
+ * calls stops every accessory dead; calling this in the loop is how it
+ * does not.  It answers at once when there is nobody else to run. */
+WORD appl_yield(void);
 
 WORD evnt_keybd(void);          /* scan code << 8 | ASCII, as on the ST */
 WORD evnt_button(WORD clicks, UWORD mask, UWORD state,

@@ -146,7 +146,7 @@ def main(argv):
         acc = {n: asym[n] + near - link_near
                for n in ("acc_id", "acc_menu", "acc_ticks", "acc_msgs",
                          "acc_opens", "acc_closes", "acc_last", "acc_ws",
-                         "acc_find", "acc_findapp")}
+                         "acc_find", "acc_findapp", "acc_yields")}
         acc_id, acc_menu = b.peek16(acc["acc_id"]), b.peek16(acc["acc_menu"])
         check(acc_id == 1, f"the accessory's ap_id is {acc_id}, expected 1")
         check(acc_menu == 0, f"its menu id is {acc_menu}, expected slot 0")
@@ -236,8 +236,10 @@ def main(argv):
 
         # 5. it is running, not merely resident
         t0 = b.peek16(acc["acc_ticks"])
+        y0, n0 = b.peek16(acc["acc_yields"]), b.peek16(syms["proc_turns"])
         b.frames(300)
         t1 = b.peek16(acc["acc_ticks"])
+        y1, n1 = b.peek16(acc["acc_yields"]), b.peek16(syms["proc_turns"])
         check(t1 > t0,
               f"the accessory's timer did not advance in 300 frames "
               f"({t0} -> {t1}): it is resident but not running")
@@ -261,7 +263,20 @@ def main(argv):
               f"appl_find(\"DESKTOP \") answered {afa}, not 0: the shell must "
               f"name the process it loads a program into, and the desktop is "
               f"the application")
-        print(f"  the scheduler gave {b.peek16(syms['proc_turns'])} turns away")
+        print(f"  the scheduler gave {n1} turns away")
+        # appl_yield (AES 17) DOES hand a turn over, and this is the only
+        # place it can be shown: with one process there is nobody to give
+        # one to, so test-m11 can only prove the call answers.  The
+        # accessory makes 32 of them per tick and the scheduler's counter
+        # has to have moved at least that far -- a handful more for the
+        # evnt_multi each tick is fine, but an appl_yield that handed
+        # nothing over could not reach it.
+        check(y1 > y0, f"the accessory made no appl_yield calls ({y0} -> {y1})")
+        check(n1 - n0 >= y1 - y0,
+              f"the accessory made {y1 - y0} appl_yield calls and the "
+              f"scheduler handed over {n1 - n0} turns: a yield that finds "
+              f"the application ready must give it one")
+        print(f"  {y1 - y0} appl_yield calls -> {n1 - n0} turns handed over")
         check(b.peek16(acc["acc_msgs"]) == 1,
               f"the accessory was sent {b.peek16(acc['acc_msgs'])} messages, "
               f"expected the one AC_OPEN")

@@ -182,31 +182,52 @@ void proc_drain(WORD rounds)
     }
 }
 
-void proc_yield(void)
+/* The round robin itself, from the one after the running process so that
+ * a process which is always ready cannot starve the one behind it.
+ * TRUE if a turn was handed over. */
+static WORD proc_pass(void)
 {
     PROC *p;
     WORD i, here;
 
     if (proc_n < 2)
-        return;
-    if (!rlr->p_evwait)
-        return;                     /* not parked on anything: keep going.
-                                     * Without this a process between waits
-                                     * would hand over and be handed back
-                                     * on every poll, and pay two stack
-                                     * copies each time for nothing. */
+        return FALSE;
     if (!ct_idle())
-        return;                     /* a gesture is in flight: see proc.h */
+        return FALSE;               /* a gesture is in flight: see proc.h */
 
-    /* Round robin from the one after the running process, so that a
-     * process that is always ready cannot starve the one behind it. */
     here = proc_pid(rlr);
     for (i = 1; i < proc_n; i++) {
         p = &proc_tab[(here + i) % proc_n];
         if (p != rlr && proc_ready(p)) {
             proc_turns++;
             ctx_switch(&p->p_ctx);
-            return;
+            return TRUE;
         }
     }
+    return FALSE;
+}
+
+void proc_yield(void)
+{
+    if (!rlr->p_evwait)
+        return;                     /* not parked on anything: keep going.
+                                     * Without this a process between waits
+                                     * would hand over and be handed back
+                                     * on every poll, and pay two stack
+                                     * copies each time for nothing. */
+    proc_pass();
+}
+
+/* appl_yield's: hand over even though the caller is NOT parked on
+ * anything, which is the whole difference between ASKING for a switch
+ * and waiting for an event.  proc_yield refuses in that case and is
+ * right to -- ev_poll calls it on a process between waits and would
+ * otherwise ping-pong -- but the same refusal made appl_yield a call
+ * that answered and did nothing at all.
+ *
+ * The caller comes back ready: a process with no p_evwait is "parked
+ * outside a wait: not waiting" to proc_ready, so the turn returns. */
+WORD proc_handover(void)
+{
+    return proc_pass();
 }

@@ -64,13 +64,14 @@ APP_OK = 0
 REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
 # AES calls src/m11_app.c makes WITHOUT a record_aes(): five objc_sysvar
-# probes, three appl_find ones and six appl_getinfo ones.  They are deliberately outside
+# probes, three appl_find ones, six appl_getinfo ones and one
+# appl_yield.  They are deliberately outside
 # results[], because every entry there is compared against
 # tools/aesref.py and these calls' answers are constants a specification
 # fixes rather than behaviour a model computes.  They still cost a COP
 # each, so the reconciliation below has to know how many -- naming them
 # keeps it able to catch a call nobody meant to make.
-UNRECORDED_AES = 5 + 3 + 6
+UNRECORDED_AES = 5 + 3 + 6 + 1
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 
@@ -382,6 +383,21 @@ def main(argv):
         check(junk == 0,
               f"appl_getinfo(99) answered {junk}, not 0: a subject this AES "
               f"does not know must be refused")
+
+        # appl_yield (AES 17): somebody else's turn, and here there is
+        # nobody else -- one program, no accessory.  So the two halves
+        # worth pinning are that it ANSWERS (a call that waited for a
+        # process which is never going to run would hang the gate instead
+        # of failing it) and that it handed nothing over.  proc_turns is
+        # the scheduler's own count of turns given away (src/aes/proc.c);
+        # nothing in this whole run should have moved it.
+        ay = struct.unpack("<h", b.memdump(app["ay_ret"] + base, 2))[0]
+        turns = b.peek16(syms["proc_turns"])
+        print(f"  appl_yield -> {ay}; the scheduler gave {turns} turns away")
+        check(ay == 1, f"appl_yield answered {ay}, not 1")
+        check(turns == 0,
+              f"the scheduler handed {turns} turns over with one process "
+              f"running -- proc_yield should find nobody to give one to")
         passed = b.peek(syms["gem_cop_pass"])
         want_foreign, want_bad, extra = ((FOREIGN_OS, 0, 0) if os_rom
                                          else (FOREIGN_REFUSED, 1, 0))

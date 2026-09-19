@@ -677,6 +677,11 @@ WORD appl_exit(void)
     return aes(19, 0, 1, 0, 0);
 }
 
+WORD appl_yield(void)
+{
+    return aes(17, 0, 1, 0, 0);
+}
+
 WORD graf_handle(WORD *wchar, WORD *hchar, WORD *wbox, WORD *hbox)
 {
     WORD h = aes(77, 0, 5, 0, 0);

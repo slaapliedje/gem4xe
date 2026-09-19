@@ -198,6 +198,7 @@ int main(void)
     appl_find("SCRENSAV");              /* eight, as the contract says */
     appl_getinfo(AES_LARGEFONT, &a, &b, &c, &d);
     appl_xgetinfo(AES_LARGEFONT, &a, &b, &c, &d);
+    appl_yield();
     appl_exit();
     evnt_keybd();
     evnt_button(1, 1, 1, &a, &b, &c, &d);

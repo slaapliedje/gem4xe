@@ -302,6 +302,33 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         ret = p ? proc_pid(p) : -1;
         break;
     }
+    case 17:
+        /* appl_yield: somebody else's turn.  PC-GEM 2.0's and MagiC's,
+         * not in the Compendium at all -- its opcode table leaves 17
+         * blank -- so the contract is gemlib's binding (0 in, 1 out) and
+         * EmuTOS's body, which is a bare dsptch().
+         *
+         * It is worth more here than on the machine it came from.  This
+         * AES is a cooperative round robin (src/aes/proc.h): a program
+         * that works for a long time without reaching an evnt_ call
+         * starves every accessory beside it, and this is the one way it
+         * can be polite without pretending to wait for something.  The
+         * handover is exactly the one ev_poll() does; the difference is
+         * that the program asked.
+         *
+         * proc_handover and NOT proc_yield: proc_yield does nothing for a
+         * process that is not parked on an event, which a program calling
+         * this never is -- so it answered and did nothing at all until
+         * test-m28 counted the turns it was supposed to be handing over
+         * (384 calls, 24 turns). */
+        /* The answer stays the default TRUE and does NOT say whether a
+         * turn was actually handed over, tempting as that is on a
+         * cooperative AES: gemlib documents this return as "unknown" and
+         * EmuTOS leaves it at TRUE, so a port may be reading anything
+         * into it and inventing a meaning here is a divergence nobody
+         * asked for.  test-m28 counts the turns instead. */
+        proc_handover();
+        break;
     case 19:                        /* appl_exit */
         break;
 
