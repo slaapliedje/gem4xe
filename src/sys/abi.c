@@ -838,6 +838,24 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         ret = path ? sh_find(path) : 0;
         break;
     }
+    case 126: {                     /* shel_rdef: cmd, dir -- both out */
+        char *cmd = near_of(addr_in[0]);
+        char *dir = near_of(addr_in[1]);
+        if (cmd && dir)
+            sh_rdef(cmd, dir);
+        else
+            ret = 0;
+        break;
+    }
+    case 127: {                     /* shel_wdef: cmd, dir -- both in */
+        const char *cmd = near_of(addr_in[0]);
+        const char *dir = near_of(addr_in[1]);
+        if (cmd && dir)
+            sh_wdef(cmd, dir);
+        else
+            ret = 0;
+        break;
+    }
     case 125: {                     /* shel_envrn: &value, name */
         const char **pp = near_of(addr_in[0]);
         const char *name = near_str(addr_in[1]);

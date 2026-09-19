@@ -210,6 +210,8 @@ void gemdos_release(void);
 /* The current drive and directory as the boot left them: what the
  * shell restores before the desktop runs again. */
 void gemdos_home(void);
+/* ...and INTO one, which is what shel_wdef's directory names. */
+void gemdos_chdir(const char *path);
 /* A name the AES opens, resolved through GEMDOS's current
  * directory when there is one (src/sys/gemdos.c). */
 void gd_cioname(const char *name, char *cio);

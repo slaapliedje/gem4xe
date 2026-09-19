@@ -215,6 +215,8 @@ EXPECT = [
     ("shel_put",         AES, 123, 1, 1, 1, 0),
     ("shel_find",        AES, 124, 0, 1, 1, 0),
     ("shel_envrn",       AES, 125, 0, 1, 2, 0),
+    ("shel_rdef",        AES, 126, 0, 1, 2, 0),
+    ("shel_wdef",        AES, 127, 0, 1, 2, 0),
 
     ("Pterm0",   DOS, 0x00, 0, 0, 0, 0),
     ("Cconin",   DOS, 0x01, 0, 0, 0, 0),

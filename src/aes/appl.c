@@ -170,7 +170,11 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_PCGEM:
-        /* objc_xfind, menu_click, shel_rdef and shel_wdef: none. */
+        /* out1 objc_xfind and out3 menu_click: neither is here.  out4 is
+         * shel_rdef and shel_wdef, which are -- and this subject is the
+         * ONLY place Atari's own documentation admits those two exist
+         * (the Compendium, p.364).  out2 is reserved. */
+        *out4 = 1;
         break;
 
     case AI_INQUIRE:

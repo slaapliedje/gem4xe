@@ -8,9 +8,15 @@ control to src/aes/shel.c and blocks in it until the loop ends, while
 the harness plays the user at the keyboard --
 
     DESKTOP.G4A (v0)  R  ->  M11.G4A runs and returns  ->  the desktop
+                      V  ->  shel_wdef names A:\SUB as the desktop's
+                             directory, then M11.G4A again -- so the run
+                             after it starts where the shell was told
                       X  ->  NOPE.G4A is not there: the alert, RETURN,
                              the desktop
-                      Q  ->  shutdown, and sys op 16 returns
+                      Q  ->  shel_rdef and shel_wdef checked, then
+                             shutdown, and sys op 16 returns.  What the
+                             desktop's main() returns is the five bits
+                             src/m16_desk.c describes.
 
 -- and checks three things.  The screen, against the model, at each stop:
 the desk drawn edge to edge with the desktop's line of help on it, and
@@ -193,6 +199,20 @@ def main(argv):
             model_desktop()
             same(b, "after-m11", ref_v.to_rgb(), "the desktop again, after M11.G4A")
 
+        # 2b. V: the desktop's directory named, then M11.G4A again.  The
+        # run after this one is the first that starts in A:\SUB, and the
+        # bit for it is folded into what Q returns.
+        b.key("V")
+        t = poll(b, runs, 5)
+        check(t >= 0, f"after V: sh_runs did not reach 5 (reads {b.peek16(runs)})")
+        if t >= 0:
+            check(b.peek16(lastrc) == 0, f"after V: load status {b.peek16(lastrc)}")
+            print(f"  shel_wdef, M11.G4A again, the desktop back {t} frames after V")
+            b.frames(SETTLE)
+            model_desktop()
+            same(b, "after-wdef", ref_v.to_rgb(),
+                 "the desktop again, now run from A:\\SUB")
+
         # 3. X: NOPE.G4A cannot be found -- the shell's alert, then the desktop
         b.key("X")
         t = poll(b, lastrc, APP_E_FILE)
@@ -208,8 +228,8 @@ def main(argv):
                           plan={0: [F(SETTLE), SHOT, K("RETURN", RETURN)]})
             same(b, "alert", ref_a.shots[-1], "the shell's alert: cannot be found")
             b.key("RETURN")
-            t = poll(b, runs, 4)
-            check(t >= 0, f"after the alert: sh_runs did not reach 4 "
+            t = poll(b, runs, 6)
+            check(t >= 0, f"after the alert: sh_runs did not reach 6 "
                           f"(reads {b.peek16(runs)})")
             if t >= 0:
                 print(f"  the alert dismissed, the desktop back {t} frames after RETURN")
@@ -236,15 +256,22 @@ def main(argv):
         ret, nruns, lret, lrc, calls, bad = rec[6:12]
         print(f"  sh_main returned {ret}: {nruns} runs, last returned {lret}, "
               f"last load {lrc}; {calls} ABI calls, {bad} refused")
-        check(ret == 4, f"sh_main returned {ret}, not the 4 programs run")
-        check(nruns == 4, f"sh_runs {nruns}, not 4")
-        check(lret == 0, f"the desktop's main() returned {lret}, not 0")
+        check(ret == 6, f"sh_main returned {ret}, not the 6 programs run")
+        check(nruns == 6, f"sh_runs {nruns}, not 6")
+        # THE FIVE BITS src/m16_desk.c sets: the name and the directory
+        # shel_rdef gave back, a fresh pair read back after shel_wdef,
+        # and -- the one that says the call does something rather than
+        # remembers something -- the desktop having been RUN in the
+        # directory V named.
+        check(lret == 0x1F, f"the desktop's main() returned {lret:#x}, not 0x1f: "
+                            f"shel_rdef/shel_wdef")
         check(lrc == 0, f"the last load's status {lrc}, not 0")
-        # One refusal, and only one: M11.G4A makes a COP that is not
-        # gem4xe's (src/m11_cop.s), and on this OS nobody else takes COPs
-        # (src/sys/abi.s).  It is counted as refused, never as a call.
-        check(calls > 0 and bad == 1, f"{calls} ABI calls, {bad} refused, "
-                                      f"not M11.G4A's one foreign COP")
+        # TWO refusals, and only two -- one per run of M11.G4A, which R
+        # and V each ask for.  It makes a COP that is not gem4xe's
+        # (src/m11_cop.s), and on this OS nobody else takes COPs
+        # (src/sys/abi.s); it is counted as refused, never as a call.
+        check(calls > 0 and bad == 2, f"{calls} ABI calls, {bad} refused, "
+                                      f"not M11.G4A's foreign COP once per run")
 
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]

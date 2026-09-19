@@ -22,17 +22,41 @@
  *         which must be refused (tests/emu/m33_farrsc.py)
  *     X   ask for NOPE.G4A, which is not there: the shell's alert, then
  *         the desktop again
- *     Q   shut GEM down and return to DOS
+ *     V   shel_wdef: the desktop's directory set to A:\SUB, then
+ *         M11.G4A -- so the run AFTER this one is the one that starts
+ *         somewhere the shell was told rather than the system's place
+ *     Q   shut GEM down and return to DOS, having checked shel_rdef and
+ *         shel_wdef and returned what it found as main()'s value: bit 0
+ *         the name kept, 1 the directory kept, 2 and 3 a fresh pair read
+ *         back, 4 the directory V asked for actually used
  *
  * The entry, the exit and the two shel_write calls are the contract the
  * real desktop keeps.
  */
 #include "gem.h"
 
+/* No string.h here: an application links against nothing of gem4xe's
+ * and the kit is the AES, not a C library. */
+static WORD samestr(const char *a, const char *b)
+{
+    while (*a && *a == *b) {
+        a++;
+        b++;
+    }
+    return (*a == 0 && *b == 0);
+}
+
 int main(void)
 {
     WORD work_in[11], work_out[57];
     WORD handle, wchar, hchar, wbox, hbox, k;
+    WORD verify = 0;
+    /* STATIC, not stack: shel_rdef's two buffers are 13 and 114 bytes by
+     * contract, and main() already has v_opnvwk's 114-byte work_out on
+     * an application stack of 256 (the Makefile's APP_STACK).  As locals
+     * they overran it and the desktop drew its line of help in the wrong
+     * colour before the keys stopped working at all. */
+    static char cmd[13], dir[114];
 
     appl_init();
     handle = graf_handle(&wchar, &hchar, &wbox, &hbox);
@@ -40,6 +64,12 @@ int main(void)
         work_in[k] = 1;
     work_in[10] = 2;
     v_opnvwk(work_in, &handle, work_out);
+
+    /* WHERE THE SHELL PUT US.  shel_wdef's directory is used at the next
+     * desktop load, so the run after the one that set it is where it
+     * shows -- which is why this is read at start-up and not on a key. */
+    if (Dgetpath((char FAR *)dir, 0) == 0 && samestr(dir, "\\SUB"))
+        verify |= 0x10;
 
     vst_color(handle, 1);
     v_gtext(handle, 8, hbox + 16, "gem4xe desktop -- R M11, C CALC, K CLOCK, B M29, H M31, T M32, X none, Q quits");
@@ -96,12 +126,33 @@ int main(void)
             shel_write(SHW_EXEC, 1, 0, "NOPE.G4A", "\0");
             break;
         }
+        if (k == 'v' || k == 'V') {
+            shel_wdef("DESKTOP.G4A", "A:\\SUB");
+            shel_write(SHW_EXEC, 1, 0, "M11.G4A", "\0");
+            break;
+        }
         if (k == 'q' || k == 'Q') {
+            /* What the shell was told last, then a fresh pair read back:
+             * shel_rdef and shel_wdef, checked at the last moment so
+             * that every bit lands in one main() result -- each run of
+             * the desktop is a new process and cannot carry the last
+             * one's answers. */
+            shel_rdef(cmd, dir);
+            if (samestr(cmd, "DESKTOP.G4A"))
+                verify |= 0x01;
+            if (samestr(dir, "A:\\SUB"))
+                verify |= 0x02;
+            shel_wdef("NOPE.G4A", "");
+            shel_rdef(cmd, dir);
+            if (samestr(cmd, "NOPE.G4A"))
+                verify |= 0x04;
+            if (dir[0] == 0)
+                verify |= 0x08;
             shel_write(SHW_SHUTDOWN, 0, 0, "", "\0");
             break;
         }
     }
     v_clsvwk(handle);
     appl_exit();
-    return 0;
+    return verify;
 }

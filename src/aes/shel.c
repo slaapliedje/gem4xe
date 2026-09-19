@@ -54,6 +54,37 @@ WORD sh_isgem;
 static WORD sh_next;            /* what runs next: SH_DESKTOP, SH_PROGRAM */
 static uint32_t sh_cmd_far, sh_tail_far, sh_buf_far;   /* 0 until sh_init */
 
+/* ---- shel_rdef and shel_wdef -----------------------------------------
+ *
+ * WHAT RUNS AS THE DESKTOP, and the directory it runs in.  Neither call
+ * is an Atari one: the Falcon ROM's CRYSBIND.H puts SHEL_SPATH at 126
+ * and GEMBIND.C never dispatches it, 127 is not there at all, and the
+ * Compendium's own binding table leaves both blank.  They are PC-GEM's,
+ * and the only place Atari's documentation admits they exist is
+ * appl_getinfo's AES_PCGEM subject, whose fourth word says whether they
+ * are implemented -- which is now 1 (src/aes/appl.c).
+ *
+ * THE BUFFER SIZES ARE THE DONOR'S, not this file's convenience: EmuTOS
+ * declares sh_desk as LEN_ZFNAME (13) and sh_cdir as LEN_ZPATH (114),
+ * and a program written against those would be overrun by anything
+ * longer.  shel_rdef writes no more than that and shel_wdef keeps no
+ * more, which costs a long desktop path and buys a caller that cannot
+ * be made to scribble.
+ *
+ * BOTH HALVES DO SOMETHING HERE, which was not a given.  The directory
+ * is where the desktop is run from, in place of the system's -- the
+ * donor's sh_chdef does exactly this for DESKTOP_APP.  The name is the
+ * program the shell loads as the desktop: gem4xe keeps the default one
+ * cached in far memory because it runs again after every program (a
+ * copy, not a disk read), so a name that is still DESKTOP.G4A comes out
+ * of the cache and any other is loaded from the file like a program.
+ * That costs a disk read per return to the desktop for a caller that
+ * changed it, which is the right way round. */
+#define SH_DESKNAME "DESKTOP.G4A"   /* what the shell runs unless told */
+#define SH_DESKLEN  13          /* LEN_ZFNAME: NAME.EXT and its NUL */
+#define SH_CDIRLEN  114         /* LEN_ZPATH: a path with its drive */
+static uint32_t sh_desk_far, sh_cdir_far;
+
 #define SH_DESKTOP  0
 #define SH_PROGRAM  1
 
@@ -64,6 +95,12 @@ void sh_init(void)
     sh_cmd_far  = far_alloc(SH_CMDLEN);
     sh_tail_far = far_alloc(SH_TAILLEN);
     sh_buf_far  = far_alloc(SH_BUFLEN);
+    sh_desk_far = far_alloc(SH_DESKLEN);
+    sh_cdir_far = far_alloc(SH_CDIRLEN);
+    if (sh_desk_far)
+        far_strput(sh_desk_far, SH_DESKNAME, SH_DESKLEN);
+    if (sh_cdir_far)
+        far_write8(sh_cdir_far, 0);     /* empty: the system's directory */
     if (sh_cmd_far && sh_tail_far && sh_buf_far) {
         far_write8(sh_cmd_far, 0);
         far_write8(sh_tail_far, 0);
@@ -73,6 +110,26 @@ void sh_init(void)
     }
     sh_doexec = -1;
     sh_isgem = 0;
+}
+
+/* shel_rdef: what the shell will run as the desktop, and where. */
+void sh_rdef(char *lpcmd, char *lpdir)
+{
+    if (!sh_desk_far)
+        return;
+    far_strget(lpcmd, sh_desk_far, SH_DESKLEN);
+    far_strget(lpdir, sh_cdir_far, SH_CDIRLEN);
+}
+
+/* shel_wdef: and what it will be from now on.  An empty directory means
+ * the system's, which is where the desktop's own files are and what the
+ * shell did before this call existed. */
+void sh_wdef(const char *lpcmd, const char *lpdir)
+{
+    if (!sh_desk_far)
+        return;
+    far_strput(sh_desk_far, lpcmd, SH_DESKLEN);
+    far_strput(sh_cdir_far, lpdir, SH_CDIRLEN);
 }
 
 void sh_read(char *pcmd, char *ptail)
@@ -318,7 +375,6 @@ static void sh_accs(void)
  * wound back when it exits (app_free), so the desktop's bytes are taken
  * before the first program and stay for every return to it: a loaded
  * desktop costs a copy, not a disk read. */
-#define SH_DESKNAME "DESKTOP.G4A"
 static uint32_t sh_desk_blob, sh_desk_len;
 
 WORD sh_runs;                   /* programs started, the desktop included */
@@ -339,9 +395,28 @@ static WORD sh_ldapp(void)
     if (was == SH_DESKTOP) {
         /* The last program ran in its own directory (the desktop's
          * do_aopen set it, src/desk/deskwin.c); the desktop's files are
-         * in the system's, and its DESKTOP.RSC is a bare name. */
+         * in the system's, and its DESKTOP.RSC is a bare name -- unless
+         * shel_wdef named another, which is what its directory is for.
+         *
+         * `cmd` TWICE, and not a buffer of its own: THIS FRAME IS ON THE
+         * ENGINE'S STACK FOR AS LONG AS THE PROGRAM RUNS, and GEMDOS
+         * refuses a Pexec with less than GD_PEXEC_STACK of that stack
+         * left, because a child's calls are served below the parent's on
+         * it (src/gem4xe.scm).  A 114-byte second buffer here answered
+         * ENSMEM to every Pexec in test-m32 -- including one for a file
+         * that is not there, which is the guard firing before it looks. */
         gemdos_home();
-        st = app_load((const uint8_t FAR *)sh_desk_blob, sh_desk_len, &app);
+        far_strget(cmd, sh_cdir_far, SH_CDIRLEN);
+        if (cmd[0])
+            gemdos_chdir(cmd);
+        /* The CACHED image only while the name is still the default one:
+         * far memory holds one desktop, read before the keep mark, and a
+         * program that asked for another gets it from the file. */
+        far_strget(cmd, sh_desk_far, SH_DESKLEN);
+        if (sh_desk_blob && !strcmp(cmd, SH_DESKNAME))
+            st = app_load((const uint8_t FAR *)sh_desk_blob, sh_desk_len, &app);
+        else
+            st = app_load_file(cmd, &app);
     } else {
         far_strget(cmd, sh_cmd_far, SH_CMDLEN);
         sh_next = SH_DESKTOP;
@@ -359,7 +434,7 @@ static WORD sh_ldapp(void)
      * the load rather than before it, so that a failure leaves the name
      * of whatever is actually there instead of one for a program that
      * never started. */
-    proc_name(proc_app, was == SH_DESKTOP ? SH_DESKNAME : cmd);
+    proc_name(proc_app, cmd);   /* the desktop's name is in cmd too now */
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     sh_lastret = app_exec(&app);

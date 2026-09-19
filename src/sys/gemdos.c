@@ -1972,6 +1972,15 @@ void gemdos_init(void)
  * (src/aes/shel.c), as the donor's sh_chdef changes back to the
  * desktop's directory; without it the desktop came back in the last
  * program's directory, where its resource is not. */
+/* Dsetpath from inside the AES.  The shell needs it for shel_wdef's
+ * directory, which is where the next desktop runs (src/aes/shel.c); the
+ * address is built rather than cast from the near pointer, as everything
+ * that crosses this seam is. */
+void gemdos_chdir(const char *path)
+{
+    gd_setpath((LONG)(uint32_t)(uint16_t)path);
+}
+
 void gemdos_home(void)
 {
     WORD i;

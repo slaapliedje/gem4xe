@@ -124,6 +124,14 @@ APP_OBJS   = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o build/
 APP_BSS    = 2048
 APP_BITS   = 256
 APP_STACK  = 256
+# The stand-in desktop's own share of the constants.  It learned
+# shel_rdef and shel_wdef and with them five more string literals -- two
+# paths and three names -- and the link failed with "Failed to place 4
+# section fragment(s), total 0f".  RAISED FOR THAT ONE PROGRAM and not
+# for every application: APP_BITS comes out of the same near budget as
+# the data, and 320 everywhere made test-m32's Pexec answer -39 for want
+# of memory to put a child in.
+DESK_BITS  = 320
 
 # Everything a gate boots, and the product: a plain `make` leaves no disk
 # behind its sources (a gate run by hand, rather than through its test-m*
@@ -659,7 +667,7 @@ build/desk/%.o: src/desk/%.c $(DESK_H)
 	$(CC) $(CFLAGS) -I src/app -I build -o $@ $<
 
 $(eval $(call g4a,desktop,$(DESK_OBJS),$(DESK_BSS),$(DESK_BITS),$(DESK_STACK)))
-$(eval $(call g4a,m16_desk,$(G4A_LIB) build/app/m16_desk.o,$(APP_BSS),$(APP_BITS),$(APP_STACK)))
+$(eval $(call g4a,m16_desk,$(G4A_LIB) build/app/m16_desk.o,$(APP_BSS),$(DESK_BITS),$(APP_STACK)))
 
 # HELLO.G4A (src/hello_app.c): the desktop's hello-world demo, shipped in
 # \APPS\ in place of the M11 gate app -- a real window a user can open and

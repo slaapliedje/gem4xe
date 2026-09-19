@@ -794,6 +794,11 @@ extern WORD sh_doexec;              /* shel_write's request: SHW_*, -1 none */
 extern WORD sh_isgem;
 void sh_init(void);
 void sh_read(char *pcmd, char *ptail);
+/* shel_rdef / shel_wdef: what the shell runs as the desktop, and the
+ * directory it runs in.  lpcmd holds 13 bytes and lpdir 114, which are
+ * the donor's LEN_ZFNAME and LEN_ZPATH -- shel.c says why. */
+void sh_rdef(char *lpcmd, char *lpdir);
+void sh_wdef(const char *lpcmd, const char *lpdir);
 /* Pexec's child (src/sys/gemdos.c) reads its own name and tail with
  * shel_read: sh_push keeps the running program's in SH_SAVELEN bytes of
  * far memory at `save` and puts the child's in their place -- the tail

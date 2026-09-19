@@ -1004,6 +1004,14 @@ WORD scrp_write(const char *path);
  * does the walk itself, as the Compendium tells it to. */
 WORD scrp_clear(void);
 WORD shel_read(char *cmd, char *tail);
+/* What the shell runs as the DESKTOP, and the directory it runs in.
+ * Neither is an Atari call -- no ST AES serves opcode 126 or 127 -- but
+ * both do something here: change the directory and the next return to
+ * the desktop happens there; change the name and the shell loads that
+ * program instead, from the file.  `cmd` holds 13 bytes and `dir` 114,
+ * the donor's sizes, and both must be near. */
+WORD shel_rdef(char *cmd, char *dir);
+WORD shel_wdef(const char *cmd, const char *dir);
 WORD shel_find(char *path);
 WORD shel_envrn(char **value, const char *name);
 

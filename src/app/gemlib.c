@@ -1465,6 +1465,20 @@ WORD scrp_clear(void)
     return aes(82, 0, 1, 0, 0);
 }
 
+WORD shel_rdef(char *cmd, char *dir)
+{
+    addr_in[0] = (LONG)(uint32_t)(char FAR *)cmd;
+    addr_in[1] = (LONG)(uint32_t)(char FAR *)dir;
+    return aes(126, 0, 1, 2, 0);
+}
+
+WORD shel_wdef(const char *cmd, const char *dir)
+{
+    addr_in[0] = (LONG)(uint32_t)(const char FAR *)cmd;
+    addr_in[1] = (LONG)(uint32_t)(const char FAR *)dir;
+    return aes(127, 0, 1, 2, 0);
+}
+
 WORD shel_read(char *cmd, char *tail)
 {
     addr_in[0] = (LONG)(uint32_t)(char FAR *)cmd;

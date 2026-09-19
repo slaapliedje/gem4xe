@@ -290,6 +290,8 @@ int main(void)
     shel_put(path, 8);
     shel_find(path);
     shel_envrn(&env, "PATH=");
+    shel_rdef(name, path);
+    shel_wdef(name, path);
     /* rc_intersect and rc_union reach no gate -- they are arithmetic on
      * two rectangles.  Called here so the surface check sees them; what
      * they COMPUTE is asserted in the second pass below. */
