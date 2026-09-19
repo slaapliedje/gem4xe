@@ -232,9 +232,13 @@ static void do_prefs(void)
     rsrc_free();                    /* the nested one: ours is untouched */
 
     if (ret == PROK) {
-        G.g_screen[DROOT].ob_spec.index = curdesk;
-        for (i = 1; i <= NUM_WNODES; i++)
-            G.g_screen[DROOT + i].ob_spec.index = curwin;
+        /* Through desk_patcol, which REMEMBERS it: the choice belongs to
+         * this screen and goes out on the INF's "#Q" line, so that Save
+         * desktop keeps it and the next boot brings it back.  Setting
+         * G.g_screen here directly was the bug -- the desk changed and
+         * nothing wrote it down. */
+        desk_patcol((UWORD)(curdesk & PATCOL_MASK),
+                    (UWORD)(curwin & PATCOL_MASK));
         do_wredraw(DESKWH, &G.g_desk);
     }
 }

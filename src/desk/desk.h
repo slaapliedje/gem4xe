@@ -58,6 +58,15 @@
 
 #define DESK_SPEC   0x00001143L         /* the desk: green, pattern 4 (the AES's own) */
 #define WINDOW_SPEC 0x00001100L         /* a window's box: white, no pattern */
+/* The two the "#Q" line keeps a pair for: this screen and the other
+ * one.  Which is which comes from the depth appl_init reported --
+ * global[10] -- so it needs no device seam of its own up here. */
+#define N_SCREENS   2
+#define SCR_COLOUR  0                   /* more than one plane: VBXE */
+#define SCR_MONO    1                   /* one: the ANTIC fallback */
+/* The pattern and colour fields of an ob_spec, and the rest of the word
+ * -- the border and text colours -- which the chooser leaves alone. */
+#define PATCOL_MASK 0x00FFL
 #define MIN_WINT    4                   /* between icon cells */
 #define MIN_HINT    2
 
@@ -208,6 +217,16 @@ typedef struct {
     char FAR *g_shelbuf;              /* the desktop's copy of the shell buffer */
     char FAR *g_copybuf;              /* COPY_BUF of it, for file copies */
     WNODE    g_wlist[NUM_WNODES];       /* by w_root - (DROOT + 1) */
+    /* Set preferences...: the desk's and a window's pattern and colour,
+     * ONE PAIR PER SCREEN, as the INF's "#Q" line carries them.  Per
+     * screen because this binary drives two of them (test-m26) and a
+     * choice made in sixteen colours must not follow the user onto the
+     * mono one -- which is why the donor indexes its own three by
+     * resolution (EmuTOS deskapp.c g_patcol).  A byte each: the pattern
+     * and colour fields are both inside the low byte of an ob_spec, and
+     * the rest of the word is the border and text colours, which this
+     * dialog does not touch. */
+    UWORD    g_patcol[N_SCREENS][2];    /* [screen][0] desk, [1] window */
     OBJECT     g_screen[NUM_SOBS];
     SCREENINFO g_screeninfo[NUM_ITEMS]; /* by obid - WOBS_START */
 } GLOBES;
@@ -232,6 +251,13 @@ void desk_busy(WORD on);
 void desk_view(WORD view);
 void desk_sort(WORD sort);
 void desk_fit(WORD fit);
+/* The background the "Set preferences..." dialog chose: remembered for
+ * THIS screen, and put on the desk and every window's box.  Call it with
+ * the two low bytes; desk_patcol_apply() alone puts the remembered pair
+ * back, which is what start-up and Read .INF file do. */
+WORD desk_screen(void);                 /* SCR_COLOUR or SCR_MONO */
+void desk_patcol(UWORD deskpc, UWORD winpc);
+void desk_patcol_apply(void);
 void win_view(void);
 void win_srtall(void);
 void win_bdall(void);

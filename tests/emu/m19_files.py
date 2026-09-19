@@ -47,6 +47,7 @@ from a8test.launcher import launch, config_dir_for   # noqa: E402
 import aesref, vdiref, vbxeref, symfile, atr    # noqa: E402
 import deskref                              # noqa: E402
 from deskref import Desktop, DROOT, GLOBES_SIZE, LEN_ZPATH  # noqa: E402
+from deskref import DESK_SPEC, WINDOW_SPEC                    # noqa: E402
 from deskrsc import (FILEMENU, OPTNMENU, SHOWITEM, NFOLITEM,  # noqa: E402
                      DELTITEM, QUITITEM, SAVEITEM, READITEM,
                      MKOK, CDOK, FIOK, FICNCL)
@@ -406,6 +407,18 @@ def check_disk(check, written):
               f"{INF_NAME} has {text.count('#W')} window lines, not 4")
         check("A:\\*.*@" in text,
               f"{INF_NAME} does not name the window that was open: {text!r}")
+        # The backgrounds.  Set preferences... used to change the desk
+        # and write nothing down, so the choice was gone at the next
+        # boot; the "#Q" line is what carries it, a desk byte and a
+        # window byte per screen with the colour screen's first.  These
+        # are the DEFAULTS -- this gate never opens the dialog -- and
+        # they are written here from desk.h's two specs rather than read
+        # out of either implementation.
+        want = " %02X %02X %02X %02X" % (DESK_SPEC & 0xFF, WINDOW_SPEC & 0xFF,
+                                         DESK_SPEC & 0xFF, WINDOW_SPEC & 0xFF)
+        check("#Q" + want + "\r\n" in text,
+              f"{INF_NAME} has no '#Q{want}' line -- the desk's pattern and "
+              f"colour are not being saved: {text!r}")
     print(f"  the image afterwards: {sorted(names)}")
 
 

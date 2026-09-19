@@ -104,6 +104,12 @@ MAX_ICONTEXT_WIDTH = 12
 LABEL_LEN = MAX_ICONTEXT_WIDTH + 1
 DESK_SPEC = 0x00001143
 WINDOW_SPEC = 0x00001100
+# The "#Q" line's pairs: one per screen, the colour one first, each a
+# desk byte and a window byte.  desk.h N_SCREENS / PATCOL_MASK.
+N_SCREENS = 2
+SCR_COLOUR = 0
+SCR_MONO = 1
+PATCOL_MASK = 0x00FF
 MIN_WINT, MIN_HINT = 4, 2
 WINDOW_STYLE = (NAME | CLOSER | FULLER | MOVER | INFO | SIZER | UPARROW
                 | DNARROW | VSLIDE | LFARROW | RTARROW | HSLIDE)
@@ -169,6 +175,7 @@ GLOBES = [("a_menu", 2), ("a_info", 2), ("a_mkdir", 2), ("a_delete", 2),
           ("g_dta", 4), ("g_opdta", 4), ("g_cnxsave", 4), ("g_shelbuf", 4),
           ("g_copybuf", 4),
           ("g_wlist", NUM_WNODES * WNODE_SIZE),
+          ("g_patcol", N_SCREENS * 2 * 2),
           ("g_screen", NUM_SOBS * OBJ_SIZE),
           ("g_screeninfo", NUM_ITEMS * SCREENINFO_SIZE)]
 GLOBES_SIZE = sum(n for _, n in GLOBES)
@@ -345,6 +352,9 @@ class Desktop:
         self.wcnt, self.dta, self.opdta = 0, 0, 0
         self.nfiles = self.ndirs = self.opsize = 0
         self.a_mkdir = self.a_delete = self.a_finfo = 0
+        # the backgrounds, a pair per screen: app_start seeds the
+        # defaults and a "#Q" line overwrites them
+        self.patcol = [[0, 0] for _ in range(N_SCREENS)]
         self.cnxsave = self.shelbuf = self.copybuf = 0
         self.wsave = [Wsave() for _ in range(NUM_WNODES)]
         # the desktop's copy of the shell buffer, a far CharArray the
@@ -1274,6 +1284,8 @@ class Desktop:
                  + hex2((INF_E5_NOSORT if self.isort == S_NSRT else 0)
                         | (0 if self.ifit else INF_E5_NOSIZE))
                  + "\r\n")
+        text += ("#Q" + "".join(hex2(v) for pc in self.patcol for v in pc)
+                 + "\r\n")
         for ws in self.wsave:
             text += ("#W" + hex2(ws.hsl) + hex2(ws.vsl)
                      + hex2(ws.x // self.wchar) + hex2(ws.y // self.hchar)
@@ -1354,6 +1366,12 @@ class Desktop:
                 self.desk_sort(S_NSRT if e5 & INF_E5_NOSORT
                                else (e1 & INF_E1_SORTMASK) >> 5)
                 self.desk_fit(not (e5 & INF_E5_NOSIZE))
+            elif text[i] == "Q":
+                i += 1
+                for pc in self.patcol:
+                    pc[0], i = self.scan_2(text, i)
+                    pc[1], i = self.scan_2(text, i)
+                self.desk_patcol_apply()
             elif text[i] == "W":
                 i += 1
                 if wincnt < NUM_WNODES:
@@ -1375,9 +1393,31 @@ class Desktop:
                     wincnt += 1
 
 
+    def desk_screen(self):
+        """SCR_COLOUR or SCR_MONO, from the depth appl_init reported."""
+        return SCR_COLOUR if self.a.gl_nplanes > 1 else SCR_MONO
+
+    def desk_patcol_apply(self):
+        """The remembered pair onto the desk and every window's box;
+        the high bytes -- border and text colours -- are left alone."""
+        pc = self.patcol[self.desk_screen()]
+        o = self.screen[DROOT]
+        o.ob_spec = (o.ob_spec & ~PATCOL_MASK) | pc[0]
+        for i in range(1, NUM_WNODES + 1):
+            o = self.screen[DROOT + i]
+            o.ob_spec = (o.ob_spec & ~PATCOL_MASK) | pc[1]
+
+    def desk_patcol(self, deskpc, winpc):
+        pc = self.patcol[self.desk_screen()]
+        pc[0], pc[1] = deskpc, winpc
+        self.desk_patcol_apply()
+
     def app_start(self):
         """What the shell buffer holds, then the file, then the
         built-in default (deskwin.c app_start)."""
+        for pc in self.patcol:
+            pc[0] = DESK_SPEC & PATCOL_MASK
+            pc[1] = WINDOW_SPEC & PATCOL_MASK
         self.call(SHEL_GET, (SIZE_SHELBUF,), tree=self.shelbuf)
         if self.shelbuf_data.raw[CPDATA_LEN] != ord("#") and not self.inf_load():
             self.build_inf()
@@ -2378,6 +2418,7 @@ class Desktop:
                 + dw(self.dta) + dw(self.opdta) + dw(self.cnxsave)
                 + dw(self.shelbuf) + dw(self.copybuf))
         out += b"".join(pw.pack() for pw in self.wlist)
+        out += b"".join(w(v) for pc in self.patcol for v in pc)
         assert len(out) == g_offset("g_screen"), len(out)
         out += b"".join(o.pack() for o in self.screen)
         for i, (ib, label) in enumerate(zip(self.info, self.labels)):

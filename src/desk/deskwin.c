@@ -1154,6 +1154,39 @@ void win_close(WNODE *pw, WORD close_window)
  * the windows themselves to and from the slots (the donor's
  * deskmain.c).  The slots also give a new window its place. */
 
+/* -- the background, and which screen it belongs to --------------------- */
+
+/* Sixteen colours or two: what appl_init reported, which is the one
+ * place the desktop learns the depth (src/sys/abi.c fills global[10]). */
+WORD desk_screen(void)
+{
+    return (global[10] > 1) ? SCR_COLOUR : SCR_MONO;
+}
+
+/* The remembered pair onto the desk and every window's box.  The high
+ * bytes are left as the resource built them -- they are the border and
+ * text colours, which the chooser does not offer. */
+void desk_patcol_apply(void)
+{
+    UWORD *pc = G.g_patcol[desk_screen()];
+    WORD i;
+
+    G.g_screen[DROOT].ob_spec.index =
+        (G.g_screen[DROOT].ob_spec.index & ~PATCOL_MASK) | (LONG)pc[0];
+    for (i = 1; i <= NUM_WNODES; i++)
+        G.g_screen[DROOT + i].ob_spec.index =
+            (G.g_screen[DROOT + i].ob_spec.index & ~PATCOL_MASK) | (LONG)pc[1];
+}
+
+void desk_patcol(UWORD deskpc, UWORD winpc)
+{
+    UWORD *pc = G.g_patcol[desk_screen()];
+
+    pc[0] = deskpc;
+    pc[1] = winpc;
+    desk_patcol_apply();
+}
+
 static WORD hex_dig(char c)
 {
     if (c >= 'A')
@@ -1233,6 +1266,18 @@ static WORD inf_write(void)
     p = put_hex2(p, 0);
     p = put_hex2(p, (WORD)((G.g_isort == S_NSRT ? INF_E5_NOSORT : 0)
                            | (G.g_ifit ? 0 : INF_E5_NOSIZE)));
+    p = put_far(p, "\r\n");
+    /* The backgrounds, the donor's "#Q" line (EmuTOS deskapp.c) with
+     * gem4xe's pairs rather than its three: a desk byte and a window
+     * byte per screen, the colour one first.  Written for BOTH screens
+     * and not only the one that is up, so that a machine booted on the
+     * ANTIC fallback and saved does not throw away what was chosen in
+     * sixteen colours. */
+    p = put_far(p, "#Q");
+    for (i = 0; i < N_SCREENS; i++) {
+        p = put_hex2(p, G.g_patcol[i][0]);
+        p = put_hex2(p, G.g_patcol[i][1]);
+    }
     p = put_far(p, "\r\n");
     for (i = 0; i < NUM_WNODES; i++, pws++) {
         p = put_far(p, "#W");
@@ -1343,6 +1388,14 @@ static void inf_parse(const char FAR *pcurr)
             desk_fit(!(e5 & INF_E5_NOSIZE));
             break;
         }
+        case 'Q':                       /* the backgrounds: see inf_write */
+            pcurr++;
+            for (i = 0; i < N_SCREENS; i++) {
+                G.g_patcol[i][0] = (UWORD)scan_2(&pcurr);
+                G.g_patcol[i][1] = (UWORD)scan_2(&pcurr);
+            }
+            desk_patcol_apply();
+            break;
         case 'W':
             pcurr++;
             if (wincnt < NUM_WNODES) {
@@ -1373,6 +1426,18 @@ static void inf_parse(const char FAR *pcurr)
  * then the built-in default. */
 void app_start(void)
 {
+    WORD i;
+
+    /* The defaults FIRST, for both screens, so that an INF written
+     * before there was a "#Q" line -- or none at all -- leaves the desk
+     * the green it has always been rather than pattern 0 in colour 0.
+     * A "#Q" in the text overwrites them a moment later; without this
+     * the next Save desktop would write the zeros out as if they were
+     * somebody's choice. */
+    for (i = 0; i < N_SCREENS; i++) {
+        G.g_patcol[i][0] = (UWORD)(DESK_SPEC & PATCOL_MASK);
+        G.g_patcol[i][1] = (UWORD)(WINDOW_SPEC & PATCOL_MASK);
+    }
     shel_get(G.g_shelbuf, SIZE_SHELBUF);
     if (G.g_shelbuf[CPDATA_LEN] != '#' && !inf_load())
         build_inf();
