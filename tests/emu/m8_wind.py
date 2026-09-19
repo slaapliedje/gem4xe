@@ -38,7 +38,7 @@ import vbxeref, vdiref, aesref, symfile     # noqa: E402
 from aesref import (Layout, MU_MESAG, MU_TIMER, MU_BUTTON, RETURN,  # noqa: E402
                     NAME, CLOSER, FULLER, MOVER, INFO, SIZER, UPARROW, DNARROW,
                     VSLIDE, LFARROW, RTARROW, HSLIDE, WC_BORDER, WC_WORK,
-                    BEG_UPDATE, END_UPDATE,
+                    BEG_UPDATE, END_UPDATE, BEG_MCTRL, M_OFF,
                     W_CLOSER, W_NAME, W_FULLER, W_WORK, W_SIZER, W_UPARROW,
                     W_DNARROW, W_VSLIDE, W_VELEV, W_RTARROW, W_HSLIDE, W_HELEV,
                     WF_KIND, WF_NAME, WF_INFO, WF_WXYWH, WF_CXYWH, WF_PXYWH,
@@ -48,8 +48,9 @@ from aesref import (Layout, MU_MESAG, MU_TIMER, MU_BUTTON, RETURN,  # noqa: E402
                     WM_REDRAW, WM_ARROWED, NUM_MSGS,
                     APPL_WRITE, EVNT_MESAG, EVNT_BUTTON, WIND_CREATE, WIND_OPEN,
                     WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET, WIND_FIND,
-                    WIND_UPDATE, WIND_CALC, FORM_DO, GRAF_RUBBOX, GRAF_DRAGBOX,
-                    GRAF_MBOX, GRAF_SLIDEBOX, GRAF_MKSTATE)
+                    WIND_UPDATE, WIND_CALC, WIND_NEW, FORM_DO,
+                    GRAF_RUBBOX, GRAF_DRAGBOX,
+                    GRAF_MBOX, GRAF_SLIDEBOX, GRAF_MKSTATE, GRAF_MOUSE)
 from m4_aes import dialog, draw, mem_diff, PRELUDE                  # noqa: E402
 from m7_form import (desk, F, M, B, K, multi, poke16, drive, compare,  # noqa: E402
                      NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS, SHOTDIR)
@@ -461,6 +462,62 @@ def case_form(L, s):
     return b
 
 
+def mouse(mode):
+    """graf_mouse: the mode, then the 37 words a USER_DEF form would
+    carry -- a script record holds them rather than a pointer."""
+    return (GRAF_MOUSE, (), (mode,) + (0,) * 37)
+
+
+def case_new(L, s):
+    """wind_new tidies up after a program that did not: two windows
+    open, both locks taken and never given back, the pointer hidden
+    twice, and then one call.
+
+    WHAT THIS ACTUALLY PROVES, which is less than the call does.  The
+    windows: they are gone, and wind_create hands back handle 1 again
+    rather than 3 -- that is the check that fails if the close/delete
+    loop is removed.  And that the application can still take
+    input afterwards.
+
+    NOT proved here, and said rather than implied -- all three were
+    tried by breaking them and watching this case stay green.  The
+    pointer's hide count: this runner never shows the cursor
+    (ptr_init(PTR_NONE)), so hiding it twice and resetting it changes no
+    pixel.  wind_update's count: nothing in this AES reads wm_ucount.
+    The mouse-control lock: ct_chgown's rectangle is not what routes an
+    evnt_multi button, so a leaked BEG_MCTRL does not stop the press
+    below arriving."""
+    b = Script()
+    b.extend([create(ALL), wopen(1, 100, 50, 300, 150),
+              create(NAME | MOVER), wopen(2, 200, 100, 300, 120), draw()])
+    b.extend(mesag(2))
+    b.op((WIND_UPDATE, (), (BEG_UPDATE,)))
+    b.op((WIND_UPDATE, (), (BEG_UPDATE,)))      # nested, as a redraw nests
+    b.op((WIND_UPDATE, (), (BEG_MCTRL,)))
+    # ...and the pointer hidden twice and never shown, which is what a
+    # program that left a redraw half-done does to it.
+    b.op(mouse(M_OFF))
+    b.op(mouse(M_OFF))
+    b.op((WIND_NEW, (), ()))
+    # THE PRESS IS WHAT PROVES THE LOCK WENT.  A leaked BEG_MCTRL leaves
+    # the control manager owning the whole screen (fm_own -> ct_chgown
+    # on gl_rscreen), and then no press ever reaches the application --
+    # this evnt_multi would never return.  It is the useful half of the
+    # call: a program that died inside form_do leaves exactly that.
+    b.op(multi(MU_BUTTON, 1, 1, 1), F(3), M(60, 200), B(1))
+    b.op(multi(MU_BUTTON, 1, 1, 0), F(3), B(0))     # ...and let it up
+    # ...and the desk is what is left: a window opened now behaves as
+    # the first one did, with handle 1 free again.
+    b.extend([create(NAME), wopen(1, 120, 60, 200, 100)])
+    b.extend(rects(1, 1) + rects(0, 3))
+    b.op(get(0, WF_TOP))
+    b.extend(mesag(2))          # the redraws that are queued, or the
+                                # timeout below would be satisfied at
+                                # entry and its plan go unused
+    b.op(timeout())
+    return b
+
+
 CASES = [
     ("wind_calc, create and open: the frame, the lists, WM_REDRAW", case_open),
     ("two windows: rectangle lists, WF_TOP, the redraw messages", case_two),
@@ -474,6 +531,7 @@ CASES = [
     ("the arrows: at the press, then repeating while held", case_arrows),
     ("the slide areas and the elevators", case_elevators),
     ("form_do owns the screen; graf_rubbox and graf_dragbox", case_form),
+    ("wind_new tidies up: the windows go and the screen is let go", case_new),
 ]
 
 

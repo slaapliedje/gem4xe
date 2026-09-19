@@ -1289,7 +1289,8 @@ WORD wm_find(WORD x, WORD y)
 
 /* BEG/END_UPDATE hold off other processes' screen updates -- none here;
  * BEG/END_MCTRL take the mouse from the window manager (fm_own). */
-static WORD wm_ucount;
+/* Not static for the same reason ml_ocnt is not: wm_new unwinds it. */
+WORD wm_ucount;
 
 void wm_update(WORD beg_update)
 {
@@ -1301,6 +1302,48 @@ void wm_update(WORD beg_update)
     } else {
         fm_own((WORD)(beg_update - 2));
     }
+}
+
+/* wind_new (109): undo what a program left behind -- its windows, the
+ * two locks, and the pointer's hide count.  AES 0x0140's, which is the
+ * version this AES reports, and the Compendium is plain about what it
+ * is for (p.457): "parent processes that wish to ensure that a poorly
+ * written child process has properly cleaned up after itself".  The
+ * shell does this much between programs already; this is the same
+ * tidying offered to a program that wants it.
+ *
+ * THE LOCKS COME FIRST, which is the donor's order (EmuTOS gemwmlib.c
+ * wm_new) rather than a mechanism of this AES: NOTHING HERE READS
+ * wm_ucount -- wm_update counts BEG_UPDATE and END_UPDATE and no other
+ * line of gem4xe looks at the total -- so unwinding it is bookkeeping,
+ * and ml_ocnt's unwind puts the control rectangle back without any
+ * observable difference to where a press goes.  Both were checked by
+ * removing them and watching test-m8 stay green, which is why they are
+ * described here as what they are instead of as what the donor's
+ * comment implies.
+ *
+ * IT DOES NOT TOUCH THE MENU BAR, and that is a departure worth naming:
+ * the Falcon ROM's wm_new clears gl_mntree (GEMWMLIB.C), EmuTOS's does
+ * not, and the Compendium -- which is what a port is written against --
+ * lists only the windows, wind_update's state and the hide count.  Two
+ * donors disagree, so the documented contract decides: a program that
+ * calls this to tidy its windows should not silently lose the bar it
+ * put up. */
+void wm_new(void)
+{
+    WORD wh;
+
+    while (ml_ocnt > 0)
+        wm_update(END_MCTRL);
+    while (wm_ucount > 0)
+        wm_update(END_UPDATE);
+    for (wh = 1; wh < NUM_WIN; wh++) {
+        if (gl_win[wh].w_flags & VF_ISOPEN)
+            wm_close(wh);
+        if (gl_win[wh].w_flags & VF_INUSE)
+            wm_delete(wh);
+    }
+    gsx_mreset();
 }
 
 /* Border rectangle from work rectangle (WC_BORDER) or back (WC_WORK),

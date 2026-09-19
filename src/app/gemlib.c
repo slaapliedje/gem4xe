@@ -1312,6 +1312,14 @@ WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj)
 /* graf_mbox (72).  The Compendium calls it graf_movebox now and says
  * graf_mbox is what "older C bindings" used (p.407); a port may carry
  * either spelling, so both are here and both are the one opcode. */
+/* wind_new (109): close and delete every window this program has, and
+ * put wind_update's locks and the pointer's hide count back.  The
+ * return is reserved -- do not test it. */
+WORD wind_new(void)
+{
+    return aes(109, 0, 1, 0, 0);
+}
+
 WORD graf_mbox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey)
 {
     int_in[0] = w;  int_in[1] = h;

@@ -720,6 +720,11 @@ static void run_script(void)
                 c4 = 3;
                 break;
             }
+            case 109:                       /* wind_new */
+                wm_new();
+                intout[0] = 1;
+                c4 = 1;
+                break;
             case 72:                        /* graf_mbox: w, h, sx, sy, ex, ey */
                 gr_movebox(intin[0], intin[1], intin[2], intin[3],
                            intin[4], intin[5]);

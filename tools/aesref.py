@@ -2901,6 +2901,24 @@ class AES:
         finally:
             self.tree = saved
 
+    def wm_new(self):
+        """wind_new (109): the windows, the two locks and the pointer's
+        hide count put back.  The locks FIRST, or a close would draw
+        nothing.  The menu bar is deliberately left alone -- src/aes/
+        wind.c says why that differs from the Falcon ROM."""
+        while self.ml_ocnt > 0:
+            self.wm_update(END_MCTRL)
+        while self.wm_ucount > 0:
+            self.wm_update(END_UPDATE)
+        for wh in range(1, NUM_WIN):
+            if self.gl_win[wh].w_flags & VF_ISOPEN:
+                self.wm_close(wh)
+            if self.gl_win[wh].w_flags & VF_INUSE:
+                self.wm_delete(wh)
+        if self.gl_moff:
+            self.gl_moff = 0
+            self.vcall(V_SHOW_C, (), (0,))
+
     def wm_update(self, beg):
         if beg < 2:
             if beg:
@@ -4144,6 +4162,11 @@ class AES:
                 self.gr_shrinkbox(pi, pt)
             io[0] = 1
             c4 = 1
+        elif n == 109:
+            # wind_new: the return is reserved, so it is the plain TRUE
+            self.wm_new()
+            io[0] = 1
+            c4 = 1
         elif n == 72:
             # graf_mbox / graf_movebox: a ghost box walked from one place
             # to another.  It draws and undraws in XOR, so what it leaves
@@ -4515,9 +4538,11 @@ EVNT_MULTI, EVNT_DCLICK = 1025, 1026
 FORM_DO, FORM_DIAL, FORM_KEYBD, FORM_BUTTON = 1050, 1051, 1055, 1056
 FORM_ALERT, FORM_ERROR = 1052, 1053
 GRAF_RUBBOX, GRAF_DRAGBOX = 1070, 1071
+WIND_NEW = 1109
 GRAF_MBOX = 1072
 GRAF_GROWBOX, GRAF_SHRINKBOX, GRAF_WATCHBOX = 1073, 1074, 1075
 GRAF_SLIDEBOX = 1076
+GRAF_MOUSE = 1078
 GRAF_MKSTATE = 1079
 APPL_INIT, APPL_WRITE, APPL_EXIT, EVNT_MESAG = 1010, 1012, 1019, 1023
 GRAF_HANDLE = 1077

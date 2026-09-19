@@ -646,6 +646,11 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     /* Resource library.  The global's ap_ptree / ap_rscmem / ap_rsclen
      * (words 5-6, 7-8, 9) are what the donor's rs_load leaves there; the
      * addresses are bank $00, so the high words are 0. */
+    case 109:                       /* wind_new */
+        /* "The return value is reserved and currently unused"
+         * (Compendium p.457), so it stays crysbind's TRUE. */
+        wm_new();
+        break;
     case 110: {                     /* rsrc_load: name */
         const char *name = near_str(addr_in[0]);
         /* int_in[0] bit 0: the caller takes far addresses.  aes_entry

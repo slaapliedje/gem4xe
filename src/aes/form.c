@@ -21,7 +21,10 @@
  * gadget goes to the form and not the window manager, and the top
  * window's work area again after.  (form_dial(FMD_FINISH) redraws the
  * desktop through the window manager's w_drawdesk.) */
-static WORD  ml_ocnt;
+/* NOT static: wm_new unwinds it (the Compendium's "the state of
+ * wind_update() ... is reset"), and it is the form library's because
+ * fm_own is. */
+WORD  ml_ocnt;
 static GRECT ml_ctrl;       /* the application's rectangle, held */
 
 void fm_own(WORD beg_ownit)

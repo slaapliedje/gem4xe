@@ -167,6 +167,7 @@ EXPECT = [
     ("form_center_grect",AES, 54, 0, 5, 1, 0),
     ("form_keybd",       AES, 55, 3, 3, 1, 0),
     ("form_button",      AES, 56, 2, 2, 1, 0),
+    ("wind_new",         AES, 109, 0, 1, 0, 0),
     ("graf_mbox",        AES, 72, 6, 1, 0, 0),
     ("graf_movebox",     AES, 72, 6, 1, 0, 0),   # the kit's other spelling
     ("graf_slidebox",    AES, 76, 3, 1, 1, 0),

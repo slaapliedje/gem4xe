@@ -231,6 +231,23 @@ void gsx_mon(void)
         gsx_1code(V_SHOW_C, 1);      /* 1: undo one hide, not "force" */
 }
 
+/* The pointer visible again however deep the hides are: wind_new's "the
+ * mouse pointer hide count is reset" (Compendium p.457), which is there
+ * because a program that exits between a gsx_moff and its gsx_mon
+ * leaves the screen with no pointer and no way to get one back.
+ *
+ * One forced show rather than a gsx_mon loop: intin[0] == 0 makes the
+ * VDI drop its own count to zero and draw (src/vdi/vdi.c), so the two
+ * counts end up agreeing.  A loop would issue one V_SHOW_C per hide and
+ * the AES's count could still walk away from the VDI's. */
+void gsx_mreset(void)
+{
+    if (gl_moff) {
+        gl_moff = 0;
+        gsx_1code(V_SHOW_C, 0);
+    }
+}
+
 /* The pointer's shape (gsx_mfset).  A form is 37 words -- hot spot,
  * planes, the mask's colour and the data's, then sixteen words of each
  * -- and vsc_form takes them in intin, so the AES's own eight forms can

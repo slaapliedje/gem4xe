@@ -893,6 +893,12 @@ WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj);
  * graf_slidebox (76): drag a child within its parent, answering where
  * it ended up, 0..1000 along -- what a dialog's slider is built from
  * (make the bar TOUCHEXIT and call this when it is clicked). */
+/* wind_new (109): close and delete every window, and put back
+ * wind_update's locks and the pointer's hide count -- the tidy-up a
+ * program can ask for after something went wrong.  It leaves the MENU
+ * BAR alone; see src/aes/wind.c for why that differs from one of the
+ * two donors.  The return is reserved: do not test it. */
+WORD wind_new(void);
 WORD graf_mbox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey);
 WORD graf_movebox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey);
 WORD graf_slidebox(OBJECT *tree, WORD parent, WORD obj, WORD orient);

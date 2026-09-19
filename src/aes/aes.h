@@ -473,6 +473,7 @@ WORD mul_div_round(WORD m1, WORD m2, WORD d1);
 void gsx_start(void);
 void gsx_moff(void);
 void gsx_mon(void);
+void gsx_mreset(void);      /* ...and visible whatever the depth */
 WORD gsx_mforce(void);           /* the pointer on whatever the count */
 void gsx_munforce(WORD old);     /* ... and the count back */
 void ratinit(void);              /* the pointer on, count zero: sh_main */
@@ -671,6 +672,11 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds);
 WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds);
 WORD wm_find(WORD x, WORD y);
 void wm_update(WORD beg_update);
+/* wind_new (109): the windows, the locks and the pointer's hide count
+ * put back as a program found them.  See the body. */
+void wm_new(void);
+extern WORD ml_ocnt;        /* form.c: fm_own's nesting depth */
+extern WORD wm_ucount;      /* wind.c: wind_update's */
 void wm_calc(WORD wtype, UWORD kind, WORD x, WORD y, WORD w, WORD h,
              WORD *px, WORD *py, WORD *pw, WORD *ph);
 

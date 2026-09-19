@@ -238,6 +238,7 @@ int main(void)
     form_center_grect(tree, &r1);
     form_keybd(tree, 1, 0, 13, &a, &b);
     form_button(tree, 1, 1, &a);
+    wind_new();
     graf_mbox(10, 8, 0, 0, 100, 50);
     graf_movebox(10, 8, 0, 0, 100, 50);
     graf_slidebox(tree, 0, 1, 1);
