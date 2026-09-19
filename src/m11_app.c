@@ -217,6 +217,15 @@ int main(void)
      * nothing was handed over, which is the other half of the same
      * statement. */
     ay_ret = appl_yield();
+
+    /* graf_mbox (72) THROUGH THE ABI, which test-m8 does not do: that
+     * gate drives the library from inside the runner, so the dispatch
+     * case is only reached from here.  It takes no input and answers
+     * nothing worth keeping -- what makes it a check is that the ghost
+     * box is drawn and undrawn in XOR, so the screen this gate compares
+     * against the model must be exactly as it was.  A box left behind
+     * fails the picture; a call nobody serves fails the refused count. */
+    graf_mbox(48, 32, 80, 60, 400, 180);
     ag_lang     = appl_getinfo(AES_LANGUAGE, &k, &k, &k, &k);
     ag_junk     = appl_getinfo(99, &k, &k, &k, &k);
 

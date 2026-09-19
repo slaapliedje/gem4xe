@@ -887,6 +887,15 @@ WORD objc_edit(OBJECT *tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
 WORD form_keybd(OBJECT *tree, WORD obj, WORD nxt_obj, WORD thechar,
                 WORD *pnxt_obj, WORD *pchar);
 WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj);
+/* graf_mbox / graf_movebox (72): the same call under both spellings --
+ * the Compendium renamed it and an ST source may carry either.  A ghost
+ * box walked from (sx,sy) to (ex,ey), for a visual clue.
+ * graf_slidebox (76): drag a child within its parent, answering where
+ * it ended up, 0..1000 along -- what a dialog's slider is built from
+ * (make the bar TOUCHEXIT and call this when it is clicked). */
+WORD graf_mbox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey);
+WORD graf_movebox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey);
+WORD graf_slidebox(OBJECT *tree, WORD parent, WORD obj, WORD orient);
 WORD graf_rubbox(WORD x, WORD y, WORD w, WORD h, WORD *pw, WORD *ph);
 WORD graf_watchbox(OBJECT *tree, WORD obj, WORD instate, WORD outstate);
 /* fsel_input / fsel_exinput answer their `button` with one of these.  The

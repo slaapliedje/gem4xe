@@ -720,6 +720,12 @@ static void run_script(void)
                 c4 = 3;
                 break;
             }
+            case 72:                        /* graf_mbox: w, h, sx, sy, ex, ey */
+                gr_movebox(intin[0], intin[1], intin[2], intin[3],
+                           intin[4], intin[5]);
+                intout[0] = 1;
+                c4 = 1;
+                break;
             case 73:                        /* graf_growbox: pi, pt */
             case 74: {                      /* graf_shrinkbox */
                 GRECT pi, pt;
@@ -737,6 +743,10 @@ static void run_script(void)
             }
             case 75:                        /* graf_watchbox: obj, in, out */
                 intout[0] = gr_watchbox(tree, intin[0], intin[1], intin[2]);
+                c4 = 1;
+                break;
+            case 76:                        /* graf_slidebox: parent, obj, orient */
+                intout[0] = gr_slidebox(tree, intin[0], intin[1], intin[2]);
                 c4 = 1;
                 break;
             case 78:                        /* graf_mouse: mode, form */

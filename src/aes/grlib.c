@@ -109,7 +109,7 @@ static void gr_2box(WORD flag1, WORD cnt, const GRECT *pt, WORD xstep,
 }
 
 /* A box w by h that moves from (srcx,srcy) to (dstx,dsty). */
-static void gr_movebox(WORD w, WORD h, WORD srcx, WORD srcy, WORD dstx,
+void gr_movebox(WORD w, WORD h, WORD srcx, WORD srcy, WORD dstx,
                        WORD dsty)
 {
     WORD  signx, signy, cnt, xstep, ystep;

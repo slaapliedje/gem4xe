@@ -4144,8 +4144,21 @@ class AES:
                 self.gr_shrinkbox(pi, pt)
             io[0] = 1
             c4 = 1
+        elif n == 72:
+            # graf_mbox / graf_movebox: a ghost box walked from one place
+            # to another.  It draws and undraws in XOR, so what it leaves
+            # on the screen is what was there -- which is the whole of
+            # what a gate can check about it, and worth checking.
+            self.gr_movebox(*ints[0:6])
+            io[0] = 1
+            c4 = 1
         elif n == 75:
             io[0] = self.gr_watchbox(ints[0], ints[1], ints[2])
+            c4 = 1
+        elif n == 76:
+            # graf_slidebox: 0..1000 of the way along the parent, which is
+            # a measurement and not a status
+            io[0] = self.gr_slidebox(ints[0], ints[1], ints[2])
             c4 = 1
         elif n == 70:
             io[0] = 1
@@ -4502,7 +4515,9 @@ EVNT_MULTI, EVNT_DCLICK = 1025, 1026
 FORM_DO, FORM_DIAL, FORM_KEYBD, FORM_BUTTON = 1050, 1051, 1055, 1056
 FORM_ALERT, FORM_ERROR = 1052, 1053
 GRAF_RUBBOX, GRAF_DRAGBOX = 1070, 1071
+GRAF_MBOX = 1072
 GRAF_GROWBOX, GRAF_SHRINKBOX, GRAF_WATCHBOX = 1073, 1074, 1075
+GRAF_SLIDEBOX = 1076
 GRAF_MKSTATE = 1079
 APPL_INIT, APPL_WRITE, APPL_EXIT, EVNT_MESAG = 1010, 1012, 1019, 1023
 GRAF_HANDLE = 1077

@@ -238,6 +238,9 @@ int main(void)
     form_center_grect(tree, &r1);
     form_keybd(tree, 1, 0, 13, &a, &b);
     form_button(tree, 1, 1, &a);
+    graf_mbox(10, 8, 0, 0, 100, 50);
+    graf_movebox(10, 8, 0, 0, 100, 50);
+    graf_slidebox(tree, 0, 1, 1);
     graf_rubbox(1, 2, 3, 4, &a, &b);
     graf_dragbox(1, 2, 3, 4, 5, 6, 7, 8, &a, &b);
     graf_growbox(1, 2, 3, 4, 5, 6, 7, 8);

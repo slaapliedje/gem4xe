@@ -1309,6 +1309,33 @@ WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj)
     return r;
 }
 
+/* graf_mbox (72).  The Compendium calls it graf_movebox now and says
+ * graf_mbox is what "older C bindings" used (p.407); a port may carry
+ * either spelling, so both are here and both are the one opcode. */
+WORD graf_mbox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey)
+{
+    int_in[0] = w;  int_in[1] = h;
+    int_in[2] = sx; int_in[3] = sy;
+    int_in[4] = ex; int_in[5] = ey;
+    return aes(72, 6, 1, 0, 0);
+}
+
+WORD graf_movebox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey)
+{
+    return graf_mbox(w, h, sx, sy, ex, ey);
+}
+
+/* graf_slidebox (76): answers where the child ended up, 0..1000 of the
+ * way along its parent -- a measurement, not a status. */
+WORD graf_slidebox(OBJECT *tree, WORD parent, WORD obj, WORD orient)
+{
+    int_in[0] = parent;
+    int_in[1] = obj;
+    int_in[2] = orient;
+    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    return aes(76, 3, 1, 1, 0);
+}
+
 WORD graf_rubbox(WORD x, WORD y, WORD w, WORD h, WORD *pw, WORD *ph)
 {
     WORD r;

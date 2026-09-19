@@ -49,7 +49,7 @@ from aesref import (Layout, MU_MESAG, MU_TIMER, MU_BUTTON, RETURN,  # noqa: E402
                     APPL_WRITE, EVNT_MESAG, EVNT_BUTTON, WIND_CREATE, WIND_OPEN,
                     WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET, WIND_FIND,
                     WIND_UPDATE, WIND_CALC, FORM_DO, GRAF_RUBBOX, GRAF_DRAGBOX,
-                    GRAF_MKSTATE)
+                    GRAF_MBOX, GRAF_SLIDEBOX, GRAF_MKSTATE)
 from m4_aes import dialog, draw, mem_diff, PRELUDE                  # noqa: E402
 from m7_form import (desk, F, M, B, K, multi, poke16, drive, compare,  # noqa: E402
                      NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS, SHOTDIR)
@@ -446,6 +446,17 @@ def case_form(L, s):
     b.op(multi(MU_BUTTON, 1, 1, 1), F(3), M(*work), B(1))
     b.op((GRAF_DRAGBOX, (), (40, 30, work[0] - 10, work[1] - 5) + FULL),
          F(3), M(600, 230), *RELEASE)       # constrained to FULL
+    # graf_mbox: a ghost box walked across the screen, drawn and undrawn
+    # in XOR.  It takes no input and answers nothing, so what it is
+    # checked on is the screen AFTERWARDS -- a box left behind, or one
+    # undrawn at the wrong place, shows up in the comparison at the end
+    # of this case and in no other way.
+    b.op((GRAF_MBOX, (), (40, 30, 100, 60, 300, 180)))
+    # graf_slidebox: the OK button dragged inside the dialog's root box,
+    # horizontally, answering how far along it ended up out of 1000.
+    b.op(multi(MU_BUTTON, 1, 1, 1), F(3), M(*work), B(1))
+    b.op((GRAF_SLIDEBOX, (), (0, 2, 0)),
+         F(3), M(work[0] + 120, work[1] + 20), *RELEASE)
     b.op(timeout())
     return b
 

@@ -65,13 +65,15 @@ REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
 # AES calls src/m11_app.c makes WITHOUT a record_aes(): five objc_sysvar
 # probes, three appl_find ones, six appl_getinfo ones and one
-# appl_yield.  They are deliberately outside
+# appl_yield, and one graf_mbox -- which is here for the dispatch case
+# rather than for an answer, and whose real check is that the screen
+# below still matches the model.  They are deliberately outside
 # results[], because every entry there is compared against
 # tools/aesref.py and these calls' answers are constants a specification
 # fixes rather than behaviour a model computes.  They still cost a COP
 # each, so the reconciliation below has to know how many -- naming them
 # keeps it able to catch a call nobody meant to make.
-UNRECORDED_AES = 5 + 3 + 6 + 1
+UNRECORDED_AES = 5 + 3 + 6 + 1 + 1
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 

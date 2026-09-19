@@ -251,7 +251,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     case 40: case 41:
     case 42: case 43: case 44: case 45: case 46: case 47:
     case 50: case 54: case 55: case 56:
-    case 75:
+    case 75: case 76:
     case 114:
         tree = (OBJECT FAR *)(uint32_t)addr_in[0];    /* any bank: see docs/far-trees.md */
         if (!tree)
@@ -511,6 +511,14 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
                    &int_out[1], &int_out[2]);
         break;
     }
+    case 72:                        /* graf_mbox: w, h, sx, sy, ex, ey */
+        /* The Compendium's name for it is graf_movebox now and
+         * graf_mbox is what "older C bindings" called it (p.407); both
+         * spellings are in the kit, because an ST source may carry
+         * either and neither is wrong. */
+        gr_movebox(int_in[0], int_in[1], int_in[2], int_in[3],
+                   int_in[4], int_in[5]);
+        break;
     case 73:                        /* graf_growbox */
     case 74: {                      /* graf_shrinkbox */
         GRECT pi, pt;
@@ -526,6 +534,11 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     }
     case 75:                        /* graf_watchbox: -, obj, in, out */
         ret = gr_watchbox(tree, int_in[1], int_in[2], int_in[3]);
+        break;
+    case 76:                        /* graf_slidebox: -, parent, obj, orient */
+        /* Answers where the child ended up, 0..1000 of the way along its
+         * parent -- so int_out[0] is a measurement and not a status. */
+        ret = gr_slidebox(tree, int_in[0], int_in[1], int_in[2]);
         break;
     case 77:                        /* graf_handle */
         int_out[1] = gl_wchar;

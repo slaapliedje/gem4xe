@@ -512,6 +512,11 @@ WORD gsx_getkey(WORD *pkey);
 
 /* ---- the graphics library: grlib.c (gemgrlib.c) ------------------------ */
 WORD gr_stilldn(WORD out, WORD x, WORD y, WORD w, WORD h);
+/* graf_mbox/graf_movebox (72): a ghost box walked from one place to
+ * another.  gr_growbox and gr_shrinkbox are this with the two ends
+ * worked out for them, which is why it was a static until the opcode
+ * was served. */
+void gr_movebox(WORD w, WORD h, WORD srcx, WORD srcy, WORD dstx, WORD dsty);
 void gr_growbox(const GRECT *po, const GRECT *pt);
 void gr_shrinkbox(const GRECT *po, const GRECT *pt);
 WORD gr_watchbox(OBJECT FAR *tree, WORD obj, WORD instate, WORD outstate);
