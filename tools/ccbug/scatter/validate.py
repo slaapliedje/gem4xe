@@ -106,9 +106,12 @@ def main(argv):
     claim("as6502 and ln6502 agree on a version",
           va.split()[-1] == vl.split()[-1], f"{va}\n{vl}")
     v6502 = va.split()[-1]
-    claim("the 6502 tools are 5.18 -- the NEWEST 6502 release there is "
-          "(5.18.1 and 5.18.2 were 65816 only)",
-          v6502 == "5.18", f"6502 = {v6502}")
+    # 5.18 is the newest 6502 RELEASE (checked against the upstream
+    # release list on 2026-09-19; every public release through 5.18
+    # carries all four architectures, and there is no 5.18.1 or 5.18.2
+    # release at all).  The 5.18.1/5.18.2 packages on this machine are
+    # 65816 only.  This file can only check the first half offline.
+    claim("the 6502 tools are 5.18", v6502 == "5.18", f"6502 = {v6502}")
     if os.path.exists(asm816):
         v816 = run([asm816, "--version"]).stdout.strip()
         claim("the 65816 assembler, used only for the last section, is 5.18.2",

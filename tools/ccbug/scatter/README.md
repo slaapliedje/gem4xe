@@ -1,8 +1,11 @@
 # `.scatterTo28` on an Atari-shaped map — what it answers, and what will not parse
 
-Measured 2026-09-19 against Calypsi **6502 5.18** — which is the NEWEST
-6502 there is: 5.18.1 and 5.18.2 were 65816-only point releases, so the
-symlink this tree's 65816 work follows does not apply here.  The closing
+Measured 2026-09-19 against Calypsi **6502 5.18**, the newest 6502
+*release* — checked against the upstream release list, where every public
+release through 5.18 carries all four architectures and there is no
+5.18.1 or 5.18.2 at all; the 5.18.1/5.18.2 packages on this machine are
+65816 only, so the `calypsi-65816` symlink this tree follows has no 6502
+counterpart.  The closing
 "not on the 65816" note is **as65816 5.18.2**.  For issue #89 (banked code
 on the Atari 8-bit).  **This is not a bug report**: the operator does
 what its documentation says.  It is the evidence behind the answer, kept
