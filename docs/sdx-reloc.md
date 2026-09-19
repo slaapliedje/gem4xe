@@ -190,6 +190,61 @@ convert from.
 
 So the honest verdict is scoped, not absolute.
 
+### ...and now it is measured, not inferred
+
+Written above as a reasonable expectation.  ORCA/C 2.2.1 now runs on this
+machine (Golden Gate under Wine; `ref/` has the notes), so the sentence
+"the relocation information would exist" can stop being an expectation.
+`tools/omfdump.py` reads OMF and reports the census; `make test-host`
+covers it against fixtures built byte by byte, because the numbers below
+are the whole value of the tool and a reader that miscounts a compressed
+record would report a plausible lie.
+
+A 5.4 KB ORCA/C program -- one `printf`, statically linked against
+ORCALib -- carries, in its single code segment:
+
+| record | what it fixes up | count |
+|---|---|---|
+| `SUPER RELOC2` | a **16-bit** address, unshifted | **438** |
+| `SUPER RELOC3` | a **24-bit** address, unshifted | **114** |
+| `cRELOC`, 2 bytes, shift -16 | the bank, as a word | 23 |
+| `cRELOC`, 1 byte, shift -16 | the bank, as a byte | 4 |
+
+Two things follow, and the second is the interesting one.
+
+**The widths SDX wants are there and they dominate.**  552 of the 579
+fixups are plain 16- or 24-bit addresses: exactly what `$FFFD` does to a
+two-byte word, and what §19.1.3.2's rule 5 wants for a reference between
+two blocks neither of which is in segment 0.  They are not merely present,
+they are 95% of the total.
+
+**The remaining 27 are the construction §2.4 forbids** -- an address
+"split into lower and higher order byte stored separately" -- so ORCA is
+not innocent of the thing that rules Calypsi out.  The difference is that
+ORCA **declares** them.  A converter can find all 27 by reading the file,
+and then reject the program, or rewrite those sites, or place the segment
+so the bank is a constant.  Against a toolchain that emits no relocations
+the same 27 sites are invisible and there is nothing to decide.
+
+That is the real distinction, and it is smaller than "ORCA can and Calypsi
+cannot": both emit split addresses, and only one of them says where.
+
+**What a freestanding target would cost** was the other unknown, and it is
+smaller than expected.  Compiling the three VDI-shaped kernels in
+`ref/bakeoff/kernel.c` -- a span fill, a Bresenham line and an object-tree
+walk -- leaves exactly **one** unresolved external symbol between them:
+`~MUL2`, ORCALib's 16x16 multiply.  No toolbox, no GS/OS, no SANE.  ORCA/C's
+code generation is not coupled to the Apple IIgs; the coupling is all in
+the library, and ORCALib ships as 65816 assembly source on the Opus ][ CD
+(`LIB.SOURCE1`, `SOURCE/ORCALIB/CC.ASM` and friends).  So a hypothetical
+Atari ORCA/C needs a startup, a handful of arithmetic helpers retargeted
+from source, and an OMF reader -- and `tools/omfdump.py` is the reader
+half already written.
+
+None of which changes the verdict below for **this** tree, which stays
+what it was.  It changes what the answer would cost somebody who wanted
+it, and that number was previously a guess.
+
 ## Verdict
 
 **Not with Calypsi**, and that is the whole of it: the benefit — letting
