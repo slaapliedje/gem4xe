@@ -149,6 +149,7 @@ EXPECT = [
     ("menu_tnormal",     AES, 33, 2, 1, 1, 0),
     ("menu_text",        AES, 34, 1, 1, 2, 0),
     ("menu_register",    AES, 35, 1, 1, 1, 0),
+    ("menu_popup",       AES, 36, 2, 1, 2, 0),
     ("objc_add",         AES, 40, 2, 1, 1, 0),
     ("objc_delete",      AES, 41, 1, 1, 1, 0),
     ("objc_draw",        AES, 42, 6, 1, 1, 0),

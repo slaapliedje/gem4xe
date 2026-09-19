@@ -426,8 +426,21 @@ typedef struct ciconblk {
     LONG    mainlist;           /* the CICON chain */
 } CICONBLK;
 
-/* menu_popup's argument (AES 36).  Not served: the call answers -1 as
- * every unknown AES opcode does (tools/surface.py lists it). */
+/* menu_popup's argument (AES 36).
+ *
+ * mn_tree is a 32-bit ADDRESS and not a pointer, for the MFDB's reason:
+ * the small data model makes a pointer sixteen bits, and the AES has to
+ * read this struct out of a program built either way.  Fill it with a
+ * cast --
+ *
+ *      MENU me;
+ *      me.mn_tree = (LONG)(uint32_t)(OBJECT FAR *)tree;
+ *
+ * mn_menu is the BOX object, the popup's own parent, whose children are
+ * the items; mn_item on the way in is the item to put under the pointer,
+ * which is what xpos/ypos actually place, and -1 means the first.
+ * mn_scroll is read and handed straight back: this AES does not scroll a
+ * menu, and appl_getinfo(AES_MENU) says so. */
 typedef struct {
     LONG mn_tree;
     WORD mn_menu, mn_item;
@@ -833,6 +846,17 @@ WORD evnt_mouse(WORD flags, WORD x, WORD y, WORD w, WORD h,
 WORD evnt_dclick(WORD rate, WORD setit);
 WORD menu_text(OBJECT *tree, WORD item, const char *text);
 WORD menu_register(WORD pid, const char *str);
+
+/* menu_popup puts the MENU box (above) up at (xpos, ypos), tracks it
+ * until a click, and takes it down.  TRUE with mdata->mn_item set when an
+ * item was chosen; FALSE when none was, and then ONLY mdata->mn_keystate
+ * is written -- the four words before it are left as you had them, which
+ * is what both an ST ROM and EmuTOS do.
+ *
+ * NO SUBMENUS, and no popup from a popup: the AES's screen save is one
+ * buffer, so one of these can be open at a time.  appl_getinfo(AES_MENU)
+ * answers 0 for sub-menus and 1 for popups, which is the way to ask. */
+WORD menu_popup(const MENU *me, WORD xpos, WORD ypos, MENU *mdata);
 WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
 
 /* appl_getinfo (AES 130) -- what this AES has, asked one subject at a

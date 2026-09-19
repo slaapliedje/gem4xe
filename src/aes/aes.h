@@ -572,6 +572,18 @@ WORD mn_do(WORD *ptitle, WORD *pitem);
 WORD do_chg(OBJECT FAR *tree, WORD iitem, UWORD chgvalue, WORD dochg,
             WORD dodraw, WORD chkdisabled);
 void mn_text(OBJECT FAR *tree, WORD item, const char *text);
+
+/* menu_popup: the box `imenu` of `tree` put up with item `istart` under
+ * the pointer at (x, y), tracked, and taken away again.  The item chosen
+ * or NIL, and *pkeystate always -- both donors write the keystate
+ * whatever happens.  The Compendium's MENU block does NOT come in here:
+ * src/sys/abi.c unpacks the caller's into these scalars.  That is where
+ * the caller's memory belongs, and it is also the version that works --
+ * an AESMENU struct with a far-pointer field delivered the tree with a
+ * bank of $3E and no reduced case reproduced it, so the reason is not
+ * known and is not being guessed at in a comment (src/sys/abi.c). */
+WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
+              WORD *pkeystate);
 /* The objects every menu tree has in these positions -- the shape the
  * RCS builds and the AES trusts.  THEDESK is the Desk TITLE, and it is
  * the word AC_OPEN carries in msg[3]; the control manager and the menu

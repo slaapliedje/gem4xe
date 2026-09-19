@@ -656,6 +656,37 @@ static void run_script(void)
                                         (const char *)(uint16_t)intin[1]);
                 c4 = 1;
                 break;
+            /* menu_popup, with the MENU block spelled out in intin
+             * rather than staged: the tree is in contrl[7] like every
+             * other menu op, so a script says box, start, scroll, x, y.
+             * What comes back is the whole out block, so that what the
+             * call leaves ALONE is visible too -- the four words it must
+             * not touch when nothing is chosen are seeded here with the
+             * in block's and read back in [1..4]. */
+            case 36: {              /* menu_popup: box, start, scroll, x, y */
+                /* CAPTURED FIRST, because mn_popup draws: every VDI call
+                 * it makes on the way -- the save, the box, each item's
+                 * highlight -- writes intin, and reading intin[0] after
+                 * it returned gave the object number the last ob_draw
+                 * happened to leave there. */
+                WORD box = intin[0], start = intin[1], scroll = intin[2];
+                WORD px = intin[3], py = intin[4];
+                WORD chosen, ks = -1;
+
+                chosen = mn_popup(tree, box, start, px, py, &ks);
+                intout[0] = (chosen != NIL) ? TRUE : FALSE;
+                /* The OUT BLOCK as src/sys/abi.c assembles it, seeded
+                 * with words the call cannot produce so that one it
+                 * leaves alone is visible as one: when nothing is chosen
+                 * only the keystate is supposed to move. */
+                intout[1] = (chosen != NIL) ? box : -2;
+                intout[2] = (chosen != NIL) ? chosen : -3;
+                intout[3] = (chosen != NIL) ? scroll : -4;
+                intout[4] = ks;
+                intout[5] = (chosen != NIL) ? 1 : 0;
+                c4 = 6;
+                break;
+            }
             case 40:                        /* objc_add: parent, child */
                 ob_add(tree, intin[0], intin[1]);
                 intout[0] = 1;

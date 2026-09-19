@@ -201,10 +201,21 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_MENU:
-        /* No sub-menus, no popups, no scrollable menus (menu.c is the
-         * donor's library WITHOUT the submenu extension), and
-         * MN_SELECTED's words 5 to 7 are zeros rather than the tree
-         * information AES 4 puts there (ctrl.c). */
+        /* POPUPS, and nothing else of AES 4's menus.  The four words are
+         * plain 0/1 and not a bit field -- read out of MULTITOS's
+         * GEMAPLIB.C, where AI_MSG and AI_WIND set theirs to 0x03fe and
+         * 0x01ff with a bit list and this one sets four ones.
+         *
+         * out2 is menu_popup, which is here (menu.c).  out1 is
+         * SUB-MENUS -- menu_attach and menu_istart -- and they are not:
+         * a submenu opens over a drop-down that is already showing, and
+         * bb_save is a single screen-sized shadow, so the second save
+         * would take the first one's drawn pixels.  out3 is scrollable
+         * menus, which need the same second buffer and the arrow items
+         * besides.  out4 is MN_SELECTED's words 5 to 7 carrying the
+         * tree the item came from; with no submenus every item comes
+         * from the bar's own tree, and ctrl.c sends zeros. */
+        *out2 = 1;
         break;
 
     case AI_SHELL:

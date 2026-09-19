@@ -1240,6 +1240,17 @@ WORD menu_register(WORD pid, const char *str)
     return aes(35, 1, 1, 1, 0);
 }
 
+/* Two addresses, not one, and the AES reads BOTH blocks word by word --
+ * so unlike a tree, a MENU may live in far memory. */
+WORD menu_popup(const MENU *me, WORD xpos, WORD ypos, MENU *mdata)
+{
+    int_in[0] = xpos;
+    int_in[1] = ypos;
+    addr_in[0] = (LONG)(uint32_t)(const MENU FAR *)me;
+    addr_in[1] = (LONG)(uint32_t)(MENU FAR *)mdata;
+    return aes(36, 2, 1, 2, 0);
+}
+
 /* The name is EIGHT CHARACTERS, blank-padded, and the caller does the
  * padding: appl_find("QED") finds nothing and appl_find("QED     ")
  * finds it.  That is the ST's contract, kept rather than softened, so a

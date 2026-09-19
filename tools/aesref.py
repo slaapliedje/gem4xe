@@ -3892,6 +3892,88 @@ class AES:
         else:
             self.bb_restore(t)
 
+    def popup_place(self, imenu, istart, x, y):
+        """The box on the screen.  x and y name where the START ITEM
+        goes, so the item's own offset comes off first; the parent's
+        origin comes off too, because both donors clamp ob_x/ob_y
+        against the screen as if the box hung off the root.  Then it is
+        clamped both ways -- the ROM clamps neither, its submenu path
+        clamps both, and a popup off an edge is unusable (src/aes/menu.c
+        has the argument)."""
+        t = self.tree
+        w, h = t[imenu].ob_width, t[imenu].ob_height
+        ox, oy = self.ob_offset(imenu)
+        ox -= t[imenu].ob_x
+        oy -= t[imenu].ob_y
+        bx = x
+        by = y - t[istart].ob_y
+        while bx + w + MENU_THICKNESS > self.gl_width:
+            bx -= self.gl_wchar
+        while bx < MENU_THICKNESS:
+            bx += self.gl_wchar
+        while by > self.gl_height - h:
+            by -= self.gl_hchar
+        while by < self.gl_rfull.y:
+            by += self.gl_hchar
+        t[imenu].ob_x = bx - ox
+        t[imenu].ob_y = by - oy
+
+    def popup_track(self, imenu, istart):
+        """The item under the pointer when a press comes, or NIL."""
+        t = self.tree
+        cur = NIL
+        if not (t[istart].ob_state & DISABLED):
+            cur = istart
+        if cur != NIL:
+            self.do_chg(cur, SELECTED, True, False, True)
+        self.gsx_sclip(self.gl_rzero)
+        self.ob_draw(imenu, MAX_DEPTH)
+        m = MOBLK(False, 0, 0, 0, 0)
+        rets = [0] * 6
+        while True:
+            self.rect_change(m, cur if cur != NIL else imenu, cur != NIL)
+            which = self.ev_multi(MU_BUTTON | MU_M1, m, None, 0,
+                                  0x0001FF01, rets)
+            last = cur
+            cur = self.ob_find(imenu, 1, rets[0], rets[1])
+            if cur == imenu:
+                cur = NIL
+            self.menu_select(last, cur, False)
+            self.menu_select(cur, last, True)
+            if which & MU_BUTTON:
+                break
+        if cur != NIL:
+            self.do_chg(cur, SELECTED, False, False, False)
+        return cur
+
+    def mn_popup(self, tree, imenu, istart, scroll, x, y):
+        """menu_popup: (answer, the out block as the runner reports it).
+        On FALSE only the keystate is written -- both donors agree, and
+        the runner seeds the other four so that is visible."""
+        out = [-2, -3, -4, -1, 0]       # menu, item, scroll, keystate, tree
+        # seeded as the runner seeds them: words the call cannot produce
+        if not tree or imenu <= 0:
+            out[3] = 0
+            return 0, out
+        with self.on_tree(tree):
+            if istart < 0:
+                istart = self.tree[imenu].ob_head
+            if istart <= 0:
+                out[3] = 0
+                return 0, out
+            self.wm_update(BEG_MCTRL)
+            self.ev_button(1, 0x00FF, 0x0000, [0] * 6)
+            self.popup_place(imenu, istart, x, y)
+            self.menu_sr(True, imenu)
+            chosen = self.popup_track(imenu, istart)
+            self.menu_sr(False, imenu)
+            out[3] = self.kstate
+            if chosen != NIL:
+                out[0], out[1], out[2], out[4] = imenu, chosen, scroll, 1
+            self.ev_button(1, 0x00FF, 0x0000, [0] * 6)
+            self.wm_update(END_MCTRL)
+        return (1 if chosen != NIL else 0), out
+
     def menu_down(self, ititle):
         imenu = self.menu_sub(ititle)
         if self.do_chg(ititle, SELECTED, True, True, True):
@@ -4123,6 +4205,15 @@ class AES:
         elif n == 35:
             io[0] = self.mn_register(ints[0], ints[1])
             c4 = 1
+        elif n == 36:
+            # menu_popup: the MENU block spelled out -- box, start,
+            # scroll, then x and y -- with the tree in the tree slot as
+            # every other menu op has it.  The whole out block comes
+            # back, so what the call must NOT touch is visible too.
+            io[0], out = self.mn_popup(self.tree, ints[0], ints[1],
+                                       ints[2], ints[3], ints[4])
+            io[1:6] = out
+            c4 = 6
         elif n == 40:
             # objc_add and objc_delete: the tree surgery objc.c already did
             # for the window manager, now an application's to call as well.
@@ -4569,7 +4660,7 @@ APPL_READ = 1011
 GRAF_HANDLE = 1077
 FSEL_INPUT, FSEL_EXINPUT = 1090, 1091
 (MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL, MENU_TEXT,
- MENU_REGISTER) = range(1030, 1036)
+ MENU_REGISTER, MENU_POPUP) = range(1030, 1037)
 (WIND_CREATE, WIND_OPEN, WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET,
  WIND_FIND, WIND_UPDATE, WIND_CALC) = range(1100, 1109)
 RSRC_LOAD, RSRC_FREE, RSRC_GADDR = 1110, 1111, 1112

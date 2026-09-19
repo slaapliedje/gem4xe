@@ -155,6 +155,25 @@ static void vdi_entry(const VDIPB_IMG FAR *pb)
 
 /* ---- AES ---------------------------------------------------------------- */
 
+/* THE CALLER'S MENU BLOCK is six words and is read and written a word at
+ * a time, because it may be far -- a --data-model=large program's locals
+ * are.  mn_tree is the first TWO of them because src/app/gem.h declares
+ * it as a 32-bit address rather than a pointer: the same change the
+ * MFDB's fd_addr needed, and for the same reason.  The small data model
+ * makes a pointer sixteen bits, which would move every field after it
+ * and give the two memory models two layouts for one struct.
+ *
+ * WORDS AND NOT A STRUCT with a far-pointer field.  It was such a struct
+ * first, and the tree arrived inside mn_popup with the right offset and
+ * a bank of $3E; the shape was reduced to a file of its own and the
+ * compiler emitted the right code for it (`lda ##0` into the bank byte),
+ * so THE CAUSE IS NOT ESTABLISHED and no compiler bug is being claimed.
+ * What is established is that this version is the one the gate passes,
+ * and that words are the better shape anyway: the caller's block is six
+ * words in its memory and copying it as six words asks no question about
+ * how a far pointer is laid out in a struct on either side. */
+#define MENU_WORDS  6
+
 /* A near address the caller passed as a int32_t: bank $00 or nothing. */
 static void *near_of(int32_t a)
 {
@@ -415,6 +434,39 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         if (!s)
             return -1;
         ret = mn_register(int_in[0], s);
+        break;
+    }
+    case 36: {                      /* menu_popup: me, x, y, mdata */
+        WORD me[MENU_WORDS], md[MENU_WORDS];
+        uint32_t pme = (uint32_t)addr_in[0], pmd = (uint32_t)addr_in[1];
+        OBJECT FAR *mt;
+        WORD chosen, ks = 0;
+
+        if (!pme || !pmd)
+            return -1;
+        far_get((uint8_t *)me, pme, MENU_WORDS * 2);
+        /* The caller's OWN mdata too, not a copy of me: the four words
+         * this call may leave alone are the caller's to keep. */
+        far_get((uint8_t *)md, pmd, MENU_WORDS * 2);
+        mt = (OBJECT FAR *)(((uint32_t)(UWORD)me[1] << 16) | (UWORD)me[0]);
+        chosen = mn_popup(mt, me[2], me[3], int_in[0], int_in[1], &ks);
+        /* ON FAILURE ONLY THE KEYSTATE IS WRITTEN and the caller's other
+         * four words stay as they were.  Both donors agree: the ROM's
+         * comment is "Always return the keystate - regardless"
+         * (MN_POPUP.C) and it fills the rest only inside `if (obj !=
+         * -1L && obj != -2L)`; EmuTOS does the same.  Writing NIL into
+         * mn_item instead would be tidier and a divergence nobody asked
+         * for -- the return value is what says nothing was chosen. */
+        md[5] = ks;
+        if (chosen != NIL) {
+            md[0] = me[0];          /* no submenus: the box it went in */
+            md[1] = me[1];
+            md[2] = me[2];
+            md[3] = chosen;
+            md[4] = me[4];
+        }
+        far_put(pmd, (const uint8_t *)md, MENU_WORDS * 2);
+        ret = (chosen != NIL) ? TRUE : FALSE;
         break;
     }
 

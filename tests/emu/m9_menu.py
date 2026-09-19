@@ -32,7 +32,8 @@ import vbxeref, aesref, symfile             # noqa: E402
 from aesref import (Layout, Obj, NIL, G_IBOX, G_BOX, G_TITLE, G_STRING,  # noqa: E402
                     LASTOB, DISABLED, CHECKED, MU_MESAG, MU_TIMER, MU_BUTTON,
                     MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL,
-                    MENU_TEXT, MENU_REGISTER, MN_SELECTED, OBJC_DRAW, MAX_DEPTH)
+                    MENU_TEXT, MENU_REGISTER, MENU_POPUP, MN_SELECTED,
+                    OBJC_DRAW, MAX_DEPTH)
 from m4_aes import mem_diff, PRELUDE                                # noqa: E402
 from m7_form import (desk, F, M, B, multi, poke16, drive, compare,  # noqa: E402
                      NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS, SHOTDIR)
@@ -118,6 +119,13 @@ def text(item, addr):
 
 def register(addr):
     return (MENU_REGISTER, (), (0, addr))
+
+
+def popup(box, start, x, y, scroll=0):
+    """menu_popup, the MENU block spelled out: the box, the item to put
+    under the pointer, the scroll word it must hand straight back, and
+    where the item goes."""
+    return (MENU_POPUP, (), (box, start, scroll, x, y))
 
 
 def wait(ms):
@@ -225,11 +233,50 @@ def case_disabled(L, L2, s):
     return b
 
 
+def case_popup(L, L2, s):
+    """menu_popup, with no menu bar anywhere: the View box put up at a
+    place the application chose, walked, and clicked.
+
+    The box is BORROWED OUT OF THE MENU TREE, which is the case the
+    donors get wrong: their clamp writes ob_x/ob_y straight and compares
+    them with the screen, and this box hangs off the drop-down IBOX
+    eleven pixels down, so it would land eleven pixels high.  Here the
+    parent's origin comes off first.
+
+    Three of them.  One chosen, where the out block gets all five words;
+    one where the press lands outside the box, where the answer is FALSE
+    and ONLY the keystate is written -- the runner seeds the other four
+    with numbers the call cannot produce, so a word it touched shows.
+    And one placed hard against the right edge, which clamps.
+
+    The screen after each is the backdrop again: what the box covered is
+    the save buffer's to put back, and the shots inside the wait are
+    where the box itself is checked."""
+    b = Script()
+    b.extend([backdrop(L2)])
+    # chosen: the pointer starts on Icons, moves to Text, presses there
+    b.op(popup(VIEWBOX, ICONS, 300, 100),
+         F(3), M(300, 100), F(3), SHOT(),
+         M(300, 108), F(3), SHOT(), B(1), F(2), B(0))
+    b.extend([backdrop(L2)])
+    # nothing chosen: the press is outside the box
+    b.op(popup(VIEWBOX, ICONS, 300, 100),
+         F(3), M(300, 100), F(3), M(500, 200), F(3), SHOT(),
+         B(1), F(2), B(0))
+    b.extend([backdrop(L2)])
+    # against the right edge: the box is stepped back a character at a time
+    b.op(popup(VIEWBOX, ICONS, 620, 100),
+         F(3), M(620, 100), F(3), SHOT(), B(1), F(2), B(0))
+    b.extend([backdrop(L2)])
+    return b
+
+
 CASES = [
     ("menu_bar, icheck, ienable, tnormal, text, register; hide", case_calls),
     ("hover: File down, View across, off the bar, a press outside", case_hover),
     ("select: Desk's fixup item, a click on File, Open -> MN_SELECTED", case_select),
     ("disabled: a separator pressed, a title that will not drop", case_disabled),
+    ("menu_popup: chosen, nothing chosen, and clamped to the edge", case_popup),
 ]
 
 

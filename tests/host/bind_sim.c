@@ -97,6 +97,7 @@ static OBJECT tree[2];
 static MFDB form;
 static DTA dta;
 static DISKINFO disk;
+static MENU popmenu;
 
 int main(void)
 {
@@ -217,6 +218,7 @@ int main(void)
     menu_tnormal(tree, 1, 1);
     menu_text(tree, 1, "x");
     menu_register(0, "x");
+    menu_popup(&popmenu, 10, 20, &popmenu);
     objc_add(tree, 0, 1);
     objc_delete(tree, 1);
     objc_draw(tree, 0, 8, 1, 2, 3, 4);

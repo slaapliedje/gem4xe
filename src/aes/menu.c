@@ -200,6 +200,144 @@ static WORD menu_down(OBJECT FAR *tree, WORD ititle)
     return imenu;
 }
 
+/* ---- menu_popup -------------------------------------------------------
+ *
+ * A menu box put up wherever the application says, tracked, and taken
+ * away again.  It is the menu bar's drop-down machinery above with the
+ * bar taken out: the same menu_sr to save what it covers, the same
+ * ob_draw, the same menu_select to move the highlight.
+ *
+ * WHAT IT IS NOT is a submenu.  The ROM's mn_popup and its submenus run
+ * one shared loop (MN_EVENT.C's EvntSubMenu) and a popup can open
+ * another popup from an item, up to MAX_LEVEL of them; this one cannot,
+ * for the reason EmuTOS gives for its own restriction and one more of
+ * gem4xe's.  bb_save is a SINGLE screen-sized shadow (graf.c) and a
+ * second save over the first one's rectangle would capture the pixels
+ * the first one drew, so only one of these can be open at a time.
+ * appl_getinfo(AES_MENU) answers 0 for sub-menus, which is what a
+ * program that cares reads.
+ */
+
+/* The box on the screen: the donor's clamp_ypos, and the same for x.
+ *
+ * THE ROM CLAMPS NEITHER, and that is not a contract to keep.  Its
+ * AdjustMenuPosition takes a Horizontal_Flag, and the submenu path passes
+ * TRUE -- flop to the other side of the item, then step right a character
+ * at a time -- while mn_popup alone passes FALSE and writes ObX = xpos
+ * verbatim.  A popup off the right edge is then drawn cut off and cannot
+ * be used, which reads as an omission in the one caller rather than a
+ * decision.  Clamping can only move a box that would have been unusable,
+ * so no program that places one properly sees a difference. */
+static void popup_place(OBJECT FAR *tree, WORD imenu, WORD istart,
+                        WORD x, WORD y)
+{
+    WORD w = tree[imenu].ob_width, h = tree[imenu].ob_height;
+    WORD ox, oy, bx, by;
+
+    /* WHERE THE BOX'S PARENT BEGINS, so that everything below is in
+     * SCREEN coordinates.  Both donors write ob_x and ob_y straight from
+     * xpos and ypos and then clamp them against the screen, which is
+     * right only while the box hangs off the root at the origin -- true
+     * of a popup tree of its own, which is the usual thing, and not true
+     * of a box borrowed out of a menu tree, where the drop-downs hang
+     * off an IBOX below the bar.  Subtracting the parent's origin costs
+     * one call and is right either way. */
+    ob_offset(tree, imenu, &ox, &oy);
+    ox = (WORD)(ox - tree[imenu].ob_x);
+    oy = (WORD)(oy - tree[imenu].ob_y);
+
+    /* x and y name where the START ITEM goes, not the box: the item's own
+     * offset within the box comes off first (both donors do this). */
+    bx = x;
+    by = (WORD)(y - tree[istart].ob_y);
+    while (bx + w + MENU_THICKNESS > gl_width)
+        bx = (WORD)(bx - gl_wchar);
+    while (bx < MENU_THICKNESS)
+        bx = (WORD)(bx + gl_wchar);
+    while (by > (WORD)(gl_height - h))
+        by = (WORD)(by - gl_hchar);
+    while (by < gl_rfull.g_y)
+        by = (WORD)(by + gl_hchar);
+    tree[imenu].ob_x = (WORD)(bx - ox);
+    tree[imenu].ob_y = (WORD)(by - oy);
+}
+
+/* Track the box until a press: the item under the pointer, or NIL.  The
+ * wait is mn_do's, one rectangle: leave the item the pointer is on, or
+ * enter the box when it is outside. */
+static WORD popup_track(OBJECT FAR *tree, WORD imenu, WORD istart)
+{
+    MOBLK m;
+    WORD  rets[6];
+    WORD  cur = NIL, last;
+    UWORD which;
+
+    /* The start item comes up selected, as the donor does it, so that a
+     * press with no movement chooses it. */
+    if (!(tree[istart].ob_state & DISABLED))
+        cur = istart;
+    if (cur != NIL)
+        do_chg(tree, cur, SELECTED, TRUE, FALSE, TRUE);
+    gsx_sclip(&gl_rzero);
+    ob_draw(tree, imenu, MAX_DEPTH);
+
+    for (;;) {
+        if (cur != NIL)
+            rect_change(tree, &m, cur, TRUE);       /* wait to leave it */
+        else
+            rect_change(tree, &m, imenu, FALSE);    /* wait to enter the box */
+        which = (UWORD)ev_multi(MU_BUTTON | MU_M1, &m, 0, 0UL,
+                                0x0001FF01UL, 0, rets);
+        last = cur;
+        cur = ob_find(tree, imenu, 1, rets[0], rets[1]);
+        if (cur == imenu)               /* in the box, on no item */
+            cur = NIL;
+        menu_select(tree, last, cur, FALSE);
+        menu_select(tree, cur, last, TRUE);
+        if (which & MU_BUTTON)
+            break;
+    }
+    /* The highlight comes off before the box does, so that the item is
+     * left as the application handed it over -- a popup is put up again
+     * and again out of the same tree. */
+    if (cur != NIL)
+        do_chg(tree, cur, SELECTED, FALSE, FALSE, FALSE);
+    return cur;
+}
+
+WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
+              WORD *pkeystate)
+{
+    WORD rets[6], chosen;
+
+    /* The keystate is written whatever happens: "TOS always sets
+     * mn_keystate" (EmuTOS), and the ROM says so in as many words --
+     * "Always return the keystate - regardless" (MN_POPUP.C). */
+    *pkeystate = 0;
+    if (!tree || imenu <= 0)
+        return NIL;
+    if (istart < 0)
+        istart = tree[imenu].ob_head;
+    if (istart <= 0)
+        return NIL;
+
+    wm_update(BEG_MCTRL);
+    /* The button that opened the popup is usually still down, and a press
+     * is what chooses an item -- so the one that got here must be let go
+     * of first, or it chooses immediately. */
+    ev_button(1, 0x00FF, 0x0000, rets);
+
+    popup_place(tree, imenu, istart, x, y);
+    menu_sr(TRUE, tree, imenu);
+    chosen = popup_track(tree, imenu, istart);
+    menu_sr(FALSE, tree, imenu);
+
+    *pkeystate = kstate;
+    ev_button(1, 0x00FF, 0x0000, rets);
+    wm_update(END_MCTRL);
+    return chosen;
+}
+
 /* Run the menu bar from the pointer's arrival in it until a button
  * transition ends it or the pointer leaves with nothing down.  TRUE with
  * the title and item when an enabled item was chosen.  The button's
