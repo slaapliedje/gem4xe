@@ -1,7 +1,10 @@
 # `.scatterTo28` on an Atari-shaped map — what it answers, and what will not parse
 
-Measured 2026-09-19 against Calypsi **6502** 5.18, for issue #89 (banked
-code on the Atari 8-bit).  **This is not a bug report**: the operator does
+Measured 2026-09-19 against Calypsi **6502 5.18** — which is the NEWEST
+6502 there is: 5.18.1 and 5.18.2 were 65816-only point releases, so the
+symlink this tree's 65816 work follows does not apply here.  The closing
+"not on the 65816" note is **as65816 5.18.2**.  For issue #89 (banked code
+on the Atari 8-bit).  **This is not a bug report**: the operator does
 what its documentation says.  It is the evidence behind the answer, kept
 because the 6502 build is a decision this tree has not taken yet
 (docs, "bank the applications") and this is what it would rest on.

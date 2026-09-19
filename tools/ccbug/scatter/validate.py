@@ -97,10 +97,22 @@ def main(argv):
         return 77
 
     print("\n-- the toolchain the numbers came from -------------------------")
+    # TWO toolchains are involved and they are NOT at the same version:
+    # the scatter work is 6502, and the closing "not on the 65816" claim
+    # is 65816.  A report that names one version and makes claims from
+    # both invites the obvious and fair reply, "try the current one".
     va = run([asm, "--version"]).stdout.strip()
     vl = run([ld, "--version"]).stdout.strip()
-    claim("as6502 and ln6502 are both 5.18",
-          "5.18" in va and "5.18" in vl, f"{va}\n{vl}")
+    claim("as6502 and ln6502 agree on a version",
+          va.split()[-1] == vl.split()[-1], f"{va}\n{vl}")
+    v6502 = va.split()[-1]
+    claim("the 6502 tools are 5.18 -- the NEWEST 6502 release there is "
+          "(5.18.1 and 5.18.2 were 65816 only)",
+          v6502 == "5.18", f"6502 = {v6502}")
+    if os.path.exists(asm816):
+        v816 = run([asm816, "--version"]).stdout.strip()
+        claim("the 65816 assembler, used only for the last section, is 5.18.2",
+              v816.split()[-1] == "5.18.2", v816)
 
     work = tempfile.mkdtemp(prefix="scatter-")
     try:
