@@ -54,7 +54,7 @@ from deskrsc import FILEMENU, QUITITEM      # noqa: E402
 from m7_form import (poke16, NOT_STARTED, STATUS, ST_GO, ST_DONE,  # noqa: E402
                      F, DCLICK, drive, compare, storm_check)
 from m4_aes import PRELUDE, SHOTDIR         # noqa: E402
-from m11_abi import app_calls               # noqa: E402
+from m11_abi import app_calls, UNRECORDED_AES   # noqa: E402
 from m12_file import Runner                 # noqa: E402
 from m13_alert import ALLOC                 # noqa: E402
 from m14_sparta import DISK as M14_DISK, boot, screen   # noqa: E402
@@ -126,7 +126,15 @@ def program_calls(a):
     while r == 0:
         n += 1
         r = a.gemdos(0x4F, ())
-    return len(app_calls(0, 0)) + 7 + n
+    # ...AND THE PROBES M11.G4A MAKES WITHOUT RECORDING THEM.  app_calls()
+    # is the sequence test-m11 compares against the model, and the
+    # objc_sysvar, appl_find and appl_getinfo probes are deliberately
+    # outside it -- but the ABI's counter, which is what this offset
+    # indexes into, counts every call.  Imported rather than written
+    # again, so the next probe added to src/m11_app.c is counted in both
+    # places or in neither: it was counted in neither when objc_sysvar
+    # arrived, and this gate spent five commits red for it.
+    return len(app_calls(0, 0)) + UNRECORDED_AES + 7 + n
 
 
 def model_desk(v, a):
@@ -275,6 +283,10 @@ def main(argv):
         def read():
             return (b.peek16(calls) - 1) & 0xFFFF
 
+        # Set by paint_desk, cleared by catch: the low-water report below
+        # is meaningless unless THIS run's stack was painted.
+        painted = [False]
+
         def reach(first, what):
             """Frames until the counter says the desktop is in call
             `first`, the first wait of a run; the load from disk is slower
@@ -291,6 +303,8 @@ def main(argv):
             return t
 
         def catch(k, what, limit=4000):
+            painted[0] = False      # each run's loader zeroes the region
+                                    # again, so the last run's paint is gone
             """Frames until the counter says the desktop is in call `k`
             -- its rsrc_load, whose read from disk holds it inside the ABI
             for frames, so the S the ABI saved is the desktop's own at
@@ -317,6 +331,7 @@ def main(argv):
         dstk_lo, dstk_hi = (x + d1.near - dlink for x in dstk)
 
         def paint_desk():
+            painted[0] = True
             app_s = b.peek16(b.peek16(syms["gem_api_sp"]) - 1)
             ok = dstk_lo <= app_s <= dstk_hi
             check(ok, f"the desktop's S ${app_s:04X} is off its stack "
@@ -369,9 +384,18 @@ def main(argv):
             print(f"  screen at the stall: {shot(b, 'stall')}")
             fault = b.peek(syms["irq_fault"])          # src/sys/irq.s
             lw = desk_low_water(b)
+            # An UNPAINTED region reads exactly like an overflowed one --
+            # every byte is something other than PAINT -- so the low
+            # water means nothing until paint_desk() has run.  It said
+            # "OVERFLOWED" for five commits while the desktop was using
+            # 279 of its 640 bytes, because the catch above bailed out
+            # before the paint and the report did not know.
+            where = (f"low water ${lw:04X}"
+                     f"{' -- OVERFLOWED' if lw == dstk_lo else ''}"
+                     if painted[0] else
+                     "never painted, so its low water says nothing")
             print(f"  irq_fault {fault} ({'none' if fault == 0 else 'BRK' if fault == 2 else 'ABORT' if fault == 3 else 'IRQ'}); "
-                  f"the desktop's stack ${dstk_lo:04X}-${dstk_hi:04X}, low water ${lw:04X}"
-                  f"{' -- OVERFLOWED' if lw == dstk_lo else ''}")
+                  f"the desktop's stack ${dstk_lo:04X}-${dstk_hi:04X}, {where}")
             try:
                 print(f"  REGS: {b.ok('REGS')}")
                 b.ok("CONFIG history true")
