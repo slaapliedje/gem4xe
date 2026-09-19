@@ -44,6 +44,7 @@ from aesref import (Layout, MU_MESAG, MU_TIMER, MU_BUTTON, RETURN,  # noqa: E402
                     WF_KIND, WF_NAME, WF_INFO, WF_WXYWH, WF_CXYWH, WF_PXYWH,
                     WF_FXYWH, WF_HSLIDE, WF_VSLIDE, WF_TOP, WF_FIRSTXYWH,
                     WF_NEXTXYWH, WF_NEWDESK, WF_HSLSIZ, WF_VSLSIZ, WF_OWNER,
+                    WF_BOTTOM,
                     WM_REDRAW, WM_ARROWED, NUM_MSGS,
                     APPL_WRITE, EVNT_MESAG, EVNT_BUTTON, WIND_CREATE, WIND_OPEN,
                     WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET, WIND_FIND,
@@ -140,10 +141,14 @@ def case_two(L, s):
         setaddr(1, WF_NAME, L.text("Under")),
         create(NAME | MOVER), wopen(2, 200, 100, 300, 120),
         setaddr(2, WF_NAME, L.text("Over")),
-        get(0, WF_TOP), get(1, WF_OWNER),
+        # The order, both ways round and from both ends: window 1 is at
+        # the bottom with 2 above it, so WF_OWNER's neighbours are each
+        # other and the desk, and WF_BOTTOM is 1 (tests/host/
+        # test_wind_order.py writes those numbers out of the Compendium).
+        get(0, WF_TOP), get(1, WF_OWNER), get(2, WF_OWNER), get(0, WF_BOTTOM),
     ] + rects(1, 3) + rects(2, 2) + rects(0, 7) + mesag(2) + [
         wset(1, WF_TOP),
-        get(0, WF_TOP),
+        get(0, WF_TOP), get(1, WF_OWNER), get(2, WF_OWNER), get(0, WF_BOTTOM),
     ] + rects(1, 2) + rects(2, 3) + [
         wset(1, WF_TOP),                        # already on top: nothing
         wset(2, WF_TOP),

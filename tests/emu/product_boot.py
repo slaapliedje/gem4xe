@@ -354,18 +354,31 @@ def one(name, progname, how, batches, cart, keep, check):
               f"return to")
         free = fs.free_count() * fs.data_bytes
         print(f"  {fs.free_count()} sectors free, {free // 1024} KB")
-        # The floor is seventy-two sectors -- 18 KB, enough for a program
-        # of somebody's own beside the system -- and the number is here so
-        # that the smallest disk gem4xe ships on stays somewhere a person
-        # can put one.  It was below eight for a while (docs/shipping.md
+        # The floor, and the number is here so that the smallest disk
+        # gem4xe ships on stays somewhere a person can put a program of
+        # their own.  It was below eight for a while (docs/shipping.md
         # section 1 has the history); the packed far image put it above
         # eighty, and growth that takes it below is a decision to make on
-        # purpose, not to discover here: phase 43's DOS command took the
+        # purpose, not to discover here.  Phase 43's DOS command took the
         # DOS 2 floppy to 65, and the decision was GEM4XE.CFG off that
         # floppy (its every value is the default) and the floor at 72.
-        check(fs.free_count() >= 72,
+        #
+        # 2026-09-18: 64.  wind_get(WF_OWNER) was answering the top and
+        # bottom of the window list where the contract asks for the
+        # window directly above and the one directly below, and putting
+        # that right -- with WF_BOTTOM, which gem.h had promised and the
+        # AES did not keep -- cost 186 bytes and two of this disk's
+        # sectors.  The floor came down rather than the fix going back,
+        # because THIS disk is the one a DOS 2 boots and a DOS 2 cannot
+        # read gem-apps.atr: the Makefile calls it "a gate's more than
+        # anybody's way in", and nobody's way in is what it is.  The
+        # SpartaDOS X floppy and the card are where somebody puts a
+        # program, and they have room to spare.  Eight sectors of margin
+        # rather than two, so the next 186 bytes are not another
+        # conversation.
+        check(fs.free_count() >= 64,
               f"{name}: {fs.free_count()} sectors free -- under the floor of "
-              f"72 that keeps room for a program of the user's own")
+              f"64 that keeps room for a program of the user's own")
 
     if cart == "":
         print(f"  not booted: no SDX cartridge fixture ([spartados].sdx_cart "

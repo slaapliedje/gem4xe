@@ -91,6 +91,19 @@ MyDOS tester disk could be double-sided and the question would not
 arise, but MyDOS is the DOS section 2 caught mangling the staged image,
 so that swap is work of its own.
 
+**Phase 45 was the third, and the argument was already made.**
+`wind_get(WF_OWNER)` was handing back the top and bottom of the window
+list where the Compendium asks for the window directly above and the one
+directly below, and `WF_BOTTOM` was a name `gem.h` promised that the AES
+did not keep.  Putting both right is 186 bytes of `GEM.COM` and two of
+the DOS 2 floppy's sectors, which took it to 70 against a floor of 72.
+Nothing went off the disk this time: **the floor moved to 64**, because
+the paragraph above had already settled what this disk is.  A DOS 2
+cannot read `gem-apps.atr`, so it is not where anybody puts a program of
+their own -- the SpartaDOS X floppy and the card are, and both have room
+to spare.  Eight sectors of margin rather than two, so that the next two
+hundred bytes are not another conversation.
+
 That is the honest shape of the thing rather than a regression to be
 fixed: a 640x240 GUI with a resident AES belongs on a volume measured in
 megabytes, and the machine this project targets (Rapidus, VBXE, U1MB) is

@@ -6,8 +6,9 @@
 ;;;   $0200-$06FF  OS vars / page 6      -- not ours ($02E0/$02E2 are the .xex vectors)
 ;;;   $0700-$1FFF  DOS resident          -- not ours
 ;;;   $2000-$20FF  direct page           <- ours
-;;;   $2100-$373F  stack / data / zdata  <- ours (the stack is 2 KB; see below)
-;;;   $3740-$3FFD  near code and rodata  <- ours
+;;;   $2100-$375F  stack / data / zdata  <- ours (the stack is 2 KB; see below)
+;;;   $3760-$3FFD  near code and rodata  <- ours
+;;;                (that boundary moves; the memories below are what it is)
 ;;;   $3FFE-$3FFF  the cstartup's reset word, inert
 ;;;   $4000-$47FF  zwin: bss no interrupt handler touches  <- ours; see BANKED
 ;;;   $4800-$67FF  the application pool             <- ours; see BANKED below
@@ -151,7 +152,11 @@
     ;; to $3750, for the four tree pointers that became FAR
     ;; (docs/far-trees.md): gl_mntree, gl_wtree, gl_awind, gl_newdesk, two
     ;; bytes each, which took LoRAM from 256 free to 248 and memreport
-    ;; said so.  THIS IS THE ONLY BOUNDARY IN
+    ;; said so.  And again on 2026-09-18, up 16 more to $3760, for
+    ;; WINDOW's w_owner -- one word per window, eight windows, so that
+    ;; wind_get(WF_OWNER) can answer who created it.  Each of those was
+    ;; memreport failing the build, which is the point of it.
+    ;; THIS IS THE ONLY BOUNDARY IN
     ;; BANK $00 THAT CAN BE MOVED SAFELY, and the reason is that Near
     ;; holds code and constants: what it needs is settled at LINK time, so
     ;; taking too much fails the link and nothing else.  The other two
@@ -159,7 +164,7 @@
     ;; and both were tried first and caught by gates -- the application
     ;; pool by test-m28 (rs_load's peak; see the note below) and the stack
     ;; by test-m32 (GD_PEXEC_STACK; see the block at the end).
-    (memory LoRAM      (address (#x2100 . #x374f))
+    (memory LoRAM      (address (#x2100 . #x375f))
             (section stack data zdata heap))
 
     ;; Near code: the entry stub, farload, the C startup, the CIO
@@ -167,7 +172,7 @@
     ;; it cannot be far) and every library routine that is not compiled
     ;; far -- plus all constant data.  There is no overflow memory: a link
     ;; that outgrows this memory fails rather than spilling somewhere slow.
-    (memory Near       (address (#x3750 . #x3ffd))
+    (memory Near       (address (#x3760 . #x3ffd))
             (section code libcode cdata idata data_init_table))
 
     ;; The library cstartup always emits a `reset` section -- a word pointing

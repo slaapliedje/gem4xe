@@ -3,14 +3,20 @@
 
 tools/surface.py answers a different question -- which NAMES the kit
 declares, against the ones gemlib declares -- and the two can disagree in
-both directions, which is the reason this file exists:
-
-  * WF_SCREEN and WF_OWNER are SERVED by the window manager and not
-    declared in gem.h, so a port has to #define them itself (qed did);
-  * WF_BOTTOM is DECLARED in gem.h and not served.
+both directions, which is the reason this file exists.  It found three
+such disagreements on its first run, all of them in wind_get's fields:
+WF_SCREEN and WF_OWNER were SERVED and not declared, so a port had to
+#define them itself (qed did), and WF_BOTTOM was DECLARED and not served.
+All three are settled now -- the three are declared and wind_get answers
+them -- which is what the audit is for.
 
 A name in a header is a promise; an opcode in a dispatcher is the thing
 that keeps it.  This reads the dispatchers.
+
+WHAT IT DOES NOT MEASURE: the FIELDS an opcode takes.  wind_get is one
+opcode and twenty-odd questions, and serving the opcode says nothing
+about which of them are answered.  Those are checked where they are
+implemented -- tests/host/test_wind_order.py for the window order.
 
     python3 tools/opcodes.py            # what is missing
     python3 tools/opcodes.py --all      # every opcode, served or not

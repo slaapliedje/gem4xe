@@ -85,6 +85,7 @@ UPARROW, DNARROW, VSLIDE, LFARROW, RTARROW, HSLIDE = (0x40, 0x80, 0x100,
  WF_HSLIDE, WF_VSLIDE, WF_TOP, WF_FIRSTXYWH, WF_NEXTXYWH, WF_RESVD,
  WF_NEWDESK, WF_HSLSIZ, WF_VSLSIZ, WF_SCREEN, WF_TATTRB, WF_SIZTOP,
  WF_OWNER) = range(1, 21)
+WF_BOTTOM = 25
 # messages
 (WM_REDRAW, WM_TOPPED, WM_CLOSED, WM_FULLED, WM_ARROWED, WM_HSLID,
  WM_VSLID, WM_SIZED, WM_MOVED, WM_NEWTOP, WM_UNTOPPED, WM_ONTOP) = range(20, 32)
@@ -430,6 +431,10 @@ class Window:
     def __init__(self):
         self.w_flags = 0
         self.w_kind = 0
+        # Who created it, for WF_OWNER.  This model runs ONE application,
+        # so the answer is always its pid -- an accessory can own a
+        # window on the target and nothing in the tree creates one.
+        self.w_owner = 0
         self.w_pname = self.w_pinfo = WM_EMPTY
         self.w_hslide = self.w_vslide = 0
         self.w_hslsiz = self.w_vslsiz = -1
@@ -2180,6 +2185,7 @@ class AES:
         pwin = self.gl_win[wh]
         pwin.w_flags = VF_INUSE
         pwin.w_kind = kind & 0xFFFF
+        pwin.w_owner = 0                # the one application: see Window
         pwin.w_pname = pwin.w_pinfo = WM_EMPTY
         pwin.w_hslide = pwin.w_vslide = 0
         pwin.w_hslsiz = pwin.w_vslsiz = -1
@@ -2307,6 +2313,22 @@ class AES:
 
     def w_top(self):
         return self.gl_wtop if self.gl_wtop != NIL else DESKWH
+
+    def w_above(self, wh):
+        """The window directly above wh in the order list, DESKWH for
+        none.  ob_head is the bottom and ob_next steps UPWARDS; the last
+        child of a right-threaded tree points back at ROOT."""
+        up = self.W_TREE[wh].ob_next
+        return DESKWH if up in (ROOT, NIL) else up
+
+    def w_below(self, wh):
+        """...and the one directly below it, DESKWH for none."""
+        i = self.W_TREE[ROOT].ob_head
+        if i in (NIL, wh):
+            return DESKWH
+        while i not in (NIL, ROOT) and self.W_TREE[i].ob_next != wh:
+            i = self.W_TREE[i].ob_next
+        return DESKWH if i in (NIL, ROOT) else i
 
     def w_setactive(self):
         self.ct_chgown(self.w_getsize(WS_WORK, self.w_top()))
@@ -2765,7 +2787,7 @@ class AES:
         """(the return value, the four output words)."""
         out = [0, 0, 0, 0]
         pwin = self.get_pwin(wh)
-        if pwin is None and field not in (WF_TOP, WF_SCREEN):
+        if pwin is None and field not in (WF_TOP, WF_SCREEN, WF_BOTTOM):
             return 0, out
         sizes = {WF_WXYWH: WS_WORK, WF_CXYWH: WS_CURR,
                  WF_PXYWH: WS_PREV, WF_FXYWH: WS_FULL}
@@ -2788,8 +2810,19 @@ class AES:
         elif field == WF_SCREEN:
             pass
         elif field == WF_OWNER:
-            out[:] = [0, 1 if pwin.w_flags & VF_ISOPEN else 0,
-                      self.gl_wtop, self.W_TREE[ROOT].ob_head]
+            # Compendium p.455: the owner's AES id, the open status, the
+            # handle of the window directly ABOVE it and the one directly
+            # BELOW it.  The root's children are the windows with the
+            # BOTTOM first, so ob_next steps upwards; a right-threaded
+            # tree's last child points back at ROOT, which means "nothing
+            # above" and answers the desk's own handle.
+            out[:] = [pwin.w_owner, 1 if pwin.w_flags & VF_ISOPEN else 0,
+                      self.w_above(wh), self.w_below(wh)]
+        elif field == WF_BOTTOM:
+            # p.456: the bottom window, the desk NOT counted -- and the
+            # desk itself when there is no window at all.
+            head = self.W_TREE[ROOT].ob_head
+            out[0] = head if head != NIL else DESKWH
         else:
             return 0, out
         return 1, out

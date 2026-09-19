@@ -377,6 +377,7 @@ static void w_setup(WORD w_handle, WORD kind)
 
     pwin->w_flags = VF_INUSE;
     pwin->w_kind = (UWORD)kind;
+    pwin->w_owner = proc_pid(rlr);      /* whoever asked: WF_OWNER */
     pwin->w_pname = (uint32_t)(uint16_t)"";     /* near, bank 0 */
     pwin->w_pinfo = (uint32_t)(uint16_t)"";
     pwin->w_hslide = pwin->w_vslide = 0;
@@ -449,6 +450,40 @@ static void do_walk(WORD wh, OBJECT FAR *tree, WORD obj, WORD depth, GRECT *pc)
 static WORD w_top(void)
 {
     return (gl_wtop != NIL) ? gl_wtop : DESKWH;
+}
+
+/* The window ORDER, as WF_OWNER reports it: the handles directly ABOVE
+ * and BELOW w_handle, DESKWH -- handle 0, the desk, which is what is
+ * there -- for neither.
+ *
+ * The root's children are the OPEN windows with the bottom one first:
+ * wm_mktop puts a window last to bring it to the top, and w_drawchange
+ * walks up the list with ob_next (see its comment, "step top down to
+ * the window below it").  So ob_head is the bottom and ob_next steps
+ * upwards, and a right-threaded tree's last child points back at the
+ * parent -- ob_next == ROOT means "this is the top", not "the desk is
+ * above".  A window that is not open is in no list and gets DESKWH both
+ * ways, which is what it should say.
+ *
+ * Derived from the tree, not kept beside it: the donor's window record
+ * carries `ontop` and `under` as fields it has to hold in step by hand
+ * (GEMWMLIB.C), and the tree already knows. */
+static WORD w_above(WORD w_handle)
+{
+    WORD up = W_TREE[w_handle].ob_next;
+
+    return (up == ROOT || up == NIL) ? DESKWH : up;
+}
+
+static WORD w_below(WORD w_handle)
+{
+    WORD i;
+
+    for (i = W_TREE[ROOT].ob_head; i != NIL && i != ROOT;
+         i = W_TREE[i].ob_next)
+        if (W_TREE[i].ob_next == w_handle)
+            return i;
+    return DESKWH;
 }
 
 /* The top window changed: the control manager gets its work area, so
@@ -1066,7 +1101,10 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds)
 
     (void)pinwds;
     pwin = get_pwin(w_handle);
-    if (!pwin && w_field != WF_TOP && w_field != WF_SCREEN)
+    /* WF_TOP, WF_SCREEN and WF_BOTTOM are questions about the AES, not
+     * about the window whose handle the binding still has to pass. */
+    if (!pwin && w_field != WF_TOP && w_field != WF_SCREEN
+        && w_field != WF_BOTTOM)
         return FALSE;
 
     switch (w_field) {
@@ -1110,10 +1148,22 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds)
         poutwds[0] = poutwds[1] = poutwds[2] = poutwds[3] = 0;
         break;
     case WF_OWNER:
-        poutwds[0] = 0;                         /* the one process */
+        /* Compendium p.455: the owner's AES id, the open status, the
+         * handle of the window directly ABOVE it and the one directly
+         * BELOW it -- its neighbours in the order list, not the top and
+         * bottom of it, which is what this answered until the contract
+         * was read against the donor's (GEMWMLIB.C: ontop, under). */
+        poutwds[0] = pwin->w_owner;
         poutwds[1] = (pwin->w_flags & VF_ISOPEN) ? TRUE : FALSE;
-        poutwds[2] = gl_wtop;
-        poutwds[3] = W_TREE[ROOT].ob_head;
+        poutwds[2] = w_above(w_handle);
+        poutwds[3] = w_below(w_handle);
+        break;
+    case WF_BOTTOM:
+        /* The bottom window, the desk NOT counted (p.456) -- so the one
+         * directly above the desk, which is the donor's own reading of
+         * it, and DESKWH when there is no window at all. */
+        poutwds[0] = (W_TREE[ROOT].ob_head != NIL) ? W_TREE[ROOT].ob_head
+                                                   : DESKWH;
         break;
     default:
         return FALSE;

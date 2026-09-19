@@ -508,7 +508,21 @@ typedef struct userblk {
 #define WF_NEWDESK  14
 #define WF_HSLSIZ   15
 #define WF_VSLSIZ   16
-#define WF_BOTTOM   25  /* AES 4's: wind_set(WF_BOTTOM) is not served here */
+/* WF_SCREEN answers the AES's menu/alert save buffer and its length.
+ * gem4xe's is in VRAM (vdi_save_form), which is not in the address
+ * space, so there is nothing to lend and all four words are 0 -- the
+ * Compendium warns an application off borrowing it in any case, and
+ * TOS 1.02 returns 0 for the length by mistake. */
+#define WF_SCREEN   17
+/* WF_OWNER and WF_BOTTOM are AES 4's and gated there on appl_getinfo,
+ * which gem4xe does not serve; wind_get answers them anyway, because a
+ * port that asks unguarded is better served with the truth than with a
+ * refusal.  WF_OWNER: the owner's ap_id, the open status, and the
+ * handles directly above and below it -- 0 (the desk) for neither.
+ * WF_BOTTOM is wind_GET only; wind_set(WF_BOTTOM), which would send a
+ * window to the bottom, is not served. */
+#define WF_OWNER    20
+#define WF_BOTTOM   25
 /* WM_ARROWED's word 4 */
 #define WA_UPPAGE   0
 #define WA_DNPAGE   1

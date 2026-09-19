@@ -185,6 +185,7 @@ typedef struct {
 #define WF_COLOR    18
 #define WF_DCOLOR   19
 #define WF_OWNER    20
+#define WF_BOTTOM   25      /* wind_get only: wind_set(WF_BOTTOM) is not served */
 
 /* wind_calc */
 #define WC_BORDER   0
@@ -399,8 +400,7 @@ typedef struct orect {
     GRECT               o_gr;
 } ORECT;
 
-/* One window (gemlib.h's WINDOW), less the multitasking owner and the
- * per-window colours.  w_pname/w_pinfo are the application's strings, by
+/* One window (gemlib.h's WINDOW), less the per-window colours.  w_pname/w_pinfo are the application's strings, by
  * address, exactly as wind_set(WF_NAME) received them -- ALL 24 BITS of
  * it, which is why they are uint32_t and not pointers.  The ST's AES
  * keeps a pointer and re-reads the string at every redraw, so the shim
@@ -413,6 +413,12 @@ typedef struct orect {
 typedef struct {
     UWORD       w_flags;    /* VF_* */
     UWORD       w_kind;     /* the gadgets */
+    /* Who created it: what wind_get(WF_OWNER) answers.  An accessory can
+     * own a window here -- it has a process of its own (src/aes/proc.h)
+     * -- so this is the process that called wind_create and not a
+     * constant, even though the application is usually the only one
+     * asking. */
+    WORD        w_owner;
     uint32_t    w_pname;
     uint32_t    w_pinfo;
     GRECT       w_full;
