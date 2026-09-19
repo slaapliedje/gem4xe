@@ -448,8 +448,8 @@ build/scrap.o: src/aes/scrap.c src/aes/aes.h src/sys/farmem.h
 # GPLv2 tree (docs/licence.md).  It is part of the LIBRARY and not of a
 # program, so the kit ships it and anybody's application gets it.
 G4A_LIB = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o \
-          build/app/gemstat.o build/app/gemtime.o build/app/gemstub.o \
-          build/app/clib.o
+          build/app/gemstat.o build/app/gemtime.o build/app/gemcompat.o \
+          build/app/gemstub.o build/app/clib.o
 
 # ...and the same three for an application compiled --data-model=large.
 # The linker refuses to mix runtime models, so a large-data program needs
@@ -457,8 +457,8 @@ G4A_LIB = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o \
 # than clib-lc-sd.a.  The SOURCES are the same files: only the model
 # differs (docs/gacs.md).
 G4A_LIB_LD = build/appld/crt_gemapp.o build/appld/gemabi.o build/appld/gemlib.o \
-             build/appld/gemstat.o build/appld/gemtime.o build/appld/gemstub.o \
-             build/appld/clib.o
+             build/appld/gemstat.o build/appld/gemtime.o \
+             build/appld/gemcompat.o build/appld/gemstub.o build/appld/clib.o
 LIB_LD     = clib-lc-ld.a
 
 build/app/clib.o: src/sys/clib.c

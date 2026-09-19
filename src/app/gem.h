@@ -878,6 +878,12 @@ WORD objc_draw_grect(OBJECT *tree, WORD start, WORD depth, const GRECT *r);
 #define FA_CHANGED 0x20         /* the same bit, spelled as Pure C and
                                  * gemlib spell it */
 
+/* The longest path GEMDOS composes, NUL included (src/sys/gemdos.c,
+ * GD_PATHMAX).  A buffer an application hands to Dgetpath, or builds a
+ * search spec in, wants to be this big; <macros.h> spells it PATH_MAX,
+ * which is the name mintlib uses and Calypsi's <limits.h> does not have. */
+#define GEM_PATH_MAX 128
+
 typedef struct {                /* the ST's, 44 bytes */
     char  d_reserved[21];
     char  d_attrib;

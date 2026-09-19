@@ -34,10 +34,23 @@ MANIFEST = [
     ("include/portab.h",    "src/portab.h"),
     ("include/sys/stat.h",  "src/app/sys/stat.h"),      # no <sys/> in Calypsi's libc
     ("include/time.h",      "src/app/time.h"),          # a 32-bit time_t: ccbug B20
+    # The names an Atari ST source includes by reflex.  Most are one door
+    # pointing at gem.h; <support.h> and <dirent.h> carry real code in
+    # lib/gemcompat.c.  qed wrote every one of these in its own shim
+    # before they were here, which is why they are here.
+    ("include/osbind.h",    "src/app/osbind.h"),
+    ("include/tos.h",       "src/app/tos.h"),
+    ("include/mintbind.h",  "src/app/mintbind.h"),
+    ("include/gemx.h",      "src/app/gemx.h"),
+    ("include/macros.h",    "src/app/macros.h"),
+    ("include/strings.h",   "src/app/strings.h"),
+    ("include/support.h",   "src/app/support.h"),
+    ("include/dirent.h",    "src/app/dirent.h"),
     ("include/mint/cookie.h", "src/app/mint/cookie.h"),  # a jar that answers "none"
     ("lib/gemlib.c",        "src/app/gemlib.c"),
     ("lib/gemstat.c",       "src/app/gemstat.c"),       # stat() over Fsfirst
     ("lib/gemtime.c",       "src/app/gemtime.c"),       # the clock, 32-bit throughout
+    ("lib/gemcompat.c",     "src/app/gemcompat.c"),     # stricmp, opendir and the rest
     ("lib/gemstub.c",       "src/app/gemstub.c"),       # the C library's board stubs
     ("lib/clib.c",          "src/sys/clib.c"),
     ("lib/gemabi.s",        "src/app/gemabi.s"),
