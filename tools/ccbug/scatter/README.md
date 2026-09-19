@@ -6,6 +6,10 @@ what its documentation says.  It is the evidence behind the answer, kept
 because the 6502 build is a decision this tree has not taken yet
 (docs, "bank the applications") and this is what it would rest on.
 
+    python3 validate.py                # re-derives every claim below
+
+or by hand:
+
     as6502 -o bank_a.o bank_a.s        # one bankedcode section each,
     as6502 -o bank_b.o bank_b.s        # each too big to share an instance
     as6502 -o bank_c.o bank_c.s
@@ -33,19 +37,32 @@ of the linked image:
 All three run at the window base; the storage address names the bank.
 That is everything a PORTB trampoline needs.
 
-**What will not parse.**  Only `.long .scatterTo28 sym` is accepted.  The
-byte and word operators work on an ordinary symbol and are refused over a
-`.scatterTo28` — in data, in parentheses, and in an instruction operand:
+**Taking a byte of it.**  Two different answers, and the difference
+matters — the first version of this file got it wrong and said everything
+was a parse error, because the harness that produced it had lost its
+INDENTATION, so the assembler was reading `.byte` as a label and
+answering "illegal symbol syntax" to every line.
 
-    OK      .byte .byte2 far_a
-    OK      lda #.byte2 far_a
-    reject  .byte .byte2 .scatterTo28 far_a
+In a DATA DIRECTIVE, only `.long` is accepted:
+
+    OK      .byte .byte2 far_a            (an ordinary symbol: fine)
+    OK      .long .scatterTo28 far_a
+    reject  .byte .byte2  .scatterTo28 far_a
     reject  .byte .byte2 (.scatterTo28 far_a)
-    reject  .word .word2 .scatterTo28 far_a
-    reject  lda #.byte2 .scatterTo28 far_a
+    reject  .word .word2  .scatterTo28 far_a
 
-So the bank must be reached through a four-byte table the trampoline
-indexes; `lda #<bank of foo>` at a call site does not assemble.
+In an INSTRUCTION OPERAND it assembles — and then the linker dies:
+
+    as6502  lda #.byte2 (.scatterTo28 far_a)    accepted
+    ln6502  internal error: relocation pattern size mismatch
+
+for `.byte0`, `.byte1`, `.byte2`, `.byte3` and for a bare
+`lda #.scatterTo28 far_a`.  `lda #.byte2 far_a` — the same shape without
+the operator — links cleanly against the same objects and the same map,
+which is the control.
+
+So the bank can only be reached through a four-byte table the trampoline
+indexes, and `lda #<bank of foo>` at a call site cannot be linked.
 
 **Not on the 65816.**  `as65816` rejects `.scatterTo28` and the 65816
 guide does not mention it.  gem4xe's own build needs none of this — it
