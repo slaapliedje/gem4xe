@@ -580,6 +580,93 @@ WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item)
     return item;
 }
 
+/* ---- menu_settings ----------------------------------------------------
+ *
+ * Five numbers the AES runs its sub-menus by.  ONE OF THEM IS LIVE here
+ * and four are kept and handed back, which is the whole of what this
+ * machine can honestly promise -- and the live one is why the call is
+ * served at all.  Before it, the submenu opened the moment the pointer
+ * reached its item, EmuTOS's behaviour, and the comment here said a
+ * delay nobody could change was only in the way.  menu_settings is the
+ * way to change it, so the ROM's delay is back and Display sets it.
+ *
+ * Drag is the diagonal grace period for a pointer heading towards an
+ * open submenu; there is no such tracking here.  Delay and Speed are
+ * the scroll arrows' repeat, and Height where a menu starts scrolling;
+ * nothing scrolls here and appl_getinfo(AES_MENU) answers 0 for it.
+ * They are still STORED and still clamped as the ROM clamps them, so
+ * that a program that sets one and reads it back is told the truth
+ * rather than the default.
+ *
+ * The ROM's numbers, from MN_TOOLS.H: 200 ms, 10000 ms, 250 ms, 0 ms,
+ * 16 items.  MultiTOS ships 999 for the height, meaning "never scroll",
+ * and clamps it down to the screen; the Falcon's 16 is the one taken
+ * here because the Falcon ROM is this project's authority. */
+#define MN_INIT_DISPLAY 200L
+#define MN_INIT_DRAG    10000L
+#define MN_INIT_DELAY   250L
+#define MN_INIT_SPEED   0L
+#define MN_INIT_HEIGHT  16
+#define MN_MIN_HEIGHT   5
+
+static uint32_t mn_display, mn_drag, mn_delay, mn_speed;
+static WORD     mn_height;
+
+/* SetMaxHeight (MN_MENU.C), order and all: a height at or below the
+ * minimum is raised to it, and one at or above what the screen holds is
+ * cut to that -- and the second test wins when both apply, which is the
+ * ROM's order and not an accident worth fixing. */
+static WORD mn_clampheight(WORD h)
+{
+    WORD max = (WORD)((gl_rfull.g_h - gl_hchar / 2 - 1) / gl_hchar);
+
+    if (h <= MN_MIN_HEIGHT)
+        h = MN_MIN_HEIGHT;
+    if (h >= max)
+        h = max;
+    return h;
+}
+
+void mn_defaults(void)
+{
+    mn_display = MN_INIT_DISPLAY;
+    mn_drag    = MN_INIT_DRAG;
+    mn_delay   = MN_INIT_DELAY;
+    mn_speed   = MN_INIT_SPEED;
+    mn_height  = MN_INIT_HEIGHT;
+}
+
+/* `set` is nine words: four LONGs low word first, then the height.  A
+ * SET applies a field only when it is not negative, which is the ROM's
+ * per-field "leave this one alone" and is why the block is signed. */
+void mn_settings(WORD flag, WORD *set)
+{
+    if (flag == MNS_GET) {
+        set[0] = (WORD)(UWORD)mn_display;
+        set[1] = (WORD)(UWORD)(mn_display >> 16);
+        set[2] = (WORD)(UWORD)mn_drag;
+        set[3] = (WORD)(UWORD)(mn_drag >> 16);
+        set[4] = (WORD)(UWORD)mn_delay;
+        set[5] = (WORD)(UWORD)(mn_delay >> 16);
+        set[6] = (WORD)(UWORD)mn_speed;
+        set[7] = (WORD)(UWORD)(mn_speed >> 16);
+        set[8] = mn_clampheight(mn_height);
+        return;
+    }
+    if (flag != MNS_SET)
+        return;
+    if (set[1] >= 0)
+        mn_display = ((uint32_t)(UWORD)set[1] << 16) | (UWORD)set[0];
+    if (set[3] >= 0)
+        mn_drag = ((uint32_t)(UWORD)set[3] << 16) | (UWORD)set[2];
+    if (set[5] >= 0)
+        mn_delay = ((uint32_t)(UWORD)set[5] << 16) | (UWORD)set[4];
+    if (set[7] >= 0)
+        mn_speed = ((uint32_t)(UWORD)set[7] << 16) | (UWORD)set[6];
+    if (set[8] >= 0)
+        mn_height = mn_clampheight(set[8]);
+}
+
 /* Open the submenu attached to `item`, beside it; its tree's address, or
  * 0 if there is nowhere to put it.  *psmroot gets its box.
  *
@@ -678,7 +765,8 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
     WORD    mnu_flags, done, main_rect;
     WORD    cur_menu, cur_item, last_item;
     WORD    cur_title, last_title;
-    WORD    cur_sub, last_sub, smparent, smroot;
+    WORD    cur_sub, last_sub, smparent, smroot, smnoroom;
+    uint32_t tmout;
     UWORD   ev_which;
     MOBLK   p1mor, p2mor;
     WORD    menu_state, leave_flag;
@@ -688,7 +776,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
     done = FALSE;
     buparm = 0x00010101UL;              /* a press */
     cur_title = cur_menu = cur_item = NIL;
-    cur_sub = smparent = NIL;
+    cur_sub = smparent = smnoroom = NIL;
     smroot = 0;
     tree = gl_mntree;
 
@@ -697,6 +785,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
     while (!done) {
         p1tree = tree;                  /* the submenu's state overrides it */
         mnu_flags = MU_BUTTON | MU_M1;
+        tmout = 0;
 
         switch (menu_state) {
         case START_STATE:
@@ -715,6 +804,15 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
             break;
         case INITEM_STATE:
             /* the pointer off the item; the button the other way */
+            /* AND THE DISPLAY DELAY, if this item has a menu of its own
+             * that is not up yet: the ROM waits SUBMENU_DELAY before
+             * opening one (MN_EVENT.C), so that running the pointer down
+             * a drop-down does not flash every submenu on the way past.
+             * menu_settings is what changes it. */
+            if (!smtree && cur_item != smnoroom && sm_opens(tree, cur_item)) {
+                mnu_flags |= MU_TIMER;
+                tmout = mn_display;
+            }
             main_rect = cur_item;
             buparm = (button & 0x0001) ? 0x00010100UL : 0x00010101UL;
             leave_flag = TRUE;
@@ -742,7 +840,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
          * MU_M1 already watches for.  A third was built, and taking it
          * out again changed nothing this gate can see, which is what
          * says it was not reached. */
-        ev_which = ev_multi(mnu_flags, &p1mor, &p2mor, 0UL, buparm, 0, rets);
+        ev_which = ev_multi(mnu_flags, &p1mor, &p2mor, tmout, buparm, 0, rets);
 
         /* A button: in the bar off the titles it is nothing.  On a title
          * it flips the state waited for and the menu goes on.  Anywhere
@@ -819,10 +917,17 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
          * opens it straight away and so does this, because nothing here
          * serves menu_settings and a delay nobody can change is a delay
          * that is only in the way. */
-        if (!smtree && sm_opens(tree, cur_item)) {
+        /* ...AND ONLY WHEN THE DELAY HAS RUN OUT.  MU_TIMER is armed in
+         * INITEM_STATE above and nowhere else, so this opens on the tick
+         * and not on the move that arrived first.  An item whose submenu
+         * has nowhere to go is remembered, or the timer would re-arm on
+         * it for as long as the pointer stayed there. */
+        if ((ev_which & MU_TIMER) && !smtree && sm_opens(tree, cur_item)) {
             smtree = sm_show(tree, cur_item, &smroot);
             if (smtree)
                 smparent = cur_item;
+            else
+                smnoroom = cur_item;
         }
         if (smtree)
             menu_select((OBJECT FAR *)smtree, cur_sub, last_sub, TRUE);
@@ -1006,6 +1111,7 @@ void mn_start(void)
     }
     gl_accreg = 0;
     gl_dafirst = 0;
+    mn_defaults();
 }
 
 /* No bar; the wake rectangle is the menu bar's row, after gsx_start has

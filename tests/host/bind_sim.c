@@ -98,6 +98,7 @@ static MFDB form;
 static DTA dta;
 static DISKINFO disk;
 static MENU popmenu;
+static MN_SET mnset;
 
 int main(void)
 {
@@ -221,6 +222,7 @@ int main(void)
     menu_popup(&popmenu, 10, 20, &popmenu);
     menu_attach(ME_ATTACH, tree, 1, &popmenu);
     menu_istart(MIS_SET, tree, 1, 2);
+    menu_settings(MNS_GET, &mnset);
     objc_add(tree, 0, 1);
     objc_delete(tree, 1);
     objc_draw(tree, 0, 8, 1, 2, 3, 4);

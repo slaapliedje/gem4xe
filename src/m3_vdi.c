@@ -708,6 +708,19 @@ static void run_script(void)
                                       intin[1], intin[2]);
                 c4 = 1;
                 break;
+            case 39: {          /* menu_settings: flag, then the block */
+                WORD set[MN_SETWORDS];
+                WORD q;
+
+                for (q = 0; q < MN_SETWORDS; q++)
+                    set[q] = intin[1 + q];
+                mn_settings(intin[0], set);
+                intout[0] = 1;
+                for (q = 0; q < MN_SETWORDS; q++)
+                    intout[1 + q] = set[q];
+                c4 = 1 + MN_SETWORDS;
+                break;
+            }
             case 40:                        /* objc_add: parent, child */
                 ob_add(tree, intin[0], intin[1]);
                 intout[0] = 1;

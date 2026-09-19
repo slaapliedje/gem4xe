@@ -101,6 +101,10 @@ SM_GAP = 2 * MENU_THICKNESS
 SUBMENU = 0x0800                # ob_flags: this item carries a menu
 ME_INQUIRE, ME_ATTACH, ME_REMOVE = 0, 1, 2
 MIS_INQUIRE, MIS_SET = 0, 1
+MNS_GET, MNS_SET, MN_SETWORDS = 0, 1, 9
+# the Falcon ROM's five (MN_TOOLS.H): ms, ms, ms, ms, items
+MN_INIT = (200, 10000, 250, 0, 16)
+MN_MIN_HEIGHT = 5
 START_STATE, INTITLE_STATE, INITEM_STATE, OUTSIDE_STATE = 1, 2, 3, 4
 SUBMENU_STATE = 5
 # WM_ARROWED's actions
@@ -3817,6 +3821,49 @@ class AES:
         finally:
             self.tree = saved
 
+    def mn_clampheight(self, h):
+        """SetMaxHeight, order and all: the minimum first, the screen's
+        maximum second, and the second wins when both apply."""
+        mx = (self.gl_rfull.h - self.gl_hchar // 2 - 1) // self.gl_hchar
+        if h <= MN_MIN_HEIGHT:
+            h = MN_MIN_HEIGHT
+        if h >= mx:
+            h = mx
+        return h
+
+    def mn_defaults(self):
+        (self.mn_display, self.mn_drag, self.mn_delay, self.mn_speed,
+         self.mn_height) = MN_INIT
+
+    def mn_settings(self, flag, set_):
+        """Nine words: four LONGs low word first, then the height.  A SET
+        applies a field only when it is not negative."""
+        def lo(v):
+            return v & 0xFFFF
+
+        def hi(v):
+            return (v >> 16) & 0xFFFF
+
+        def sw(v):
+            return v - 0x10000 if v >= 0x8000 else v
+        s = list(set_)
+        if flag == MNS_GET:
+            for i, v in enumerate((self.mn_display, self.mn_drag,
+                                   self.mn_delay, self.mn_speed)):
+                s[i * 2], s[i * 2 + 1] = sw(lo(v)), sw(hi(v))
+            s[8] = self.mn_clampheight(self.mn_height)
+            return s
+        if flag != MNS_SET:
+            return s
+        for i, name in enumerate(("mn_display", "mn_drag", "mn_delay",
+                                  "mn_speed")):
+            if s[i * 2 + 1] >= 0:
+                setattr(self, name,
+                        ((s[i * 2 + 1] & 0xFFFF) << 16) | (s[i * 2] & 0xFFFF))
+        if s[8] >= 0:
+            self.mn_height = self.mn_clampheight(s[8])
+        return s
+
     def mn_init(self):
         self.gl_mntree = None
         self.gl_ctwait.m_out = False
@@ -3824,6 +3871,7 @@ class AES:
         if not hasattr(self, "gl_smi"):
             self.gl_smi = [{"tree": 0, "menu": 0, "start": 0, "count": 0}
                            for _ in range(NUM_SMI)]
+            self.mn_defaults()          # mn_start's, once per AES start
 
     def menu_sub(self, ititle):
         tree = self.tree
@@ -4162,7 +4210,7 @@ class AES:
         done = False
         buparm = 0x00010101                     # a press
         cur_title = cur_menu = cur_item = NIL
-        cur_sub = smparent = NIL
+        cur_sub = smparent = smnoroom = NIL
         smtree, smroot = 0, 0
         p1mor, p2mor = MOBLK(False, 0, 0, 0, 0), MOBLK(False, 0, 0, 0, 0)
         rets = [0] * 6
@@ -4170,6 +4218,7 @@ class AES:
         while not done:
             p1tree = tree
             mnu_flags = MU_BUTTON | MU_M1
+            tmout = 0
             if menu_state == START_STATE:
                 # into the titles, or out of the bar
                 mnu_flags |= MU_M2
@@ -4182,7 +4231,12 @@ class AES:
                 self.rect_change(p2mor, cur_menu, False)
                 main_rect, leave_flag = THEACTIVE, False
             elif menu_state == INITEM_STATE:
-                # off the item; the button the other way
+                # off the item; the button the other way -- and the
+                # display delay if this item's submenu is not up yet
+                if (not smtree and cur_item != smnoroom
+                        and self.sm_opens(tree, cur_item)):
+                    mnu_flags |= MU_TIMER
+                    tmout = self.mn_display
                 main_rect = cur_item
                 buparm = 0x00010100 if (self.button & 1) else 0x00010101
                 leave_flag = True
@@ -4197,7 +4251,8 @@ class AES:
                 self.rect_change(p1mor, main_rect, leave_flag)
 
             # two rectangles and not three: src/aes/menu.c says why
-            ev_which = self.ev_multi(mnu_flags, p1mor, p2mor, 0, buparm, rets)
+            ev_which = self.ev_multi(mnu_flags, p1mor, p2mor, tmout, buparm,
+                                     rets)
 
             # A button in the bar off the titles is nothing; on a title it
             # flips the transition waited for; anywhere else it ends the menu.
@@ -4257,10 +4312,16 @@ class AES:
             if self.menu_select(cur_title, last_title, True):
                 cur_menu = self.menu_down(cur_title)
             self.menu_select(cur_item, last_item, True)
-            if not smtree and self.sm_opens(tree, cur_item):
+            # ...and only on the tick: MU_TIMER is armed in INITEM_STATE
+            # and nowhere else, so the submenu opens after the delay and
+            # not on the move that arrived first.
+            if ((ev_which & MU_TIMER) and not smtree
+                    and self.sm_opens(tree, cur_item)):
                 smtree, smroot = self.sm_show(tree, cur_item)
                 if smtree:
                     smparent = cur_item
+                else:
+                    smnoroom = cur_item
             if smtree:
                 with self.on_tree(self.trees[smtree]):
                     self.menu_select(cur_sub, last_sub, True)
@@ -4430,6 +4491,12 @@ class AES:
             io[0], md = self.mn_attach(ints[0], self.tree, ints[1], md)
             io[1:5] = md
             c4 = 5
+        elif n == 39:
+            # menu_settings: flag, then the nine words of the block
+            io[1:1 + MN_SETWORDS] = self.mn_settings(ints[0],
+                                                     ints[1:1 + MN_SETWORDS])
+            io[0] = 1                   # the ROM's mn_settings is VOID
+            c4 = 1 + MN_SETWORDS
         elif n == 38:
             # menu_istart: flag, imenu, item -- the tree by address
             io[0] = self.mn_istart(ints[0], self.tree_addr(self.tree),
@@ -4890,7 +4957,8 @@ APPL_READ = 1011
 GRAF_HANDLE = 1077
 FSEL_INPUT, FSEL_EXINPUT = 1090, 1091
 (MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL, MENU_TEXT,
- MENU_REGISTER, MENU_POPUP, MENU_ATTACH, MENU_ISTART) = range(1030, 1039)
+ MENU_REGISTER, MENU_POPUP, MENU_ATTACH, MENU_ISTART,
+ MENU_SETTINGS) = range(1030, 1040)
 (WIND_CREATE, WIND_OPEN, WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET,
  WIND_FIND, WIND_UPDATE, WIND_CALC) = range(1100, 1109)
 RSRC_LOAD, RSRC_FREE, RSRC_GADDR = 1110, 1111, 1112

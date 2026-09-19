@@ -492,6 +492,22 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         }
         break;
     }
+    case 39: {                      /* menu_settings: flag, set */
+        /* Nine words, read and written whole because the block may be
+         * far.  The ROM's mn_settings is VOID and GEMBIND.C falls
+         * through with crysbind's `ret = TRUE`, so opcode 39 always
+         * answers 1 -- even for a flag it does not know. */
+        WORD set[MN_SETWORDS];
+        uint32_t p = (uint32_t)addr_in[0];
+
+        if (!p)
+            return -1;
+        far_get((uint8_t *)set, p, MN_SETWORDS * 2);
+        mn_settings(int_in[0], set);
+        if (int_in[0] == MNS_GET)
+            far_put(p, (const uint8_t *)set, MN_SETWORDS * 2);
+        break;
+    }
     case 38:                        /* menu_istart: flag, tree, imenu, item */
         ret = mn_istart(int_in[0], (uint32_t)addr_in[0],
                         int_in[1], int_in[2]);

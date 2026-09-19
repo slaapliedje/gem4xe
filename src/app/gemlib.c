@@ -1260,6 +1260,13 @@ WORD menu_attach(WORD flag, OBJECT *tree, WORD item, MENU *mdata)
     return aes(37, 2, 1, 2, 0);
 }
 
+WORD menu_settings(WORD flag, MN_SET *set)
+{
+    int_in[0] = flag;
+    addr_in[0] = (LONG)(uint32_t)(MN_SET FAR *)set;
+    return aes(39, 1, 1, 1, 0);
+}
+
 WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item)
 {
     int_in[0] = flag;

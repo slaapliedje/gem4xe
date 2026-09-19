@@ -596,6 +596,17 @@ WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
 #define ME_REMOVE   2
 #define MIS_INQUIRE 0
 #define MIS_SET     1
+/* menu_settings' flag, and its block: nine words -- four LONGs, low word
+ * first, then the height.  A SET applies a field only when it is not
+ * negative, which is why the words are signed. */
+/* The ROM writes bare 0 and 1 (MN_SUBMN.C) and the Compendium does
+ * not document the call at all, so the names are this port's --
+ * MN_SET itself is taken, by the struct. */
+#define MNS_GET     0
+#define MNS_SET     1
+#define MN_SETWORDS 9
+void mn_defaults(void);         /* mn_start: the ROM's five numbers */
+void mn_settings(WORD flag, WORD *set);
 /* menu_attach.  The four words are OUT on an inquiry and IN on an
  * attach, where mn_item is clamped into the box and written back.  The
  * tree is an ADDRESS for the reason menu.c gives. */

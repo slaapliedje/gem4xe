@@ -880,6 +880,26 @@ WORD menu_popup(const MENU *me, WORD xpos, WORD ypos, MENU *mdata);
  *
  * menu_istart reads or sets which item of the submenu lines up with the
  * parent item; it answers the item, or 0 for an error. */
+/* The five numbers the AES runs sub-menus by, in MILLISECONDS except
+ * the height, which is in items.  ONE IS LIVE here: mn_display, how long
+ * the pointer must rest on an item before its submenu opens.  The other
+ * four are kept and handed back -- there is no drag tracking and nothing
+ * scrolls (appl_getinfo(AES_MENU) says so) -- and a SET applies a field
+ * only when it is not negative, so -1 means "leave this one". */
+typedef struct {
+    LONG mn_display;            /* before a submenu opens          (200) */
+    LONG mn_drag;               /* the diagonal grace period     (10000) */
+    LONG mn_delay;              /* before a scroll arrow repeats   (250) */
+    LONG mn_speed;              /* between its repeats               (0) */
+    WORD mn_height;             /* items before a menu scrolls      (16) */
+} MN_SET;
+WORD menu_settings(WORD flag, MN_SET *set);
+/* The ROM writes bare 0 and 1 (MN_SUBMN.C) and the Compendium does
+ * not document the call at all, so the names are this port's --
+ * MN_SET itself is taken, by the struct. */
+#define MNS_GET     0
+#define MNS_SET     1
+
 WORD menu_attach(WORD flag, OBJECT *tree, WORD item, MENU *mdata);
 WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item);
 #define ME_INQUIRE  0

@@ -34,7 +34,8 @@ from aesref import (Layout, Obj, NIL, G_IBOX, G_BOX, G_TITLE, G_STRING,  # noqa:
                     MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL,
                     MENU_TEXT, MENU_REGISTER, MENU_POPUP, MENU_ATTACH,
                     MENU_ISTART, ME_ATTACH, ME_INQUIRE, ME_REMOVE,
-                    MIS_INQUIRE, MIS_SET, MN_SELECTED, OBJC_DRAW, MAX_DEPTH)
+                    MIS_INQUIRE, MIS_SET, MENU_SETTINGS, MNS_GET, MNS_SET,
+                    MN_SETWORDS, MN_SELECTED, OBJC_DRAW, MAX_DEPTH)
 from m4_aes import mem_diff, PRELUDE                                # noqa: E402
 from m7_form import (desk, F, M, B, multi, poke16, drive, compare,  # noqa: E402
                      NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS, SHOTDIR)
@@ -132,6 +133,18 @@ def popup(box, start, x, y, scroll=0):
 def attach(flag, item, box=0, start=0, scroll=0, tree=0):
     """menu_attach, the MENU block spelled out as menu_popup's is."""
     return (MENU_ATTACH, (), (flag, item, tree, box, start, scroll))
+
+
+def settings(flag, display=-1, drag=-1, delay=-1, speed=-1, height=-1):
+    """menu_settings: the nine words of MN_SET.  A LONG is two words,
+    low first, and a negative high word means "leave this field"."""
+    def two(v):
+        return (v & 0xFFFF, (v >> 16) & 0xFFFF) if v >= 0 else (0, -1)
+    w = []
+    for v in (display, drag, delay, speed):
+        w.extend(two(v))
+    w.append(height)
+    return (MENU_SETTINGS, (), (flag,) + tuple(w))
 
 
 def istart(flag, imenu, item=0):
@@ -316,9 +329,57 @@ def case_submenu(L, L2, s):
               attach(ME_ATTACH, FILEBOX, VIEWBOX, ICONS, tree=L.base)])
     b.op(wait(2000),
          F(3), M(*s.centre(b, T_FILE)), F(3), SHOT(),
-         M(*s.item(b, T_FILE, INFO)), F(3), SHOT(),
+         # FIFTEEN frames, not three: the submenu waits out the display
+         # delay now (200 ms, menu_settings), so the shot after this one
+         # is the first that can show it open.
+         M(*s.item(b, T_FILE, INFO)), F(15), SHOT(),
          M(270, 23), F(3), SHOT(),
          M(270, 31), F(3), SHOT(), B(1))
+    b.append(tnormal(T_FILE, 1))
+    b.op(multi(MU_BUTTON, 1, 1, 0), *RELEASE)
+    b.op(wait(200), F(3), M(400, 150), F(12))
+    b.op(bar(0))
+    return b
+
+
+def case_settings(L, L2, s):
+    """menu_settings, and the one of its five numbers that does anything.
+
+    A GET first, which must be the Falcon ROM's defaults -- 200, 10000,
+    250, 0 and 16.  Then a SET of one field with the other four left as
+    -1, and a GET to show that only that one moved: the ROM applies a
+    field per field and does not take the block whole.  The height is
+    CLAMPED on the way in, low and high both, so a GET after a silly SET
+    tells the truth rather than what was asked for.
+
+    Then the field that is live.  The display delay is set to 2000 ms
+    and the pointer rests on File -> Info for the same fifteen frames
+    that opened the submenu in the case before this one: it must NOT be
+    open at the end of them, which is the whole of what makes this call
+    worth serving rather than storing.
+
+    That last part fails as an UNFINISHED PLAN rather than a wrong
+    picture, and the difference is worth knowing: a submenu that opens
+    when it should not takes a turn of the menu loop the plan did not
+    budget for, so the run stops before any screen is compared.  Both
+    ways of getting it wrong were tried -- no delay at all, and a fixed
+    200 ms that ignores the setting -- and both stop here.
+    """
+    b = Script()
+    b.extend([backdrop(L2), bar(1),
+              attach(ME_ATTACH, INFO, VIEWBOX, ICONS, tree=L.base),
+              settings(MNS_GET),                    # the ROM's five
+              settings(MNS_SET, delay=500),         # one field
+              settings(MNS_GET),                    # ...and only it moved
+              settings(MNS_SET, height=1),          # under the minimum
+              settings(MNS_GET),
+              settings(MNS_SET, height=999),        # over the screen
+              settings(MNS_GET),
+              settings(MNS_SET, display=2000)])
+    b.op(wait(2000),
+         F(3), M(*s.centre(b, T_FILE)), F(3),
+         M(*s.item(b, T_FILE, INFO)), F(15), SHOT(),
+         B(1))
     b.append(tnormal(T_FILE, 1))
     b.op(multi(MU_BUTTON, 1, 1, 0), *RELEASE)
     b.op(wait(200), F(3), M(400, 150), F(12))
@@ -333,6 +394,7 @@ CASES = [
     ("disabled: a separator pressed, a title that will not drop", case_disabled),
     ("menu_popup: chosen, nothing chosen, and clamped to the edge", case_popup),
     ("menu_attach: the arrow, the walk into it, MN_SELECTED's tree", case_submenu),
+    ("menu_settings: the five numbers, and the delay that is live", case_settings),
 ]
 
 
