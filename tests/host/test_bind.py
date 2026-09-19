@@ -130,6 +130,8 @@ EXPECT = [
     ("appl_init",        AES, 10, 0, 1, 0, 0),
     ("appl_write",       AES, 12, 2, 1, 1, 0),
     ("appl_find",        AES, 13, 0, 1, 1, 0),
+    ("appl_getinfo",     AES, 130, 1, 5, 0, 0),
+    ("appl_xgetinfo",    AES, 130, 1, 5, 0, 0),   # the kit's forward: same call
     ("appl_exit",        AES, 19, 0, 1, 0, 0),
     ("evnt_keybd",       AES, 20, 0, 1, 0, 0),
     ("evnt_button",      AES, 21, 3, 5, 0, 0),
@@ -285,6 +287,8 @@ ANSWERS = [
     ("vqt_name",       100, 101, 102, 0, 0),    # the id, then the name
     ("evnt_button",    301, 302, 303, 304, 0),  # the AES answers from
     ("evnt_mouse",     301, 302, 303, 304, 0),  # int_out[1] on
+    ("appl_getinfo",   301, 302, 303, 304, 0),
+    ("appl_xgetinfo",  301, 302, 303, 304, 0),
     ("objc_offset",    301, 302, 0, 0, 0),
     ("form_center",    301, 302, 303, 304, 0),
     ("graf_handle",    301, 302, 303, 304, 0),

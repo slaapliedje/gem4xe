@@ -196,6 +196,8 @@ int main(void)
     appl_init();
     appl_write(0, 16, w8);
     appl_find("SCRENSAV");              /* eight, as the contract says */
+    appl_getinfo(AES_LARGEFONT, &a, &b, &c, &d);
+    appl_xgetinfo(AES_LARGEFONT, &a, &b, &c, &d);
     appl_exit();
     evnt_keybd();
     evnt_button(1, 1, 1, &a, &b, &c, &d);
@@ -379,6 +381,10 @@ int main(void)
     evnt_button(1, 1, 1, &a, &b, &c, &d);
     put(3, a, b, c, d, 0);
     evnt_mouse(0, 1, 2, 3, 4, &a, &b, &c, &d);
+    put(3, a, b, c, d, 0);
+    appl_getinfo(AES_LARGEFONT, &a, &b, &c, &d);
+    put(3, a, b, c, d, 0);
+    appl_xgetinfo(AES_LARGEFONT, &a, &b, &c, &d);
     put(3, a, b, c, d, 0);
     objc_offset(tree, 1, &a, &b);
     put(3, a, b, 0, 0, 0);

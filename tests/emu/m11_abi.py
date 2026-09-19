@@ -64,13 +64,13 @@ APP_OK = 0
 REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
 # AES calls src/m11_app.c makes WITHOUT a record_aes(): five objc_sysvar
-# probes and three appl_find ones.  They are deliberately outside
+# probes, three appl_find ones and five appl_getinfo ones.  They are deliberately outside
 # results[], because every entry there is compared against
 # tools/aesref.py and these calls' answers are constants a specification
 # fixes rather than behaviour a model computes.  They still cost a COP
 # each, so the reconciliation below has to know how many -- naming them
 # keeps it able to catch a call nobody meant to make.
-UNRECORDED_AES = 5 + 3
+UNRECORDED_AES = 5 + 3 + 5
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 
@@ -329,6 +329,47 @@ def main(argv):
               f"unpadded name must find nothing, as it does on an ST")
         check(af["af_none"] == -1,
               f"appl_find(\"NOSUCHPR\") answered {af['af_none']}, not -1")
+
+        # appl_getinfo (AES 130), the same way.  These numbers are the
+        # ones src/aes/appl.c commits to, each with the code that keeps
+        # the promise named beside it there; what is checked here is that
+        # the promise survives the shim's five-word copy-out, which is
+        # wider than any other AES call gem4xe serves.
+        def words(name):
+            raw = b.memdump(app[name] + base, 10)
+            return list(struct.unpack("<5h", bytes(raw)))
+        font, shell, obj = words("ag_font"), words("ag_shell"), words("ag_obj")
+        lang = struct.unpack("<h", b.memdump(app["ag_lang"] + base, 2))[0]
+        junk = struct.unpack("<h", b.memdump(app["ag_junk"] + base, 2))[0]
+        print(f"  appl_getinfo: font {font}, shell {shell}, object {obj}, "
+              f"language {lang}, unknown {junk}")
+        # The font cell, which is what a ported dialog lays itself out
+        # with: the CELL HEIGHT in pixels, the system font's id, and
+        # SYSTEM_FONT because it is a bitmap strip.  8 is this device's.
+        check(font == [1, 8, 1, 0, 0],
+              f"appl_getinfo(AES_LARGEFONT) answered {font}, not [1, 8, 1, 0, 0] "
+              f"-- the cell height, the system font id, and a bitmap face")
+        # shel_write's highest mode is 5; mode 0 cancels; mode 1 takes
+        # effect when the running program exits; no ARGV.
+        check(shell == [1, 5, 1, 1, 0],
+              f"appl_getinfo(AES_SHELL) answered {shell}, not [1, 5, 1, 1, 0]")
+        # No 3D objects, objc_sysvar present (this is the subject cflib's
+        # obgframe.c branches on), no GDOS face in a TEDINFO.
+        check(obj == [1, 0, 1, 0, 0],
+              f"appl_getinfo(AES_OBJECT) answered {obj}, not [1, 0, 1, 0, 0]")
+        # The language: this disk carries no LANG.RSC, so the built-in
+        # strings are in use and the AES KNOWS it is English.  With a
+        # file loaded it would refuse, because a LANG.RSC carries strings
+        # and no identity -- so a 0 here means the gate's disk changed,
+        # not that the answer is wrong.
+        check(lang == 1,
+              f"appl_getinfo(AES_LANGUAGE) answered {lang}, not 1 -- with no "
+              f"LANG.RSC on the disk the AES knows the strings are English")
+        # ...and the half of the contract that a call answering TRUE for
+        # everything would pass anyway.
+        check(junk == 0,
+              f"appl_getinfo(99) answered {junk}, not 0: a subject this AES "
+              f"does not know must be refused")
         passed = b.peek(syms["gem_cop_pass"])
         want_foreign, want_bad, extra = ((FOREIGN_OS, 0, 0) if os_rom
                                          else (FOREIGN_REFUSED, 1, 0))

@@ -52,6 +52,12 @@ WORD sv_junk;                       /* a `which` that is not one of the six */
 WORD af_self;                       /* its own name, padded: its pid */
 WORD af_short;                      /* ...the same name UNpadded: -1 */
 WORD af_none;                       /* a name nothing carries: -1 */
+/* appl_getinfo's, five words each: the return and the four answers. */
+WORD ag_font[5];                    /* AES_LARGEFONT */
+WORD ag_shell[5];                   /* AES_SHELL */
+WORD ag_obj[5];                     /* AES_OBJECT */
+WORD ag_lang;                       /* AES_LANGUAGE: the return alone */
+WORD ag_junk;                       /* a subject this AES does not know */
 static DTA dta;
 
 extern WORD m11_cop01(void);
@@ -184,6 +190,22 @@ int main(void)
     af_self  = appl_find("M11     ");
     af_short = appl_find("M11");
     af_none  = appl_find("NOSUCHPR");
+
+    /* appl_getinfo (opcode 130): what this AES has, one subject at a
+     * time.  Four of the fifteen are asked -- the font metric every
+     * ported dialog is laid out with, the shell's three non-zero words,
+     * the one cflib actually branches on, and the language -- plus a
+     * subject that does not exist, because the return value is a truth
+     * value and a call that answered TRUE for everything would look
+     * exactly like a call that worked. */
+    ag_font[0]  = appl_getinfo(AES_LARGEFONT, &ag_font[1], &ag_font[2],
+                               &ag_font[3], &ag_font[4]);
+    ag_shell[0] = appl_getinfo(AES_SHELL, &ag_shell[1], &ag_shell[2],
+                               &ag_shell[3], &ag_shell[4]);
+    ag_obj[0]   = appl_getinfo(AES_OBJECT, &ag_obj[1], &ag_obj[2],
+                               &ag_obj[3], &ag_obj[4]);
+    ag_lang     = appl_getinfo(AES_LANGUAGE, &k, &k, &k, &k);
+    ag_junk     = appl_getinfo(99, &k, &k, &k, &k);
 
     foreign = m11_cop01();
     return ncalls;

@@ -692,6 +692,14 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         break;
     }
 
+    /* Application manager, the second half: an inquiry rather than a
+     * message, so it is a library call (src/aes/appl.c) and not fifteen
+     * cases here. */
+    case 130:                       /* appl_getinfo: which -> four words */
+        ret = ap_getinfo(int_in[0], &int_out[1], &int_out[2],
+                         &int_out[3], &int_out[4]);
+        break;
+
     default:
         gem_bad++;
         ret = -1;

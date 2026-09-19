@@ -364,7 +364,14 @@ typedef struct {
     WORD  rsh_nstring, rsh_nimages;
     UWORD rsh_rssize;
 } RSHDR;
-#define NEW_FORMAT_RSC 0x0004       /* colour icons: not carried */
+/* rsh_vrsn's bit for the colour-icon extension.  It IS carried: rs_load
+ * parses the extension array, the colour-icon table and every CICONBLK
+ * (rsrc.c).  What is not done with it is DRAWING -- a G_CICON draws its
+ * mono form (objc.c) -- and a resource that has to load FAR is refused
+ * if it is new-format.  appl_getinfo says exactly that: AES_SYSTEM's
+ * fourth word is 1 for the format and its third is 0 for the icons.
+ * (This comment used to read "not carried", from before rs_cicons.) */
+#define NEW_FORMAT_RSC 0x0004
 
 /* rsrc_gaddr / rsrc_saddr types */
 #define R_TREE      0
@@ -691,6 +698,17 @@ void lang_init(void);                   /* the strings: needs far memory only */
 void lang_font(void);                   /* SYSTEM.FNT: needs the VDI device  */
 WORD lang_loaded(void);                 /* 1 when LANG.RSC is what is in use */
 const char *lang_str(WORD n);                    /* LS_*, build/lang_rsc.h */
+
+/* ---- appl.c: what this AES has, asked one subject at a time ----------- */
+/* appl_getinfo (130).  TRUE for a subject it knows, FALSE for one it does
+ * not -- the donor's convention, which the Compendium states backwards
+ * (appl.c has the four readings).  The four words are always written,
+ * zeroed first, so a caller reading them after a FALSE gets zeros rather
+ * than whatever was on the stack. */
+#define SYSTEM_FONT     0       /* ...and its ap_gout3 for the two fonts */
+#define OUTLINE_FONT    1
+#define AESLANG_ENGLISH 0       /* ...and its ap_gout1 for the language */
+WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4);
 
 /* fsel.c -- the file selector (docs/phase11.md) */
 extern WORD gl_drvbits;             /* which drive buttons are live, A = bit 0 */

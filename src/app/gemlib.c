@@ -1237,6 +1237,32 @@ WORD appl_find(const char *fname)
     return aes(13, 0, 1, 1, 0);
 }
 
+/* FIVE out words, not one: int_out[0] is the answer and 1..4 the four
+ * values -- the widest copy-out of any AES call gem4xe serves.  The
+ * count in the control block is what makes the shim copy them, and this
+ * reads all four unconditionally, as the ST's binding does; a count that
+ * said 3 would hand the caller the last call's words 3 and 4 rather than
+ * zeros, which is what test-m11 shows when it is made to.  A caller may
+ * pass a null pointer for any of them (gemlib allows it). */
+WORD appl_getinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
+                  WORD *ap_gout3, WORD *ap_gout4)
+{
+    WORD r;
+    int_in[0] = ap_gtype;
+    r = aes(130, 1, 5, 0, 0);
+    if (ap_gout1) *ap_gout1 = int_out[1];
+    if (ap_gout2) *ap_gout2 = int_out[2];
+    if (ap_gout3) *ap_gout3 = int_out[3];
+    if (ap_gout4) *ap_gout4 = int_out[4];
+    return r;
+}
+
+WORD appl_xgetinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
+                   WORD *ap_gout3, WORD *ap_gout4)
+{
+    return appl_getinfo(ap_gtype, ap_gout1, ap_gout2, ap_gout3, ap_gout4);
+}
+
 /* objc_edit: `idx` is both the cursor position going in and the one
  * that comes back (the ST passes it by address; here it is a word in
  * and a word out, which is what the shim does with it). */

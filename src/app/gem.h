@@ -824,6 +824,60 @@ WORD evnt_dclick(WORD rate, WORD setit);
 WORD menu_text(OBJECT *tree, WORD item, const char *text);
 WORD menu_register(WORD pid, const char *str);
 WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
+
+/* appl_getinfo (AES 130) -- what this AES has, asked one subject at a
+ * time.  The modes are the Compendium's and gemlib's; the higher ones
+ * gemlib carries (64, 65, 96-99, and WINX's 22360) belong to MagiC and
+ * N.AES and are refused here, as any mode this AES does not know is.
+ *
+ * IT ANSWERS NON-ZERO FOR A MODE IT KNOWS and zero for one it does not.
+ * The Compendium says the opposite in prose -- "returns 1 if an error
+ * occurred or 0 otherwise", p.368 -- and it is wrong: the ROM sets
+ * ret = TRUE and only the default case clears it (MULTITOS GEMAPLIB.C),
+ * gemlib documents "0 if an error occurred or non-zero otherwise", and
+ * every caller in cflib tests it as a truth value.
+ *
+ * VERSION.  The Compendium makes this AES 4.00 and gem4xe reports 1.40,
+ * so a program that checks the version first will never call it -- which
+ * is correct, because gem4xe is not an AES 4.  It is served for the
+ * programs that ask anyway, and because answering "no" one subject at a
+ * time is better than an unknown opcode's -1.  (The third-party way to
+ * advertise it below 4.00 is a process named "?AGI" for appl_find, which
+ * cflib's own xgetinfo.c tests for; gem4xe registers no such process,
+ * and nothing local documents what it should answer.) */
+#define AES_LARGEFONT   0
+#define AES_SMALLFONT   1
+#define AES_SYSTEM      2
+#define AES_LANGUAGE    3
+#define AES_PROCESS     4
+#define AES_PCGEM       5
+#define AES_INQUIRE     6
+#define AES_WDIALOG     7       /* "reserved" in the Compendium; Mag!X's */
+#define AES_MOUSE       8
+#define AES_MENU        9
+#define AES_SHELL       10
+#define AES_WINDOW      11
+#define AES_MESSAGE     12
+#define AES_OBJECT      13
+#define AES_FORM        14
+/* AES_LARGEFONT / AES_SMALLFONT's ap_gout3 */
+#define SYSTEM_FONT     0
+#define OUTLINE_FONT    1
+/* AES_LANGUAGE's ap_gout1 */
+#define AESLANG_ENGLISH 0
+#define AESLANG_GERMAN  1
+#define AESLANG_FRENCH  2
+#define AESLANG_SPANISH 4
+#define AESLANG_ITALIAN 5
+#define AESLANG_SWEDISH 6
+WORD appl_getinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
+                  WORD *ap_gout3, WORD *ap_gout4);
+/* gemlib's convenience, which cflib expects to exist: feature-test, then
+ * ask.  On gem4xe the test is settled at compile time -- the AES either
+ * serves appl_getinfo or it does not, and this kit is the one that does
+ * -- so it forwards, and a port needs no shim of its own. */
+WORD appl_xgetinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
+                   WORD *ap_gout3, WORD *ap_gout4);
 WORD objc_edit(OBJECT *tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
 WORD form_keybd(OBJECT *tree, WORD obj, WORD nxt_obj, WORD thechar,
                 WORD *pnxt_obj, WORD *pchar);

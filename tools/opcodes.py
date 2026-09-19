@@ -123,6 +123,16 @@ def report(kind, served, names, show_all):
     for n, nm in sorted(rows):
         mark = "ok  " if n in served else "MISS"
         print(f"    {mark} {n:4d}  {nm}")
+    # SERVED AND UNNAMED.  The AES names come from EmuTOS, whose AES is
+    # 1.40's, so an opcode gem4xe serves from a LATER AES has no row
+    # above and would otherwise be counted by neither side -- appl_getinfo
+    # (130) was served for a whole commit while this said "65 of 79"
+    # before and after.  An audit that exists to stop a silent gap must
+    # not have one of its own.
+    extra = sorted(n for n in served if n not in names)
+    if extra:
+        print(f"    -- and {len(extra)} served that {kind}'s name table does "
+              f"not carry: {', '.join(str(n) for n in extra)}")
     return miss
 
 
