@@ -56,6 +56,7 @@ WORD af_none;                       /* a name nothing carries: -1 */
 WORD ag_font[5];                    /* AES_LARGEFONT */
 WORD ag_shell[5];                   /* AES_SHELL */
 WORD ag_obj[5];                     /* AES_OBJECT */
+WORD ag_sys[5];                     /* AES_SYSTEM */
 WORD ag_lang;                       /* AES_LANGUAGE: the return alone */
 WORD ag_junk;                       /* a subject this AES does not know */
 static DTA dta;
@@ -204,6 +205,8 @@ int main(void)
                                &ag_shell[3], &ag_shell[4]);
     ag_obj[0]   = appl_getinfo(AES_OBJECT, &ag_obj[1], &ag_obj[2],
                                &ag_obj[3], &ag_obj[4]);
+    ag_sys[0]   = appl_getinfo(AES_SYSTEM, &ag_sys[1], &ag_sys[2],
+                               &ag_sys[3], &ag_sys[4]);
     ag_lang     = appl_getinfo(AES_LANGUAGE, &k, &k, &k, &k);
     ag_junk     = appl_getinfo(99, &k, &k, &k, &k);
 

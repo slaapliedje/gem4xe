@@ -37,22 +37,28 @@
 #define AI_OBJECT       13
 #define AI_FORM         14
 
-/* THE RESOLUTION NUMBER IS THE ONE ANSWER HERE THAT IS A CHOICE.
- * AI_SYSTEM's first word is "the resolution number, as would be returned
- * by Getrez()", and gem4xe is none of the three ST screens: the VBXE
- * surface is 640x240 in sixteen colours (ST Low's colours at ST Medium's
- * width) and the ANTIC one is 320x240 in two.  gem4xe serves no Getrez
- * and holds no such number anywhere, so there is nothing to report and
- * something has to be said.
+/* THE RESOLUTION NUMBER: gem4xe has none, and says so.
  *
- * ST Low, and the reason is which way the mistake falls.  A program that
- * lays itself out from this number takes 320x200 and fits on both
- * screens with room over; ST High's 640x400 would have it draw off the
- * bottom of either.  The truth a caller actually needs is in the NEXT
- * word, which is the real number of colours, and in graf_handle, which
- * is the real cell -- and both of those are facts rather than a choice.
- */
-#define AI_REZ_STLOW    0
+ * AI_SYSTEM's first word is "the resolution number, as would be returned
+ * by Getrez()".  Every value that call can answer names an Atari screen
+ * -- 0, 1, 2 are the ST's, 4, 6, 7 the TT's -- and gem4xe is not any of
+ * them.  Its VBXE surface is 512, 640 or 672 pixels across in sixteen
+ * colours, whichever GEM4XE.CFG's SCREENW asked for, and its fallback is
+ * 320x168 in two.  Those are the VBXE's own resolutions and the point of
+ * offering them is not to pretend they are somebody else's.
+ *
+ * So -1, which is not a screen.  It was ST Low for one commit, chosen
+ * because a program laying itself out for 320x200 fits on anything gem4xe
+ * shows -- but that is a plausible wrong answer rather than a true one,
+ * and a plausible wrong answer is what turns a missing feature into a
+ * bug that looks like something else.  -1 is also the AES's own word for
+ * "no such thing": it is what appl_find, wind_create and menu_register
+ * answer when there is nothing to give back.
+ *
+ * What a caller actually needs is next door and is a fact: out2 is the
+ * real number of colours.  The size is v_opnwk's work_out and the cell is
+ * graf_handle, which is where a program that means it will look. */
+#define AI_REZ_NONE     (-1)
 
 WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
 {
@@ -84,7 +90,7 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_SYSTEM:
-        *out1 = AI_REZ_STLOW;           /* a choice: see above */
+        *out1 = AI_REZ_NONE;            /* not an Atari screen: see above */
         *out2 = (WORD)(1 << gl_nplanes);  /* 16 on VBXE, 2 on ANTIC */
         *out3 = 0;                      /* colour icons: G_CICON draws its
                                          * MONO form (objc.c) */

@@ -64,13 +64,13 @@ APP_OK = 0
 REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
 # AES calls src/m11_app.c makes WITHOUT a record_aes(): five objc_sysvar
-# probes, three appl_find ones and five appl_getinfo ones.  They are deliberately outside
+# probes, three appl_find ones and six appl_getinfo ones.  They are deliberately outside
 # results[], because every entry there is compared against
 # tools/aesref.py and these calls' answers are constants a specification
 # fixes rather than behaviour a model computes.  They still cost a COP
 # each, so the reconciliation below has to know how many -- naming them
 # keeps it able to catch a call nobody meant to make.
-UNRECORDED_AES = 5 + 3 + 5
+UNRECORDED_AES = 5 + 3 + 6
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 
@@ -339,6 +339,7 @@ def main(argv):
             raw = b.memdump(app[name] + base, 10)
             return list(struct.unpack("<5h", bytes(raw)))
         font, shell, obj = words("ag_font"), words("ag_shell"), words("ag_obj")
+        sysw = words("ag_sys")
         lang = struct.unpack("<h", b.memdump(app["ag_lang"] + base, 2))[0]
         junk = struct.unpack("<h", b.memdump(app["ag_junk"] + base, 2))[0]
         print(f"  appl_getinfo: font {font}, shell {shell}, object {obj}, "
@@ -357,6 +358,17 @@ def main(argv):
         # obgframe.c branches on), no GDOS face in a TEDINFO.
         check(obj == [1, 0, 1, 0, 0],
               f"appl_getinfo(AES_OBJECT) answered {obj}, not [1, 0, 1, 0, 0]")
+        # The resolution number is -1 BECAUSE THERE ISN'T ONE.  Every
+        # value Getrez can answer names an Atari screen -- 0/1/2 the ST's,
+        # 4/6/7 the TT's -- and gem4xe's are the VBXE's own (512, 640 or
+        # 672 across).  The fact a caller wants is the next word: sixteen
+        # colours on this device.  Then no colour icons (G_CICON draws its
+        # mono form) and yes to the extended resource format.
+        print(f"  appl_getinfo(AES_SYSTEM) -> {sysw}")
+        check(sysw == [1, -1, 16, 0, 1],
+              f"appl_getinfo(AES_SYSTEM) answered {sysw}, not [1, -1, 16, 0, 1] "
+              f"-- -1 is 'not a screen Getrez names', and 16 is this device's "
+              f"real colour count")
         # The language: this disk carries no LANG.RSC, so the built-in
         # strings are in use and the AES KNOWS it is English.  With a
         # file loaded it would refuse, because a LANG.RSC carries strings
