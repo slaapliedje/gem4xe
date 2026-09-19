@@ -66,7 +66,20 @@
 /* OVATT byte 0: D7:D6 playfield palette, D5:D4 overlay palette,
  *               D1:D0 width (00/11 narrow, 01 normal, 10 wide)          */
 #define OVATT_OVPAL(n)     ((uint8_t)((n) << 4))
+/* The three the hardware has.  In HR each colour clock is four pixels,
+ * so the widths the overlay actually occupies come straight out of the
+ * bounds the core renders between -- narrow $40-$BF is 128 colour
+ * clocks, normal $30-$CF is 160, wide $2C-$D4 is 168 -- which is 512,
+ * 640 and 672 pixels (Altirra vbxe.cpp kBounds; the wide bounds are NOT
+ * ANTIC's, which is worth knowing before reusing a playfield number).
+ * The encoding has a hole in it: 11 is narrow again, not a fourth
+ * width. */
+#define OVATT_WIDTH_NARROW 0x00
 #define OVATT_WIDTH_NORMAL 0x01
+#define OVATT_WIDTH_WIDE   0x02
+#define VB_W_NARROW        512
+#define VB_W_NORMAL        640
+#define VB_W_WIDE          672
 /* OVATT byte 1 is the priority mask.  ALWAYS $FF: bits 6/7 changed meaning
  * between FX 1.24 and 1.26, and a priority of $00 renders normally on 1.24
  * but makes the overlay VANISH on 1.26 (bit 7 became COLBAK).            */
@@ -174,7 +187,10 @@ void     vram_fill(uint32_t addr, uint8_t val, uint16_t len);
 uint8_t  vram_read8(uint32_t addr);
 
 void     vbxe_palette(uint8_t pal, uint8_t first, const uint8_t *rgb, uint16_t count);
-void     vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin);
+/* `ovatt_width` is one of OVATT_WIDTH_*; the picture is VB_W_* pixels
+ * across and the caller's screen memory has to be strided to match. */
+void     vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin,
+                     uint8_t ovatt_width);
 void     vbxe_off(void);                              /* overlay and MEMAC off */
 void     vbxe_wait_vbl(void);
 

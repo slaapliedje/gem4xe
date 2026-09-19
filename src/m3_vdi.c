@@ -978,7 +978,7 @@ TASK void main(void)
     /* A blit list started in uninitialised VRAM ($FF) never stops, because the
      * "next" bit is always set.  Clear the control region before first use. */
     vram_fill(VR_XDL, 0x00, 0x1000);
-    vbxe_xdl_hr(VR_SCREEN0, VB_H, 0);
+    vbxe_xdl_hr(VR_SCREEN0, VB_H, 0, OVATT_WIDTH_NORMAL);
     antic_suspend();                /* DOS's text screen off the bus: antic.h */
     vdev = &vdev_vbxe;              /* the conformance runner is about the VBXE device, and says so */
     vdi_font_default();         /* the linked 8x8 into VRAM */

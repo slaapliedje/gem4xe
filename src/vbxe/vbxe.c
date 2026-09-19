@@ -188,7 +188,8 @@ void vbxe_palette(uint8_t pal, uint8_t first, const uint8_t *rgb, uint16_t count
  *     priority, scroll and palette selection are), so it must be set at the
  *     top of every XDL.
  */
-void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin)
+void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin,
+                 uint8_t ovatt_width)
 {
     uint8_t xdl[24];
     uint16_t ctl = XDLC_GMON | XDLC_HR | XDLC_RPTL | XDLC_OVADR | XDLC_OVATT;
@@ -211,7 +212,7 @@ void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin)
         xdl[n++] = (uint8_t)(screen >> 16);
         xdl[n++] = 0;                             /* OVSTEP 0: the same line     */
         xdl[n++] = 0;
-        xdl[n++] = OVATT_OVPAL(1) | OVATT_WIDTH_NORMAL;
+        xdl[n++] = OVATT_OVPAL(1) | ovatt_width;
         xdl[n++] = OVATT_PRI_OVER_ALL;
     }
 
@@ -223,7 +224,7 @@ void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin)
     xdl[n++] = (uint8_t)(screen >> 16);
     xdl[n++] = (uint8_t)(VB_STRIDE);             /* OVSTEP, 12 bits        */
     xdl[n++] = (uint8_t)(VB_STRIDE >> 8);
-    xdl[n++] = OVATT_OVPAL(1) | OVATT_WIDTH_NORMAL;
+    xdl[n++] = OVATT_OVPAL(1) | ovatt_width;
     xdl[n++] = OVATT_PRI_OVER_ALL;                /* $FF -- see vbxe.h      */
     xdl[n++] = (uint8_t)((XDLC_OVOFF | XDLC_END) & 0xFF);
     xdl[n++] = (uint8_t)((XDLC_OVOFF | XDLC_END) >> 8);
