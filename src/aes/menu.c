@@ -31,9 +31,11 @@
  * the screen (vro_cpyfm, source-clipped), so the cost is a stripe left
  * unrestored, not a crash.
  */
+#include <string.h>
 #include "portab.h"
 #include "aes.h"
 #include "proc.h"
+#include "sys/farmem.h"
 
 #define MENU_THICKNESS  1       /* the frame bb_save keeps around a drop-down */
 
@@ -356,13 +358,28 @@ void mn_bar(OBJECT FAR *tree, WORD showit)
 }
 
 /* menu_text: a new string for an item, copied over the old one, which
- * the caller made long enough. */
+ * the caller made long enough.
+ *
+ * THE DESTINATION IS FAR, because the tree is: ob_spec is a 32-bit GEM
+ * address and a menu whose resource went to far memory has a real
+ * 24-bit one there (docs/far-trees.md).  `(char *)(uint16_t)ob_spec`
+ * kept the offset and threw the BANK away, and since far_alloc hands out
+ * whole banks the offset is the string's offset in the .RSC file -- so
+ * the copy landed in bank $00 at that address, on top of whatever is
+ * there.  Under SpartaDOS X that is the DOS: QED's "  Makefile..." (file
+ * offset $08C4) overwrote $0008C4, four bytes into the stub SDX calls to
+ * read a DIRECTORY, whose `jsr` then ran into a BRK.  The symptom was a
+ * file selector that drew and then hung the machine -- three removes from
+ * the menu call that did it, and nowhere near the selector.
+ *
+ * far_strput rather than a walked pointer: far pointer arithmetic is
+ * 16 bits on this compiler and does not carry into the bank byte
+ * (tools/ccbug), so a string near the top of a bank would wrap. */
 void mn_text(OBJECT FAR *tree, WORD item, const char *text)
 {
-    char *d = (char *)(uint16_t)tree[item].ob_spec;
+    uint32_t d = (uint32_t)tree[item].ob_spec;
 
-    while ((*d++ = *text++) != 0)
-        ;
+    far_strput(d, text, (uint16_t)(strlen(text) + 1));
 }
 
 /* menu_register: a name in the Desk menu, and the menu id that will come

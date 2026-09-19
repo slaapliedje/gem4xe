@@ -28,6 +28,19 @@
  *                 right one
  *   m33_str0      the first byte of free string 0, read through the far
  *                 address rsrc_gaddr(R_STRING) handed back: 'F'
+ *   m33_mtfar     menu_text WROTE WHERE ob_spec POINTS, which for this
+ *   m33_mtnear    resource is far memory -- and did NOT write to bank $00
+ *                 at the address ob_spec truncates to.  This pair is here
+ *                 because mn_text did exactly that until 2026-09-18: it
+ *                 took `(char *)(uint16_t)ob_spec` and dropped the bank,
+ *                 and since far_alloc hands out whole banks the remainder
+ *                 is the string's OFFSET IN THE .RSC FILE.  QED's
+ *                 "  Makefile..." lives at offset $08C4, so the copy
+ *                 landed on $0008C4 -- inside SpartaDOS X -- and the next
+ *                 directory read jumped into a BRK.  The failure showed up
+ *                 as a file selector that drew and then hung the machine,
+ *                 with nothing to connect it to a menu call, so what is
+ *                 checked here is the WRITE, not any symptom of it.
  *   m33_gfree     rsrc_free returned 1, the far block given back
  */
 #include "portab.h"
@@ -44,10 +57,53 @@ NEAR WORD m33_find, m33_findok;
 NEAR WORD m33_str0;
 NEAR WORD m33_gfree;
 NEAR WORD m33_model;          /* 4 = large, 2 = small: sizeof a pointer */
+NEAR WORD m33_mtfar;          /* menu_text wrote at the far ob_spec */
+NEAR WORD m33_mtnear;         /* ...and bank $00 at its low word is untouched */
+NEAR WORD m33_mtlo;           /* that low word, for the gate to report */
 
 /* The name near, so that neither kit has to bounce it: what this program
  * tests is the resource, not the string shim. */
 NEAR char m33_name[] = "FARRSC.RSC";
+
+/* Shorter than the string it replaces ("Row 01: far tree, object   2"),
+ * because menu_text's contract is that the caller made the old one long
+ * enough.  NEAR for the same reason m33_name is. */
+NEAR char m33_mtext[] = "MENU_TEXT WENT FAR";
+
+/* menu_text through a FAR tree, checked at the bytes.  The object is the
+ * dialog's first row, a G_STRING whose ob_spec is a plain string address.
+ *
+ * WATCH_SET would not do this: bank $00 is SRAM on a Rapidus and the
+ * watchpoint does not see it, and a debugger breakpoint stops the sim
+ * dead.  So the program reads both addresses itself, before and after,
+ * and publishes two words. */
+static void check_menu_text(OBJECT *tree)
+{
+    uint32_t spec = (uint32_t)tree[FR_ROW0].ob_spec.index;
+    const char *ffar = (const char *)spec;
+    const char *fnear = (const char *)(uint32_t)(uint16_t)spec;
+    char before[8];
+    WORD i;
+
+    m33_mtlo = (WORD)(uint16_t)spec;
+    for (i = 0; i < 8; i++)
+        before[i] = fnear[i];
+
+    menu_text(tree, FR_ROW0, m33_mtext);
+
+    m33_mtfar = 1;
+    for (i = 0; m33_mtext[i]; i++)
+        if (ffar[i] != m33_mtext[i]) {
+            m33_mtfar = 0;
+            break;
+        }
+    m33_mtnear = 1;
+    for (i = 0; i < 8; i++)
+        if (fnear[i] != before[i]) {
+            m33_mtnear = 0;
+            break;
+        }
+}
 
 int main(void)
 {
@@ -85,6 +141,10 @@ int main(void)
             m33_str0 = (WORD)(uint8_t)*(const char *)p;
         m33_step = 7;                   /* drawn: the gate looks now */
         evnt_keybd();
+        /* AFTER the screen check, so that rewriting a row's text cannot
+         * move the dark-pixel count the gate measures. */
+        if (tree)
+            check_menu_text(tree);
         m33_gfree = rsrc_free();
         m33_step = 8;
     }

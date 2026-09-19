@@ -53,8 +53,13 @@ static WORD str_cpy(char *dst, const char *src)
 }
 
 /* ---- addresses in ob_spec ---------------------------------------------
- * ob_spec is a 32-bit GEM address; on this target everything the AES
- * reaches lives in bank $00, so the low 16 bits are the pointer. */
+ * ob_spec is a 32-bit GEM address, and ALL TWENTY-FOUR BITS OF IT MATTER:
+ * a resource too big for the pool loads into far memory and its strings,
+ * TEDINFOs and BITBLKs are addressed there (docs/far-trees.md).  This
+ * comment used to say the opposite -- "everything the AES reaches lives
+ * in bank $00, so the low 16 bits are the pointer" -- which was true
+ * before far trees and is what mn_text was still doing afterwards, with
+ * the bank thrown away and the copy landing on the DOS. */
 
 #define SPEC_PTR(spec)  ((void FAR *)(uint32_t)(spec))
 

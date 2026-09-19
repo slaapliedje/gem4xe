@@ -52,7 +52,8 @@ APPS_SYM = os.path.join(ROOT, "build", "m33s_farrsc.sym")
 RSC = os.path.join(ROOT, "build", "farrsc.rsc")
 NAMES = ("m33_step", "m33_loaded", "m33_bank", "m33_lo", "m33_hdrlo", "m33_hdrhi",
          "m33_ap5", "m33_ap6", "m33_cx", "m33_cy", "m33_cw", "m33_ch",
-         "m33_find", "m33_findok", "m33_str0", "m33_gfree", "m33_model")
+         "m33_find", "m33_findok", "m33_str0", "m33_gfree", "m33_model",
+         "m33_mtfar", "m33_mtnear", "m33_mtlo")
 POOL = 14336
 DARK_MIN = 2000                 # a 40x28-cell dialog with 20 rows of text has far more
 
@@ -172,6 +173,22 @@ def main(argv=()):
             b.key("RETURN")
             te = poll(b, at["m33_step"], 9)
             v, _, _ = app_vars(b, syms, APP_SYM, APP)
+            # menu_text through the FAR tree (src/aes/menu.c mn_text).  It
+            # took (uint16_t)ob_spec until 2026-09-18, and since far_alloc
+            # hands out whole banks the remainder is the string's OFFSET IN
+            # THE FILE -- so the copy went to bank $00 at that offset, on
+            # top of whatever lives there.  On a SpartaDOS X machine that
+            # was the DOS, and the next directory read jumped into a BRK:
+            # a file selector that drew and then hung, three removes from
+            # the menu call that did it.
+            print(f"  menu_text: wrote far {'yes' if v['m33_mtfar'] else 'NO'}, "
+                  f"bank $00 at ${v['m33_mtlo']:04X} "
+                  f"{'untouched' if v['m33_mtnear'] else 'CLOBBERED'}")
+            check(v["m33_mtfar"] == 1,
+                  "menu_text did not write where the far tree's ob_spec points")
+            check(v["m33_mtnear"] == 1,
+                  f"menu_text wrote into bank $00 at ${v['m33_mtlo']:04X}: "
+                  f"the bank was dropped from ob_spec")
             check(te >= 0 and v["m33_gfree"] == 1,
                   f"rsrc_free returned {v['m33_gfree']} (step {v['m33_step']}), expected 1")
             b.key("RETURN")                 # and leave
