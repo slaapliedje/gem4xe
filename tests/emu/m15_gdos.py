@@ -36,6 +36,7 @@ from m12_file import Runner, D2, FAULT_I, FRAMES_I, SYS  # noqa: E402
 from m14_sparta import boot, screen, DISK as SPDISK  # noqa: E402
 
 GDOS, RELEASE = SYS + 12, SYS + 13
+SCRAP = SYS + 18                            # sc_write then sc_clear (src/m3_vdi.c)
 CIO_I, CALLS_I, BAD_I = 8, 9, 10            # the op's own words
 DOS2DISK = os.path.abspath(os.path.join(ROOT, "build", "m3-boot.atr"))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "test.txt")
@@ -447,6 +448,52 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
     check(ret == ENMFIL, f"after Fdelete: {ret}")
     ret, _ = g.call("Fdelete", L(g.string("GDOUT2.TXT")))
     check(ret == EFILNF, f"Fdelete twice {ret}, not EFILNF")
+
+    # -- the scrap: SCRAP.* deleted, and NOTHING else ----------------------------------
+    # scrp_clear (opcode 82) is the one AES call that reaches the disk,
+    # so it is gated here rather than against a host model: the files are
+    # made with GEMDOS, cleared through the runner's sys op 18, and
+    # looked for again with Fsfirst.  SCRIP.TXT is the control -- one
+    # letter away from the mask, and a walk that deletes it is a walk
+    # that would take a program's own files with the scrap.
+    #
+    # In a FOLDER, made and removed here, and not in the root: three
+    # files in the root grow a SpartaDOS directory by a sector that
+    # deleting them does not give back, and the Dfree check below wants
+    # the disk it started with.  It is also the shape the Compendium
+    # describes (p.352) -- C:\CLIPBRD\, the trailing backslash and all.
+    # A flat DOS has no folder, so there it is the root, whose directory
+    # is a fixed eight sectors and cannot grow.
+    scrapdir = "A:\\CLIPBRD\\" if tree else "A:\\"
+    if tree:
+        ret, _ = g.call("Dcreate", L(g.string("A:\\CLIPBRD")))
+        check(ret == 0, f"Dcreate CLIPBRD {ret}")
+    for name in ("SCRAP.TXT", "SCRAP.DAT", "SCRIP.TXT"):
+        h, _ = g.call("Fcreate", L(g.string(scrapdir + name)), W(0))
+        check(h >= HANDLE_BASE, f"Fcreate {name} {h}")
+        g.call("Fclose", W(h))
+    got, _ = g.listing(scrapdir + "SCR*.*", 0)
+    check(set(got) == {"SCRAP.TXT", "SCRAP.DAT", "SCRIP.TXT"},
+          f"the three files were not made: {sorted(got)}")
+    rec = r.run([(SCRAP, (), (g.string(scrapdir),))])[0][2:]
+    check(rec[6] == 1, f"scrp_write answered {rec[6]}")
+    check(rec[7] == 1, f"scrp_clear answered {rec[7]}, not TRUE")
+    got, _ = g.listing(scrapdir + "SCR*.*", 0)
+    check(set(got) == {"SCRIP.TXT"},
+          f"after scrp_clear {scrapdir} holds {sorted(got)}")
+    # WHAT IS THERE, not what should be: the line above is a check and
+    # this is a report, and a report that names the expected answer says
+    # "SCRIP.TXT kept" just as cheerfully when the walk has deleted it.
+    print(f"  scrp_clear in {scrapdir}: SCR*.* now {sorted(got) or 'empty'}")
+    ret, _ = g.call("Fdelete", L(g.string(scrapdir + "SCRIP.TXT")))
+    check(ret == 0, f"Fdelete of the control file {ret}")
+    if tree:
+        ret, _ = g.call("Ddelete", L(g.string("A:\\CLIPBRD")))
+        check(ret == 0, f"Ddelete CLIPBRD {ret}")
+    # AND IT REFUSES WHEN THERE IS NO SCRAP DIRECTORY, which is the
+    # donor's only refusal and the one an application acts on.
+    rec = r.run([(SCRAP, (), (g.string(""),))])[0][2:]
+    check(rec[7] == 0, f"scrp_clear with no scrap directory answered {rec[7]}, not FALSE")
 
     # -- directories made and removed --------------------------------------------------
     ret, _ = g.call("Dcreate", L(g.string("A:\\NEWDIR")))

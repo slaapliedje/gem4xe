@@ -576,6 +576,9 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         ret = p ? sc_write(p) : 0;
         break;
     }
+    case 82:                        /* scrp_clear: no parameters at all */
+        ret = sc_clear();
+        break;
 
     /* Window manager */
     case 100:                       /* wind_create: kind, rect */

@@ -181,6 +181,7 @@ EXPECT = [
     ("graf_mkstate",     AES, 79, 0, 5, 0, 0),
     ("scrp_read",        AES, 80, 0, 1, 1, 0),
     ("scrp_write",       AES, 81, 0, 1, 1, 0),
+    ("scrp_clear",       AES, 82, 0, 1, 0, 0),
     ("fsel_input",       AES, 90, 0, 2, 2, 0),
     ("fsel_exinput",     AES, 91, 0, 2, 3, 0),
     ("wind_create",      AES, 100, 5, 1, 0, 0),

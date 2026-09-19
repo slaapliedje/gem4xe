@@ -734,6 +734,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel);
 void sc_init(void);
 WORD sc_read(char *pscrap);
 WORD sc_write(const char *pscrap);
+WORD sc_clear(void);            /* PC-GEM's: no Atari AES has opcode 82 */
 
 /* ---- the shell library: shel.c (gemshlib.c) ----------------------------
  * Buffers in far memory, taken once by sh_init() before any application

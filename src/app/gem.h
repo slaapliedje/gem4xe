@@ -920,6 +920,10 @@ WORD rsrc_obfix(OBJECT *tree, WORD obj);
  * shel_read's is -- a path can outrun the 63-byte far-string bounce. */
 WORD scrp_read(char *path);
 WORD scrp_write(const char *path);
+/* scrp_clear deletes every SCRAP.* in that directory.  It is PC-GEM's:
+ * no Atari AES has opcode 82, so a program that must also run on an ST
+ * does the walk itself, as the Compendium tells it to. */
+WORD scrp_clear(void);
 WORD shel_read(char *cmd, char *tail);
 WORD shel_find(char *path);
 WORD shel_envrn(char **value, const char *name);

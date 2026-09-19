@@ -453,6 +453,24 @@ static void sys_op(WORD op)
         c4 = 10;
         break;
     }
+    /* THE SCRAP MANAGER, which is the only AES call that reaches the
+     * disk (src/aes/scrap.c).  intin[0] is the near address of the scrap
+     * DIRECTORY -- a path ending in a backslash, as the Compendium says
+     * one does; [6] what sc_write answered and [7] what sc_clear did.
+     *
+     * It is a SYS op and not one of the library's 1000+n, because those
+     * are compared against tools/aesref.py and a host model cannot hold
+     * a disk.  What checks this is tests/emu/m15_gdos.py, on either side
+     * of the call: GEMDOS makes the SCRAP.* files and looks for them
+     * again with Fsfirst afterwards. */
+    case 18:
+        sc_init();                  /* the AES's start-up does this (src/gem.c);
+                                     * the conformance runner's op 1000 does it
+                                     * too, and this gate runs neither */
+        intout[6] = sc_write((const char *)(uint16_t)intin[0]);
+        intout[7] = sc_clear();
+        c4 = 8;
+        break;
     default:
         break;
     }

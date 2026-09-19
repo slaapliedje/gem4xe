@@ -1416,6 +1416,11 @@ WORD scrp_write(const char *path)
     return aes(81, 0, 1, 1, 0);
 }
 
+WORD scrp_clear(void)
+{
+    return aes(82, 0, 1, 0, 0);
+}
+
 WORD shel_read(char *cmd, char *tail)
 {
     addr_in[0] = (LONG)(uint32_t)(char FAR *)cmd;

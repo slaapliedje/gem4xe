@@ -252,6 +252,7 @@ int main(void)
     graf_mkstate(&a, &b, &c, &d);
     scrp_read(path);
     scrp_write("X:\\");
+    scrp_clear();
     fsel_input(path, name, &a);
     fsel_exinput(path, name, &a, "x");
     r1.g_x = 1; r1.g_y = 2; r1.g_w = 3; r1.g_h = 4;
