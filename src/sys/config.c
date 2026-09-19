@@ -10,10 +10,16 @@
 #include "config.h"
 #include "cio.h"
 #include "../vdi/vdi.h"
+#include "../vbxe/vbxe.h"   /* VB_WIDE_*: the width index SCREENW keeps */
 #include "../vdi/pointer.h"
 
+/* SCREENW's default is NAMED and not left to the zero the rest of the
+ * struct starts as: VB_WIDE_NARROW is 0, so an unset SCREENW would have
+ * brought every machine up 512 pixels wide.  topmargin and screenh are
+ * fine at zero because zero means "the default" for both of them; this
+ * one's zero means a screen. */
 CONFIG config = { CFG_VIDEO_AUTO, CFG_MOUSE_AUTO, CFG_PRINT_NONE, "P:",
-                  CFG_CLOCK_AUTO };
+                  CFG_CLOCK_AUTO, 0, 0, VB_WIDE_NORMAL };
 
 #define CFG_LINE 72             /* a whole line, or it is not a setting */
 
@@ -78,6 +84,7 @@ static const char FAR k_printto[] = "PRINTTO";
 static const char FAR k_clock[] = "CLOCK";
 static const char FAR k_topmargin[] = "TOPMARGIN";
 static const char FAR k_screenh[] = "SCREENH";
+static const char FAR k_screenw[] = "SCREENW";
 
 static char up(char c)
 {
@@ -187,6 +194,20 @@ static void cfg_line(char *s)
         config.topmargin = cfg_num(val, config.topmargin, CFG_TOPMARGIN_MAX);
     else if (same(k_screenh, key))
         config.screenh = cfg_num(val, config.screenh, CFG_SCREENH_MAX);
+    else if (same(k_screenw, key)) {
+        /* The file says the WIDTH; what is kept is the index, which is
+         * also the OVATT code the XDL wants.  A width the hardware does
+         * not have leaves the setting alone rather than picking the
+         * nearest: guessing at a number somebody typed is how a machine
+         * comes up in a mode nobody asked for. */
+        int16_t px = cfg_num(val, CFG_SCREENW_NORMAL, CFG_SCREENW_WIDE);
+        if (px == CFG_SCREENW_NARROW)
+            config.screenw = VB_WIDE_NARROW;
+        else if (px == CFG_SCREENW_NORMAL)
+            config.screenw = VB_WIDE_NORMAL;
+        else if (px == CFG_SCREENW_WIDE)
+            config.screenw = VB_WIDE_WIDE;
+    }
     else if (same(k_printto, key)) {
         /* A NAME, not a word out of a table: the value is taken as it
          * stands (upper-cased, as CIO wants) and truncated rather than

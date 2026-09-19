@@ -170,15 +170,21 @@ TASK void main(void)
         /* How many of the 240 lines to show.  A tube that cuts the top
          * or bottom off is given fewer; the buffer is 240 either way, so
          * only the XDL and what the seam reports change. */
-        vdev = config.screenh == 200 ? &vdev_vbxe_200
-             : config.screenh == 224 ? &vdev_vbxe_224
-                                     : &vdev_vbxe;
+        /* Which screen: the width the overlay shows and how many of its
+         * lines.  SCREENW picks among the hardware's three (512, 640,
+         * 672 pixels) and SCREENH among 240, 224 and 200 for a tube
+         * that crops; the buffer is VB_H lines either way. */
+        vdev = &vdev_vbxe_tab[config.screenw]
+                             [config.screenh == 200 ? 2
+                            : config.screenh == 224 ? 1 : 0];
         /* A blit list started in uninitialised VRAM ($FF) never stops,
          * because the "next" bit is always set.  Clear the control
          * region first. */
         vram_fill(VR_XDL, 0x00, 0x1000);
+        /* The index IS the OVATT code -- VB_WIDE_* are in the order the
+         * hardware numbers them (src/vbxe/vbxe.h). */
         vbxe_xdl_hr(VR_SCREEN0, (uint16_t)vdev->h, (uint8_t)config.topmargin,
-                    OVATT_WIDTH_NORMAL);
+                    (uint8_t)config.screenw);
         antic_suspend();            /* its DMA off the bus: antic.h */
     } else {
         vdev = &vdev_antic;

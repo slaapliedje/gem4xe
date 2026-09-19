@@ -1320,8 +1320,8 @@ extern const uint8_t FAR font8x8[];
  * compile-time SCR_H: it is the BUFFER's bound, a safe superset of the
  * screen's, and everything above the seam has already clipped to
  * vdev->h. */
-#define VBXE_DEV(hh) {                                                    \
-    SCR_W, (hh), SCR_STRIDE,                                              \
+#define VBXE_DEV(ww, hh) {                                                \
+    (ww), (hh), (ww) / 2,       /* HR is 4bpp: two pixels to the byte */  \
     FONT_W, FONT_H,                                                       \
     FONT_TOP, FONT_ASCENT, FONT_HALF, FONT_DESCENT, FONT_BOTTOM,          \
     FONT_POINT, font8x8,                                                  \
@@ -1354,6 +1354,24 @@ extern const uint8_t FAR font8x8[];
     dev_flush,                                                            \
 }
 
-const VDIDEV FAR vdev_vbxe     = VBXE_DEV(VB_H);
-const VDIDEV FAR vdev_vbxe_224 = VBXE_DEV(224);
-const VDIDEV FAR vdev_vbxe_200 = VBXE_DEV(200);
+/* Every width the overlay has by every height a tube might want, which
+ * is nine tables of about 130 bytes in `cfar` -- far, banked, and next
+ * to the code that reads them.  A table per combination rather than a
+ * mutable one in bank $00: the seam's whole argument is that `vdev` is
+ * a CONST far pointer set once, so there is no second copy of the
+ * screen's shape to disagree with the first (src/vdi/vdidev.h).
+ *
+ * The widths are the hardware's three, measured: the overlay occupies
+ * 128, 160 or 168 colour clocks and HR puts four pixels in each
+ * (src/vbxe/vbxe.h).  The heights are what GEM4XE.CFG's SCREENH has
+ * always offered -- the BUFFER is VB_H lines whatever is shown, so only
+ * the XDL and what this reports change. */
+#define VBXE_DEVS(ww)  { VBXE_DEV(ww, VB_H), VBXE_DEV(ww, 224), VBXE_DEV(ww, 200) }
+const VDIDEV FAR vdev_vbxe_tab[VB_WIDTHS][VB_HEIGHTS] = {
+    VBXE_DEVS(VB_W_NARROW),
+    VBXE_DEVS(VB_W_NORMAL),
+    VBXE_DEVS(VB_W_WIDE),
+};
+/* The one a runner that does not care means: the screen as it has always
+ * been, 640 by 240. */
+const VDIDEV FAR *const vdev_vbxe = &vdev_vbxe_tab[VB_WIDE_NORMAL][0];

@@ -80,6 +80,14 @@
 #define VB_W_NARROW        512
 #define VB_W_NORMAL        640
 #define VB_W_WIDE          672
+/* ...and the same three as indices, for the device tables and the
+ * config, in the order the OVATT code has them so one converts to the
+ * other by nothing at all. */
+#define VB_WIDE_NARROW     0
+#define VB_WIDE_NORMAL     1
+#define VB_WIDE_WIDE       2
+#define VB_WIDTHS          3
+#define VB_HEIGHTS         3    /* 240, 224, 200: GEM4XE.CFG's SCREENH */
 /* OVATT byte 1 is the priority mask.  ALWAYS $FF: bits 6/7 changed meaning
  * between FX 1.24 and 1.26, and a priority of $00 renders normally on 1.24
  * but makes the overlay VANISH on 1.26 (bit 7 became COLBAK).            */
@@ -104,14 +112,26 @@
  * THIS DEVICE'S numbers, and a program that has both linked cannot use
  * either as "the screen": that is vdev->w and vdev->h, which is what the
  * VDI reads as VB_W and VB_H (src/vdi/vdidev.h). */
-#define VB_W               640
+#define VB_W               VB_W_NORMAL
 #define VB_H               240
 #define VB_STRIDE          (VB_W / 2)           /* 320 bytes per row        */
 #define VB_BYTES           ((uint32_t)VB_STRIDE * VB_H)     /* 76,800       */
+/* ...and the WIDEST the hardware will show, which is what the VRAM map
+ * below is laid out for.  A screen's stride is the width the program
+ * chose; the map is not, because the map is compiled in and the choice
+ * is made at run time from GEM4XE.CFG.  Sizing every region for wide
+ * costs VRAM that has nothing else to do -- 340 KB of 512 at the widest
+ * -- and buys one map instead of three. */
+#define VB_STRIDE_MAX      (VB_W_WIDE / 2)      /* 336 bytes per row        */
+#define VB_BYTES_MAX       ((uint32_t)VB_STRIDE_MAX * VB_H) /* 80,640       */
 
 /* ---- VRAM map (512 KB) ----------------------------------------------- */
-#define VR_SCREEN0         0x00000UL            /* 76,800 -> $12BFF         */
-#define VR_SCREEN1         0x13000UL            /* 76,800 -> $25BFF         */
+#define VR_SCREEN0         0x00000UL            /* up to 80,640 -> $13B7F   */
+/* The next 4 KB boundary after a whole wide screen, so that the two
+ * screens never overlap at any width.  It was $13000, which is inside a
+ * wide screen 0 -- the two would have shared 2,944 bytes and the
+ * failure would have looked like a corrupt blit rather than a map. */
+#define VR_SCREEN1         ((VB_BYTES_MAX + 0xFFFUL) & ~0xFFFUL)  /* $14000 */
 #define VR_XDL             0x30000UL            /* 256                      */
 #define VR_BCB             0x30100UL            /* blit control blocks, 1K  */
 #define VR_CURSAVE         0x30200UL            /* 16x16 under the pointer  */
@@ -148,11 +168,11 @@
  * a save is a same-coordinates vro_cpyfm between the two and always a blit.
  * The donor keeps 25 character columns by the screen height and overflows
  * on a wider drop-down; a full screen costs nothing here.               */
-#define VR_SAVE            0x40000UL            /* 76,800 -> $52BFF         */
+#define VR_SAVE            0x40000UL            /* up to 80,640 -> $53B7F   */
 /* Scratch for vrt_cpyfm (src/vdi/vdi.c): a monochrome form expanded to 4bpp
  * AND and OR strips, half a page each, written through one MEMAC mapping
  * and blitted in bands.  The first page boundary after the save buffer.  */
-#define VR_STRIP           ((VR_SAVE + VB_BYTES + 0xFFFUL) & ~0xFFFUL)
+#define VR_STRIP           ((VR_SAVE + VB_BYTES_MAX + 0xFFFUL) & ~0xFFFUL)
 #define VR_STRIP_LEN       0x1000UL
 /* VR_STRIP + VR_STRIP_LEN onward is free: window backing stores, icons */
 

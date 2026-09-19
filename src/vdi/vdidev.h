@@ -341,11 +341,18 @@ extern const VDIDEV FAR *vdev;
 /* The two tables, in the two device files.  A build links whichever
  * devices it has a screen for; naming one that is not linked is a link
  * error, which is the right time to find out. */
-extern const VDIDEV FAR vdev_vbxe;
-/* the same device showing fewer lines, for a screen whose top or bottom
- * the tube cuts off (GEM4XE.CFG's SCREENH) */
-extern const VDIDEV FAR vdev_vbxe_224;
-extern const VDIDEV FAR vdev_vbxe_200;
+/* Every VBXE screen the overlay can show: [width][height], the widths
+ * VB_WIDE_* (512/640/672 pixels, GEM4XE.CFG's SCREENW) and the heights
+ * 240/224/200 for a tube that crops (SCREENH).  The program picks one
+ * before vdi_init and never moves again. */
+/* The bounds are written out rather than taken from src/vbxe/vbxe.h's
+ * VB_WIDTHS/VB_HEIGHTS: nothing above the seam includes that header, and
+ * this declaration is above it.  dev_vbxe.c defines the table with the
+ * named constants and would not link if the two disagreed. */
+extern const VDIDEV FAR vdev_vbxe_tab[3][3];
+/* ...and the plain one, 640x240, for a runner with nothing to say about
+ * it.  A POINTER, so `vdev = vdev_vbxe` where it used to be `&vdev_vbxe`. */
+extern const VDIDEV FAR *const vdev_vbxe;
 extern const VDIDEV FAR vdev_antic;
 /* ...and the page, which is a device open BESIDE one of those rather
  * than instead of it: a workstation carries its own (src/vdi/vdi.h). */

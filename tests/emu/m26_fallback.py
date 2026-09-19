@@ -178,12 +178,31 @@ def one(tag, disk, has_vbxe, want_cfg, want_dev, geom, syms, keep, check):
         # A far pointer, four bytes with the top one unused.
         raw = bytes(b.memdump(syms["vdev"], 4))
         got = int.from_bytes(raw, "little") & 0xFFFFFF
-        want = syms["vdev_" + want_dev]
-        other = syms["vdev_" + ("antic" if want_dev == "vbxe" else "vbxe")]
-        check(got == want,
-              f"{tag}: vdev is ${got:06X}, and the {want_dev} table is at "
-              f"${want:06X} (the other is at ${other:06X})")
-        print(f"  the VDI is on the {want_dev} device, vdev = ${got:06X}")
+        # WHICH table, and it is no longer one symbol each: the VBXE has
+        # nine (three widths by three heights, src/vdi/dev_vbxe.c) and
+        # `vdev` points at one of them.  So the check is on the table
+        # ITSELF rather than on its address -- the first three words of a
+        # VDIDEV are the width, the height and the stride -- plus that it
+        # lies inside the right object.  That is exact without the gate
+        # having to know sizeof(VDIDEV), and it is the property that
+        # actually matters: the seam reports the screen it is on.
+        tab = syms["vdev_vbxe_tab"]
+        antic = syms["vdev_antic"]
+        w, h, stride = (int.from_bytes(bytes(b.memdump(got + 2 * i, 2)),
+                                       "little") for i in range(3))
+        if want_dev == "vbxe":
+            check(tab <= got < tab + 0x1000 and got != antic,
+                  f"{tag}: vdev is ${got:06X}, outside the VBXE tables at "
+                  f"${tab:06X} (the ANTIC one is at ${antic:06X})")
+        else:
+            check(got == antic,
+                  f"{tag}: vdev is ${got:06X}, not the ANTIC table at "
+                  f"${antic:06X}")
+        check((w, h) == geom[:2] and stride * (2 if want_dev == "vbxe" else 8) >= w,
+              f"{tag}: the table vdev points at says {w}x{h} stride {stride}, "
+              f"and the AES was told {geom[:2]}")
+        print(f"  the VDI is on the {want_dev} device, vdev = ${got:06X} "
+              f"-> {w}x{h}, stride {stride}")
 
         # -- and what the AES laid out for -------------------------------
         aes = tuple(b.peek16(syms[k]) for k in

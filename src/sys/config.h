@@ -72,6 +72,17 @@
  * 0 means the default, which is all of them. */
 #define CFG_SCREENH_MAX  240
 
+/* SCREENW -- how WIDE the VBXE overlay is, which unlike SCREENH is a
+ * different picture and not the same one cropped: the overlay occupies
+ * 128, 160 or 168 colour clocks and HR puts four pixels in each, so the
+ * screen is 512, 640 or 672 pixels and its stride changes with it.
+ * Written as the PIXEL count, because that is what somebody setting it
+ * is choosing; anything else falls back to 640.  The VRAM map is laid
+ * out for the widest whatever this says (src/vbxe/vbxe.h). */
+#define CFG_SCREENW_NARROW 512
+#define CFG_SCREENW_NORMAL 640
+#define CFG_SCREENW_WIDE   672
+
 /* CLOCK -- where the time comes from.  src/sys/clock.c: the chip on a
  * U1MB or a SIDE first, the DOS's kernel when there is neither. */
 #define CFG_CLOCK_AUTO   0      /* the chip, then the DOS */
@@ -91,6 +102,7 @@ typedef struct {
     int16_t clock;              /* CFG_CLOCK_* */
     int16_t topmargin;          /* blank scanlines above the picture, 0..CFG_TOPMARGIN_MAX */
     int16_t screenh;            /* VBXE lines shown: 200, 224, 240; 0 = default */
+    int16_t screenw;            /* VB_WIDE_*: the INDEX, not the pixels */
     int16_t found;              /* 1: the file was there and was read --
                                  * the boot screen says which it was */
 } CONFIG;

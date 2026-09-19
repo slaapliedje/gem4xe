@@ -980,7 +980,7 @@ TASK void main(void)
     vram_fill(VR_XDL, 0x00, 0x1000);
     vbxe_xdl_hr(VR_SCREEN0, VB_H, 0, OVATT_WIDTH_NORMAL);
     antic_suspend();                /* DOS's text screen off the bus: antic.h */
-    vdev = &vdev_vbxe;              /* the conformance runner is about the VBXE device, and says so */
+    vdev = vdev_vbxe;               /* the conformance runner is about the VBXE device, and says so */
     vdi_font_default();         /* the linked 8x8 into VRAM */
     vdi_init();
     /* No pointing device: the harness IS the pointer.  It writes ptr_state
