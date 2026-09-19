@@ -66,6 +66,7 @@ FMD_START, FMD_GROW, FMD_SHRINK, FMD_FINISH = 0, 1, 2, 3
 FORWARD, BACKWARD, DEFLT = 0, 1, 2
 # -- the window manager (wind.c) ------------------------------------------
 NUM_WIN, NUM_ORECT, NUM_MSGS, NUM_ELEM = 8, 80, 16, 19
+AP_MSGWORDS, AP_MSGBYTES = 8, 16      # src/aes/aes.h: a message
 NUM_ACCS = 6                    # the Desk box's slots (src/aes/proc.h)
 DESKWH = 0
 VF_INUSE, VF_BROKEN, VF_ISOPEN = 1, 2, 4
@@ -2970,6 +2971,15 @@ class AES:
             return None
         return self.gl_queue.pop(0)
 
+    def ap_read(self, ap_id, length):
+        """appl_read: (answer, the eight words the caller's buffer ends
+        up holding).  Your own pipe only, and ONE message -- this pipe is
+        messages and not bytes, and src/aes/appl.c says what keeping it
+        that way cost."""
+        if ap_id != 0 or length != AP_MSGBYTES:
+            return 0, [0] * AP_MSGWORDS
+        return 1, list(self.ev_mesag())
+
     def ap_sendmsg(self, type_, w3, w4, w5, w6, w7):
         self.mq_put([type_, 0, 0, w3, w4, w5, w6, w7])
 
@@ -4041,10 +4051,20 @@ class AES:
             # appl_init: the ap_id, which is 0 -- one process (abi.c)
             io[0] = 0
             c4 = 1
+        elif n == 11:
+            # appl_read: id, len -- the runner has no buffer a script
+            # could name, so the message comes back in int_out[1..]
+            io[0], words = self.ap_read(ints[0], ints[1])
+            io[1:1 + AP_MSGWORDS] = words
+            c4 = 1 + AP_MSGWORDS
         elif n == 12:
-            # appl_write: id, len, then the eight-word message
-            self.mq_put(ints[2:10])
-            io[0] = 1
+            # appl_write: id, len, then the eight-word message.  The
+            # length is read: one message, or a refusal.
+            if ints[1] != AP_MSGBYTES:
+                io[0] = 0
+            else:
+                self.mq_put(ints[2:2 + AP_MSGWORDS])
+                io[0] = 1
             c4 = 1
         elif n == 19:
             io[0] = 1                   # appl_exit
@@ -4545,6 +4565,7 @@ GRAF_SLIDEBOX = 1076
 GRAF_MOUSE = 1078
 GRAF_MKSTATE = 1079
 APPL_INIT, APPL_WRITE, APPL_EXIT, EVNT_MESAG = 1010, 1012, 1019, 1023
+APPL_READ = 1011
 GRAF_HANDLE = 1077
 FSEL_INPUT, FSEL_EXINPUT = 1090, 1091
 (MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL, MENU_TEXT,

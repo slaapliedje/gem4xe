@@ -540,9 +540,29 @@ static void run_script(void)
                 lang_font();                /* and SYSTEM.FNT, into the device */
                 fs_start();                 /* the selector's name slots, too */
                 break;
-            case 12:                        /* appl_write: id, len, msg[8] */
-                mq_put(proc_app, &intin[2]);
-                intout[0] = 1;
+            /* appl_read has no buffer a script could name, so the
+             * message comes back in int_out[1..] -- zeroed first, so a
+             * refusal hands back zeros and not this frame's leavings.
+             * appl_write reads its length now, as the ABI does. */
+            case 11: {                      /* appl_read: id, len */
+                WORD buf[AP_MSGWORDS];
+
+                for (k = 0; k < AP_MSGWORDS; k++)
+                    buf[k] = 0;
+                intout[0] = ap_read(intin[0], intin[1],
+                                    (uint32_t)(uint16_t)buf);
+                for (k = 0; k < AP_MSGWORDS; k++)
+                    intout[1 + k] = buf[k];
+                c4 = 1 + AP_MSGWORDS;
+                break;
+            }
+            case 12:                        /* appl_write: id, len, msg */
+                if (intin[1] != AP_MSGBYTES) {
+                    intout[0] = FALSE;
+                } else {
+                    mq_put(proc_app, &intin[2]);
+                    intout[0] = TRUE;
+                }
                 c4 = 1;
                 break;
             /* The event calls block until the host injects input; the host

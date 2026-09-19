@@ -822,6 +822,11 @@ WORD shel_get(void FAR *buffer, WORD len);
 WORD shel_put(const void FAR *data, WORD len);
 
 /* The rest of the AES. */
+/* The message pipe, for messages evnt_mesag cannot carry: `length` is in
+ * BYTES and must be a whole number of 16-byte messages -- one is the
+ * usual, four the most appl_write will take.  appl_read waits, and reads
+ * only your own pipe; both buffers may be far. */
+WORD appl_read(WORD id, WORD length, WORD *msg);
 WORD appl_write(WORD id, WORD length, const WORD *msg);
 WORD evnt_mouse(WORD flags, WORD x, WORD y, WORD w, WORD h,
                 WORD *mx, WORD *my, WORD *button, WORD *kstate);

@@ -17,7 +17,53 @@
 #include "portab.h"
 #include "aes.h"
 #include "proc.h"
+#include "sys/farmem.h"         /* appl_read's buffer may be far */
 #include "../vdi/font.h"        /* FONT_ID_SYS: the face that is linked in */
+
+/* THE PIPE IS MESSAGES, NOT BYTES, and that is the whole of appl_read.
+ *
+ * The donor's queue is a 128-byte buffer with a byte count (EmuTOS
+ * aes/struct.h, p_queue/p_qindex), so its ap_rdwr blocks for any length
+ * at all.  gem4xe's is p_qmax slots of eight words (proc.h), because the
+ * window manager COALESCES: a second WM_REDRAW for a window already
+ * waiting is unioned into the one in the queue rather than appended, and
+ * a WM_ARROWED replaces its predecessor.  That is what keeps a dragged
+ * window from queueing a redraw per frame, and it can only be done by
+ * something that knows where a message starts.
+ *
+ * So the unit is sixteen bytes -- which is what every AES message is,
+ * and what the Compendium recommends anyway ("It is recommended that
+ * message lengths in multiples of 16 bytes be used", p.370).
+ *
+ * A LONGER READ IS REFUSED, and this is where a working multi-block
+ * version was taken out again.  Blocks past the first are the CALLER'S
+ * OWN BYTES and not messages, but they would sit in the same queue,
+ * where mq_put cannot tell them apart: a continuation block whose first
+ * word happened to be WM_REDRAW and whose fourth matched a live window
+ * would be unioned into a real redraw by the next one the window manager
+ * posted -- silently, and the reader would then wait forever for a block
+ * that no longer exists.  The fix is a per-slot flag the queue does not
+ * have.  Keeping the coalescing is worth more than a call the Compendium
+ * itself says is "normally not used", so the length is one message and a
+ * program that wants more sends more of them.
+ */
+WORD ap_read(WORD ap_id, WORD length, uint32_t buf)
+{
+    WORD msg[AP_MSGWORDS];
+
+    /* YOUR OWN PIPE, and only yours.  The donor resolves ap_id to a
+     * process and will read another's; here that would take a message
+     * its owner is waiting for, and leave the caller blocked until some
+     * third party wrote to a queue nobody told it about.  The AES 4.0
+     * APR_NOWAIT (-1) is not special for the reason it is not special in
+     * appl_find: it is gated on appl_getinfo, whose AES_INQUIRE subject
+     * answers 0 here, so a caller that asked has already been told. */
+    if (ap_id != proc_pid(rlr) || !buf || length != AP_MSGBYTES)
+        return FALSE;
+    ev_mesag(msg);
+    far_put(buf, (const uint8_t *)msg, AP_MSGBYTES);
+    return TRUE;
+}
 
 /* The Compendium's ap_gtype subjects (p.363-367).  The names are
  * gemlib's, which is what a ported program will have written. */

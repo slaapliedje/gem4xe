@@ -721,6 +721,14 @@ const char *lang_str(WORD n);                    /* LS_*, build/lang_rsc.h */
 #define AESLANG_ENGLISH 0       /* ...and its ap_gout1 for the language */
 WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4);
 
+/* appl_read: one message out of the CALLER'S OWN pipe into `buf`, which
+ * may be far, waiting the way evnt_mesag waits.  `length` must be
+ * AP_MSGBYTES exactly -- this pipe is messages and not bytes, and
+ * appl.c has the reason and what it cost to keep it that way. */
+#define AP_MSGWORDS     8
+#define AP_MSGBYTES     (AP_MSGWORDS * 2)
+WORD ap_read(WORD ap_id, WORD length, uint32_t buf);
+
 /* fsel.c -- the file selector (docs/phase11.md) */
 extern WORD gl_drvbits;             /* which drive buttons are live, A = bit 0 */
 void fs_start(void);                /* at AES start-up: the far name slots */

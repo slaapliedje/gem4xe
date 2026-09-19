@@ -46,7 +46,8 @@ from aesref import (Layout, MU_MESAG, MU_TIMER, MU_BUTTON, RETURN,  # noqa: E402
                     WF_NEXTXYWH, WF_NEWDESK, WF_HSLSIZ, WF_VSLSIZ, WF_OWNER,
                     WF_BOTTOM,
                     WM_REDRAW, WM_ARROWED, NUM_MSGS,
-                    APPL_WRITE, EVNT_MESAG, EVNT_BUTTON, WIND_CREATE, WIND_OPEN,
+                    APPL_READ, APPL_WRITE, EVNT_MESAG, EVNT_BUTTON,
+                    WIND_CREATE, WIND_OPEN,
                     WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET, WIND_FIND,
                     WIND_UPDATE, WIND_CALC, WIND_NEW, FORM_DO,
                     GRAF_RUBBOX, GRAF_DRAGBOX,
@@ -99,6 +100,19 @@ def mesag(n):
 def write(msg):
     """appl_write to this one process; the message is 8 words."""
     return (APPL_WRITE, (), (0, 16) + tuple(msg) + (0,) * (8 - len(msg)))
+
+
+def writelen(msg, length):
+    """appl_write with a length of its own: the eight words still travel,
+    so what the length changes is only whether the call is taken."""
+    m = tuple(msg) + (0,) * (8 - len(msg))
+    return (APPL_WRITE, (), (0, length) + m[:8])
+
+
+def readn(length=16, pid=0):
+    """appl_read: the message comes back in int_out[1..] (the runner has
+    no buffer a script could name)."""
+    return (APPL_READ, (), (pid, length))
 
 
 def timeout():
@@ -223,6 +237,45 @@ def case_queue(L, s):
         write((WM_ARROWED, 0, 0, 1, 3, 0, 0, 0)),
         write((WM_ARROWED, 0, 0, 2, 4, 0, 0, 0)),       # replaces
     ] + fill + [queued()] + mesag(NUM_MSGS - 1) + [timeout()]  # one dropped
+
+
+def case_read(L, s):
+    """appl_read, and the length appl_write did not use to read.
+
+    The pipe here is MESSAGES and not bytes -- the window manager
+    coalesces, so it has to know where one starts, and src/aes/appl.c
+    says what keeping that cost.  So both calls take sixteen bytes and
+    refuse anything else, where appl_write used to copy eight words
+    whatever it was told: past the caller's buffer for a short length,
+    and losing the rest for a long one.
+
+    The reads are checked against messages the AES itself posted as well
+    as written ones, because appl_read and evnt_mesag must come out of
+    the same queue in the same order -- a redraw queued between two
+    written messages is read in its place.
+
+    EVERY REFUSAL HAS MESSAGES WAITING BEHIND IT, and the eight queued
+    before them are sized for that: a refusal that is not one takes the
+    oldest message, so the reads after come back shifted and the case
+    goes red.  The slack is what keeps it from HANGING instead -- three
+    wrongly-taken messages still leave enough for every read that
+    follows, and a gate that disagrees says far more than one that stops.
+    """
+    m = [(AC_OPEN, 0, 0, 10 * i, 0, 0, 0, 0) for i in range(9)]
+    return [
+        write(m[1]), write((WM_REDRAW, 0, 0, 1, 10, 10, 20, 20)), write(m[2]),
+        readn(), readn(), readn(),      # m1, the redraw, m2 -- in order
+        write(m[3]), (EVNT_MESAG, (), ()),   # the same pipe, either way
+    ] + [write(x) for x in m[1:]] + [
+        readn(24),                      # not a whole message
+        readn(0),                       # nor is nothing
+        readn(pid=1),                   # and not somebody else's pipe
+        readn(),                        # so this is still m1
+        writelen(m[8], 8),              # a short write is refused, not
+        writelen(m[8], 32),             # read past; a long one, not cut
+        readn(),                        # so this is m2, never m8
+        queued(),                       # m3, and the queue still has some
+    ]
 
 
 # -- the control manager ----------------------------------------------------
@@ -532,6 +585,7 @@ CASES = [
     ("the slide areas and the elevators", case_elevators),
     ("form_do owns the screen; graf_rubbox and graf_dragbox", case_form),
     ("wind_new tidies up: the windows go and the screen is let go", case_new),
+    ("appl_read: one message, in the order evnt_mesag would", case_read),
 ]
 
 

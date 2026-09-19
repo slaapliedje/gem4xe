@@ -194,6 +194,7 @@ int main(void)
 
     /* -- AES, in opcode order ------------------------------------------ */
     appl_init();
+    appl_read(0, 16, w8);
     appl_write(0, 16, w8);
     appl_find("SCRENSAV");              /* eight, as the contract says */
     appl_getinfo(AES_LARGEFONT, &a, &b, &c, &d);

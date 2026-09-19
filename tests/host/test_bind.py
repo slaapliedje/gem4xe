@@ -128,6 +128,7 @@ EXPECT = [
     ("vqt_fontinfo",     VDI, 131, 0, 0, 0, H),
 
     ("appl_init",        AES, 10, 0, 1, 0, 0),
+    ("appl_read",        AES, 11, 2, 1, 1, 0),
     ("appl_write",       AES, 12, 2, 1, 1, 0),
     ("appl_find",        AES, 13, 0, 1, 1, 0),
     ("appl_getinfo",     AES, 130, 1, 5, 0, 0),

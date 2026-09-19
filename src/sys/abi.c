@@ -272,11 +272,24 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         global[10] = gl_nplanes;
         ret = proc_pid(rlr);        /* ap_id */
         break;
+    case 11:                        /* appl_read: id, length, buffer */
+        ret = ap_read(int_in[0], int_in[1], (uint32_t)addr_in[0]);
+        break;
     case 12:                        /* appl_write: id, len, buffer */
         {
             const WORD FAR *m = (const WORD FAR *)addr_in[0];
-            WORD msg[8];
-            for (k = 0; k < 8; k++)
+            WORD msg[AP_MSGWORDS];
+            /* THE LENGTH IS READ NOW, and it was not before.  This copied
+             * eight words whatever it was told, which is wrong in both
+             * directions: a longer message lost everything past the first
+             * sixteen bytes in silence, and a SHORTER one was read past
+             * the end of the caller's buffer.  One message, or a refusal
+             * -- appl.c says why the pipe cannot be bytes. */
+            if (int_in[1] != AP_MSGBYTES) {
+                ret = FALSE;
+                break;
+            }
+            for (k = 0; k < AP_MSGWORDS; k++)
                 msg[k] = m[k];
             /* The destination was read and thrown away while there was
              * one process; it is honoured now, and word 1 says who sent

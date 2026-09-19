@@ -1185,6 +1185,14 @@ WORD shel_put(const void FAR *data, WORD len)
  * argument.
  */
 
+WORD appl_read(WORD id, WORD length, WORD *msg)
+{
+    int_in[0] = id;
+    int_in[1] = length;
+    addr_in[0] = (LONG)(uint32_t)(WORD FAR *)msg;
+    return aes(11, 2, 1, 1, 0);
+}
+
 WORD appl_write(WORD id, WORD length, const WORD *msg)
 {
     int_in[0] = id;
