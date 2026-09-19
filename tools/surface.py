@@ -43,8 +43,8 @@ EXCUSED = [
      r'vqt_(cachesize|get_table)|vst_(error|scratch)|vq_vgdos)',
      "FSM/SpeedoGDOS font machinery"),
     (r'16n?$|16n_pxy$|^vqt_extentn$|^v_gtextn$', "UTF-16 / counted text, MagiC"),
-    (r'^(appl_(bvset|control|options|yield|search|read|write|find|tplay|trecord)|'
-     r'^scrp_clear$)', "AV/OLGA and MiNT: dead on a single-application system"),
+    (r'^appl_(bvset|control|options|search)$',
+     "AV/OLGA and MiNT: dead on a single-application system"),
     (r'^(v_(cellarray)|vq_(cellarray|chcells|curaddress|tabstatus)|'
      r'vs_curaddress|vrq_|vsm_(locator|string|valuator)|vs_palette)',
      "opcodes the driver answers with nothing (kit README says why)"),
@@ -52,8 +52,8 @@ EXCUSED = [
      r'evnt_multi_fast|graf_(xhandle|rubbbox|rubberbox)|vs_clip_(off|pxy))',
      "gemlib's own conveniences, not AES calls"),
     (r'^(objc_x|form_x|wind_x|fsel_boxinput|graf_multirubber|graf_wwatchbox|'
-     r'form_w|objc_w|menu_(attach|istart|settings|click|unregister)|'
-     r'shel_(help|rdef|wdef)|wind_(draw|new)|appl_getinfo_str)',
+     r'form_w|objc_w|menu_(click|unregister)|shel_help|wind_draw|'
+     r'appl_getinfo_str)',
      "AES 4.x / MagiC extensions"),
 ]
 

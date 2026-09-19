@@ -295,6 +295,12 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     case 11:                        /* appl_read: id, length, buffer */
         ret = ap_read(int_in[0], int_in[1], (uint32_t)addr_in[0]);
         break;
+    case 14:                        /* appl_tplay: mem, num, scale */
+        ret = ap_tplay((uint32_t)addr_in[0], int_in[0], int_in[1]);
+        break;
+    case 15:                        /* appl_trecord: mem, num */
+        ret = ap_trecord((uint32_t)addr_in[0], int_in[0]);
+        break;
     case 12:                        /* appl_write: id, len, buffer */
         {
             const WORD FAR *m = (const WORD FAR *)addr_in[0];

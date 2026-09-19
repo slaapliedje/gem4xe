@@ -43,7 +43,8 @@ from aesref import (Obj, Layout, NIL, G_BOX, G_IBOX, G_BUTTON, G_FTEXT,   # noqa
                     EVNT_KEYBD, EVNT_BUTTON, EVNT_MOUSE, EVNT_TIMER,
                     EVNT_MULTI, EVNT_DCLICK, FORM_DO, FORM_DIAL, FORM_KEYBD,
                     FORM_BUTTON, GRAF_GROWBOX, GRAF_SHRINKBOX, GRAF_WATCHBOX,
-                    GRAF_MKSTATE, WIND_SET)
+                    GRAF_MKSTATE, WIND_SET, APPL_TPLAY, APPL_TRECORD,
+                    APPEVNT_TIMER, APPEVNT_BUTTON, APPEVNT_MOUSE)
 from m4_aes import dialog, form, draw, key, mem_diff, PRELUDE   # noqa: E402
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "m3-boot.atr"))
@@ -118,6 +119,33 @@ def DCLICK(xy):
     return [M(*xy), B(1), F(2), B(0), F(2), B(1), F(2), B(0), F(14)]
 
 
+# -- the tape (appl_tplay / appl_trecord) -----------------------------------
+# An EVNTREC is six bytes: the kind as a WORD, then a LONG, both
+# little-endian, which is what this compiler lays the struct out as
+# (src/aes/event.c reads the offsets out of the generated code).  TAPE
+# carries the addresses from the tree builder, which runs before the
+# body, to the body, which needs them.
+TAPE = {}
+
+
+def evntrec(recs):
+    return b"".join(struct.pack("<hi", ev, val) for ev, val in recs)
+
+
+def tape_tree(L):
+    """dialog(), plus a tape to play and room to record one into."""
+    TAPE["play"] = L.raw(evntrec([
+        (APPEVNT_MOUSE,  320 | (140 << 16)),
+        (APPEVNT_BUTTON, 1 | (1 << 16)),
+        (APPEVNT_TIMER,  60),
+        (APPEVNT_BUTTON, 0),
+        (APPEVNT_MOUSE,  400 | (180 << 16)),
+    ]))
+    TAPE["nplay"] = 5
+    TAPE["rec"] = L.raw(bytes(6 * 8))
+    return dialog(L)
+
+
 Z5 = (0, 0, 0, 0, 0)
 
 
@@ -130,7 +158,54 @@ def multi(flags, clicks=0, mask=0, state=0, m1=Z5, m2=Z5, ms=0):
 # (name, tree builder, body, plan[, second tree builder]).  Plan keys index
 # the body; the body may be a function of the second tree's address.
 
+def tape_body(_):
+    """appl_tplay, then appl_trecord and the tape it took played back.
+
+    WHAT THE TAPE LEAVES BEHIND IS THE BUTTON, not the pointer.  A
+    graf_mkstate after a playback was the obvious check and it is
+    VACUOUS: gem4xe polls the hardware every ev_poll, so the emulator's
+    own pointer snaps back the moment playback ends, and a tplay that
+    skipped every mouse record passed.  What survives is the button
+    TRANSITION -- bchange keeps pr_xrat and pr_yrat from the moment of
+    it, and nothing polls those back -- so an evnt_multi(MU_BUTTON)
+    satisfied at entry reports where the TAPE pressed, which is nowhere
+    the plan has been.  evnt_button will NOT do: it registers a wait and
+    spins for a FRESH transition (ev_block), so a stored one is
+    invisible to it, which cost a run to find out.
+
+    The first tape is staged by the host, so what it should answer is
+    written in this file: a press at (320, 140).  Then the round trip --
+    six records taken while the plan moves to (250, 120) and clicks,
+    played back after the pointer has been moved away -- must answer
+    with the recording's own press.  A recorder that filed nothing but
+    the passage of time (which is what it does on a quiet machine, and
+    why appl_trecord returns at all) would have nothing to play and the
+    wait would never be satisfied.
+    """
+    return [
+        multi(MU_TIMER, ms=100),                  # park the pointer
+        (GRAF_MKSTATE,),                          # where the PLAN left it
+        (APPL_TPLAY, (), (TAPE["nplay"], 100, TAPE["play"])),
+        multi(MU_BUTTON, 1, 1, 1),                # the TAPE's press
+        (APPL_TRECORD, (), (6, TAPE["rec"])),     # six, while the plan moves
+        multi(MU_TIMER, ms=100),                  # and away again
+        (APPL_TPLAY, (), (6, 100, TAPE["rec"])),
+        multi(MU_BUTTON, 1, 1, 1),                # the RECORDED press
+    ]
+
+
 CASES = [
+    ("appl_tplay and appl_trecord: the tape, and a round trip", tape_tree,
+     tape_body,
+     {0: [F(2), M(100, 60), F(4)],
+      2: [F(4)],
+      4: [F(2), M(250, 120), B(1), F(3), B(0), F(3)],
+      5: [F(2), M(60, 200), F(4)],
+      6: [F(8)]},
+     # a tree of one, only so that the body may be a function: it needs
+     # the addresses the tree builder staged
+     lambda L2: [Obj(NIL, NIL, NIL, G_BOX, LASTOB, 0, 0x00021100, 0, 0, 8, 8)]),
+
     ("evnt_keybd and evnt_multi(MU_KEYBD): keys through POKEY", dialog,
      [draw(), (EVNT_KEYBD,), (EVNT_KEYBD,), (EVNT_KEYBD,),
       multi(MU_KEYBD), multi(MU_KEYBD | MU_TIMER, ms=2000)],

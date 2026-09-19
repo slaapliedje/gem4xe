@@ -99,6 +99,7 @@ static DTA dta;
 static DISKINFO disk;
 static MENU popmenu;
 static MN_SET mnset;
+static EVNTREC tape[2];
 
 int main(void)
 {
@@ -197,6 +198,8 @@ int main(void)
     /* -- AES, in opcode order ------------------------------------------ */
     appl_init();
     appl_read(0, 16, w8);
+    appl_tplay(tape, 1, 100);
+    appl_trecord(tape, 1);
     appl_write(0, 16, w8);
     appl_find("SCRENSAV");              /* eight, as the contract says */
     appl_getinfo(AES_LARGEFONT, &a, &b, &c, &d);

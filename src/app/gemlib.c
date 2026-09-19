@@ -1193,6 +1193,21 @@ WORD appl_read(WORD id, WORD length, WORD *msg)
     return aes(11, 2, 1, 1, 0);
 }
 
+WORD appl_tplay(const EVNTREC *mem, WORD num, WORD scale)
+{
+    int_in[0] = num;
+    int_in[1] = scale;
+    addr_in[0] = (LONG)(uint32_t)(const EVNTREC FAR *)mem;
+    return aes(14, 2, 1, 1, 0);
+}
+
+WORD appl_trecord(EVNTREC *mem, WORD num)
+{
+    int_in[0] = num;
+    addr_in[0] = (LONG)(uint32_t)(EVNTREC FAR *)mem;
+    return aes(15, 1, 1, 1, 0);
+}
+
 WORD appl_write(WORD id, WORD length, const WORD *msg)
 {
     int_in[0] = id;

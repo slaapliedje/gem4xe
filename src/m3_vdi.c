@@ -544,6 +544,20 @@ static void run_script(void)
              * message comes back in int_out[1..] -- zeroed first, so a
              * refusal hands back zeros and not this frame's leavings.
              * appl_write reads its length now, as the ABI does. */
+            /* THE TAPE.  A script gives the array's address as a plain
+             * bank-$00 word -- vdi_scratch is where a script's data is
+             * staged -- and the host stages or reads back the records
+             * itself, six bytes each (src/aes/event.c). */
+            case 14:            /* appl_tplay: num, scale, buffer */
+                intout[0] = ap_tplay((uint32_t)(uint16_t)intin[2],
+                                     intin[0], intin[1]);
+                c4 = 1;
+                break;
+            case 15:            /* appl_trecord: num, buffer */
+                intout[0] = ap_trecord((uint32_t)(uint16_t)intin[1],
+                                       intin[0]);
+                c4 = 1;
+                break;
             case 11: {                      /* appl_read: id, len */
                 WORD buf[AP_MSGWORDS];
 

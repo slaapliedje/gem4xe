@@ -40,6 +40,7 @@
  */
 #include "aes.h"
 #include "proc.h"
+#include "../sys/farmem.h"
 #include "../sys/zwin.h"
 
 /* ---- the pointer as the AES sees it ------------------------------------ */
@@ -139,6 +140,91 @@ static WORD in_mrect(const MOBLK *pmo)
 {
     WORD in = inside(xrat, yrat, &pmo->m_gr);
     return (pmo->m_out != in);
+}
+
+/* ---- the tape: appl_trecord and appl_tplay -----------------------------
+ *
+ * The AES's own input, written into the caller's array and played back
+ * out of it.  The ROM does this through its fork queue -- ap_trecd sets
+ * gl_recd and the forker files every post, ap_tplay pushes them back in
+ * and dispatches between each (GEMAPLIB.C) -- and gem4xe has no fork
+ * queue, so the three places input actually ARRIVES do the filing: the
+ * VDI's motion, button and timer vectors below, and the one call that
+ * takes a key.
+ *
+ * THE FORMAT IS THE COMPENDIUM'S EVNTREC (p.372), six bytes: a WORD
+ * saying which kind, then a LONG whose halves depend on it.  It is the
+ * caller's memory and may be far, so records go in and out a record at a
+ * time rather than through a pointer.
+ *
+ * RECORDING BLOCKS UNTIL THE ARRAY IS FULL, which is the ROM's contract
+ * and reads like a hang until you see why it is not: a timer record is
+ * filed every TP_SAMPLE whether anything else happened or not, so a
+ * quiet machine fills the array with the passage of time and the call
+ * comes back.  The ROM samples at the same 100 ms.
+ *
+ * WHAT IS NOT RECORDED: a key nobody asks for.  The ROM files a kchange
+ * when the key ARRIVES; here it is filed when the AES takes it out of
+ * the VDI's queue, because that is the only place the AES sees one.  A
+ * key pressed while no wait wants it is recorded when a wait finally
+ * does, with the time of that moment rather than of the press.
+ *
+ * WHAT THE GATE COVERS: the pointer, the buttons and the gaps between
+ * them, both ways round -- a tape the host wrote, and a tape this code
+ * took and then played back, compared byte for byte (test-m7 case 0).
+ * THE KEYBOARD IS NOT IN IT.  ev_getkey below is written and is not
+ * exercised by any case, which is worth knowing before trusting it. */
+#define TP_OFF      0
+#define TP_RECORD   1
+#define TP_PLAY     2
+#define TP_RECBYTES 6           /* EVNTREC: a WORD and a LONG */
+#define TP_SAMPLE   100         /* ms between timer records, as the ROM */
+
+#define APPEVNT_TIMER    0
+#define APPEVNT_BUTTON   1
+#define APPEVNT_MOUSE    2
+#define APPEVNT_KEYBOARD 3
+
+static uint32_t tp_buf;         /* the caller's array, or 0 */
+static WORD     tp_max, tp_n;   /* its room, and what is in it */
+static WORD     tp_mode = TP_OFF;
+static uint32_t tp_mark;        /* gl_ticks when the last record went in */
+static WORD     tp_key;         /* a key the tape has put back, or 0 */
+
+static void tp_rec(WORD ev, uint32_t val)
+{
+    uint8_t r[TP_RECBYTES];
+
+    if (tp_mode != TP_RECORD || tp_n >= tp_max)
+        return;
+    /* Little-endian, both fields, because the caller's EVNTREC is this
+     * compiler's: a WORD then a LONG is six bytes with the LONG at
+     * offset two, which was read out of the generated code and not
+     * assumed -- Calypsi pads some structs to four (tools/ccbug B7). */
+    r[0] = (uint8_t)ev;
+    r[1] = (uint8_t)(ev >> 8);
+    r[2] = (uint8_t)val;
+    r[3] = (uint8_t)(val >> 8);
+    r[4] = (uint8_t)(val >> 16);
+    r[5] = (uint8_t)(val >> 24);
+    far_put(tp_buf + (uint32_t)tp_n * TP_RECBYTES, r, TP_RECBYTES);
+    tp_n++;
+    tp_mark = gl_ticks;
+    if (tp_n >= tp_max)
+        tp_mode = TP_OFF;       /* full: ap_trecord stops waiting */
+}
+
+/* The gap before an event, so that a playback can keep its timing.  The
+ * ROM files a TCHNG of its own for this and so does gem4xe. */
+static void tp_gap(void)
+{
+    uint32_t dt;
+
+    if (tp_mode != TP_RECORD)
+        return;
+    dt = (gl_ticks - tp_mark) * (uint32_t)gl_ticktime;
+    if (dt)
+        tp_rec(APPEVNT_TIMER, dt);
 }
 
 /* ---- transitions -------------------------------------------------------- */
@@ -253,23 +339,40 @@ static void ev_motv(void)
 {
     WORD x, y;
 
+    if (tp_mode == TP_PLAY)     /* the tape is driving, not the mouse */
+        return;
     gsx_mouse(&x, &y);
-    if (x != xrat || y != yrat)
+    if (x != xrat || y != yrat) {
         mchange(x, y);
+        tp_gap();
+        tp_rec(APPEVNT_MOUSE, (uint32_t)(UWORD)x
+                              | ((uint32_t)(UWORD)y << 16));
+    }
 }
 
 static void ev_butv(void)
 {
     WORD x, y, b;
 
+    if (tp_mode == TP_PLAY)
+        return;
     b = gsx_mouse(&x, &y);
     b_click(b);
+    tp_gap();
+    tp_rec(APPEVNT_BUTTON, (uint32_t)(UWORD)b
+                           | ((uint32_t)(UWORD)mclick << 16));
 }
 
 static void ev_timv(void)
 {
     gl_ticks++;
     b_delay(1);
+    /* The sample: a record of the time passing, so that recording on a
+     * quiet machine still fills the array and comes back. */
+    if (tp_mode == TP_RECORD
+        && (gl_ticks - tp_mark) * (uint32_t)gl_ticktime >= TP_SAMPLE)
+        tp_rec(APPEVNT_TIMER,
+               (gl_ticks - tp_mark) * (uint32_t)gl_ticktime);
 }
 
 /* ---- ownership ---------------------------------------------------------- */
@@ -561,6 +664,104 @@ void ev_fq(void)
         ;
 }
 
+/* THE ONE PLACE THE AES TAKES A KEY, so the one place the tape can file
+ * one or put one back.  ev_fq's drain still calls gsx_getkey directly:
+ * throwing keys away is not an event worth recording, and a playback
+ * that had to survive a drain would be recording its own replay. */
+static WORD ev_getkey(WORD *pkey)
+{
+    if (tp_mode == TP_PLAY) {
+        if (!tp_key)
+            return FALSE;
+        *pkey = tp_key;
+        tp_key = 0;
+        return TRUE;
+    }
+    if (!gsx_getkey(pkey))
+        return FALSE;
+    tp_gap();
+    tp_rec(APPEVNT_KEYBOARD, (uint32_t)(UWORD)*pkey
+                             | ((uint32_t)(UWORD)kstate << 16));
+    return TRUE;
+}
+
+/* ---- the tape's two calls ----------------------------------------------
+ *
+ * Both live here rather than in appl.c, where the other application
+ * manager calls are, because both ARE the input layer: one files what
+ * the vectors above see and the other hands the vectors' work to
+ * mchange and b_click itself. */
+
+/* appl_trecord: fill the caller's array and say how many went in.  It
+ * BLOCKS until the array is full, which is the ROM's contract
+ * (GEMAPLIB.C's `while (gl_recd) ev_timer(100L);`) and terminates for
+ * the ROM's reason: time itself is recorded. */
+WORD ap_trecord(uint32_t buf, WORD num)
+{
+    if (!buf || num <= 0 || tp_mode != TP_OFF)
+        return 0;
+    tp_buf = buf;
+    tp_max = num;
+    tp_n = 0;
+    tp_mark = gl_ticks;
+    tp_mode = TP_RECORD;
+    while (tp_mode == TP_RECORD)
+        ev_timer(TP_SAMPLE);
+    tp_buf = 0;
+    return tp_n;
+}
+
+/* appl_tplay: the array back through the input layer, `scale` per cent
+ * of the speed it was taken at -- 100 as recorded, 200 twice as fast.
+ *
+ * THE POINTER IS LEFT WHERE THE TAPE PUT IT.  The ROM saves xrat and
+ * yrat at the top and the code that would put them back is inside an
+ * `#if UNLINKED` that is off, with a note at the head of the file
+ * saying the fix was "so after it finished, it stay where it is".  The
+ * next real movement of the mouse takes it back, on that machine and on
+ * this one, because the hardware never knew. */
+WORD ap_tplay(uint32_t buf, WORD num, WORD scale)
+{
+    uint8_t  r[TP_RECBYTES];
+    uint32_t val;
+    WORD     i, ev;
+
+    if (!buf || num <= 0 || tp_mode != TP_OFF)
+        return 0;
+    if (scale <= 0)
+        scale = 100;            /* the Compendium's 1..10000; 0 would divide */
+    tp_mode = TP_PLAY;
+    tp_key = 0;
+    for (i = 0; i < num; i++) {
+        far_get(r, buf + (uint32_t)i * TP_RECBYTES, TP_RECBYTES);
+        ev = (WORD)(r[0] | (r[1] << 8));
+        val = (uint32_t)r[2] | ((uint32_t)r[3] << 8)
+            | ((uint32_t)r[4] << 16) | ((uint32_t)r[5] << 24);
+        switch (ev) {
+        case APPEVNT_TIMER:
+            ev_timer(val * 100UL / (uint32_t)scale);
+            break;
+        case APPEVNT_MOUSE:
+            mchange((WORD)(UWORD)val, (WORD)(UWORD)(val >> 16));
+            break;
+        case APPEVNT_BUTTON:
+            b_click((WORD)(UWORD)val);
+            break;
+        case APPEVNT_KEYBOARD:
+            tp_key = (WORD)(UWORD)val;
+            kstate = (WORD)(UWORD)(val >> 16);
+            break;
+        default:
+            break;
+        }
+        /* and let whoever is waiting hear it, which is the dsptch() the
+         * ROM makes between every event it plays */
+        ev_poll();
+    }
+    tp_mode = TP_OFF;
+    return TRUE;
+}
+
 /* ---- the wait ----------------------------------------------------------- */
 
 /* Mouse x, y, button and shift state for the caller; the previous
@@ -642,7 +843,7 @@ static WORD ev_wait(WORD flags, const MOBLK *pmo1, const MOBLK *pmo2,
     /* quick checks: anything already there?  The input ones only for the
      * mouse's owner. */
     if (ct_mine()) {
-        if ((flags & MU_KEYBD) && gsx_getkey(&k)) {
+        if ((flags & MU_KEYBD) && ev_getkey(&k)) {
             prets[4] = k;
             what |= MU_KEYBD;
         }
@@ -696,7 +897,7 @@ static WORD ev_wait(WORD flags, const MOBLK *pmo1, const MOBLK *pmo2,
         for (;;) {
             ev_poll();
             if (ct_mine()) {
-                if ((flags & MU_KEYBD) && gsx_getkey(&k)) {
+                if ((flags & MU_KEYBD) && ev_getkey(&k)) {
                     prets[4] = k;
                     which |= MU_KEYBD;
                 }
@@ -776,7 +977,7 @@ WORD ev_block(WORD code, uint32_t lvalue)
     case MU_KEYBD:
         ev_poll();
         for (;;) {
-            if (ct_mine() && gsx_getkey(&r))
+            if (ct_mine() && ev_getkey(&r))
                 return r;
             ev_poll();
         }
@@ -814,7 +1015,7 @@ WORD ev_keybd(void)
 WORD ev_keyq(WORD *pkey)
 {
     ev_poll();
-    return (WORD)(ct_mine() && gsx_getkey(pkey));
+    return (WORD)(ct_mine() && ev_getkey(pkey));
 }
 
 WORD ev_button(WORD clicks, UWORD mask, UWORD state, WORD *rets)

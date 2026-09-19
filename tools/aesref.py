@@ -102,6 +102,10 @@ SUBMENU = 0x0800                # ob_flags: this item carries a menu
 ME_INQUIRE, ME_ATTACH, ME_REMOVE = 0, 1, 2
 MIS_INQUIRE, MIS_SET = 0, 1
 MNS_GET, MNS_SET, MN_SETWORDS = 0, 1, 9
+# the tape (src/aes/event.c): EVNTREC is six bytes, sampled at 100 ms
+TP_OFF, TP_RECORD, TP_PLAY = 0, 1, 2
+TP_RECBYTES, TP_SAMPLE = 6, 100
+APPEVNT_TIMER, APPEVNT_BUTTON, APPEVNT_MOUSE, APPEVNT_KEYBOARD = 0, 1, 2, 3
 # the Falcon ROM's five (MN_TOOLS.H): ms, ms, ms, ms, items
 MN_INIT = (200, 10000, 250, 0, 16)
 MN_MIN_HEIGHT = 5
@@ -257,8 +261,8 @@ class Layout:
     def blob_of(self, thing):
         """The bytes an item occupies NOW -- a Text edited by objc_edit
         packs differently from when it was laid out."""
-        if isinstance(thing, bytes):
-            return thing
+        if isinstance(thing, (bytes, bytearray)):
+            return bytes(thing)
         if isinstance(thing, int):
             return struct.pack("<I", thing & 0xFFFFFFFF)
         return thing.pack()
@@ -297,6 +301,19 @@ class Layout:
         text = text or Rect(0, hl, wb * 8, 8)
         ib = Iconblk(pmask, pdata, ptext, char, xchar, ychar, icon, text)
         return self._put(ib, ib.pack())
+
+    def raw(self, b):
+        """Bytes at an address of their own -- an EVNTREC array for the
+        tape, and anything else a case stages whole.
+
+        A BYTEARRAY, because a call that writes into it must be seen by
+        every dict the Layout's map was copied into: the AES model is
+        handed a copy, so replacing the entry there would be invisible
+        and only mutating the object itself shows up.  It is the same
+        reason objc_edit mutates a Text rather than putting a new one
+        back."""
+        b = bytearray(b)
+        return self._put(b, b)
 
     def indirect(self, spec):
         return self._put(spec, struct.pack("<I", spec & 0xFFFFFFFF))
@@ -1464,6 +1481,8 @@ class AES:
         self.gl_btrue = self.gl_bdesired = b
         self.kstate = self.gsx_kstate()
         self.ev_dclick(3, True)
+        self.tp_mode, self.tp_n, self.tp_max = TP_OFF, 0, 0
+        self.tp_mark, self.tp_out, self.tp_key = 0, [], None
 
     def ev_dclick(self, rate, setit):
         if setit:
@@ -1529,18 +1548,131 @@ class AES:
         self.xrat, self.yrat = x, y
 
     # the VDI vectors
+    # ---- the tape: appl_trecord and appl_tplay -----------------------
+    # The AES's own input, filed into the caller's EVNTREC array and
+    # played back out of it.  src/aes/event.c has the reasoning; this
+    # is the same three hooks, because the model's vectors are the
+    # target's vectors.
+    def tp_rec(self, ev, val):
+        if self.tp_mode != TP_RECORD or self.tp_n >= self.tp_max:
+            return
+        self.tp_out.append((ev, val & 0xFFFFFFFF))
+        self.tp_n += 1
+        self.tp_mark = self.gl_ticks
+        if self.tp_n >= self.tp_max:
+            self.tp_mode = TP_OFF
+
+    def tp_gap(self):
+        if self.tp_mode != TP_RECORD:
+            return
+        dt = (self.gl_ticks - self.tp_mark) * self.gl_ticktime
+        if dt:
+            self.tp_rec(APPEVNT_TIMER, dt)
+
     def ev_motv(self):
+        if self.tp_mode == TP_PLAY:
+            return
         b, x, y = self.gsx_mouse()
         if x != self.xrat or y != self.yrat:
             self.mchange(x, y)
+            self.tp_gap()
+            self.tp_rec(APPEVNT_MOUSE, (x & 0xFFFF) | ((y & 0xFFFF) << 16))
 
     def ev_butv(self):
+        if self.tp_mode == TP_PLAY:
+            return
         b, x, y = self.gsx_mouse()
         self.b_click(b)
+        self.tp_gap()
+        self.tp_rec(APPEVNT_BUTTON,
+                    (b & 0xFFFF) | ((self.mclick & 0xFFFF) << 16))
 
     def ev_timv(self):
         self.gl_ticks += 1
         self.b_delay(1)
+        if (self.tp_mode == TP_RECORD
+                and (self.gl_ticks - self.tp_mark) * self.gl_ticktime
+                >= TP_SAMPLE):
+            self.tp_rec(APPEVNT_TIMER,
+                        (self.gl_ticks - self.tp_mark) * self.gl_ticktime)
+
+    def tp_staged(self, addr, num):
+        """The EVNTREC array the script staged, as (kind, value) pairs.
+        The map holds a `bytes` at the address the case put it."""
+        blob = self.mem.get(addr, b"")
+        out = []
+        for i in range(num):
+            r = bytes(blob[i * TP_RECBYTES:(i + 1) * TP_RECBYTES])
+            if len(r) < TP_RECBYTES:
+                out.append((0, 0))
+                continue
+            out.append((r[0] | (r[1] << 8),
+                        r[2] | (r[3] << 8) | (r[4] << 16) | (r[5] << 24)))
+        return out
+
+    def tp_packed(self, addr, num):
+        """What appl_trecord left in the caller's array, written INTO
+        the bytearray the case staged: the records it filed, and the
+        rest of the array untouched, because the target writes only the
+        ones it took."""
+        out = self.mem.get(addr)
+        if not isinstance(out, bytearray):
+            return
+        for i, (ev, val) in enumerate(self.tp_out):
+            if val >= 0x80000000:
+                val -= 0x100000000
+            out[i * TP_RECBYTES:(i + 1) * TP_RECBYTES] = struct.pack("<hi",
+                                                                    ev, val)
+
+    def ev_getkey(self):
+        """The one place the AES takes a key -- ev_fq's drain still goes
+        straight to the VDI (src/aes/event.c says why)."""
+        if self.tp_mode == TP_PLAY:
+            k, self.tp_key = self.tp_key, None
+            return k
+        k = self.gsx_getkey()
+        if k is None:
+            return None
+        self.tp_gap()
+        self.tp_rec(APPEVNT_KEYBOARD,
+                    (k & 0xFFFF) | ((self.kstate & 0xFFFF) << 16))
+        return k
+
+    def ap_trecord(self, num):
+        """Fill the array and say how many went in; it BLOCKS until full,
+        which ends even on a quiet machine because the passage of time is
+        recorded too."""
+        if num <= 0 or self.tp_mode != TP_OFF:
+            return 0
+        self.tp_max, self.tp_n, self.tp_out = num, 0, []
+        self.tp_mark = self.gl_ticks
+        self.tp_mode = TP_RECORD
+        while self.tp_mode == TP_RECORD:
+            self.ev_timer(TP_SAMPLE)
+        return self.tp_n
+
+    def ap_tplay(self, recs, num, scale):
+        """`recs` is the array as it lies in the caller's memory."""
+        if num <= 0 or self.tp_mode != TP_OFF:
+            return 0
+        if scale <= 0:
+            scale = 100
+        self.tp_mode = TP_PLAY
+        self.tp_key = None
+        for i in range(num):
+            ev, val = recs[i]
+            if ev == APPEVNT_TIMER:
+                self.ev_timer(val * 100 // scale)
+            elif ev == APPEVNT_MOUSE:
+                self.mchange(val & 0xFFFF, (val >> 16) & 0xFFFF)
+            elif ev == APPEVNT_BUTTON:
+                self.b_click(val & 0xFFFF)
+            elif ev == APPEVNT_KEYBOARD:
+                self.tp_key = val & 0xFFFF
+                self.kstate = (val >> 16) & 0xFFFF
+            self.ev_poll()
+        self.tp_mode = TP_OFF
+        return 1
 
     # -- ownership (geminput.c; event.c's ct_* here) -----------------------
     # ctrl is the application's rectangle; a press outside it goes to the
@@ -1749,7 +1881,7 @@ class AES:
             by_level = False
             mine = self.ct_mine()
             if mine and flags & MU_KEYBD:
-                k = self.gsx_getkey()
+                k = self.ev_getkey()
                 if k is not None:
                     rets[4] = k
                     what |= MU_KEYBD
@@ -1827,7 +1959,7 @@ class AES:
             w = 0
             mine = self.ct_mine()
             if mine and flags & MU_KEYBD:
-                k = self.gsx_getkey()
+                k = self.ev_getkey()
                 if k is not None:
                     rets[4] = k
                     w |= MU_KEYBD
@@ -1872,7 +2004,7 @@ class AES:
             got = []
 
             def check():
-                k = self.gsx_getkey() if self.ct_mine() else None
+                k = self.ev_getkey() if self.ct_mine() else None
                 if k is not None:
                     got.append(k)
                 return bool(got)
@@ -4413,6 +4545,19 @@ class AES:
             # appl_init: the ap_id, which is 0 -- one process (abi.c)
             io[0] = 0
             c4 = 1
+        elif n == 14:
+            # appl_tplay: num, scale, and the array's address -- the
+            # records come out of the memory map the script staged
+            io[0] = self.ap_tplay(self.tp_staged(ints[2], ints[0]),
+                                  ints[0], ints[1])
+            c4 = 1
+        elif n == 15:
+            # appl_trecord: num, and where to put them.  The records go
+            # back into the memory map, because that is the caller's
+            # array and the gate compares it byte for byte.
+            io[0] = self.ap_trecord(ints[0])
+            self.tp_packed(ints[1], ints[0])
+            c4 = 1
         elif n == 11:
             # appl_read: id, len -- the runner has no buffer a script
             # could name, so the message comes back in int_out[1..]
@@ -4953,7 +5098,7 @@ GRAF_SLIDEBOX = 1076
 GRAF_MOUSE = 1078
 GRAF_MKSTATE = 1079
 APPL_INIT, APPL_WRITE, APPL_EXIT, EVNT_MESAG = 1010, 1012, 1019, 1023
-APPL_READ = 1011
+APPL_READ, APPL_TPLAY, APPL_TRECORD = 1011, 1014, 1015
 GRAF_HANDLE = 1077
 FSEL_INPUT, FSEL_EXINPUT = 1090, 1091
 (MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL, MENU_TEXT,

@@ -772,6 +772,15 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4);
 #define AP_MSGBYTES     (AP_MSGWORDS * 2)
 WORD ap_read(WORD ap_id, WORD length, uint32_t buf);
 
+/* appl_trecord / appl_tplay: the AES's own input, filed into the
+ * caller's EVNTREC array and played back out of it.  Both live in
+ * event.c, where the input is; `buf` may be far, and a record is six
+ * bytes -- a WORD kind then a LONG, the Compendium's (p.372).
+ * ap_trecord BLOCKS until the array is full, which is the ROM's
+ * contract and terminates because the passage of time is recorded too. */
+WORD ap_trecord(uint32_t buf, WORD num);
+WORD ap_tplay(uint32_t buf, WORD num, WORD scale);
+
 /* fsel.c -- the file selector (docs/phase11.md) */
 extern WORD gl_drvbits;             /* which drive buttons are live, A = bit 0 */
 void fs_start(void);                /* at AES start-up: the far name slots */

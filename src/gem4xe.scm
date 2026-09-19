@@ -7,7 +7,7 @@
 ;;;   $0700-$1FFF  DOS resident          -- not ours
 ;;;   $2000-$20FF  direct page           <- ours
 ;;;   $2100-$375F  stack / data / zdata  <- ours (the stack is 2 KB; see below)
-;;;   $37D0-$3FFD  near code and rodata  <- ours
+;;;   $37E0-$3FFD  near code and rodata  <- ours
 ;;;                (that boundary moves; the memories below are what it is)
 ;;;   $3FFE-$3FFF  the cstartup's reset word, inert
 ;;;   $4000-$47FF  zwin: bss no interrupt handler touches  <- ours; see BANKED
@@ -164,7 +164,7 @@
     ;; and both were tried first and caught by gates -- the application
     ;; pool by test-m28 (rs_load's peak; see the note below) and the stack
     ;; by test-m32 (GD_PEXEC_STACK; see the block at the end).
-    (memory LoRAM      (address (#x2100 . #x37cf))
+    (memory LoRAM      (address (#x2100 . #x37df))
             (section stack data zdata heap))
 
     ;; Near code: the entry stub, farload, the C startup, the CIO
@@ -172,7 +172,7 @@
     ;; it cannot be far) and every library routine that is not compiled
     ;; far -- plus all constant data.  There is no overflow memory: a link
     ;; that outgrows this memory fails rather than spilling somewhere slow.
-    (memory Near       (address (#x37d0 . #x3ffd))
+    (memory Near       (address (#x37e0 . #x3ffd))
             (section code libcode cdata idata data_init_table))
 
     ;; The library cstartup always emits a `reset` section -- a word pointing

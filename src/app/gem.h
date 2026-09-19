@@ -839,6 +839,28 @@ WORD shel_put(const void FAR *data, WORD len);
  * BYTES and must be a whole number of 16-byte messages -- one is the
  * usual, four the most appl_write will take.  appl_read waits, and reads
  * only your own pipe; both buffers may be far. */
+/* The AES's own input, recorded and played back.  A record is six bytes
+ * and the array is yours; appl_trecord fills it and says how many went
+ * in, and it DOES NOT RETURN until it is full -- that is the ST's
+ * contract, and it ends even on a quiet machine because the passage of
+ * time is recorded too, one entry per 100 ms.  appl_tplay's `scale` is
+ * a percentage: 100 as recorded, 200 twice as fast.
+ *
+ * What gem4xe records is what the AES SEES: the pointer moving, the
+ * buttons, and a key at the moment a wait takes it rather than at the
+ * moment it was pressed.  The pointer is left where a playback put it;
+ * the next real movement takes it back, because the mouse never knew. */
+#define APPEVNT_TIMER    0      /* ap_value: elapsed milliseconds */
+#define APPEVNT_BUTTON   1      /* low word state, high word clicks */
+#define APPEVNT_MOUSE    2      /* low word x, high word y */
+#define APPEVNT_KEYBOARD 3      /* bits 0-7 ASCII, 8-15 scan, 16-31 shift */
+typedef struct {
+    WORD ap_event;
+    LONG ap_value;
+} EVNTREC;
+WORD appl_trecord(EVNTREC *mem, WORD num);
+WORD appl_tplay(const EVNTREC *mem, WORD num, WORD scale);
+
 WORD appl_read(WORD id, WORD length, WORD *msg);
 WORD appl_write(WORD id, WORD length, const WORD *msg);
 WORD evnt_mouse(WORD flags, WORD x, WORD y, WORD w, WORD h,
