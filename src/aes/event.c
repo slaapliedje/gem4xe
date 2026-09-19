@@ -189,7 +189,10 @@ static uint32_t tp_buf;         /* the caller's array, or 0 */
 static WORD     tp_max, tp_n;   /* its room, and what is in it */
 static WORD     tp_mode = TP_OFF;
 static uint32_t tp_mark;        /* gl_ticks when the last record went in */
-static WORD     tp_key;         /* a key the tape has put back, or 0 */
+/* A key the tape has put back, or 0 for none.  0 is safe as "none"
+ * because a GEM key word is the scan code in the high byte and the
+ * ASCII in the low one, and 0 would be neither. */
+static WORD     tp_key;
 
 static void tp_rec(WORD ev, uint32_t val)
 {
