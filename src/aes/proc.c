@@ -37,6 +37,10 @@ WORD proc_init(void *store)
          * then holds bytes of the driver -- and the desktop said
          * DESKTOP.RSC was not on the boot disk (docs/phase41.md). */
         memset(p, 0, sizeof *p);
+        /* ...and the name is BLANKS, which zero is not.  A record full of
+         * zeroes compares equal to the empty string over its whole width,
+         * so appl_find("") would answer 0 -- a pid, and a wrong one. */
+        memset(p->p_name, ' ', AP_NAMELEN);
         p->p_stat = P_FREE;
         p->p_evwait = 0;
         p->p_tdead = 0;
@@ -78,9 +82,45 @@ PROC *proc_new(WORD *queue, WORD qmax)
     p->p_qcount = 0;
     p->p_rsc = p->p_rsc2 = 0;          /* a new process has no resource yet */
     p->p_rscmark = p->p_rscmark2 = 0;
+    memset(p->p_name, ' ', AP_NAMELEN);   /* not the last tenant's */
     p->p_stat = P_NEW;
     proc_n++;
     return p;
+}
+
+/* The donor's sh_name() and p_nameit() in one (gemshlib.c, gempd.c):
+ * the last component of the path, its first eight characters, stopping
+ * at the extension and padded out with blanks.  One function rather than
+ * two because gem4xe has no other caller for either half -- and because
+ * two cannot then be called in the wrong order. */
+void proc_name(PROC *p, const char *path)
+{
+    const char *name = path, *s;
+    WORD i;
+
+    for (s = path; *s; s++)
+        if (*s == '\\' || *s == '/' || *s == ':')
+            name = s + 1;
+    for (i = 0; i < AP_NAMELEN && name[i] && name[i] != '.'; i++)
+        p->p_name[i] = name[i];
+    for (; i < AP_NAMELEN; i++)
+        p->p_name[i] = ' ';
+}
+
+/* The donor's fpdnm(pname, 0), over the records in use -- and P_FREE is
+ * skipped inside that range too.  proc_drop() only ever gives back the
+ * LAST record and winds proc_n back with it, so there should be no free
+ * record below proc_n; the test costs a compare and means a name can
+ * never be answered for a record nobody is running. */
+PROC *proc_byname(const char *name)
+{
+    WORD i;
+
+    for (i = 0; i < proc_n; i++)
+        if (proc_tab[i].p_stat != P_FREE
+            && strncmp(name, proc_tab[i].p_name, AP_NAMELEN) == 0)
+            return &proc_tab[i];
+    return 0;
 }
 
 /* Give back the record proc_new() just handed out, when the load it was

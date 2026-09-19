@@ -63,14 +63,14 @@ LOAD_RUN = 3004
 APP_OK = 0
 REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
-# AES calls src/m11_app.c makes WITHOUT a record_aes(): the five
-# objc_sysvar probes.  They are deliberately outside results[], because
-# every entry there is compared against tools/aesref.py and this call's
-# answers are constants a specification fixes rather than behaviour a
-# model computes.  They still cost a COP each, so the reconciliation
-# below has to know how many -- naming them keeps it able to catch a
-# call nobody meant to make.
-UNRECORDED_AES = 5
+# AES calls src/m11_app.c makes WITHOUT a record_aes(): five objc_sysvar
+# probes and three appl_find ones.  They are deliberately outside
+# results[], because every entry there is compared against
+# tools/aesref.py and these calls' answers are constants a specification
+# fixes rather than behaviour a model computes.  They still cost a COP
+# each, so the reconciliation below has to know how many -- naming them
+# keeps it able to catch a call nobody meant to make.
+UNRECORDED_AES = 5 + 3
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 
@@ -308,6 +308,27 @@ def main(argv):
               "these settings to change")
         check(sv["sv_junk"] == 0,
               "objc_sysvar with a `which` outside the six must answer 0")
+
+        # appl_find (AES 13), read the same way.  The runner named the
+        # process after the file the shell installs this program as
+        # (src/m3_vdi.c, op 4), so its own padded name must find it at
+        # pid 0 -- and the UNPADDED spelling must not, because the
+        # Compendium tells the caller to pad to eight and a real AES
+        # compares over eight.  Softening that here would make a program
+        # work on gem4xe and fail on an ST.
+        af = {n: struct.unpack("<h", b.memdump(app[n] + base, 2))[0]
+              for n in ("af_self", "af_short", "af_none")}
+        print(f"  appl_find: \"M11     \" -> {af['af_self']}, \"M11\" -> "
+              f"{af['af_short']}, \"NOSUCHPR\" -> {af['af_none']}")
+        check(af["af_self"] == 0,
+              f"appl_find(\"M11     \") answered {af['af_self']}, not 0: the "
+              f"application is process 0 and that is the name it was loaded "
+              f"under")
+        check(af["af_short"] == -1,
+              f"appl_find(\"M11\") answered {af['af_short']}, not -1: an "
+              f"unpadded name must find nothing, as it does on an ST")
+        check(af["af_none"] == -1,
+              f"appl_find(\"NOSUCHPR\") answered {af['af_none']}, not -1")
         passed = b.peek(syms["gem_cop_pass"])
         want_foreign, want_bad, extra = ((FOREIGN_OS, 0, 0) if os_rom
                                          else (FOREIGN_REFUSED, 1, 0))

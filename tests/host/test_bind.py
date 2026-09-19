@@ -129,6 +129,7 @@ EXPECT = [
 
     ("appl_init",        AES, 10, 0, 1, 0, 0),
     ("appl_write",       AES, 12, 2, 1, 1, 0),
+    ("appl_find",        AES, 13, 0, 1, 1, 0),
     ("appl_exit",        AES, 19, 0, 1, 0, 0),
     ("evnt_keybd",       AES, 20, 0, 1, 0, 0),
     ("evnt_button",      AES, 21, 3, 5, 0, 0),

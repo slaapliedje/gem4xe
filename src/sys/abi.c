@@ -286,6 +286,22 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
             mq_put(proc_of(int_in[0]), msg);
         }
         break;
+    case 13: {                      /* appl_find: name */
+        /* Eight characters, blank-padded by the CALLER as the Compendium
+         * tells it to (p.362), compared over all eight.  A name that was
+         * not padded finds nothing, which is what a real AES answers.
+         *
+         * The AES 4.0 extensions are NOT here and must not be: an upper
+         * word of $FFFF, $FFFE or $0000 meaning a MiNT id, an AES id or
+         * "me".  They are gated on appl_getinfo, which is AES 4.0 while
+         * gem4xe reports 1.40 -- and the third would be ruinous on a
+         * 24-bit machine anyway, where EVERY near pointer has a zero
+         * upper word and would be swallowed by it. */
+        const char *s = near_str(addr_in[0]);
+        PROC *p = s ? proc_byname(s) : 0;
+        ret = p ? proc_pid(p) : -1;
+        break;
+    }
     case 19:                        /* appl_exit */
         break;
 

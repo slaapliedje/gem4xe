@@ -145,7 +145,8 @@ def main(argv):
         near = title - (asym["acc_title"] - link_near)
         acc = {n: asym[n] + near - link_near
                for n in ("acc_id", "acc_menu", "acc_ticks", "acc_msgs",
-                         "acc_opens", "acc_closes", "acc_last", "acc_ws")}
+                         "acc_opens", "acc_closes", "acc_last", "acc_ws",
+                         "acc_find", "acc_findapp")}
         acc_id, acc_menu = b.peek16(acc["acc_id"]), b.peek16(acc["acc_menu"])
         check(acc_id == 1, f"the accessory's ap_id is {acc_id}, expected 1")
         check(acc_menu == 0, f"its menu id is {acc_menu}, expected slot 0")
@@ -242,6 +243,24 @@ def main(argv):
               f"({t0} -> {t1}): it is resident but not running")
         print(f"  its own timer went {t0} -> {t1} over 300 frames with the "
               f"desktop up")
+
+        # appl_find (AES 13): the process list searched by NAME, which is
+        # the only thing in the tree that walks more than one record.  The
+        # accessory asked for its own name once, at start-up, and asks for
+        # the application's on every tick -- and the application only HAS
+        # a name once the shell has loaded a program into it, so this is
+        # the check that sh_ldapp names the one it runs.
+        af, afa = b.peek16(acc["acc_find"]), b.peek16(acc["acc_findapp"])
+        af = af - 65536 if af >= 32768 else af
+        afa = afa - 65536 if afa >= 32768 else afa
+        print(f"  appl_find: its own name -> {af}, \"DESKTOP \" -> {afa}")
+        check(af == acc_id,
+              f"appl_find(\"M28     \") answered {af}, not the accessory's own "
+              f"ap_id {acc_id}: the shell did not name it from M28.ACC")
+        check(afa == 0,
+              f"appl_find(\"DESKTOP \") answered {afa}, not 0: the shell must "
+              f"name the process it loads a program into, and the desktop is "
+              f"the application")
         print(f"  the scheduler gave {b.peek16(syms['proc_turns'])} turns away")
         check(b.peek16(acc["acc_msgs"]) == 1,
               f"the accessory was sent {b.peek16(acc['acc_msgs'])} messages, "

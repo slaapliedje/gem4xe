@@ -32,6 +32,8 @@ WORD acc_closes;                /* AC_CLOSE */
 WORD acc_last[8];               /* the last message, word for word */
 WORD acc_ticks;                 /* timer waits completed: it is alive */
 WORD acc_ws;                    /* a workstation, opened once and KEPT */
+WORD acc_find;                  /* appl_find on its OWN name: its pid */
+WORD acc_findapp;               /* ...and on the desktop's, refreshed */
 
 static char acc_title[] = "  Gate accessory";
 
@@ -61,6 +63,14 @@ int main(void)
 
     acc_menu = menu_register(acc_id, acc_title);
 
+    /* appl_find (13): the process list, searched by NAME -- the file the
+     * shell loaded each process from, eight characters padded with
+     * blanks.  This accessory came from M28.ACC, so its own name is
+     * "M28" and five blanks, and finding it must answer the pid
+     * appl_init handed out.  It is the only place in the tree where the
+     * search has more than one record to walk. */
+    acc_find = appl_find("M28     ");
+
     /* The loop a desk accessory never leaves.  A timer goes with the
      * message so that the accessory is a process with something to wake
      * up FOR: a message alone would make it invisible to the scheduler
@@ -70,8 +80,16 @@ int main(void)
         WORD what = evnt_multi_moblk((UWORD)(MU_MESAG | MU_TIMER), 1, 1, 1,
                                0, 0, msg, 500, 0,
                                &mx, &my, &mb, &ks, &kr, &br);
-        if (what & MU_TIMER)
+        if (what & MU_TIMER) {
             acc_ticks++;
+            /* And who is running above it.  The shell names the
+             * application's process after each program it loads
+             * (sh_ldapp), so this is -1 until the first one starts and 0
+             * -- the application's pid -- while the desktop is up.  Asked
+             * again on every tick because the answer CHANGES: an
+             * accessory is loaded before any program runs. */
+            acc_findapp = appl_find("DESKTOP ");
+        }
         if (!(what & MU_MESAG))
             continue;
         acc_msgs++;

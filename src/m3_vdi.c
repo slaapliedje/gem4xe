@@ -314,6 +314,13 @@ static void sys_op(WORD op)
         gem_calls = app_calls = gem_bad = 0;
         st = app_load(app_blob, app_blob_len, &app);
         if (st == APP_OK) {
+            /* What the SHELL would have done (sh_ldapp): name the process
+             * after the file it is about to run, so that appl_find can
+             * find it.  The blob is packed into this image and has no
+             * name of its own, so the name is the one the same program
+             * is installed under and runs by under the real shell --
+             * M11.G4A (the Makefile's SHELL_FILES). */
+            proc_name(proc_app, "M11.G4A");
             ret = app_exec(&app);
             app_free(&app);
         }

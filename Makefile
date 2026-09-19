@@ -577,7 +577,9 @@ build/app_blob.o: build/app_blob.c
 # smallest of anything here -- it draws nothing and owns no window -- so
 # what test-m28 measures is close to the floor an accessory costs.
 ACC_OBJS   = $(G4A_LIB) build/app/m28_acc.o
-$(eval $(call g4a,m28_acc,$(ACC_OBJS),1152,128,384,,))
+# 160 bits, not 128: the two eight-character names it hands appl_find are
+# near constants, and 128 left six bytes free.
+$(eval $(call g4a,m28_acc,$(ACC_OBJS),1152,160,384,,))
 
 # The two accessories (src/apps): the first programs written to the
 # application ABI that are not tests.  Each is one C file, one resource

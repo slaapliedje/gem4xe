@@ -46,6 +46,12 @@
 #define NUM_PROCS   4           /* the application, and three accessories */
 #define ACC_MSGS    8           /* an accessory's queue, in messages */
 
+/* The width of the name appl_find searches, and the donor's (struct.h
+ * calls it "architectural", which it is: the Compendium tells the CALLER
+ * to pad its name to exactly eight characters, so the compare is over
+ * exactly eight and the field is exactly eight). */
+#define AP_NAMELEN  8
+
 #define P_FREE  0               /* the record is not in use */
 #define P_NEW   1               /* loaded, never given a turn */
 #define P_LIVE  2               /* running, or parked with a wait recorded */
@@ -91,6 +97,12 @@ typedef struct PROC {
     uint16_t p_gdowned;         /* the IOCBs Fopen has out, bit n */
     uint16_t p_gdateof;         /* ...and those a read took to the end */
     uint32_t p_gddta;           /* its Disk Transfer Address */
+    /* What appl_find searches: eight characters of the file the process
+     * was loaded from, blank-padded and DELIBERATELY NOT TERMINATED,
+     * because eight characters is the whole field.  Blanks, not zeroes:
+     * a record full of zeroes matches the empty string, so a program
+     * that asked appl_find("") would be told it had found process 0. */
+    char     p_name[AP_NAMELEN];
 } PROC;
 
 extern PROC *proc_tab;          /* NUM_PROCS records, the caller's memory */
@@ -134,6 +146,15 @@ PROC *proc_new(WORD *queue, WORD qmax);
 /* Give back the record proc_new() handed out, when the load it was for
  * did not happen. */
 void  proc_drop(PROC *p);
+
+/* Name a process after the file it is running, and find one by that
+ * name: what appl_find (13) searches.  proc_name() takes the WHOLE path
+ * the shell was given and keeps the last component's first eight
+ * characters, stopping at the extension; proc_byname() compares over all
+ * eight, so a caller that did not blank-pad finds nothing -- which is
+ * what a real AES does and what the caller is told to expect. */
+void  proc_name(PROC *p, const char *path);
+PROC *proc_byname(const char *name);
 
 /* Somebody else's turn, if anybody else can go.  ev_poll() calls it. */
 void  proc_yield(void);

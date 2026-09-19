@@ -271,6 +271,7 @@ static WORD sh_ldacc(const char *name)
         proc_drop(p);
         return FALSE;
     }
+    proc_name(p, name);                 /* what appl_find will search */
     ctx_switch(&p->p_ctx);              /* runs until it parks */
     p->p_stat = P_LIVE;                 /* it has had its first turn */
     sh_naccs++;
@@ -353,6 +354,12 @@ static WORD sh_ldapp(void)
             sh_doexec = 4;
         return st;
     }
+    /* What appl_find will search, and it is the APPLICATION's record by
+     * definition -- an application is process 0 (proc.h).  Named after
+     * the load rather than before it, so that a failure leaves the name
+     * of whatever is actually there instead of one for a program that
+     * never started. */
+    proc_name(proc_app, was == SH_DESKTOP ? SH_DESKNAME : cmd);
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     sh_lastret = app_exec(&app);

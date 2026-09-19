@@ -195,6 +195,7 @@ int main(void)
     /* -- AES, in opcode order ------------------------------------------ */
     appl_init();
     appl_write(0, 16, w8);
+    appl_find("SCRENSAV");              /* eight, as the contract says */
     appl_exit();
     evnt_keybd();
     evnt_button(1, 1, 1, &a, &b, &c, &d);

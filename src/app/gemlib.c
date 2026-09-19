@@ -1227,6 +1227,16 @@ WORD menu_register(WORD pid, const char *str)
     return aes(35, 1, 1, 1, 0);
 }
 
+/* The name is EIGHT CHARACTERS, blank-padded, and the caller does the
+ * padding: appl_find("QED") finds nothing and appl_find("QED     ")
+ * finds it.  That is the ST's contract, kept rather than softened, so a
+ * program that works here works there. */
+WORD appl_find(const char *fname)
+{
+    addr_in[0] = (LONG)(uint32_t)(const char FAR *)fname;
+    return aes(13, 0, 1, 1, 0);
+}
+
 /* objc_edit: `idx` is both the cursor position going in and the one
  * that comes back (the ST passes it by address; here it is a word in
  * and a word out, which is what the shim does with it). */

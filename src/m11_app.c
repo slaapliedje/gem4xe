@@ -47,6 +47,11 @@ WORD sv_lk3d, sv_lk3d1, sv_lk3d2;   /* LK3DIND: the same */
 WORD sv_col1;                       /* INDBUTCOL's colour */
 WORD sv_set;                        /* a SV_SET: must be refused */
 WORD sv_junk;                       /* a `which` that is not one of the six */
+/* appl_find's answers, kept out of results[] for the same reason: what
+ * they must be is fixed by the contract, not computed by a model. */
+WORD af_self;                       /* its own name, padded: its pid */
+WORD af_short;                      /* ...the same name UNpadded: -1 */
+WORD af_none;                       /* a name nothing carries: -1 */
 static DTA dta;
 
 extern WORD m11_cop01(void);
@@ -169,6 +174,16 @@ int main(void)
     objc_sysvar(SV_INQUIRE, INDBUTCOL, 0, 0, &sv_col1, &k);
     sv_set  = objc_sysvar(SV_SET, INDBUTCOL, 1, 0, &k, &k);
     sv_junk = objc_sysvar(SV_INQUIRE, 99, 0, 0, &k, &k);
+
+    /* appl_find (opcode 13): the process list, searched by name.  The
+     * name is the file the shell -- or here the runner, which stands in
+     * for it -- loaded this program from, EIGHT characters padded with
+     * blanks, and the unpadded spelling must find nothing: that is the
+     * ST's contract and a program written to it works either way round
+     * only if this side does not soften it. */
+    af_self  = appl_find("M11     ");
+    af_short = appl_find("M11");
+    af_none  = appl_find("NOSUCHPR");
 
     foreign = m11_cop01();
     return ncalls;

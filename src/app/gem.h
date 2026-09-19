@@ -809,6 +809,7 @@ WORD evnt_mouse(WORD flags, WORD x, WORD y, WORD w, WORD h,
 WORD evnt_dclick(WORD rate, WORD setit);
 WORD menu_text(OBJECT *tree, WORD item, const char *text);
 WORD menu_register(WORD pid, const char *str);
+WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
 WORD objc_edit(OBJECT *tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
 WORD form_keybd(OBJECT *tree, WORD obj, WORD nxt_obj, WORD thechar,
                 WORD *pnxt_obj, WORD *pchar);
