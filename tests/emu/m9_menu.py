@@ -32,8 +32,9 @@ import vbxeref, aesref, symfile             # noqa: E402
 from aesref import (Layout, Obj, NIL, G_IBOX, G_BOX, G_TITLE, G_STRING,  # noqa: E402
                     LASTOB, DISABLED, CHECKED, MU_MESAG, MU_TIMER, MU_BUTTON,
                     MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL,
-                    MENU_TEXT, MENU_REGISTER, MENU_POPUP, MN_SELECTED,
-                    OBJC_DRAW, MAX_DEPTH)
+                    MENU_TEXT, MENU_REGISTER, MENU_POPUP, MENU_ATTACH,
+                    MENU_ISTART, ME_ATTACH, ME_INQUIRE, ME_REMOVE,
+                    MIS_INQUIRE, MIS_SET, MN_SELECTED, OBJC_DRAW, MAX_DEPTH)
 from m4_aes import mem_diff, PRELUDE                                # noqa: E402
 from m7_form import (desk, F, M, B, multi, poke16, drive, compare,  # noqa: E402
                      NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS, SHOTDIR)
@@ -126,6 +127,15 @@ def popup(box, start, x, y, scroll=0):
     under the pointer, the scroll word it must hand straight back, and
     where the item goes."""
     return (MENU_POPUP, (), (box, start, scroll, x, y))
+
+
+def attach(flag, item, box=0, start=0, scroll=0, tree=0):
+    """menu_attach, the MENU block spelled out as menu_popup's is."""
+    return (MENU_ATTACH, (), (flag, item, tree, box, start, scroll))
+
+
+def istart(flag, imenu, item=0):
+    return (MENU_ISTART, (), (flag, imenu, item))
 
 
 def wait(ms):
@@ -271,12 +281,58 @@ def case_popup(L, L2, s):
     return b
 
 
+def case_submenu(L, L2, s):
+    """menu_attach and menu_istart: the View box hung off File -> Info.
+
+    The attach marks the item the ROM's way -- a right-arrow character
+    two bytes from the end of ITS OWN STRING, the SUBMENU flag, and the
+    slot in ob_type's high byte -- so "  Info..." comes back as
+    "  Info.<arrow>." on the screen, which is what a resource that did
+    not leave two blanks at the end gets and is worth seeing once.
+
+    Then the walk: File drops, the pointer rests on Info and the submenu
+    opens beside it, the pointer crosses into it, moves down a item, and
+    a press there ends the menu.  The item chosen is in the SUBMENU's
+    box, so MN_SELECTED's words 5 to 7 are what say which -- 24 means
+    nothing without them, because 24 is also an item of the bar's own
+    tree.
+
+    menu_istart is read, set and read again, and the second attach and
+    its removal are what the slot's count is for: two items sharing one
+    submenu, and taking one away must not free it under the other.
+    """
+    b = Script()
+    b.extend([backdrop(L2), bar(1),
+              attach(ME_ATTACH, INFO, VIEWBOX, ICONS, tree=L.base),
+              istart(MIS_INQUIRE, VIEWBOX),
+              istart(MIS_SET, VIEWBOX, TEXT),
+              istart(MIS_INQUIRE, VIEWBOX),
+              istart(MIS_SET, VIEWBOX, ICONS),
+              attach(ME_INQUIRE, INFO),
+              attach(ME_ATTACH, OPEN, VIEWBOX, ICONS, tree=L.base),
+              attach(ME_REMOVE, OPEN),
+              attach(ME_INQUIRE, INFO),     # still there: the count held
+              attach(ME_INQUIRE, QUIT),     # never attached: FALSE
+              attach(ME_ATTACH, FILEBOX, VIEWBOX, ICONS, tree=L.base)])
+    b.op(wait(2000),
+         F(3), M(*s.centre(b, T_FILE)), F(3), SHOT(),
+         M(*s.item(b, T_FILE, INFO)), F(3), SHOT(),
+         M(270, 23), F(3), SHOT(),
+         M(270, 31), F(3), SHOT(), B(1))
+    b.append(tnormal(T_FILE, 1))
+    b.op(multi(MU_BUTTON, 1, 1, 0), *RELEASE)
+    b.op(wait(200), F(3), M(400, 150), F(12))
+    b.op(bar(0))
+    return b
+
+
 CASES = [
     ("menu_bar, icheck, ienable, tnormal, text, register; hide", case_calls),
     ("hover: File down, View across, off the bar, a press outside", case_hover),
     ("select: Desk's fixup item, a click on File, Open -> MN_SELECTED", case_select),
     ("disabled: a separator pressed, a title that will not drop", case_disabled),
     ("menu_popup: chosen, nothing chosen, and clamped to the edge", case_popup),
+    ("menu_attach: the arrow, the walk into it, MN_SELECTED's tree", case_submenu),
 ]
 
 
@@ -298,7 +354,7 @@ class Scratch:
         objs, mem, objs2 = copy.deepcopy((self.objs, mem, self.objs2))
         plan = {k + len(PRELUDE): v for k, v in plan_for(script).items()}
         a = aesref.run(PRELUDE + list(script), objs, mem, plan=plan,
-                       trees={self.L2.base: objs2})[1]
+                       trees={self.L2.base: objs2}, home=self.L.base)[1]
         a.tree = objs
         return a
 
@@ -392,7 +448,8 @@ def main(argv):
 
             ref_v, ref_a, want = aesref.run(script, objs, mem, plan=dict(plan),
                                             pointer=pointer,
-                                            trees={L2.base: objs2})
+                                            trees={L2.base: objs2},
+                                            home=L.base)
 
             words = aesref.encode(script, sc)
             assert len(words) * 2 <= script_room, (name, len(words), script_room)

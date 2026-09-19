@@ -215,9 +215,10 @@ void hctl_button(WORD mx, WORD my)
  * mouse back when the accessory has nothing on the screen any more. */
 void hctl_rect(void)
 {
-    WORD title, item;
+    WORD title, item, menu;
+    uint32_t mtree;
 
-    if (!gl_mntree || !mn_do(&title, &item))
+    if (!gl_mntree || !mn_do(&title, &item, &mtree, &menu))
         return;
     if (title == THEDESK && gl_accreg && item >= gl_dafirst) {
         WORD  id = (WORD)(item - gl_dafirst);
@@ -230,7 +231,17 @@ void hctl_rect(void)
         }
         return;
     }
-    ct_msgup(proc_app, MN_SELECTED, title, item, 0, 0, 0);
+    /* WORDS 5, 6 AND 7 ARE FILLED IN NOW, and they used to be zeros.
+     * They are AES 4's: the tree the item came from, high word first,
+     * then the box it is a child of (MULTITOS GEMCTRL.C's hctl_rect
+     * splits the pointer exactly this way).  With sub-menus the item may
+     * be in a tree that is not the menu bar's, and then the number on
+     * its own names nothing -- so the words are not an extension here,
+     * they are what makes menu_attach usable.  A program with one tree
+     * and no sub-menus reads msg[4] as it always did and these are
+     * simply true; appl_getinfo(AES_MENU) says they are valid. */
+    ct_msgup(proc_app, MN_SELECTED, title, item,
+             (WORD)(UWORD)(mtree >> 16), (WORD)(UWORD)mtree, menu);
 }
 
 /* The menu taking the mouse (grabit) and giving it back.  While it has

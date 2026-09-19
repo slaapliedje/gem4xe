@@ -67,6 +67,7 @@ typedef struct {
 #define TOUCHEXIT   0x0040
 #define HIDETREE    0x0080
 #define INDIRECT    0x0100
+#define SUBMENU     0x0800      /* this item carries a menu of its own */
 
 /* ob_state */
 #define NORMAL      0x0000
@@ -568,7 +569,10 @@ extern OBJECT FAR *gl_mntree;       /* the menu bar showing, or 0 */
 extern MOBLK   gl_ctwait;       /* the rectangle whose entry runs the menu */
 void mn_init(void);
 void mn_bar(OBJECT FAR *tree, WORD showit);
-WORD mn_do(WORD *ptitle, WORD *pitem);
+/* mn_do also says WHICH TREE and which box the item came from, because
+ * with sub-menus the item may be in neither the menu bar's tree nor its
+ * drop-down: those are MN_SELECTED's words 5, 6 and 7 (ctrl.c). */
+WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu);
 WORD do_chg(OBJECT FAR *tree, WORD iitem, UWORD chgvalue, WORD dochg,
             WORD dodraw, WORD chkdisabled);
 void mn_text(OBJECT FAR *tree, WORD item, const char *text);
@@ -584,6 +588,22 @@ void mn_text(OBJECT FAR *tree, WORD item, const char *text);
  * known and is not being guessed at in a comment (src/sys/abi.c). */
 WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
               WORD *pkeystate);
+
+/* menu_attach's flag, and menu_istart's.  The ROM writes bare integers
+ * (MN_SUBMN.C); the names are EmuTOS's. */
+#define ME_INQUIRE  0
+#define ME_ATTACH   1
+#define ME_REMOVE   2
+#define MIS_INQUIRE 0
+#define MIS_SET     1
+/* menu_attach.  The four words are OUT on an inquiry and IN on an
+ * attach, where mn_item is clamped into the box and written back.  The
+ * tree is an ADDRESS for the reason menu.c gives. */
+WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
+               uint32_t *ptree, WORD *pmenu, WORD *pitem, WORD *pscroll);
+/* menu_istart: the start item, or 0 for an error -- the ROM's ambiguity,
+ * harmless because object 0 is a root and never a menu item. */
+WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item);
 /* The objects every menu tree has in these positions -- the shape the
  * RCS builds and the AES trusts.  THEDESK is the Desk TITLE, and it is
  * the word AC_OPEN carries in msg[3]; the control manager and the menu

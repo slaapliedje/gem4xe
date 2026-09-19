@@ -1251,6 +1251,24 @@ WORD menu_popup(const MENU *me, WORD xpos, WORD ypos, MENU *mdata)
     return aes(36, 2, 1, 2, 0);
 }
 
+WORD menu_attach(WORD flag, OBJECT *tree, WORD item, MENU *mdata)
+{
+    int_in[0] = flag;
+    int_in[1] = item;
+    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    addr_in[1] = (LONG)(uint32_t)(MENU FAR *)mdata;
+    return aes(37, 2, 1, 2, 0);
+}
+
+WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item)
+{
+    int_in[0] = flag;
+    int_in[1] = imenu;
+    int_in[2] = item;
+    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    return aes(38, 3, 1, 1, 0);
+}
+
 /* The name is EIGHT CHARACTERS, blank-padded, and the caller does the
  * padding: appl_find("QED") finds nothing and appl_find("QED     ")
  * finds it.  That is the ST's contract, kept rather than softened, so a

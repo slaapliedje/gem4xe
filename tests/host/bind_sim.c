@@ -219,6 +219,8 @@ int main(void)
     menu_text(tree, 1, "x");
     menu_register(0, "x");
     menu_popup(&popmenu, 10, 20, &popmenu);
+    menu_attach(ME_ATTACH, tree, 1, &popmenu);
+    menu_istart(MIS_SET, tree, 1, 2);
     objc_add(tree, 0, 1);
     objc_delete(tree, 1);
     objc_draw(tree, 0, 8, 1, 2, 3, 4);

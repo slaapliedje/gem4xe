@@ -267,6 +267,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     /* Every op that takes a tree takes it in addr_in[0]. */
     switch (opcode) {
     case 30: case 31: case 32: case 33: case 34:
+    case 37:
     case 40: case 41:
     case 42: case 43: case 44: case 45: case 46: case 47:
     case 50: case 54: case 55: case 56:
@@ -469,6 +470,32 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         ret = (chosen != NIL) ? TRUE : FALSE;
         break;
     }
+    case 37: {                      /* menu_attach: flag, tree, item, mdata */
+        WORD md[MENU_WORDS];
+        uint32_t pmd = (uint32_t)addr_in[1], mt;
+
+        /* ME_REMOVE takes no block, and the ROM's own binding still
+         * passes one; a NULL is accepted here for the same reason
+         * EmuTOS accepts one -- "although not specified by TOS, we
+         * tolerate the pointer to the return data to be NULL". */
+        for (k = 0; k < MENU_WORDS; k++)
+            md[k] = 0;
+        if (pmd)
+            far_get((uint8_t *)md, pmd, MENU_WORDS * 2);
+        mt = ((uint32_t)(UWORD)md[1] << 16) | (UWORD)md[0];
+        ret = mn_attach(int_in[0], tree, int_in[1],
+                        &mt, &md[2], &md[3], &md[4]);
+        if (pmd && ret) {
+            md[0] = (WORD)(UWORD)mt;
+            md[1] = (WORD)(UWORD)(mt >> 16);
+            far_put(pmd, (const uint8_t *)md, MENU_WORDS * 2);
+        }
+        break;
+    }
+    case 38:                        /* menu_istart: flag, tree, imenu, item */
+        ret = mn_istart(int_in[0], (uint32_t)addr_in[0],
+                        int_in[1], int_in[2]);
+        break;
 
     /* Object manager.  objc_add and objc_delete are the tree surgery the
      * window manager already does to its own tree (src/aes/objc.c): an

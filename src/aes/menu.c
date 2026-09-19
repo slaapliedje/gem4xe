@@ -54,6 +54,7 @@ WORD        gl_dafirst;
 #define INTITLE_STATE   2       /* on a title */
 #define INITEM_STATE    3       /* on an item */
 #define OUTSIDE_STATE   4       /* off the bar and the items, menu down */
+#define SUBMENU_STATE   5       /* on an item of an open submenu */
 
 OBJECT FAR *gl_mntree;              /* the menu bar showing, or 0 */
 MOBLK   gl_ctwait;              /* the rectangle that wakes the menu: the
@@ -338,12 +339,329 @@ WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
     return chosen;
 }
 
+/* ---- sub-menus: menu_attach and menu_istart ---------------------------
+ *
+ * A menu item may carry a whole menu of its own, which opens beside it
+ * while the pointer rests on it.  The AES keeps the attachment, not the
+ * application: menu_attach records a (tree, box) pair against the item
+ * and marks the item, and mn_do opens it.
+ *
+ * THE MARK IS THE ROM'S, exactly, because a resource editor and a ported
+ * program both know it: a RIGHT-ARROW character written into the item's
+ * own string two bytes from its end, the SUBMENU flag set in ob_flags,
+ * and the slot number in the HIGH BYTE of ob_type -- which is free
+ * because objc.c has always read the type as `ob_type & 0xFF`.  The ROM
+ * numbers its slots from 128 and so does this, so an item marked here
+ * reads the same way to anything that inspects the tree.
+ *
+ * WHICH MEANS IT WRITES INTO THE APPLICATION'S STRING.  The ROM does the
+ * same and never checks; the landmine is that the string must be at
+ * least two characters long and must be writable, and a one-character
+ * item would have its NUL or the byte in front of it overwritten.  This
+ * one checks the length and refuses, because the check is two lines and
+ * the alternative is a corruption in somebody else's memory.
+ *
+ * THE LIMITS, all of them gem4xe's rather than the donor's:
+ *
+ *   One level.  A submenu's items cannot carry submenus of their own,
+ *   and neither can a popup's.  That is EmuTOS's restriction too, and
+ *   the reason here is the screen save: bb_save is one screen-sized
+ *   shadow (graf.c), so two saved rectangles may not overlap, and the
+ *   drop-down and its submenu are kept apart by SM_GAP for exactly that
+ *   reason.  A third would have nowhere to go.
+ *
+ *   No scrolling.  mn_scroll is carried and ignored, as it is in
+ *   menu_popup, and appl_getinfo(AES_MENU) answers 0 for it.
+ */
+#define SMI_BASE    128     /* ob_type's high byte: the ROM's numbering */
+#define NUM_SMI     8       /* pairs one program may have attached */
+#define SM_ARROW    0x03    /* the character the ROM marks an item with */
+#define SM_ARROWOFF 2       /* ...written that many bytes from the end */
+#define SM_GAP      (2 * MENU_THICKNESS)  /* between two saved rectangles */
+
+/* The tree is an ADDRESS and not a pointer here.  Every other far
+ * pointer in this AES is a local or a bare global; this is the one that
+ * would live in a struct, and the one time a far pointer was put in a
+ * struct field the value that came back out had the right offset and the
+ * wrong bank, with no reduced case to explain it (src/sys/abi.c).  An
+ * address costs a cast at each use and cannot go wrong that way. */
+typedef struct {
+    uint32_t s_tree;        /* 0 = the slot is free */
+    WORD     s_menu;        /* the submenu's box object in that tree */
+    WORD     s_start;       /* the item to put beside the parent item */
+    WORD     s_count;       /* items pointing at this pair */
+} SMI;
+
+static SMI gl_smi[NUM_SMI];
+
+static SMI *smi_at(WORD n)
+{
+    if (n < SMI_BASE || n >= SMI_BASE + NUM_SMI)
+        return 0;
+    return gl_smi[n - SMI_BASE].s_tree ? &gl_smi[n - SMI_BASE] : 0;
+}
+
+/* The slot an item names, out of ob_type's high byte. */
+static SMI *smi_of(OBJECT FAR *tree, WORD item)
+{
+    if (!(tree[item].ob_flags & SUBMENU))
+        return 0;
+    return smi_at((WORD)((tree[item].ob_type >> 8) & 0xFF));
+}
+
+static WORD smi_slot(SMI *s)
+{
+    return (WORD)(SMI_BASE + (s - gl_smi));
+}
+
+/* The slot for a (tree, box) pair, or a free one, or 0. */
+static SMI *smi_find(uint32_t tree, WORD imenu)
+{
+    WORD i;
+
+    for (i = 0; i < NUM_SMI; i++)
+        if (gl_smi[i].s_tree == tree && gl_smi[i].s_menu == imenu)
+            return &gl_smi[i];
+    return 0;
+}
+
+static SMI *smi_new(void)
+{
+    WORD i;
+
+    for (i = 0; i < NUM_SMI; i++)
+        if (!gl_smi[i].s_tree)
+            return &gl_smi[i];
+    return 0;
+}
+
+/* Put the arrow on the item, or a blank to take it off.
+ *
+ * THE STRING IS MEASURED HERE and not in a helper of its own, which is
+ * what this was.  Spelled as mn_attach -> sm_mark -> sm_str, with the
+ * far `tree` handed down both levels, the mark silently did not happen:
+ * sm_str returned the right length and sm_mark behaved as though it had
+ * not.  Any read of tree[item].ob_spec in mn_attach before the call --
+ * even one whose result was thrown away -- made it work, which is the
+ * signature of something going wrong in the far pointer's passage and
+ * not of a bug in the arithmetic.  One level down it is right.  No
+ * reduced case was made, so nothing is being claimed about the
+ * compiler; what is recorded is the shape that works.
+ *
+ * A far string is measured WHERE IT LIES: only the two bytes at the end
+ * are touched, and bringing forty characters down to count them would
+ * be the expensive way to find that out.  The byte goes into a WORD
+ * before it is tested, which is tools/ccbug's B16 rule. */
+static WORD sm_mark(OBJECT FAR *tree, WORD item, WORD ch)
+{
+    uint32_t p = tree[item].ob_spec;
+    WORD n;
+
+    if (tree[item].ob_flags & INDIRECT)
+        p = *(const uint32_t FAR *)(uint32_t)p;
+    if (!p)
+        return FALSE;
+    for (n = 0; n < MAX_LEN; n++) {
+        WORD c = (WORD)far_read8(p + (uint32_t)n);
+        if (!c)
+            break;
+    }
+    if (n < SM_ARROWOFF)
+        return FALSE;
+    far_write8(p + (uint32_t)(n - SM_ARROWOFF), (uint8_t)ch);
+    return TRUE;
+}
+
+static void sm_detach(OBJECT FAR *tree, WORD item)
+{
+    SMI *s = smi_of(tree, item);
+
+    sm_mark(tree, item, ' ');        /* a SPACE, as the ROM leaves it */
+    tree[item].ob_type &= 0x00FF;
+    tree[item].ob_flags &= ~SUBMENU;
+    if (s && --s->s_count <= 0)
+        s->s_tree = 0;
+}
+
+/* menu_attach.  The three flags are the ROM's bare integers, which
+ * EmuTOS names ME_INQUIRE, ME_ATTACH and ME_REMOVE.  On an inquiry the
+ * four words are the pair attached; on an attach they are what to
+ * attach, and mn_item is clamped into the box as the ROM clamps it. */
+WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
+               uint32_t *ptree, WORD *pmenu, WORD *pitem, WORD *pscroll)
+{
+    SMI *s;
+
+    if (!tree || item <= 0)
+        return FALSE;
+    /* A G_STRING, and only one.  The ROM tests this before anything else
+     * and so does EmuTOS: the mark is a character IN THE ITEM'S TEXT,
+     * and a type that does not have text has nowhere to put it. */
+    if ((tree[item].ob_type & 0x00FF) != G_STRING)
+        return FALSE;
+
+    if (flag == ME_INQUIRE) {
+        s = smi_of(tree, item);
+        if (!s)
+            return FALSE;
+        *ptree = s->s_tree;
+        *pmenu = s->s_menu;
+        *pitem = s->s_start;
+        *pscroll = 0;               /* never scrolled: see the head */
+        return TRUE;
+    }
+    if (flag != ME_ATTACH && flag != ME_REMOVE)
+        return FALSE;
+
+    if (tree[item].ob_flags & SUBMENU)
+        sm_detach(tree, item);      /* one attachment at a time */
+    if (flag == ME_REMOVE)
+        return TRUE;
+    if (!*ptree || *pmenu <= 0)
+        return FALSE;
+
+    s = smi_find(*ptree, *pmenu);
+    if (!s) {
+        s = smi_new();
+        if (!s)
+            return FALSE;
+        s->s_tree = *ptree;
+        s->s_menu = *pmenu;
+        s->s_count = 0;
+    }
+    /* The MARK LAST, so a refusal leaves the item untouched: the string
+     * is the application's and a half-done attach would leave an arrow
+     * on an item that carries nothing. */
+    if (!sm_mark(tree, item, SM_ARROW)) {
+        if (s->s_count <= 0)
+            s->s_tree = 0;
+        return FALSE;
+    }
+    {
+        OBJECT FAR *st = (OBJECT FAR *)s->s_tree;
+        WORD start = *pitem;
+        if (start < st[s->s_menu].ob_head)
+            start = st[s->s_menu].ob_head;
+        if (start > st[s->s_menu].ob_tail)
+            start = st[s->s_menu].ob_tail;
+        s->s_start = start;
+        *pitem = start;             /* the ROM writes the clamp back */
+    }
+    s->s_count++;
+    tree[item].ob_type = (UWORD)((tree[item].ob_type & 0x00FF)
+                                 | (smi_slot(s) << 8));
+    tree[item].ob_flags |= SUBMENU;
+    return TRUE;
+}
+
+/* menu_istart: which item of an attached submenu sits beside its parent.
+ * The ROM answers the item and not a truth value, and 0 for an error --
+ * which is ambiguous there and here, and harmless because object 0 is a
+ * tree's root and never a menu item. */
+WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item)
+{
+    OBJECT FAR *t = (OBJECT FAR *)tree;
+    SMI *s;
+
+    if (!tree || imenu <= 0)
+        return 0;
+    s = smi_find(tree, imenu);
+    if (!s)
+        return 0;
+    if (flag == MIS_INQUIRE)
+        return s->s_start;
+    if (flag != MIS_SET)
+        return 0;
+    if (item < t[imenu].ob_head)
+        item = t[imenu].ob_head;
+    if (item > t[imenu].ob_tail)
+        item = t[imenu].ob_tail;
+    s->s_start = item;
+    return item;
+}
+
+/* Open the submenu attached to `item`, beside it; its tree's address, or
+ * 0 if there is nowhere to put it.  *psmroot gets its box.
+ *
+ * TO THE RIGHT, WITH A GAP, flopped to the left when there is no room.
+ * The ROM tucks the box UNDER the item by a character so the two touch
+ * (MN_MENU.C's ShowSubMenu, and EmuTOS copies it); here they must not
+ * touch at all, because bb_save is ONE screen-sized shadow (graf.c) and
+ * a second saved rectangle overlapping the first captures the pixels the
+ * first one drew -- restoring the drop-down would then paint the
+ * submenu's own border back onto the screen.  SM_GAP is the two pixels
+ * menu_sr adds to each box, and the cost is a submenu two pixels further
+ * out than an ST's.  Where neither side has room the submenu does not
+ * open, which is a refusal and not a corruption.
+ *
+ * NO GATE CAN FALSIFY THAT, and it was tried: with SM_GAP set to 0 on
+ * BOTH sides test-m9 stays green, because tools/aesref.py models the
+ * same single shadow at the same coordinates and loses the same pixels.
+ * A comparison cannot see a fault both sides have.  What would see it is
+ * an invariant rather than a comparison -- the screen after the menu
+ * equals the screen before it -- and m9 does not check that.  So the
+ * reason for the gap is read out of graf.c and is not gated; setting it
+ * to 0 changes only where the box lands, which IS gated. */
+static uint32_t sm_show(OBJECT FAR *tree, WORD item, WORD *psmroot)
+{
+    SMI *s = smi_of(tree, item);
+    OBJECT FAR *st;
+    GRECT r;
+    WORD w, h, ox, oy, bx, by;
+
+    if (!s)
+        return 0;
+    st = (OBJECT FAR *)s->s_tree;
+    ob_actxywh(tree, item, &r);
+    w = st[s->s_menu].ob_width;
+    h = st[s->s_menu].ob_height;
+    ob_offset(st, s->s_menu, &ox, &oy);
+    ox = (WORD)(ox - st[s->s_menu].ob_x);
+    oy = (WORD)(oy - st[s->s_menu].ob_y);
+
+    bx = (WORD)(r.g_x + r.g_w + SM_GAP);
+    if (bx + w + MENU_THICKNESS > gl_width)
+        bx = (WORD)(r.g_x - w - SM_GAP);    /* flop to the other side */
+    if (bx < MENU_THICKNESS)
+        return 0;                           /* and no room there either */
+    by = (WORD)(r.g_y - st[s->s_start].ob_y);
+    while (by > (WORD)(gl_height - h))
+        by = (WORD)(by - gl_hchar);
+    while (by < gl_rfull.g_y)
+        by = (WORD)(by + gl_hchar);
+    st[s->s_menu].ob_x = (WORD)(bx - ox);
+    st[s->s_menu].ob_y = (WORD)(by - oy);
+
+    menu_sr(TRUE, st, s->s_menu);
+    gsx_sclip(&gl_rzero);
+    ob_draw(st, s->s_menu, MAX_DEPTH);
+    *psmroot = s->s_menu;
+    return s->s_tree;
+}
+
+static void sm_hide(OBJECT FAR *tree, WORD item)
+{
+    SMI *s = smi_of(tree, item);
+
+    if (s)
+        menu_sr(FALSE, (OBJECT FAR *)s->s_tree, s->s_menu);
+}
+
+/* Does this item open one?  Enabled, marked, and with a slot behind the
+ * mark -- an item whose slot was freed is still marked and must not. */
+static WORD sm_opens(OBJECT FAR *tree, WORD item)
+{
+    if (item == NIL || (tree[item].ob_state & DISABLED))
+        return FALSE;
+    return smi_of(tree, item) != 0;
+}
+
 /* Run the menu bar from the pointer's arrival in it until a button
  * transition ends it or the pointer leaves with nothing down.  TRUE with
  * the title and item when an enabled item was chosen.  The button's
  * state is left as it is: the control manager holds the mouse until it
  * is up (event.c). */
-WORD mn_do(WORD *ptitle, WORD *pitem)
+WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
 {
     /* FAR, because gl_mntree is: a menu tree can live in far memory now
      * (docs/far-trees.md), and a near slot here truncated it to sixteen
@@ -355,11 +673,12 @@ WORD mn_do(WORD *ptitle, WORD *pitem)
      * ob_find and rect_change here were handed a bank-$00 address that
      * was never a tree.  Everything this passes tree to already takes
      * OBJECT FAR *. */
-    OBJECT FAR *tree;
-    uint32_t buparm;
+    OBJECT FAR *tree, *p1tree;
+    uint32_t buparm, smtree = 0;
     WORD    mnu_flags, done, main_rect;
     WORD    cur_menu, cur_item, last_item;
     WORD    cur_title, last_title;
+    WORD    cur_sub, last_sub, smparent, smroot;
     UWORD   ev_which;
     MOBLK   p1mor, p2mor;
     WORD    menu_state, leave_flag;
@@ -369,11 +688,14 @@ WORD mn_do(WORD *ptitle, WORD *pitem)
     done = FALSE;
     buparm = 0x00010101UL;              /* a press */
     cur_title = cur_menu = cur_item = NIL;
+    cur_sub = smparent = NIL;
+    smroot = 0;
     tree = gl_mntree;
 
     ct_mouse(TRUE);
 
     while (!done) {
+        p1tree = tree;                  /* the submenu's state overrides it */
         mnu_flags = MU_BUTTON | MU_M1;
 
         switch (menu_state) {
@@ -397,13 +719,29 @@ WORD mn_do(WORD *ptitle, WORD *pitem)
             buparm = (button & 0x0001) ? 0x00010100UL : 0x00010101UL;
             leave_flag = TRUE;
             break;
+        case SUBMENU_STATE:
+            /* the pointer off the SUBMENU's item, in the submenu's tree */
+            p1tree = (OBJECT FAR *)smtree;
+            main_rect = cur_sub;
+            buparm = (button & 0x0001) ? 0x00010100UL : 0x00010101UL;
+            leave_flag = TRUE;
+            break;
         default:                        /* INTITLE_STATE */
             main_rect = cur_title;
             leave_flag = TRUE;
             break;
         }
-        rect_change(tree, &p1mor, main_rect, leave_flag);
+        rect_change(p1tree, &p1mor, main_rect, leave_flag);
 
+        /* TWO RECTANGLES AND NOT THREE.  EmuTOS's menu loop arms a
+         * third for "the pointer enters the submenu", because its
+         * submenu overlaps the parent item by a character and the
+         * pointer can therefore be in both.  Here they are SM_GAP apart
+         * -- the save buffer requires it -- so entering the submenu
+         * always means leaving the item, and leaving the item is what
+         * MU_M1 already watches for.  A third was built, and taking it
+         * out again changed nothing this gate can see, which is what
+         * says it was not reached. */
         ev_which = ev_multi(mnu_flags, &p1mor, &p2mor, 0UL, buparm, 0, rets);
 
         /* A button: in the bar off the titles it is nothing.  On a title
@@ -419,12 +757,14 @@ WORD mn_do(WORD *ptitle, WORD *pitem)
 
         last_title = cur_title;
         last_item = cur_item;
+        last_sub = cur_sub;
 
         /* where the pointer is now */
         cur_title = ob_find(tree, THEACTIVE, 1, rets[0], rets[1]);
         if (cur_title != NIL && cur_title != THEACTIVE) {
             menu_state = INTITLE_STATE;
             cur_item = NIL;
+            cur_sub = NIL;
         } else {
             cur_title = last_title;
             if (cur_menu == NIL)        /* no menu ever shown: nothing */
@@ -432,36 +772,91 @@ WORD mn_do(WORD *ptitle, WORD *pitem)
             if (cur_title == NIL) {
                 done = TRUE;
             } else {
-                cur_item = ob_find(tree, cur_menu, 1, rets[0], rets[1]);
-                if (cur_item != NIL) {
-                    menu_state = INITEM_STATE;
-                } else if (tree[cur_title].ob_state & DISABLED) {
-                    cur_title = NIL;
-                    done = TRUE;
+                /* THE SUBMENU IS ASKED FIRST, and cur_item is left alone
+                 * when the pointer is in it: the parent item has to stay
+                 * selected while its own menu is open, and it is also
+                 * what says which submenu is showing. */
+                cur_sub = smtree ? ob_find((OBJECT FAR *)smtree, smroot, 1,
+                                           rets[0], rets[1]) : NIL;
+                if (cur_sub == smroot)
+                    cur_sub = NIL;      /* in the box, on no item */
+                if (cur_sub != NIL) {
+                    menu_state = SUBMENU_STATE;
                 } else {
-                    menu_state = OUTSIDE_STATE;
+                    cur_item = ob_find(tree, cur_menu, 1, rets[0], rets[1]);
+                    if (cur_item != NIL) {
+                        menu_state = INITEM_STATE;
+                    } else if (tree[cur_title].ob_state & DISABLED) {
+                        cur_title = NIL;
+                        done = TRUE;
+                    } else {
+                        menu_state = OUTSIDE_STATE;
+                    }
                 }
             }
         }
 
-        /* the old item off; the old title off and its menu up; the new
-         * title on and its menu down; the new item on */
+        /* The order is inside out: the submenu's highlight, then the
+         * submenu itself, then the item, then the title and its menu --
+         * so that a box is never taken off the screen while something
+         * drawn on top of it is still there. */
+        if (smtree)
+            menu_select((OBJECT FAR *)smtree, last_sub, cur_sub, FALSE);
+        if (smtree && cur_item != smparent) {
+            sm_hide(tree, smparent);
+            smtree = 0;
+            smparent = NIL;
+            cur_sub = last_sub = NIL;
+        }
         menu_select(tree, last_item, cur_item, FALSE);
         if (menu_select(tree, last_title, cur_title, FALSE))
             menu_sr(FALSE, tree, cur_menu);
         if (menu_select(tree, cur_title, last_title, TRUE))
             cur_menu = menu_down(tree, cur_title);
         menu_select(tree, cur_item, last_item, TRUE);
+        /* The submenu opens AT ONCE and not after a delay.  The ROM arms
+         * a timer with SUBMENU_DELAY (200 ms, menu_settings); EmuTOS
+         * opens it straight away and so does this, because nothing here
+         * serves menu_settings and a delay nobody can change is a delay
+         * that is only in the way. */
+        if (!smtree && sm_opens(tree, cur_item)) {
+            smtree = sm_show(tree, cur_item, &smroot);
+            if (smtree)
+                smparent = cur_item;
+        }
+        if (smtree)
+            menu_select((OBJECT FAR *)smtree, cur_sub, last_sub, TRUE);
     }
 
     /* Clean up: the menu up, and the item reported only if it is one
      * and enabled -- then the title stays selected for the application
      * to menu_tnormal, else it is deselected here. */
     done = FALSE;
+    *ptree = (uint32_t)tree;
+    *pmenu = cur_menu;
     if (cur_title != NIL) {
+        if (smtree) {
+            sm_hide(tree, smparent);
+            if (cur_sub != NIL)
+                do_chg((OBJECT FAR *)smtree, cur_sub, SELECTED, FALSE,
+                       FALSE, FALSE);
+        }
         menu_sr(FALSE, tree, cur_menu);
-        if (cur_item != NIL
-            && do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)) {
+        /* THE ITEM MAY BE IN THE SUBMENU'S TREE, which is why mn_do says
+         * which tree at all: with sub-menus an object number on its own
+         * no longer names one thing, and the caller would look it up in
+         * the menu bar's tree and find something else.  Those are
+         * MN_SELECTED's words 5, 6 and 7 (ctrl.c). */
+        if (smtree && cur_sub != NIL
+            && do_chg((OBJECT FAR *)smtree, cur_sub, SELECTED, FALSE,
+                      FALSE, TRUE)) {
+            *ptitle = cur_title;
+            *pitem = cur_sub;
+            *ptree = smtree;
+            *pmenu = smroot;
+            done = TRUE;
+        } else if (!smtree && cur_item != NIL
+                   && do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)) {
             *ptitle = cur_title;
             *pitem = cur_item;
             done = TRUE;

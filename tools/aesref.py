@@ -95,7 +95,14 @@ AC_OPEN, AC_CLOSE = 40, 41
 # the menu tree's fixed objects (menu.c), and mn_do's states
 THESCREEN, THEBAR, THEACTIVE, THEDESK = 0, 1, 2, 3
 MENU_THICKNESS = 1
+# sub-menus (src/aes/menu.c): the ROM's mark, and gem4xe's gap
+SMI_BASE, NUM_SMI, SM_ARROW, SM_ARROWOFF = 128, 8, 0x03, 2
+SM_GAP = 2 * MENU_THICKNESS
+SUBMENU = 0x0800                # ob_flags: this item carries a menu
+ME_INQUIRE, ME_ATTACH, ME_REMOVE = 0, 1, 2
+MIS_INQUIRE, MIS_SET = 0, 1
 START_STATE, INTITLE_STATE, INITEM_STATE, OUTSIDE_STATE = 1, 2, 3, 4
+SUBMENU_STATE = 5
 # WM_ARROWED's actions
 (WA_UPPAGE, WA_DNPAGE, WA_UPLINE, WA_DNLINE, WA_LFPAGE, WA_RTPAGE,
  WA_LFLINE, WA_RTLINE) = range(8)
@@ -3119,7 +3126,13 @@ class AES:
             self.do_chg(title, SELECTED, False, True, True)
             self.ct_msgup(AC_OPEN, title, item - self.gl_dafirst, 0, 0, 0)
             return
-        self.ct_msgup(MN_SELECTED, title, item, 0, 0, 0)
+        # WORDS 5, 6 AND 7: the tree the item came from, high word
+        # first, then the box it is a child of.  With sub-menus the item
+        # may not be in the menu bar's tree, and then the number alone
+        # names nothing (MULTITOS GEMCTRL.C splits the pointer this way).
+        self.ct_msgup(MN_SELECTED, title, item,
+                      (self.mn_tree >> 16) & 0xFFFF, self.mn_tree & 0xFFFF,
+                      self.mn_menu)
 
     def ct_mouse(self, grabit):
         """The control manager takes the mouse for the menu: the pointer
@@ -3808,6 +3821,9 @@ class AES:
         self.gl_mntree = None
         self.gl_ctwait.m_out = False
         self.gl_ctwait.m_gr = self.gl_rmenu.copy()
+        if not hasattr(self, "gl_smi"):
+            self.gl_smi = [{"tree": 0, "menu": 0, "start": 0, "count": 0}
+                           for _ in range(NUM_SMI)]
 
     def menu_sub(self, ititle):
         tree = self.tree
@@ -3974,6 +3990,157 @@ class AES:
             self.wm_update(END_MCTRL)
         return (1 if chosen != NIL else 0), out
 
+    # ---- sub-menus: menu_attach and menu_istart -----------------------
+    # The mark is the ROM's: a right-arrow character two bytes from the
+    # end of the item's own string, the SUBMENU flag, and the slot number
+    # in ob_type's HIGH byte from 128 up.  src/aes/menu.c has the
+    # reasoning and the limits; this follows it line for line.
+
+    def tree_addr(self, tree):
+        """Where a tree is staged: MN_SELECTED's words 5 and 6."""
+        for a, t in self.trees.items():
+            if t is tree:
+                return a
+        return 0
+
+    def smi_at(self, n):
+        if n < SMI_BASE or n >= SMI_BASE + NUM_SMI:
+            return None
+        s = self.gl_smi[n - SMI_BASE]
+        return s if s["tree"] else None
+
+    def smi_of(self, tree, item):
+        if not (tree[item].ob_flags & SUBMENU):
+            return None
+        return self.smi_at((tree[item].ob_type >> 8) & 0xFF)
+
+    def smi_find(self, addr, imenu):
+        for s in self.gl_smi:
+            if s["tree"] == addr and s["menu"] == imenu:
+                return s
+        return None
+
+    def sm_mark(self, tree, item, ch):
+        """The arrow into the item's own string, where the ROM puts it:
+        two bytes from the end.  The target writes one byte through the
+        address in ob_spec; here the staged Text is edited, which is the
+        same string seen from the host side."""
+        p = tree[item].ob_spec
+        if tree[item].ob_flags & INDIRECT:
+            p = self.mem[p]
+        t = self.mem.get(p)
+        if t is None or not isinstance(t, Text) or len(t.s) < SM_ARROWOFF:
+            return False
+        n = len(t.s)
+        t.s = t.s[:n - SM_ARROWOFF] + chr(ch) + t.s[n - SM_ARROWOFF + 1:]
+        return True
+
+    def sm_detach(self, tree, item):
+        s = self.smi_of(tree, item)
+        self.sm_mark(tree, item, 0x20)
+        tree[item].ob_type &= 0x00FF
+        tree[item].ob_flags &= ~SUBMENU
+        if s:
+            s["count"] -= 1
+            if s["count"] <= 0:
+                s["tree"] = 0
+
+    def mn_attach(self, flag, tree, item, md):
+        """md is [treeaddr, menu, start, scroll]; answers (ok, md)."""
+        md = list(md)
+        if not tree or item <= 0:
+            return 0, md
+        if (tree[item].ob_type & 0x00FF) != G_STRING:
+            return 0, md
+        if flag == ME_INQUIRE:
+            s = self.smi_of(tree, item)
+            if not s:
+                return 0, md
+            return 1, [s["tree"], s["menu"], s["start"], 0]
+        if flag not in (ME_ATTACH, ME_REMOVE):
+            return 0, md
+        if tree[item].ob_flags & SUBMENU:
+            self.sm_detach(tree, item)
+        if flag == ME_REMOVE:
+            return 1, md
+        if not md[0] or md[1] <= 0:
+            return 0, md
+        s = self.smi_find(md[0], md[1])
+        if not s:
+            s = next((x for x in self.gl_smi if not x["tree"]), None)
+            if not s:
+                return 0, md
+            s["tree"], s["menu"], s["count"] = md[0], md[1], 0
+        if not self.sm_mark(tree, item, SM_ARROW):
+            if s["count"] <= 0:
+                s["tree"] = 0
+            return 0, md
+        st = self.trees[s["tree"]]
+        start = max(st[s["menu"]].ob_head, min(md[2], st[s["menu"]].ob_tail))
+        s["start"] = start
+        md[2] = start
+        s["count"] += 1
+        tree[item].ob_type = (tree[item].ob_type & 0x00FF) | \
+                             ((SMI_BASE + self.gl_smi.index(s)) << 8)
+        tree[item].ob_flags |= SUBMENU
+        return 1, md
+
+    def mn_istart(self, flag, addr, imenu, item):
+        if not addr or imenu <= 0:
+            return 0
+        s = self.smi_find(addr, imenu)
+        if not s:
+            return 0
+        if flag == MIS_INQUIRE:
+            return s["start"]
+        if flag != MIS_SET:
+            return 0
+        t = self.trees[addr]
+        item = max(t[imenu].ob_head, min(item, t[imenu].ob_tail))
+        s["start"] = item
+        return item
+
+    def sm_show(self, tree, item):
+        """Open the submenu beside the item: (addr, box) or (0, 0)."""
+        s = self.smi_of(tree, item)
+        if not s:
+            return 0, 0
+        st = self.trees[s["tree"]]
+        with self.on_tree(tree):
+            r = self.ob_actxywh(item)
+        with self.on_tree(st):
+            w, h = st[s["menu"]].ob_width, st[s["menu"]].ob_height
+            ox, oy = self.ob_offset(s["menu"])
+            ox -= st[s["menu"]].ob_x
+            oy -= st[s["menu"]].ob_y
+            bx = r.x + r.w + SM_GAP
+            if bx + w + MENU_THICKNESS > self.gl_width:
+                bx = r.x - w - SM_GAP
+            if bx < MENU_THICKNESS:
+                return 0, 0
+            by = r.y - st[s["start"]].ob_y
+            while by > self.gl_height - h:
+                by -= self.gl_hchar
+            while by < self.gl_rfull.y:
+                by += self.gl_hchar
+            st[s["menu"]].ob_x = bx - ox
+            st[s["menu"]].ob_y = by - oy
+            self.menu_sr(True, s["menu"])
+            self.gsx_sclip(self.gl_rzero)
+            self.ob_draw(s["menu"], MAX_DEPTH)
+        return s["tree"], s["menu"]
+
+    def sm_hide(self, tree, item):
+        s = self.smi_of(tree, item)
+        if s:
+            with self.on_tree(self.trees[s["tree"]]):
+                self.menu_sr(False, s["menu"])
+
+    def sm_opens(self, tree, item):
+        if item == NIL or (tree[item].ob_state & DISABLED):
+            return False
+        return self.smi_of(tree, item) is not None
+
     def menu_down(self, ititle):
         imenu = self.menu_sub(ititle)
         if self.do_chg(ititle, SELECTED, True, True, True):
@@ -3995,10 +4162,13 @@ class AES:
         done = False
         buparm = 0x00010101                     # a press
         cur_title = cur_menu = cur_item = NIL
+        cur_sub = smparent = NIL
+        smtree, smroot = 0, 0
         p1mor, p2mor = MOBLK(False, 0, 0, 0, 0), MOBLK(False, 0, 0, 0, 0)
         rets = [0] * 6
         self.ct_mouse(True)
         while not done:
+            p1tree = tree
             mnu_flags = MU_BUTTON | MU_M1
             if menu_state == START_STATE:
                 # into the titles, or out of the bar
@@ -4006,7 +4176,8 @@ class AES:
                 self.rect_change(p2mor, THEBAR, True)
                 main_rect, leave_flag = THEACTIVE, False
             elif menu_state == OUTSIDE_STATE:
-                # into the titles, or into the drop-down
+                # into the titles, into the drop-down, or -- with one
+                # showing -- into the submenu: three rectangles
                 mnu_flags |= MU_M2
                 self.rect_change(p2mor, cur_menu, False)
                 main_rect, leave_flag = THEACTIVE, False
@@ -4015,10 +4186,17 @@ class AES:
                 main_rect = cur_item
                 buparm = 0x00010100 if (self.button & 1) else 0x00010101
                 leave_flag = True
+            elif menu_state == SUBMENU_STATE:
+                p1tree = self.trees[smtree]
+                main_rect = cur_sub
+                buparm = 0x00010100 if (self.button & 1) else 0x00010101
+                leave_flag = True
             else:                               # INTITLE_STATE
                 main_rect, leave_flag = cur_title, True
-            self.rect_change(p1mor, main_rect, leave_flag)
+            with self.on_tree(p1tree):
+                self.rect_change(p1mor, main_rect, leave_flag)
 
+            # two rectangles and not three: src/aes/menu.c says why
             ev_which = self.ev_multi(mnu_flags, p1mor, p2mor, 0, buparm, rets)
 
             # A button in the bar off the titles is nothing; on a title it
@@ -4030,11 +4208,12 @@ class AES:
                     break
                 buparm ^= 0x00000001
 
-            last_title, last_item = cur_title, cur_item
+            last_title, last_item, last_sub = cur_title, cur_item, cur_sub
             cur_title = self.ob_find(THEACTIVE, 1, rets[0], rets[1])
             if cur_title != NIL and cur_title != THEACTIVE:
                 menu_state = INTITLE_STATE
                 cur_item = NIL
+                cur_sub = NIL
             else:
                 cur_title = last_title
                 if cur_menu == NIL:             # no menu ever shown
@@ -4042,31 +4221,71 @@ class AES:
                 if cur_title == NIL:
                     done = True
                 else:
-                    cur_item = self.ob_find(cur_menu, 1, rets[0], rets[1])
-                    if cur_item != NIL:
-                        menu_state = INITEM_STATE
-                    elif tree[cur_title].ob_state & DISABLED:
-                        cur_title = NIL
-                        done = True
+                    # the submenu is asked first, and cur_item is left
+                    # alone while the pointer is in it
+                    if smtree:
+                        with self.on_tree(self.trees[smtree]):
+                            cur_sub = self.ob_find(smroot, 1, rets[0], rets[1])
+                        if cur_sub == smroot:
+                            cur_sub = NIL
                     else:
-                        menu_state = OUTSIDE_STATE
+                        cur_sub = NIL
+                    if cur_sub != NIL:
+                        menu_state = SUBMENU_STATE
+                    else:
+                        cur_item = self.ob_find(cur_menu, 1, rets[0], rets[1])
+                        if cur_item != NIL:
+                            menu_state = INITEM_STATE
+                        elif tree[cur_title].ob_state & DISABLED:
+                            cur_title = NIL
+                            done = True
+                        else:
+                            menu_state = OUTSIDE_STATE
 
-            # the old item off; the old title off and its menu up; the new
-            # title on and its menu down; the new item on
+            # inside out: the submenu's highlight, the submenu, the item,
+            # then the title and its menu
+            if smtree:
+                with self.on_tree(self.trees[smtree]):
+                    self.menu_select(last_sub, cur_sub, False)
+            if smtree and cur_item != smparent:
+                self.sm_hide(tree, smparent)
+                smtree, smparent = 0, NIL
+                cur_sub = last_sub = NIL
             self.menu_select(last_item, cur_item, False)
             if self.menu_select(last_title, cur_title, False):
                 self.menu_sr(False, cur_menu)
             if self.menu_select(cur_title, last_title, True):
                 cur_menu = self.menu_down(cur_title)
             self.menu_select(cur_item, last_item, True)
+            if not smtree and self.sm_opens(tree, cur_item):
+                smtree, smroot = self.sm_show(tree, cur_item)
+                if smtree:
+                    smparent = cur_item
+            if smtree:
+                with self.on_tree(self.trees[smtree]):
+                    self.menu_select(cur_sub, last_sub, True)
 
         got = None
+        self.mn_tree, self.mn_menu = self.tree_addr(tree), cur_menu
         if cur_title != NIL:
+            if smtree:
+                self.sm_hide(tree, smparent)
+                if cur_sub != NIL:
+                    with self.on_tree(self.trees[smtree]):
+                        self.do_chg(cur_sub, SELECTED, False, False, False)
             self.menu_sr(False, cur_menu)
-            if (cur_item != NIL
-                    and self.do_chg(cur_item, SELECTED, False, False, True)):
+            ok = False
+            if smtree and cur_sub != NIL:
+                with self.on_tree(self.trees[smtree]):
+                    ok = self.do_chg(cur_sub, SELECTED, False, False, True)
+                if ok:
+                    got = (cur_title, cur_sub)
+                    self.mn_tree, self.mn_menu = smtree, smroot
+            if not ok and not smtree and cur_item != NIL \
+                    and self.do_chg(cur_item, SELECTED, False, False, True):
                 got = (cur_title, cur_item)
-            else:
+                ok = True
+            if not ok:
                 self.do_chg(cur_title, SELECTED, False, True, True)
         self.ct_mouse(False)
         return got
@@ -4204,6 +4423,17 @@ class AES:
             c4 = 1
         elif n == 35:
             io[0] = self.mn_register(ints[0], ints[1])
+            c4 = 1
+        elif n == 37:
+            # menu_attach: flag, item; the tree, and the MENU block
+            md = [ints[2], ints[3], ints[4], ints[5]]
+            io[0], md = self.mn_attach(ints[0], self.tree, ints[1], md)
+            io[1:5] = md
+            c4 = 5
+        elif n == 38:
+            # menu_istart: flag, imenu, item -- the tree by address
+            io[0] = self.mn_istart(ints[0], self.tree_addr(self.tree),
+                                   ints[1], ints[2])
             c4 = 1
         elif n == 36:
             # menu_popup: the MENU block spelled out -- box, start,
@@ -4660,7 +4890,7 @@ APPL_READ = 1011
 GRAF_HANDLE = 1077
 FSEL_INPUT, FSEL_EXINPUT = 1090, 1091
 (MENU_BAR, MENU_ICHECK, MENU_IENABLE, MENU_TNORMAL, MENU_TEXT,
- MENU_REGISTER, MENU_POPUP) = range(1030, 1037)
+ MENU_REGISTER, MENU_POPUP, MENU_ATTACH, MENU_ISTART) = range(1030, 1039)
 (WIND_CREATE, WIND_OPEN, WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET,
  WIND_FIND, WIND_UPDATE, WIND_CALC) = range(1100, 1109)
 RSRC_LOAD, RSRC_FREE, RSRC_GADDR = 1110, 1111, 1112
@@ -4687,7 +4917,8 @@ GD_ENHNDL, GD_EIHNDL = -35, -37
 
 
 def run(script, tree, mem, plan=None, pointer=(0, 0), trees=None,
-        dirs=None, pool=None, buffers=None, dirsep="", lang=None, dev=None):
+        dirs=None, pool=None, buffers=None, dirsep="", lang=None, dev=None,
+        home=0):
     """Run a mixed VDI/AES script against fresh models; returns
     (vdi, aes, results) with one result record per script record, the
     way vdiref.VDI.run() does for a pure VDI script.
@@ -4716,8 +4947,13 @@ def run(script, tree, mem, plan=None, pointer=(0, 0), trees=None,
     v = vdiref.VDI(dev)
     v.ptr_x, v.ptr_y = pointer
     a = AES(v, tree, mem)
-    a.trees = trees or {}
+    a.trees = dict(trees or {})
     a.home = tree               # the tree a record that names none means
+    # ...and WHERE it is, which MN_SELECTED's words 5 and 6 report now
+    # that an item may come from a tree that is not the menu bar's.
+    if home:
+        a.trees[home] = tree
+    a.home_addr = home
     a.dirs = dirs or {}
     a.dos_dirsep = dirsep       # the DOS seam's: "" on DOS 2, ">" on a SpartaDOS
     a.pool_mark = pool

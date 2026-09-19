@@ -687,6 +687,27 @@ static void run_script(void)
                 c4 = 6;
                 break;
             }
+            /* menu_attach and menu_istart, with the MENU block spelled
+             * out in intin as menu_popup's is: the tree it names is a
+             * bank-$00 address, which is where a script's trees are. */
+            case 37: {          /* flag, item, tree, menu, start, scroll */
+                uint32_t mt = (uint32_t)(uint16_t)intin[2];
+                WORD mm = intin[3], ms = intin[4], msc = intin[5];
+
+                intout[0] = mn_attach(intin[0], tree, intin[1],
+                                      &mt, &mm, &ms, &msc);
+                intout[1] = (WORD)(uint16_t)mt;
+                intout[2] = mm;
+                intout[3] = ms;
+                intout[4] = msc;
+                c4 = 5;
+                break;
+            }
+            case 38:            /* menu_istart: flag, imenu, item */
+                intout[0] = mn_istart(intin[0], (uint32_t)(uint16_t)tree,
+                                      intin[1], intin[2]);
+                c4 = 1;
+                break;
             case 40:                        /* objc_add: parent, child */
                 ob_add(tree, intin[0], intin[1]);
                 intout[0] = 1;

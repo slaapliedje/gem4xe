@@ -857,6 +857,36 @@ WORD menu_register(WORD pid, const char *str);
  * buffer, so one of these can be open at a time.  appl_getinfo(AES_MENU)
  * answers 0 for sub-menus and 1 for popups, which is the way to ask. */
 WORD menu_popup(const MENU *me, WORD xpos, WORD ypos, MENU *mdata);
+
+/* SUB-MENUS: a menu item that carries a menu of its own, which opens
+ * beside it while the pointer rests on it.
+ *
+ *   menu_attach(ME_ATTACH, tree, item, &md)   attaches md's box to item
+ *   menu_attach(ME_INQUIRE, tree, item, &md)  fills md with what is there
+ *   menu_attach(ME_REMOVE, tree, item, 0)     takes it off again
+ *
+ * THE ITEM MUST BE A G_STRING AND AT LEAST TWO CHARACTERS LONG, and its
+ * text must be writable, because attaching writes a right-arrow
+ * character two bytes from the end of it -- the ROM's mark, so a tree
+ * marked here reads the same to anything that inspects it.  The ROM
+ * never checks either; this refuses rather than write outside a short
+ * string.  Removing puts a SPACE there, not what was there before.
+ *
+ * One level only: a submenu's own items cannot carry sub-menus, and
+ * neither can a popup's.  Ask appl_getinfo(AES_MENU) rather than
+ * assuming -- its first word is sub-menus, its second popups, its third
+ * scrolling (which is not here), its fourth whether MN_SELECTED's words
+ * 5 to 7 carry the tree the item came from, which they do.
+ *
+ * menu_istart reads or sets which item of the submenu lines up with the
+ * parent item; it answers the item, or 0 for an error. */
+WORD menu_attach(WORD flag, OBJECT *tree, WORD item, MENU *mdata);
+WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item);
+#define ME_INQUIRE  0
+#define ME_ATTACH   1
+#define ME_REMOVE   2
+#define MIS_INQUIRE 0
+#define MIS_SET     1
 WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
 
 /* appl_getinfo (AES 130) -- what this AES has, asked one subject at a

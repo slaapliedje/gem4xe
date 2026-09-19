@@ -206,16 +206,19 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
          * GEMAPLIB.C, where AI_MSG and AI_WIND set theirs to 0x03fe and
          * 0x01ff with a bit list and this one sets four ones.
          *
-         * out2 is menu_popup, which is here (menu.c).  out1 is
-         * SUB-MENUS -- menu_attach and menu_istart -- and they are not:
-         * a submenu opens over a drop-down that is already showing, and
-         * bb_save is a single screen-sized shadow, so the second save
-         * would take the first one's drawn pixels.  out3 is scrollable
-         * menus, which need the same second buffer and the arrow items
-         * besides.  out4 is MN_SELECTED's words 5 to 7 carrying the
-         * tree the item came from; with no submenus every item comes
-         * from the bar's own tree, and ctrl.c sends zeros. */
+         * out1 is SUB-MENUS (menu_attach, menu_istart) and out2 is
+         * popups: both are here.  out4 is MN_SELECTED's words 5 to 7
+         * carrying the tree the item came from, and they are filled in
+         * now (ctrl.c) -- with sub-menus the item may be in a tree that
+         * is not the menu bar's, so the number alone would name nothing.
+         *
+         * out3 is SCROLLABLE menus, and they are not here: an item that
+         * scrolls needs arrow items written into the caller's strings
+         * and the box rebuilt by index as it moves, and nothing serves
+         * menu_settings to change the speeds it would run at. */
+        *out1 = 1;
         *out2 = 1;
+        *out4 = 1;
         break;
 
     case AI_SHELL:
