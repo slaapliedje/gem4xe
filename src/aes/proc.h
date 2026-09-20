@@ -30,11 +30,17 @@
  * HOW BIG.  The Desk box has six accessory slots because the resource
  * has eight children and the AES rebuilds the chain by index
  * (tools/deskrsc.py, and the invariant is the donor's).  Six SLOTS is not
- * six PROGRAMS: one accessory may register more than one name, and on
- * this machine the binding limit is bank $00, not the menu -- the pool is
- * 14 KB and the desktop with its resource is most of it.  So the slots
- * stay at six and the processes are counted separately, and the loader
- * stops when the pool says no rather than when this number does.
+ * six PROGRAMS: one accessory may register more than one name.
+ *
+ * The binding limit used to be bank $00 rather than the menu -- the pool
+ * is 14 KB and the desktop with its resource was most of it, so three
+ * accessories was all there were records for, whatever the box could
+ * draw.  The desktop's resource moved to far memory on 2026-09-19
+ * (src/aes/rsrc.c prefers far for a caller that can take it) and gave
+ * back about 6 KB, so the processes now match the slots: six, as TOS and
+ * EmuTOS have.  The loader still stops when the POOL says no rather than
+ * when this number does -- six accessories that each want a near region
+ * can still run it out, and sh_accfull counts the ones that did.
  */
 #ifndef GEM4XE_PROC_H
 #define GEM4XE_PROC_H
@@ -43,7 +49,21 @@
 #include "sys/ctx.h"
 
 #define NUM_ACCS    6           /* menu slots: the Desk box's children */
-#define NUM_PROCS   4           /* the application, and three accessories */
+/* SEVEN: the application, and one per Desk menu slot.  It was four --
+ * three accessories -- while bank $00 could not afford more, which made
+ * gem4xe's real limit three however many slots the box could draw.  The
+ * desktop's resource went to far memory on 2026-09-19 and gave the pool
+ * back about 6 KB, which is what pays for the other three. */
+#define NUM_PROCS   7
+/* HOW MANY CAN ACTUALLY REGISTER.  An accessory needs a process record
+ * (src/aes/shel.c, sh_ldacc: proc_new or sh_accfull), so this follows
+ * NUM_PROCS rather than being stated twice -- and one more accessory is
+ * refused by proc_new before menu_register is reached.  With NUM_PROCS
+ * at 7 it is 6, which is what the Desk box has slots for and what
+ * TOS/EmuTOS allow.  NUM_ACCS still bounds the TREE: the resource must
+ * carry all eight children of the Desk box whether they are used or
+ * not. */
+#define MAX_ACCS    (NUM_PROCS - 1)
 #define ACC_MSGS    8           /* an accessory's queue, in messages */
 
 /* The width of the name appl_find searches, and the donor's (struct.h
