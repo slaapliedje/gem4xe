@@ -39,18 +39,21 @@
  * keeps its literals in far memory, and the shim brings one down before
  * the call (src/sys/abi.c).  Three sizes, in the order a string grows:
  *
- *   rsrc_load, menu_text, menu_register and the fsel dialog title copy
- *   into a 64-byte near scratch (near_str), so 63 bytes;
+ *   rsrc_load, menu_text and the fsel dialog title copy into a 64-byte
+ *   near scratch (near_str), so 63 bytes;
  *
  *   form_alert takes the AES's pool instead (pool_str), so 511 -- an
  *   alert a screen can hold does not fit in the scratch;
  *
- *   wind_set(WF_NAME) and WF_INFO copy nothing here.  The AES keeps all
- *   24 bits of the address and reads the string again at every redraw,
- *   as the ST's does, bringing a far one down where the DRAWING happens
- *   (src/aes/wind.c, w_ptext).  A far title of any length is accepted
- *   and an application may still edit it in place, but 40 characters of
- *   it are drawn; a NEAR title is used where it lies and has no cap.
+ *   menu_register, wind_set(WF_NAME) and WF_INFO copy NOTHING.  The AES
+ *   keeps all 24 bits of the address and reads the string again when it
+ *   needs it, as the ST's does (src/sys/abi.c case 35, src/aes/wind.c
+ *   w_ptext).  A string of ANY LENGTH is accepted, near or far, and an
+ *   application may edit it in place and be seen to.
+ *
+ *   menu_register must not bounce, in particular: the AES keeps a
+ *   registered name for the life of the machine, and near_str's cursor
+ *   winds back to zero on the next call that uses it.
  *
  * A second far string in one call -- which fsel's path/selection,
  * shel_write and shel_find are -- still wants bank $00.
@@ -806,17 +809,33 @@ WORD wind_update(WORD code);
 WORD wind_calc(WORD type, WORD kind, WORD x, WORD y, WORD w, WORD h,
                WORD *ox, WORD *oy, WORD *ow, WORD *oh);
 /* wind_set's WF_NEWDESK takes the tree as the ST does: its address in
- * two words, high first (0 here: the tree is in bank $00), then the
- * object to draw from. */
-#define wind_newdesk(tree, root) \
-    wind_set(0, WF_NEWDESK, 0, (WORD)(uint16_t)(tree), (root), 0)
+ * two words, high first, then the object to draw from.  BOTH WORDS MEAN
+ * SOMETHING HERE.  They did not until 2026-09-19: the high one was
+ * written 0 because a tree was always in bank $00, and a --data-model=
+ * large program whose globals are in far bss -- the desktop, since its
+ * resource went far -- would have had its background tree truncated to a
+ * near address with no error (the trap docs/far-trees.md records).  A
+ * small-data program still passes 0 in the high word, so nothing about
+ * it changes. */
+#define wind_newdesk(tree, root)                                        \
+    wind_set(0, WF_NEWDESK,                                             \
+             (WORD)((uint32_t)(const OBJECT FAR *)(tree) >> 16),        \
+             (WORD)(uint16_t)(uint32_t)(const OBJECT FAR *)(tree),      \
+             (root), 0)
 
-/* rsrc_load takes the resource from gem4xe's application pool when it
- * fits, and -- for a program compiled --data-model=large, whose binding
- * says it can take one -- from far memory when it does not
- * (docs/far-trees.md).  rsrc_gaddr answers a bank-$00 address to a
- * small-data program, which is all such a program can hold, and a 24-bit
- * one to a large-data program. */
+/* rsrc_load PREFERS far memory for a program compiled --data-model=large,
+ * whose binding says it can hold a 24-bit address -- whatever the size of
+ * the file.  Bank $00 is the scarce thing on this machine and far memory
+ * is the plentiful one, so far is the default and the application pool is
+ * the exception (docs/phase47.md, src/aes/rsrc.c).
+ *
+ * Two callers still take the pool: a --data-model=small program, which
+ * could not follow a far address, and any resource with colour icons
+ * (NEW_FORMAT_RSC), whose CICONBLK chains this loader fixes up as 16-bit
+ * quantities.
+ *
+ * rsrc_gaddr answers a bank-$00 address to a small-data program, which is
+ * all such a program can hold, and a 24-bit one to a large-data program. */
 WORD rsrc_load(const char *name);
 WORD rsrc_free(void);
 WORD rsrc_gaddr(WORD type, WORD index, void **addr);
@@ -1058,9 +1077,14 @@ WORD wind_open_grect(WORD handle, const GRECT *r);
 WORD wind_get_grect(WORD handle, WORD field, GRECT *r);
 WORD wind_set_grect(WORD handle, WORD field, const GRECT *r);
 WORD wind_calc_grect(WORD type, WORD kind, const GRECT *in, GRECT *out);
-/* WF_NAME / WF_INFO: the string must be NEAR and must outlive the window --
- * the AES keeps the pointer and redraws the title from it.  A far address
- * is refused (the call answers 0) rather than cut to 16 bits. */
+/* WF_NAME / WF_INFO: the string may be NEAR OR FAR and must outlive the
+ * window -- the AES keeps all 24 bits of the address and redraws the title
+ * from it, so an application editing its title in place is seen to.  The
+ * two words are the address high-then-low, which is what this binding
+ * sends and what wind.c reassembles; passing only the low word (a bare
+ * pointer, or a hand-built call with 0 in the high word) names bank $00
+ * and is the silent half of the truncation class tools/nearcast.py
+ * guards -- see docs/phase47.md. */
 WORD wind_set_str(WORD handle, WORD field, const char *str);
 WORD form_center_grect(OBJECT *tree, GRECT *r);
 WORD form_dial_grect(WORD flag, const GRECT *little, const GRECT *big);

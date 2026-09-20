@@ -414,10 +414,17 @@ typedef struct orect {
  * keeps a pointer and re-reads the string at every redraw, so the shim
  * cannot bounce a far title into a scratch that lasts the call the way
  * it does form_alert's text; a --data-model=large program's title is far
- * and would be cut to 16 bits.  Keeping the whole address and bringing a
- * far one down at DRAW time (w_ptext, src/aes/wind.c) preserves the
+ * and would be cut to 16 bits.  Keeping the whole address preserves the
  * contract in both directions: the application may still edit its title
- * in place and see it at the next redraw. */
+ * in place and see it at the next redraw.
+ *
+ * NOTHING IS COPIED ANYWHERE.  w_ptext assigns the address straight into
+ * the frame TEDINFO's te_ptext and the VDI reads the string where it
+ * lies, exactly as objc_draw already read a G_TEXT's (src/aes/objc.c).
+ * It used to bounce a far title through a 41-byte near buffer, which
+ * capped one at forty characters while a near title had none -- and the
+ * desktop's own w_name is fifty bytes, so a deep path drew short from
+ * the day G moved to far memory.  docs/phase47.md. */
 typedef struct {
     UWORD       w_flags;    /* VF_* */
     UWORD       w_kind;     /* the gadgets */
@@ -627,12 +634,12 @@ WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item);
 #define THEDESK     3
 
 void mn_start(void);             /* once per AES start: the registry cleared */
-WORD mn_register(WORD pid, const char *pstr);
+WORD mn_register(WORD pid, uint32_t pstr);
 struct PROC *mn_owner(WORD id);  /* who registered that slot, or 0 */
 void mn_cleanup(void);           /* AC_CLOSE to every registered accessory */
 extern WORD gl_dafirst;          /* where the first accessory name lands */
 extern WORD gl_accreg;           /* names registered in the Desk menu */
-extern const char *gl_acctitle[]; /* by slot; the ACCESSORY's own memory */
+extern uint32_t gl_acctitle[]; /* by slot; the ACCESSORY's own memory */
 
 /* The message pipe (gemqueue.c).  Every process has one -- src/aes/proc.h
  * -- and mq_put names which; mq_get and mq_count are the running one's.

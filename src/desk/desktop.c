@@ -583,7 +583,7 @@ static WORD hndl_msg(void)
  * written over the resource's "0.00". */
 static void set_version(void)
 {
-    char *v = (char *)(uint16_t)G.a_info[DEVERSN].ob_spec.index;
+    char *v = (char *)(uint32_t)G.a_info[DEVERSN].ob_spec.index;
     UWORD g = (UWORD)global[0];
     static const char hex[] = "0123456789ABCDEF";
 

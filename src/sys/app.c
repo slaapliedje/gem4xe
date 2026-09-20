@@ -23,6 +23,14 @@ static uint16_t pool_brk;       /* 0 until the first take: then the cursor */
  * because a picture does not depend on where the bss is. */
 uint16_t app_near;
 
+/* AND WHERE ITS FAR IMAGE WENT, for the same reason.  A --data-model=
+ * large program keeps its globals in far bss, not in the near region, so
+ * app_near no longer finds them: a gate relocates a far link address L as
+ * ((app_far >> 16) + (L >> 16) - link_bank) << 16 | (L & 0xFFFF), with
+ * link_bank read from the .g4a header (byte 14).  The desktop became such
+ * a program on 2026-09-19 and every gate that reads its G needs this. */
+uint32_t app_far;
+
 /* THE FLOOR.  Nothing may be released below this, and what puts things
  * under it is pool_keep_mark(): "everything taken so far is permanent."
  *
@@ -187,6 +195,7 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
         return APP_E_FAR;
     }
     app->far_addr = ((uint32_t)bank << 16) | far_off;
+    app_far = app->far_addr;        /* for a gate to find it: see above */
     app->far_size = far_size;
 
     /* The bytes, then the patches.  A near address moves by whole pages

@@ -89,6 +89,7 @@ extern uint16_t pool_refused;
  * diagnostic -- nothing in the engine reads it -- but the gates need it
  * now that an accessory is loaded before the first program. */
 extern uint16_t app_near;                          /* bytes left          */
+extern uint32_t app_far;           /* its far image: large-data globals   */
 
 int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app);
 int16_t app_exec(const APP *app);

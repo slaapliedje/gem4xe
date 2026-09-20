@@ -31,8 +31,10 @@
  * --data-model=large program keeps its every string literal in far memory
  * (Calypsi cfar), so near_str() copies a SHORT far string into a near
  * scratch before the AES sees it -- enough for a resource name, a menu
- * label, an alert (form_alert, rsrc_load, menu_text, menu_register) and
- * fsel's dialog title.  The strings that could be longer or come in pairs
+ * label, an alert (form_alert, rsrc_load, menu_text) and fsel's dialog
+ * title.  NOT menu_register, which keeps the caller's address instead:
+ * the AES holds a registered name for the life of the machine and this
+ * scratch's cursor winds back to zero on the next call (case 35).  The strings that could be longer or come in pairs
  * -- fsel's path and selection, shel_write's, shel_find's -- still want a
  * near buffer, until a bigger scratch can be afforded.  Message buffers and the parameter block's own arrays are
  * written through far pointers and can be anywhere.
@@ -59,6 +61,12 @@ uint8_t  gem_depth;
 uint16_t gem_calls;
 uint16_t app_calls;             /* of those, the application's: see abi.h */
 uint16_t gem_bad;
+/* WHICH CALL THE LAST REFUSAL HAPPENED IN.  A count on its own says a
+ * program asked for something it could not have and nothing about what:
+ * near_of() refuses a far address from four different opcodes and the
+ * default arm refuses an opcode that does not exist.  Recorded here so a
+ * gate can name it instead of the reader bisecting for it. */
+uint16_t gem_badop = 0xFFFF;
 uint8_t  gem_cop_pass;
 uint8_t  gem_term;
 
@@ -436,13 +444,13 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         mn_text(tree, int_in[0], s);
         break;
     }
-    case 35: {                      /* menu_register: pid, string */
-        const char *s = (const char *)near_str(addr_in[0]);
-        if (!s)
-            return -1;
-        ret = mn_register(int_in[0], s);
+    case 35:                        /* menu_register: pid, string */
+        /* NOT through near_str.  The AES keeps this address for the life
+         * of the machine and reads it at every redraw, and the scratch is
+         * reused by the next call that takes a string -- so the title
+         * goes in whole and is read where it lies (src/aes/menu.c). */
+        ret = addr_in[0] ? mn_register(int_in[0], (uint32_t)addr_in[0]) : -1;
         break;
-    }
     case 36: {                      /* menu_popup: me, x, y, mdata */
         WORD me[MENU_WORDS], md[MENU_WORDS];
         uint32_t pme = (uint32_t)addr_in[0], pmd = (uint32_t)addr_in[1];
@@ -814,12 +822,27 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         break;
     }
     case 121: {                     /* shel_write: doex, isgr, iscr, cmd, tail */
-        const char *cmd = near_of(addr_in[0]);   /* far: not yet */
-        const char *tail = near_of(addr_in[1]);
-        if (int_in[0] == 1 && !(cmd && tail))
-            ret = 0;
-        else
-            ret = sh_write(int_in[0], int_in[1], int_in[2], cmd, tail);
+        /* ONLY SHW_EXEC READS THE TWO STRINGS.  Every other doex ignores
+         * them (src/aes/shel.c sh_write), so resolving them regardless
+         * counted a refusal for the "" and "\0" that a caller hands
+         * SHW_SHUTDOWN -- which in a --data-model=large program are far
+         * string literals, and near_of refuses a far address.  That was
+         * two of the two refusals m17 saw the day the desktop moved to
+         * that model, and the calls had done their work anyway.
+         *
+         * And pool_str rather than near_of for the pair, so a far path
+         * works at all: sh_write COPIES both into far memory, so the
+         * pool copies go back at the end of the call. */
+        if (int_in[0] != 1) {
+            ret = sh_write(int_in[0], int_in[1], int_in[2], 0, 0);
+        } else {
+            uint16_t smark = pool_mark();
+            const char *cmd = pool_str(addr_in[0]);
+            const char *tail = pool_str(addr_in[1]);
+            ret = (cmd && tail)
+                  ? sh_write(int_in[0], int_in[1], int_in[2], cmd, tail) : 0;
+            pool_release(smark);
+        }
         break;
     }
     case 122: {                     /* shel_get: buffer, len -- the buffer
@@ -919,8 +942,13 @@ static void aes_entry(const AESPB_IMG FAR *pb)
     for (k = 0; k < n; k++)
         addr_in[k] = ai[k];
 
-    int_out[0] = crysbind(control[0], (WORD FAR *)pb->global,
-                          int_in, int_out, addr_in);
+    {
+        uint16_t was = gem_bad;
+        int_out[0] = crysbind(control[0], (WORD FAR *)pb->global,
+                              int_in, int_out, addr_in);
+        if (gem_bad != was)
+            gem_badop = (uint16_t)control[0];
+    }
 
     n = control[2];
     if (n > O_SIZE)

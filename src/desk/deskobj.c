@@ -173,7 +173,7 @@ WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
     obj_clear(si);
     pic = &si->i.blk;
     *pic = G.a_iblist[which];
-    pob->ob_spec.index = (LONG)(uint16_t)pic;
+    pob->ob_spec.index = (LONG)(uint32_t)pic;
     pic->ib_xicon = (WORD)((G.g_wicon - pic->ib_wicon) / 2);
     pic->ib_ytext = pic->ib_hicon;
     pic->ib_wtext = (WORD)(MAX_ICONTEXT_WIDTH * G.g_wchar);
@@ -183,7 +183,7 @@ WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
     while (*label && d < si->i.label + LABEL_LEN - 1)
         *d++ = *label++;
     *d = 0;
-    pic->ib_ptext = (LONG)(uint16_t)si->i.label;
+    pic->ib_ptext = (LONG)(uint32_t)si->i.label;
     return obid;
 }
 
@@ -205,6 +205,6 @@ WORD obj_text(WORD wparent, WORD x, WORD y, WORD w, WORD h)
     pob->ob_type = G_STRING;
     si = obj_info(obid);
     obj_clear(si);
-    pob->ob_spec.index = (LONG)(uint16_t)si->line;
+    pob->ob_spec.index = (LONG)(uint32_t)si->line;
     return obid;
 }

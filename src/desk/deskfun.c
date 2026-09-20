@@ -77,13 +77,13 @@ static char *put_far(char *d, const char FAR *s)
 
 static TEDINFO *ted_of(OBJECT *tree, WORD obj)
 {
-    return (TEDINFO *)(uint16_t)tree[obj].ob_spec.index;
+    return (TEDINFO *)(uint32_t)tree[obj].ob_spec.index;
 }
 
 static void inf_sset(OBJECT *tree, WORD obj, const char *str)
 {
     TEDINFO *ted = ted_of(tree, obj);
-    char *text = (char *)(uint16_t)ted->te_ptext;
+    char *text = (char *)(uint32_t)ted->te_ptext;
     WORD len = ted->te_txtlen;                  /* its own local, then the
                                                  * arithmetic: cc65816 drops
                                                  * the load otherwise
@@ -97,14 +97,14 @@ static void inf_sset(OBJECT *tree, WORD obj, const char *str)
 
 static void inf_sget(OBJECT *tree, WORD obj, char *str)
 {
-    put_str(str, (const char *)(uint16_t)ted_of(tree, obj)->te_ptext);
+    put_str(str, (const char *)(uint32_t)ted_of(tree, obj)->te_ptext);
 }
 
 /* The number at the right of the field, the donor's "%*lu". */
 static void inf_numset(OBJECT *tree, WORD obj, LONG value)
 {
     TEDINFO *ted = ted_of(tree, obj);
-    char *text = (char *)(uint16_t)ted->te_ptext;
+    char *text = (char *)(uint32_t)ted->te_ptext;
     WORD len = ted->te_txtlen;                  /* rule 5, as above: the
                                                  * field into a local, then
                                                  * the subtraction */

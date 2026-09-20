@@ -50,7 +50,8 @@ extern uint16_t gem_calls;     /* COPs served, every process's */
  * gem_calls stopped being that the moment a desk accessory could be
  * resident beside it (src/aes/proc.h). */
 extern uint16_t app_calls;
-extern uint16_t gem_bad;       /* COPs refused: signature, opcode, bank */
+extern uint16_t gem_bad;    /* COPs refused: signature, opcode, bank */
+extern uint16_t gem_badop;  /* the opcode the last refusal was in */
 
 /* Nonzero when the OS takes COPs of its own -- Rapidus OS, whose @:SYSDEF
  * says its native interrupt services are there -- so that a COP which is

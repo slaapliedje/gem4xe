@@ -386,7 +386,14 @@ static void win_sinfo(WNODE *pw)
     d = put_str(d, " bytes used in ");
     d = put_num(d, pw->w_path.p_count);
     put_str(d, " items.");
-    wind_set(pw->w_id, WF_INFO, 0, (WORD)(uint16_t)pw->w_info, 0, 0);
+    /* BOTH WORDS, high first.  The high one was written 0 while this was
+     * a small-data program and every string was in bank $00; the window's
+     * name and information line live in G, and G went to far memory when
+     * the desktop's resource did (2026-09-19).  A truncated address here
+     * draws whatever is at the same offset in bank $00. */
+    wind_set(pw->w_id, WF_INFO,
+             (WORD)((uint32_t)pw->w_info >> 16),
+             (WORD)(uint32_t)pw->w_info, 0, 0);
 }
 
 /* -- the view ---------------------------------------------------------- */
@@ -917,7 +924,9 @@ static WORD do_diropen(WNODE *pw, WORD new_win, WORD curr, const char *path,
     pn_active(&pw->w_path);
     win_sname(pw);
     win_sinfo(pw);
-    wind_set(pw->w_id, WF_NAME, 0, (WORD)(uint16_t)pw->w_name, 0, 0);
+    wind_set(pw->w_id, WF_NAME,
+             (WORD)((uint32_t)pw->w_name >> 16),
+             (WORD)(uint32_t)pw->w_name, 0, 0);
     do_wopen(new_win, pw->w_id, curr, pt);
     if (new_win)
         win_top(pw);
@@ -969,7 +978,9 @@ void win_rebld(WNODE *pw)
     pn_active(&pw->w_path);
     win_sname(pw);
     win_sinfo(pw);
-    wind_set(pw->w_id, WF_NAME, 0, (WORD)(uint16_t)pw->w_name, 0, 0);
+    wind_set(pw->w_id, WF_NAME,
+             (WORD)((uint32_t)pw->w_name >> 16),
+             (WORD)(uint32_t)pw->w_name, 0, 0);
     desk_verify(pw->w_id);
     wind_get_grect(pw->w_id, WF_WORKXYWH, &t);
     do_wredraw(pw->w_id, &t);

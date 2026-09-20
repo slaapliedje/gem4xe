@@ -120,42 +120,29 @@ static ORECT   gl_mkrect;           /* the rectangle newrect is breaking:
                                      * a value, near, passed by address */
 static TEDINFO gl_aname, gl_ainfo;
 
-/* WHERE A FAR TITLE IS BROUGHT DOWN.  A TEDINFO's te_ptext is near --
- * the VDI reads the string through it at every redraw -- so a title a
- * --data-model=large program handed to wind_set(WF_NAME) as a 24-bit
- * address has to be copied into bank $00 before it can be drawn.  It is
- * copied HERE, at draw time, and not in the shim: the ST's AES re-reads
- * the application's string on every redraw and an application is
- * entitled to edit it in place, so a bounce that happened once in
- * wind_set would freeze the title at whatever it said that instant.
+/* Point a frame TEDINFO at the string `addr` names -- WHEREVER IT LIES,
+ * near or far, and all 24 bits of it.
  *
- * FORTY CHARACTERS, not the eighty a 640-wide title bar could hold, and
- * the eighty bytes that saves are the reason both sides of bank $00 have
- * a margin worth the name.  It caps FAR titles only: a near one is used
- * where it lies and may be any length.  Forty is wide enough for every
- * title the donor's own desktop sets and for both programs this project
- * exists for; a longer far one is truncated, not refused.
+ * It used to copy a far string into a 41-byte near buffer first, on the
+ * belief that te_ptext had to be bank $00.  It does not: objc_draw reads
+ * a G_TEXT/G_BOXTEXT's text through a far pointer already (src/aes/objc.c,
+ * `gr_gtext(..., (const char FAR *)SPEC_PTR(ted.te_ptext), ...)`), which
+ * is the same path the window frame's name and information line take.
  *
- * Where the 114 bytes came from is written up in src/gem4xe.scm -- the
- * LoRAM/Near boundary, the one boundary in bank $00 that fails at LINK
- * time rather than run time.  Two nearer-looking homes were tried first
- * and both were caught by gates: the application pool (test-m28) and the
- * stack (test-m32). */
-#define W_TEXTMAX   40
-static char gl_nbuf[W_TEXTMAX + 1];
-static char gl_ibuf[W_TEXTMAX + 1];
-
-/* Point a frame TEDINFO at the string `addr` names.  A near address is
- * used where it lies, so the application's own edits show; a far one is
- * copied into `buf` first.  Either way te_ptext is bank $00. */
-static void w_ptext(TEDINFO FAR *pt, char *buf, uint32_t addr)
+ * Two things were wrong with the copy, and both are gone with it.  It
+ * CAPPED a far title at forty characters while a near one had no cap --
+ * and the desktop's w_name is fifty bytes (LEN_ZPATH + 2, desk.h), so a
+ * deep path drew short from the day the desktop's G moved to far memory;
+ * tools/aesref.py never modelled the cap, so the model and the target had
+ * quietly stopped agreeing.  And the two buffers cost 82 bytes of LoRAM,
+ * which is the scarcest region in the machine.
+ *
+ * The ST's semantics are the better ones anyway and are what is left: the
+ * AES keeps the address and reads the string again at every redraw, so an
+ * application editing its title in place sees the change. */
+static void w_ptext(TEDINFO FAR *pt, uint32_t addr)
 {
-    if (addr >> 16) {
-        far_strget(buf, addr, W_TEXTMAX + 1);
-        pt->te_ptext = (uint16_t)buf;
-    } else {
-        pt->te_ptext = (uint16_t)addr;
-    }
+    pt->te_ptext = addr;
 }
 
 OBJECT FAR *gl_wtree;
@@ -605,8 +592,8 @@ void w_bldactive(WORD w_handle)
     kind = (WORD)pw->w_kind;
     w_nilit(NUM_ELEM, W_ACTIVE);
 
-    w_ptext(&gl_aname, gl_nbuf, pw->w_pname);
-    w_ptext(&gl_ainfo, gl_ibuf, pw->w_pinfo);
+    w_ptext(&gl_aname, pw->w_pname);
+    w_ptext(&gl_ainfo, pw->w_pinfo);
     gl_aname.te_just = TE_CNTR;
 
     /* the outer box, at the window's position */
@@ -1212,9 +1199,10 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
     case WF_NAME:
         /* the address is 32 bits in pinwds[0..1], high word first, as in
          * the ROM's intin -- and ALL of it is kept, so a large-data
-         * program's far title survives (w_ptext brings it down to draw) */
+         * program's far title survives (w_ptext keeps it whole, and
+         * objc_draw reads it where it lies) */
         pwin->w_pname = ((uint32_t)(UWORD)pinwds[0] << 16) | (UWORD)pinwds[1];
-        w_ptext(&gl_aname, gl_nbuf, pwin->w_pname);
+        w_ptext(&gl_aname, pwin->w_pname);
         if (pwin->w_flags & VF_ISOPEN) {
             which = W_NAME;
             do_cpwalk = TRUE;
@@ -1222,7 +1210,7 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
         break;
     case WF_INFO:
         pwin->w_pinfo = ((uint32_t)(UWORD)pinwds[0] << 16) | (UWORD)pinwds[1];
-        w_ptext(&gl_ainfo, gl_ibuf, pwin->w_pinfo);
+        w_ptext(&gl_ainfo, pwin->w_pinfo);
         if (pwin->w_flags & VF_ISOPEN) {
             which = W_INFO;
             do_cpwalk = TRUE;
@@ -1239,7 +1227,12 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
             wm_mktop(w_handle);
         break;
     case WF_NEWDESK:
-        gl_newdesk = (OBJECT FAR *)(uint16_t)pinwds[1];
+        /* BOTH WORDS: high first, as the ST passes it.  This took only
+         * the low one until 2026-09-19, which silently truncated the
+         * background tree of any program whose globals are in far
+         * memory (src/app/gem.h wind_newdesk). */
+        gl_newdesk = (OBJECT FAR *)((((uint32_t)(uint16_t)pinwds[0]) << 16)
+                                    | (uint16_t)pinwds[1]);
         gl_newroot = pinwds[2];
         break;
     case WF_HSLSIZ:

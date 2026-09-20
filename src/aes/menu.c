@@ -44,8 +44,16 @@
  * on one into a menu id.  Registrations outlive every application: the
  * donor's mn_init runs once at AES start-up, before the accessories are
  * loaded, and never again. */
-const char *gl_acctitle[NUM_ACCS];
-PROC       *gl_accown[NUM_ACCS];
+/* THE FULL 24 BITS, not a near pointer.  The AES keeps this address for
+ * the life of the machine and reads the string again at every redraw, so
+ * it may not be bounced through abi.c's near scratch: str_used winds back
+ * to 0 on the next call and the Desk menu would draw whatever landed
+ * there.  A large-data accessory's title IS far -- in that model every
+ * string literal is -- and this is the first thing to register one.
+ * objc_draw already reads a G_STRING's spec through a far pointer
+ * (expand_string, SPEC_PTR), which is what makes keeping it free. */
+uint32_t gl_acctitle[MAX_ACCS];
+PROC       *gl_accown[MAX_ACCS];
 WORD        gl_accreg;
 WORD        gl_dafirst;
 
@@ -109,11 +117,11 @@ static void menu_fixup(void)
         ob = dabox + i;
         ob_add(tree, dabox, ob);
         if (i > 2) {                    /* the names, after the separator */
-            while (slot < NUM_ACCS && !gl_acctitle[slot])
+            while (slot < MAX_ACCS && !gl_acctitle[slot])
                 slot++;
-            if (slot >= NUM_ACCS)
+            if (slot >= MAX_ACCS)
                 break;
-            tree[ob].ob_spec = (int32_t)(uint16_t)gl_acctitle[slot];
+            tree[ob].ob_spec = (int32_t)gl_acctitle[slot];
             slot++;
         }
         height += gl_hchar;
@@ -1037,16 +1045,16 @@ void mn_text(OBJECT FAR *tree, WORD item, const char *text)
  * handed out.  The owner recorded is the CALLER, not the pid it names --
  * again the donor's: pid is a sanity check and nothing more, since the
  * only process that can ask is the one running. */
-WORD mn_register(WORD pid, const char *pstr)
+WORD mn_register(WORD pid, uint32_t pstr)
 {
     WORD slot;
 
-    if (pid < 0 || gl_accreg >= NUM_ACCS)
+    if (pid < 0 || gl_accreg >= MAX_ACCS)
         return -1;
-    for (slot = 0; slot < NUM_ACCS; slot++)
+    for (slot = 0; slot < MAX_ACCS; slot++)
         if (!gl_acctitle[slot])
             break;
-    if (slot >= NUM_ACCS)
+    if (slot >= MAX_ACCS)
         return -1;
     gl_acctitle[slot] = pstr;
     gl_accown[slot] = rlr;
@@ -1075,7 +1083,7 @@ void mn_cleanup(void)
 {
     WORD i;
 
-    for (i = 0; i < NUM_ACCS; i++)
+    for (i = 0; i < MAX_ACCS; i++)
         if (gl_accown[i])
             ap_sendmsg(gl_accown[i], AC_CLOSE, i, 0, 0, 0, 0);
 }
@@ -1083,7 +1091,7 @@ void mn_cleanup(void)
 /* The process that registered slot `id`, and 0 for a slot nobody has. */
 PROC *mn_owner(WORD id)
 {
-    if (id < 0 || id >= NUM_ACCS)
+    if (id < 0 || id >= MAX_ACCS)
         return 0;
     return gl_accown[id];
 }
@@ -1105,7 +1113,7 @@ void mn_start(void)
 {
     WORD i;
 
-    for (i = 0; i < NUM_ACCS; i++) {
+    for (i = 0; i < MAX_ACCS; i++) {
         gl_acctitle[i] = 0;
         gl_accown[i] = 0;
     }
