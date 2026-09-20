@@ -124,14 +124,20 @@ APP_OBJS   = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o build/
 APP_BSS    = 2048
 APP_BITS   = 256
 APP_STACK  = 256
-# The stand-in desktop's own share of the constants.  It learned
-# shel_rdef and shel_wdef and with them five more string literals -- two
-# paths and three names -- and the link failed with "Failed to place 4
-# section fragment(s), total 0f".  RAISED FOR THAT ONE PROGRAM and not
-# for every application: APP_BITS comes out of the same near budget as
+# The STAND-IN desktop's own share of the constants (src/m16_desk.c).  It
+# learned shel_rdef and shel_wdef and with them five more string literals
+# -- two paths and three names -- and the link failed with "Failed to
+# place 4 section fragment(s), total 0f".  RAISED FOR THAT ONE PROGRAM and
+# not for every application: APP_BITS comes out of the same near budget as
 # the data, and 320 everywhere made test-m32's Pexec answer -39 for want
 # of memory to put a child in.
-DESK_BITS  = 320
+#
+# ITS OWN NAME, not DESK_BITS, which the real desktop also used: the two
+# went opposite ways on 2026-09-19 -- the real one down to 128 because its
+# constants are far now, this one still needing 320 because it is a
+# small-data program -- and sharing the name made `make test-m16` fail to
+# link the moment the other shrank.
+M16_BITS   = 320
 
 # Everything a gate boots, and the product: a plain `make` leaves no disk
 # behind its sources (a gate run by hand, rather than through its test-m*
@@ -593,10 +599,11 @@ ACC_OBJS   = $(G4A_LIB) build/app/m28_acc.o
 # near constants, and 128 left six bytes free.
 $(eval $(call g4a,m28_acc,$(ACC_OBJS),1152,160,384,,))
 
-# The two accessories (src/apps): the first programs written to the
+# The shipped applications (src/apps): the first programs written to the
 # application ABI that are not tests.  Each is one C file, one resource
 # built on the host, and the same three-way link every .g4a takes.
-build/apps/%.o: src/apps/%.c src/app/gem.h build/calcrsc.h build/clockrsc.h
+build/apps/%.o: src/apps/%.c src/app/gem.h build/calcrsc.h build/clockrsc.h \
+                build/cpanelrsc.h
 	@mkdir -p build/apps
 	$(CC) $(CFLAGS) -I src/app -I build -o $@ $<
 
@@ -608,7 +615,7 @@ build/clock.rsc build/clockrsc.h: tools/clockrsc.py tools/rsc.py tools/aesref.py
 	@mkdir -p build
 	python3 tools/clockrsc.py build/clock.rsc build/clockrsc.h
 
-CALC_OBJS  = $(G4A_LIB) build/apps/calc.o
+CALC_OBJS  = $(G4A_LIB) build/apps/calc.o build/apps/calcapp.o
 CLOCK_OBJS = $(G4A_LIB) build/apps/clock.o build/apps/clockapp.o
 $(eval $(call g4a,calc,$(CALC_OBJS),1536,256,512,,))
 $(eval $(call g4a,clock,$(CLOCK_OBJS),1536,256,512,,))
@@ -621,6 +628,42 @@ $(eval $(call g4a,clock,$(CLOCK_OBJS),1536,256,512,,))
 # and everything resident beside it (docs/phase36.md).
 CLOCKACC_OBJS = $(G4A_LIB) build/apps/clock.o build/apps/clockacc.o
 $(eval $(call g4a,clockacc,$(CLOCKACC_OBJS),1152,128,384,,))
+
+# The control panel (src/apps/cpanel.c), an accessory for the same reason
+# the clock is one and a stronger one besides: the moment somebody wants
+# the double-click rate changed is the moment one did not register, and
+# the Desk menu is the only door open from inside a program.  It draws
+# nothing itself -- the AES draws the form -- so it needs no workstation
+# and less near memory than the clock.
+build/cpanel.rsc build/cpanelrsc.h: tools/cpanelrsc.py tools/rsc.py tools/aesref.py
+	@mkdir -p build
+	python3 tools/cpanelrsc.py build/cpanel.rsc build/cpanelrsc.h
+
+# COMPILED --data-model=large, which is what buys the pool back: a
+# program that holds 32-bit pointers may be handed a resource in far
+# memory, and since 2026-09-19 rs_load puts one there whenever it can
+# rather than only when the pool is too small (src/aes/rsrc.c).  So
+# CPANEL.RSC costs bank $00 nothing at all, and what is left is the
+# queue and the near region.  The reservations are what the map says
+# rather than round numbers, because an accessory is charged to the pool
+# for as long as the machine is on.
+build/appsld/%.o: src/apps/%.c src/app/gem.h build/calcrsc.h build/clockrsc.h \
+                  build/cpanelrsc.h
+	@mkdir -p build/appsld
+	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
+
+CPANEL_OBJS = $(G4A_LIB_LD) build/appsld/cpanel.o build/appsld/cpanelacc.o
+$(eval $(call g4a,cpanelacc,$(CPANEL_OBJS),640,128,384,,,$(LIB_LD)))
+
+# The calculator AS AN ACCESSORY: the same calc.o, the other main().
+# The ST shipped one, and it is what the Desk menu is FOR -- a thing you
+# want while you are using something else.  Large-data like the control
+# panel, so CALC.RSC costs bank $$00 nothing.
+CALCACC_OBJS = $(G4A_LIB_LD) build/appsld/calc.o build/appsld/calcacc.o
+# 512 and 128: the map answers 384 bytes of bss -- which IS the stack,
+# its statics having gone to far bss with the large data model -- and 20
+# of bits.  256 + 512 + 128 is 896, four pages.
+$(eval $(call g4a,calcacc,$(CALCACC_OBJS),512,128,384,,,$(LIB_LD)))
 
 # The desktop (src/desk): a bigger near region than the gate application's,
 # for the object trees a desktop keeps in bank $00, and DESKTOP.RSC beside
@@ -652,22 +695,30 @@ $(eval $(call g4a,clockacc,$(CLOCKACC_OBJS),1152,128,384,,))
 # work area (src/sys/gemdos.c), which is why the desktop gates run a
 # runner whose staging leaves the pool the room GEM.COM leaves it
 # (build/m3desk.xex, above).
-DESK_OBJS  = $(G4A_LIB) build/desk/desktop.o build/desk/deskobj.o build/desk/deskwin.o \
-             build/desk/deskfun.o build/desk/deskcmd.o
-DESK_BSS   = 3072
-DESK_BITS  = 512
-# The near region is page-rounded (src/sys/app.c app_load): DP + bss + bits
-# is 3840 with DESK_BSS anywhere from 2944 to 3072, so the pool pays the
-# same for either.  The next byte costs a page (test-m28: tools/memreport.py).
+# COMPILED --data-model=large.  The desktop's resource is the largest
+# single thing in the pool -- 4862 bytes resident, 6398 while it loads --
+# and a program that holds 32-bit pointers is handed it in far memory
+# instead (src/aes/rsrc.c).  That is what makes room for a second
+# accessory beside it, and for the six the Desk box has slots for.
+DESK_OBJS  = $(G4A_LIB_LD) build/deskld/desktop.o build/deskld/deskobj.o \
+             build/deskld/deskwin.o build/deskld/deskfun.o \
+             build/deskld/deskcmd.o
+# Small now that the globals are far: the map answers 639 bytes of bss --
+# which is the 640-byte stack and almost nothing else, G having moved to
+# far bss -- and 30 of bits.  256 + 768 + 128 is 1152, five pages.
+DESK_BSS   = 768
+DESK_BITS  = 128
+# The near region is page-rounded (src/sys/app.c app_load): DP + bss + bits.
+# The next byte costs a page (test-m28: tools/memreport.py).
 DESK_STACK = 640
 DESK_H     = src/app/gem.h src/desk/desk.h build/deskrsc.h
 
-build/desk/%.o: src/desk/%.c $(DESK_H)
-	@mkdir -p build/desk
-	$(CC) $(CFLAGS) -I src/app -I build -o $@ $<
+build/deskld/%.o: src/desk/%.c $(DESK_H)
+	@mkdir -p build/deskld
+	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
 
-$(eval $(call g4a,desktop,$(DESK_OBJS),$(DESK_BSS),$(DESK_BITS),$(DESK_STACK)))
-$(eval $(call g4a,m16_desk,$(G4A_LIB) build/app/m16_desk.o,$(APP_BSS),$(DESK_BITS),$(APP_STACK)))
+$(eval $(call g4a,desktop,$(DESK_OBJS),$(DESK_BSS),$(DESK_BITS),$(DESK_STACK),,,$(LIB_LD)))
+$(eval $(call g4a,m16_desk,$(G4A_LIB) build/app/m16_desk.o,$(APP_BSS),$(M16_BITS),$(APP_STACK)))
 
 # HELLO.G4A (src/hello_app.c): the desktop's hello-world demo, shipped in
 # \APPS\ in place of the M11 gate app -- a real window a user can open and
@@ -882,7 +933,9 @@ ACC_DEPS  = build/m28_acc.g4a
 # directory rather than \APPS\, because an accessory is not a program the
 # desktop launches -- the AES loads it once at start-up and it outlives
 # every program (src/aes/shel.c).
-ACCP_DEPS = build/clockacc.g4a build/clock.rsc
+ACCP_DEPS = build/clockacc.g4a build/clock.rsc \
+            build/cpanelacc.g4a build/cpanel.rsc \
+            build/calcacc.g4a build/calc.rsc
 
 # The large-data gate application (src/m29_big.c): the ONE object in the
 # tree compiled --data-model=large, which is the model GACS's engine and
@@ -1073,6 +1126,10 @@ SP_LAYOUT = --name "GEM>GEM.COM" --boot "CD >GEM|GEM" --mkdir GEM \
 SP_APPS   = --mkdir APPS \
 	    --add build/clockacc.g4a "GEM>CLOCK.ACC" \
 	    --add build/clock.rsc "GEM>CLOCK.RSC" \
+	    --add build/cpanelacc.g4a "GEM>CONTROL.ACC" \
+	    --add build/cpanel.rsc "GEM>CPANEL.RSC" \
+	    --add build/calcacc.g4a "GEM>CALC.ACC" \
+	    --add build/calc.rsc "GEM>CALC.RSC" \
 	    --add build/calc.g4a "APPS>CALC.G4A" --add build/calc.rsc "APPS>CALC.RSC" \
 	    --add build/clock.g4a "APPS>CLOCK.G4A" --add build/clock.rsc "APPS>CLOCK.RSC"
 SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) tools/mkspdisk.py tools/atr.py

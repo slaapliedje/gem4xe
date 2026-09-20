@@ -37,12 +37,24 @@ static WORD    pending;                     /* the operator waiting, an index */
 static WORD    fresh;                       /* the next digit starts a number */
 
 /* The display's buffer, which the AES leaves alone: the resource's
- * TEDINFO points at it and objc_draw reads it where it stands. */
+ * TEDINFO points at it and objc_draw reads it where it stands.
+ *
+ * ALL 24 BITS OF BOTH.  ob_spec and te_ptext are LONGs holding addresses,
+ * and this took the low sixteen of each -- correct while a resource was
+ * always in bank $00, and silently wrong from the moment one was not.
+ * Built as an accessory this file is --data-model=large, so rs_load puts
+ * CALC.RSC in FAR memory (src/aes/rsrc.c) and the truncated pointers sent
+ * show() to write the display over whatever sits at the same offset in
+ * bank $00: the desktop came up to an hourglass and a blank desk, hung
+ * inside a GEMDOS call, with no bad-call count and no BRK to say why.
+ * The program build is small-data and its resource IS near, so uint32_t
+ * changes nothing there.  Fourteenth of its kind today -- see the
+ * (uint16_t) casts fixed in src/desk/ the same afternoon. */
 static char *disp_text(void)
 {
-    TEDINFO *ted = (TEDINFO *)(uint16_t)tree[CDISP].ob_spec.index;
+    TEDINFO *ted = (TEDINFO *)(uint32_t)tree[CDISP].ob_spec.index;
 
-    return (char *)(uint16_t)ted->te_ptext;
+    return (char *)(uint32_t)ted->te_ptext;
 }
 
 /* A signed LONG into the display, right-aligned in its places -- the
@@ -145,20 +157,41 @@ static void apply(void)
     show(acc);
 }
 
-int main(void)
+/* The resource, once.  Separate from the panel because the two happen at
+ * different times in an accessory: the shell takes this while the AES is
+ * starting up -- before the first program, the only time an accessory may
+ * take anything from bank $00 -- and opens the panel whenever somebody
+ * chooses it from the Desk menu (src/apps/calcacc.c). */
+WORD calc_start(void)
 {
-    WORD handle, wchar, hchar, wbox, hbox, done = FALSE;
-    WORD x, y, w, h, obj;
-
-    appl_init();
-    handle = graf_handle(&wchar, &hchar, &wbox, &hbox);
-    v_opnvwk(work_in, &handle, work_out);
-    if (!handle || !rsrc_load("CALC.RSC")) {
-        appl_exit();
-        return 1;
-    }
+    if (!rsrc_load("CALC.RSC"))
+        return FALSE;
     rsrc_gaddr(R_TREE, ADCALC, (void **)&tree);
     clear();
+    return TRUE;
+}
+
+/* A workstation of its own, for the PROGRAM.  The panel does not need one
+ * -- the AES draws the form and form_do runs it, which is why the
+ * accessory opens none (src/apps/calcacc.c, and src/apps/cpanel.c for the
+ * same reasoning) -- but the standalone calculator has always opened one
+ * and its gate counts the calls it makes (test-m22). */
+WORD calc_ws(void)
+{
+    WORD handle, wchar, hchar, wbox, hbox;
+
+    handle = graf_handle(&wchar, &hchar, &wbox, &hbox);
+    if (!handle)
+        return 0;
+    v_opnvwk(work_in, &handle, work_out);
+    return handle;
+}
+
+/* The panel, and the form_do loop that is the whole of this program.
+ * Returns when Quit is pressed and the screen has been given back. */
+void calc_panel(void)
+{
+    WORD x, y, w, h, obj, done = FALSE;
 
     form_center(tree, &x, &y, &w, &h);
     form_dial(FMD_START, 0, 0, 0, 0, x, y, w, h);
@@ -202,8 +235,4 @@ int main(void)
 
     form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
-    rsrc_free();
-    v_clsvwk(handle);
-    appl_exit();
-    return 0;
 }
