@@ -228,25 +228,53 @@ static uint16_t sdx_symbol(const char *name)
     return (uint16_t)((p & 0x02) ? 0 : sdx_ax);    /* Z: no such symbol */
 }
 
+/* THE NAMES GO BELOW $4000, and that is the whole of this buffer's
+ * reason for existing.  They used to be pool_alloc'd, which puts them at
+ * $4800 or above -- INSIDE THE WINDOW SPARTADOS X BANKS ITS OWN RAM INTO
+ * while it works (src/gem4xe.scm, "THE BANKED WINDOW").  The window is
+ * safe for a CIO buffer because a DOS reaches a caller's memory through
+ * its memory-index mechanism and runs the transfer loop below $4000 for
+ * exactly that reason (SDX Programming Guide 4.50, 3.7 and 22.4.3).
+ * jfsymbol is NOT CIO: it is a JSR into the cartridge with a raw pointer
+ * in the registers, so the name has to be somewhere that is still there
+ * after the bank comes in.
+ *
+ * It presented as a SIZE problem, which is why it took a bisect and then
+ * a probe to name: pool_alloc hands out the pool's cursor, the cursor
+ * moves as the desktop and its resource grow, and whether the seventeen
+ * bytes landed somewhere fatal depended on how big GEM.COM was.  Four
+ * hundred bytes of dummy far code on a good commit reproduced it
+ * exactly.  The desktop hung at cmd_init with the hourglass up and
+ * sometimes a BRK; skipping the cartridge call took it from call 18 to
+ * call 44 and named the subject.
+ *
+ * ONE NAME AT A TIME, and nine bytes rather than seventeen, because
+ * LoRAM is what pays for this: the pair in one buffer took it to 251
+ * free against a budget of 256, and src/gem4xe.scm had just said the
+ * next table would have to find room rather than move that boundary a
+ * fifth time.  jfsymbol takes eight characters and no terminator -- the
+ * old buffer held both names with the NUL only after the second -- so
+ * the ninth byte here is for C's sake, not the cartridge's. */
+static char sdx_name[9];                /* LoRAM: below $4000, always there */
+
+static uint16_t sdx_find(const char FAR *name)
+{
+    far_strget(sdx_name, (uint32_t)name, sizeof sdx_name);
+    return sdx_symbol(sdx_name);
+}
+
 static void sdx_lookup(void)
 {
-    static const char FAR names[] = "XCOMLI  PUT_V   ";
-    uint16_t mark;
-    char *n;
+    static const char FAR xcomli[] = "XCOMLI  ";
+    static const char FAR put_v[]  = "PUT_V   ";
 
     if (dos.kind != DOS_SDX || SDX_VERSION < 0x44
      || *(volatile uint8_t *)SDX_JFSYMBOL != 0x4C) {
         sdx_asked = 1;
         return;
     }
-    mark = pool_mark();                 /* the names, in bank $00 for a moment */
-    n = pool_alloc(17, 1);
-    if (!n)
-        return;                         /* asked again next time */
-    far_strget(n, (uint32_t)names, 17);
-    sdx_xcomli = sdx_symbol(n);
-    sdx_putv = sdx_symbol(n + 8);
-    pool_release(mark);
+    sdx_xcomli = sdx_find(xcomli);
+    sdx_putv = sdx_find(put_v);
     sdx_asked = 1;
 }
 

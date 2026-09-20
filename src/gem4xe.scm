@@ -4,7 +4,12 @@
 ;;;   $0000-$00FF  OS zero page          -- not ours
 ;;;   $0100-$01FF  6502 stack page       -- not ours (we run a 16-bit stack elsewhere)
 ;;;   $0200-$06FF  OS vars / page 6      -- not ours ($02E0/$02E2 are the .xex vectors)
-;;;   $0700-$1FFF  DOS resident          -- not ours
+;;;   $0700-$1FFF  DOS resident          -- not ours.  PROBED, not assumed:
+;;;                SpartaDOS X 4.50 with the stock AUTOEXEC leaves MEMLO at
+;;;                $1C1D, so gem4xe's first byte is 995 above it.  That is
+;;;                the MARGIN, not a guarantee -- MEMLO moves with the
+;;;                drivers a user loads, and a machine whose MEMLO passed
+;;;                $2000 would have GEM.COM load on top of the DOS.
 ;;;   $2000-$20FF  direct page           <- ours
 ;;;   $2100-$375F  stack / data / zdata  <- ours (the stack is 2 KB; see below)
 ;;;   $37E0-$3FFD  near code and rodata  <- ours
@@ -45,6 +50,17 @@
 ;;; which $A000, sharing its window with MEMAC, never was.  What the region
 ;;; may not hold is anything an interrupt handler needs, since a handler can
 ;;; run while a bank is in; gem4xe's are all in $2000-$3FFF.
+;;;
+;;; AND NOTHING THE CARTRIDGE IS HANDED A RAW POINTER TO.  The paragraph
+;;; above is about CIO, where the memory-index mechanism sees through the
+;;; bank; it does NOT cover a JSR straight into SpartaDOS X.  jfsymbol
+;;; ($07EB) is one: gem4xe passes it a name in the registers, and a name
+;;; in the pool is a name that vanishes when SDX switches its own RAM in.
+;;; It cost a bisect -- the desktop hung at cmd_init with the hourglass
+;;; up, only under SDX, and only once GEM.COM had grown past about
+;;; 110.5 KB, because pool_alloc hands out a cursor that moves with the
+;;; binary.  The buffer is a LoRAM static now (src/sys/dos.c, sdx_name).
+;;; Anything else that calls the cartridge directly must do the same.
 ;;;
 ;;; Banks $01-$0F: the far code, two memories per bank (the hole below).  A probe
 ;;; (src/sys/farmem.c) finds one unbroken run of RAM from bank $01 to $EF on a
