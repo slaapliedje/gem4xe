@@ -54,13 +54,13 @@ carries them -- the user's own layout.  The real desktop, at the mouse:
     double-click drive A      ->  a window on A:\*.*
     the fuller                ->  it grows to the desk
     double-click APPS         ->  do_fopen: the same window, deeper
-    double-click CALC.G4A     ->  do_aopen: shel_write, and the shell
+    double-click CALC.PRG     ->  do_aopen: shel_write, and the shell
                                   loads the calculator
     a key on the panel        ->  the calculator answers it
     Quit                      ->  the desktop again
 
 **No gate had opened a folder before.**  test-m18 launches a program
-from a window, but from the root, and the program it launches (M11.G4A)
+from a window, but from the root, and the program it launches (M11.PRG)
 makes its calls and returns without ever reading the mouse.  test-m22
 uses the accessories, but launches them from a stand-in desktop by a
 KEYPRESS.  Neither crosses the seam that broke: what the AES's input

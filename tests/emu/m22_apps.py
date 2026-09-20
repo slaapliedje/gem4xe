@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Phase 28 gate: the two accessories, run through the shell loop.
 
-CALC.G4A and CLOCK.G4A (src/apps) are the first programs written to
+CALC.PRG and CLOCK.PRG (src/apps) are the first programs written to
 gem4xe's application ABI that are not tests.  They are gated here the
 way the desktop is: not against a picture kept from a previous run, but
 against what the HOST AES makes of the same resource with the same text
@@ -229,7 +229,7 @@ def main(argv):
         if t < 0:
             return 1
         b.frames(SETTLE)
-        print(f"  CALC.G4A up {t} frames after C; near ${near:04X}, "
+        print(f"  CALC.PRG up {t} frames after C; near ${near:04X}, "
               f"resource ${rsc_base:04X}")
 
         model_desk()                        # app_free, then the program draws
@@ -270,7 +270,7 @@ def main(argv):
         check(t >= 0, f"after Quit: the desktop did not come back (sh_runs "
                       f"{b.peek16(runs)})")
         check(b.peek16(lastret) == 0,
-              f"CALC.G4A's main() returned {b.peek16(lastret)}, not 0")
+              f"CALC.PRG's main() returned {b.peek16(lastret)}, not 0")
         b.frames(SETTLE)
         model_desktop()
         same(b, "after-calc", ref_v.to_rgb(), "the desktop again, after the calculator")
@@ -301,7 +301,7 @@ def main(argv):
         check(abs(ran - want_ticks) <= 1,
               f"the clock advanced {ran} seconds over {drove} frames, not the "
               f"{want_ticks} they are worth, give or take one")
-        print(f"  CLOCK.G4A ticked {ran} of {want_ticks} seconds; it says "
+        print(f"  CLOCK.PRG ticked {ran} of {want_ticks} seconds; it says "
               f"{hrs:02d}:{mins:02d}:{secs:02d}")
 
         model_desk()
@@ -322,7 +322,7 @@ def main(argv):
         check(t >= 0, f"after SPACE: the desktop did not come back (sh_runs "
                       f"{b.peek16(runs)})")
         check(b.peek16(lastret) == 0,
-              f"CLOCK.G4A's main() returned {b.peek16(lastret)}, not 0")
+              f"CLOCK.PRG's main() returned {b.peek16(lastret)}, not 0")
         b.frames(SETTLE)
         model_desktop()
         same(b, "after-clock", ref_v.to_rgb(), "the desktop again, after the clock")

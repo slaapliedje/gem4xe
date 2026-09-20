@@ -79,14 +79,14 @@ partition in two halves, each with an `INSTALL.BAT` that puts it on a
 drive.
 
     the system floppy                           D2: (or wherever)
-      GEM>GEM.COM  DESKTOP.G4A  DESKTOP.RSC  ---->  GEM>...
+      GEM>GEM.COM  DESKTOP.PRG  DESKTOP.RSC  ---->  GEM>...
           PREFS.RSC  LANG.RSC  GEM4XE.CFG  816.COM
       AUTOEXEC.BAT, if the drive has none    ---->  AUTOEXEC.BAT
     the applications floppy, gem-apps.atr
       GEM>CLOCK.ACC  CLOCK.RSC  CONTROL.ACC  ---->  GEM>...
           CPANEL.RSC  CALC.ACC  CALC.RSC
-      APPS>HELLO.G4A  CALC.G4A  CALC.RSC     ---->  APPS>...
-          CLOCK.G4A  CLOCK.RSC
+      APPS>HELLO.PRG  CALC.PRG  CALC.RSC     ---->  APPS>...
+          CLOCK.PRG  CLOCK.RSC
 
 At the SpartaDOS X prompt -- quit GEM to get there -- on the drive the
 floppy is in:

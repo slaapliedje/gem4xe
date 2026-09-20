@@ -1,4 +1,4 @@
-/* desktop.c -- DESKTOP.G4A, the GEM Desktop.
+/* desktop.c -- DESKTOP.PRG, the GEM Desktop.
  *
  * A gem4xe application like any other (src/app/gem.h): the shell loop
  * in src/aes/shel.c loads it first, runs whatever it asks for with

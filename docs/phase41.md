@@ -123,7 +123,7 @@ as the machine's XL kernel, from a private emulator profile
   find them: `tools/memreport.py`, `tests/emu/m17_desktop.py` and
   `tests/emu/m31_huge.py`, the last as a plain `ver == 2`.
 - The first full suite after the change failed three gates and one link,
-  none of them the handler.  `M11.G4A` is also the program `test-m16` and
+  none of them the handler.  `M11.PRG` is also the program `test-m16` and
   `test-m18` run from the shell and the desktop, so its deliberate foreign
   COP turned up as a refusal neither expected -- both now expect exactly
   one -- and, because the refusal was still counted as a call, as one call

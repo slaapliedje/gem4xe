@@ -131,7 +131,7 @@ to 272; Near gave two bytes to `ctx_stack_lo`.
 
 ## The gate
 
-`make test-m32` runs `M32.G4A` (`src/m32_con.c`) from the stand-in
+`make test-m32` runs `M32.PRG` (`src/m32_con.c`) from the stand-in
 desktop, and the program never calls the AES.  It writes a page of VT-52
 that uses every escape, and the screen is held against `tools/conref.py`
 -- the console's model, written from the Compendium's table and drawn
@@ -141,7 +141,7 @@ found; the screen is held again with the echoes on it.  It forces handle
 1 onto a file, writes with `Cconws`, `Cconout` and `Fwrite`, puts it back
 through `Fdup`'s handle, reads the file back, then forces handle 0 onto it
 and reads it with `Cconin`, `Cconrs` and `Crawcin` to 0xFF1A.  It runs
-`M32KID.G4A` (`src/m32_kid.c`) with handle 1 forced onto a file: the child
+`M32KID.PRG` (`src/m32_kid.c`) with handle 1 forced onto a file: the child
 reads its tail, writes it, leaves a file open, a handle duplicated and 4 KB
 allocated, and ends with `Pterm(5)` -- and the parent's own file is still
 open after it, the heap is where it was, a missing program is EFILNF and

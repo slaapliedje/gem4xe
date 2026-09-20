@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Phase 14, milestone 5 gate: the GEM Desktop and its folder windows.
 
-DESKTOP.G4A (src/desk) under sh_main on the SpartaDOS disk, with the
+DESKTOP.PRG (src/desk) under sh_main on the SpartaDOS disk, with the
 harness at the mouse: the desk comes up with its drive icons and the
 trash under the menu bar; a click selects an icon; Desk -> About opens
 the dialog, OK closes it; a double-click on drive A opens a window on

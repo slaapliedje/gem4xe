@@ -171,7 +171,7 @@ int main(void)
     s = (WORD)Fdup(1);
     Fforce(1, h);
     m32_mem[5] = Malloc(-1L);
-    m32_res[52] = (WORD)Pexec(PE_LOADGO, "M32KID.G4A", "\005hello", 0);
+    m32_res[52] = (WORD)Pexec(PE_LOADGO, "M32KID.PRG", "\005hello", 0);
     m32_res[53] = (WORD)(Malloc(-1L) == m32_mem[5]);
     Fforce(1, s);
     Fclose(s);
@@ -184,8 +184,8 @@ int main(void)
     for (i = 0; kid_file[i]; i++)
         if (m32_file[i] != kid_file[i])
             m32_res[56] = 0;
-    m32_res[57] = (WORD)Pexec(PE_LOADGO, "NOPE.G4A", "\0", 0);
-    m32_res[58] = (WORD)Pexec(3, "M32KID.G4A", "\0", 0);
+    m32_res[57] = (WORD)Pexec(PE_LOADGO, "NOPE.PRG", "\0", 0);
+    m32_res[58] = (WORD)Pexec(3, "M32KID.PRG", "\0", 0);
 
     /* -- the clock: Tgettimeofday and clock() across an evnt_timer ------
      * The gate wants the pair before and after a 500 ms wait, so it can

@@ -20,7 +20,7 @@ rather keep the shapes a multitasking AES could keep.
 The port lives in a checkout of its own (`~/dev/qed`, branch `gem4xe`),
 not in this tree, and its remote is upstream's, so it is not pushed
 there.  `tools/ci_gem4xe.py` in that checkout drives the whole thing:
-the desktop comes up, opens a drive, and runs `QED.G4A`, requiring
+the desktop comes up, opens a drive, and runs `QED.PRG`, requiring
 `sh_runs` to go 1 to 2 -- the desktop is still process one.
 
 What follows is the scoping as it was written, kept because the

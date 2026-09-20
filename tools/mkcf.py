@@ -7,7 +7,7 @@ applications and the documents, and SpartaDOS X mounts its partitions as
 D1:, D2:, ... through the APT table tools/apt.py writes.
 
     D1:  the system      \\GEM\\GEM.COM       the VDI, AES, GEMDOS, shell
-                         \\GEM\\DESKTOP.G4A   the desktop
+                         \\GEM\\DESKTOP.PRG   the desktop
                          \\GEM\\DESKTOP.RSC   its resource
                          \\APPS\\...          applications
                          AUTOEXEC.BAT       cd into \\GEM and run it
@@ -41,10 +41,10 @@ from atr import Sdfs                             # noqa: E402
 MB = 1 << 20
 EOL = 0x9B
 # What the system partition carries, and where.  The names are the ones
-# src/aes/shel.c looks for: the shell opens DESKTOP.G4A in the current
+# src/aes/shel.c looks for: the shell opens DESKTOP.PRG in the current
 # directory, so AUTOEXEC.BAT changes into \GEM before it runs GEM.COM.
 SYSTEM = [("build/gem.xex", "GEM>GEM.COM"),
-          ("build/desktop.g4a", "GEM>DESKTOP.G4A"),
+          ("build/desktop.g4a", "GEM>DESKTOP.PRG"),
           ("build/desktop.rsc", "GEM>DESKTOP.RSC"),
           # the chooser, loaded only while Set preferences is open
           ("build/prefs.rsc", "GEM>PREFS.RSC"),
@@ -63,7 +63,7 @@ SYSTEM = [("build/gem.xex", "GEM>GEM.COM"),
 # rs_load puts their resources in far memory and they cost bank $00
 # nothing beyond their near regions (docs/phase47.md).
 #
-# The calculator ships TWICE, from one source: APPS>CALC.G4A is the
+# The calculator ships TWICE, from one source: APPS>CALC.PRG is the
 # program and GEM>CALC.ACC the accessory (src/apps/calcapp.c and
 # calcacc.c around src/apps/calc.c).  They share one CALC.RSC, which is
 # on the disk twice because \GEM\ and \APPS\ are installed separately
@@ -74,10 +74,10 @@ APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         ("build/cpanel.rsc", "GEM>CPANEL.RSC"),
         ("build/calcacc.g4a", "GEM>CALC.ACC"),
         ("build/calc.rsc", "GEM>CALC.RSC"),
-        ("build/hello_app.g4a", "APPS>HELLO.G4A"),
-        ("build/calc.g4a", "APPS>CALC.G4A"),
+        ("build/hello_app.g4a", "APPS>HELLO.PRG"),
+        ("build/calc.g4a", "APPS>CALC.PRG"),
         ("build/calc.rsc", "APPS>CALC.RSC"),
-        ("build/clock.g4a", "APPS>CLOCK.G4A"),
+        ("build/clock.g4a", "APPS>CLOCK.PRG"),
         ("build/clock.rsc", "APPS>CLOCK.RSC")]
 DIRS = ["GEM", "APPS"]
 BOOT = ["CD >GEM", "GEM"]

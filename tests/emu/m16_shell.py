@@ -7,11 +7,11 @@ is the whole of that on a SpartaDOS disk: the runner's sys op 16 hands
 control to src/aes/shel.c and blocks in it until the loop ends, while
 the harness plays the user at the keyboard --
 
-    DESKTOP.G4A (v0)  R  ->  M11.G4A runs and returns  ->  the desktop
+    DESKTOP.PRG (v0)  R  ->  M11.PRG runs and returns  ->  the desktop
                       V  ->  shel_wdef names A:\SUB as the desktop's
-                             directory, then M11.G4A again -- so the run
+                             directory, then M11.PRG again -- so the run
                              after it starts where the shell was told
-                      X  ->  NOPE.G4A is not there: the alert, RETURN,
+                      X  ->  NOPE.PRG is not there: the alert, RETURN,
                              the desktop
                       Q  ->  shel_rdef and shel_wdef checked, then
                              shutdown, and sys op 16 returns.  What the
@@ -91,7 +91,7 @@ def main(argv):
     # polled while SpartaDOS may have its bank in at $4000-$7FFF (m14)
     for a in (runs, lastret, lastrc, ptr, syms["vdi_result_count"]):
         assert not 0x4000 <= a < 0x8000, hex(a)
-    ncalls = len(app_calls(0, 0))           # what M11.G4A's main() returns
+    ncalls = len(app_calls(0, 0))           # what M11.PRG's main() returns
     desk_len = (os.path.getsize(DESKTOP) + 3) & ~3   # far_alloc's rounding
     os.makedirs(SHOTDIR, exist_ok=True)
     shots = []
@@ -186,20 +186,20 @@ def main(argv):
         model_desktop()
         same(b, "desktop", ref_v.to_rgb(), "the desk and the desktop's line of help")
 
-        # 2. R: M11.G4A, then the desktop again
+        # 2. R: M11.PRG, then the desktop again
         b.key("R")
         t = poll(b, runs, 3)
         check(t >= 0, f"after R: sh_runs did not reach 3 (reads {b.peek16(runs)})")
         if t >= 0:
             got = b.peek16(lastret)
-            check(got == ncalls, f"M11.G4A's main() returned {got}, not {ncalls}")
+            check(got == ncalls, f"M11.PRG's main() returned {got}, not {ncalls}")
             check(b.peek16(lastrc) == 0, f"the last load's status {b.peek16(lastrc)}")
-            print(f"  M11.G4A ran and returned {got}; the desktop back {t} frames after R")
+            print(f"  M11.PRG ran and returned {got}; the desktop back {t} frames after R")
             b.frames(SETTLE)
             model_desktop()
-            same(b, "after-m11", ref_v.to_rgb(), "the desktop again, after M11.G4A")
+            same(b, "after-m11", ref_v.to_rgb(), "the desktop again, after M11.PRG")
 
-        # 2b. V: the desktop's directory named, then M11.G4A again.  The
+        # 2b. V: the desktop's directory named, then M11.PRG again.  The
         # run after this one is the first that starts in A:\SUB, and the
         # bit for it is folded into what Q returns.
         b.key("V")
@@ -207,13 +207,13 @@ def main(argv):
         check(t >= 0, f"after V: sh_runs did not reach 5 (reads {b.peek16(runs)})")
         if t >= 0:
             check(b.peek16(lastrc) == 0, f"after V: load status {b.peek16(lastrc)}")
-            print(f"  shel_wdef, M11.G4A again, the desktop back {t} frames after V")
+            print(f"  shel_wdef, M11.PRG again, the desktop back {t} frames after V")
             b.frames(SETTLE)
             model_desktop()
             same(b, "after-wdef", ref_v.to_rgb(),
                  "the desktop again, now run from A:\\SUB")
 
-        # 3. X: NOPE.G4A cannot be found -- the shell's alert, then the desktop
+        # 3. X: NOPE.PRG cannot be found -- the shell's alert, then the desktop
         b.key("X")
         t = poll(b, lastrc, APP_E_FILE)
         check(t >= 0, f"after X: sh_lastrc did not read APP_E_FILE "
@@ -266,12 +266,12 @@ def main(argv):
         check(lret == 0x1F, f"the desktop's main() returned {lret:#x}, not 0x1f: "
                             f"shel_rdef/shel_wdef")
         check(lrc == 0, f"the last load's status {lrc}, not 0")
-        # TWO refusals, and only two -- one per run of M11.G4A, which R
+        # TWO refusals, and only two -- one per run of M11.PRG, which R
         # and V each ask for.  It makes a COP that is not gem4xe's
         # (src/m11_cop.s), and on this OS nobody else takes COPs
         # (src/sys/abi.s); it is counted as refused, never as a call.
         check(calls > 0 and bad == 2, f"{calls} ABI calls, {bad} refused, "
-                                      f"not M11.G4A's foreign COP once per run")
+                                      f"not M11.PRG's foreign COP once per run")
 
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]

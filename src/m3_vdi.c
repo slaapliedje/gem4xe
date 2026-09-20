@@ -319,8 +319,8 @@ static void sys_op(WORD op)
              * find it.  The blob is packed into this image and has no
              * name of its own, so the name is the one the same program
              * is installed under and runs by under the real shell --
-             * M11.G4A (the Makefile's SHELL_FILES). */
-            proc_name(proc_app, "M11.G4A");
+             * M11.PRG (the Makefile's SHELL_FILES). */
+            proc_name(proc_app, "M11.PRG");
             ret = app_exec(&app);
             app_free(&app);
         }
@@ -407,7 +407,7 @@ static void sys_op(WORD op)
         intout[9] = PORTB;
         c4 = 10;
         break;
-    /* The shell loop (src/aes/shel.c): DESKTOP.G4A from the boot disk,
+    /* The shell loop (src/aes/shel.c): DESKTOP.PRG from the boot disk,
      * whatever it asks for, until a shutdown.  [6] what sh_main returned
      * -- the programs run, or a negative APP_* status -- [7] the runs,
      * [8] the last program's main() result, [9] the last load status,

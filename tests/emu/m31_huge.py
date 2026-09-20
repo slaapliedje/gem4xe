@@ -88,12 +88,12 @@ def main(argv):
         hdr = f.read(32)
     ver = hdr[3]
     far_size = int.from_bytes(hdr[10:14], "little")
-    check(ver == 4, f"M31.G4A is format {ver}, expected 4 -- an image over "
+    check(ver == 4, f"M31.PRG is format {ver}, expected 4 -- an image over "
                     f"a bank cannot be written in format 3")
     check(far_size > 0x10000,
-          f"M31.G4A's far image is {far_size} bytes, which is not over a "
+          f"M31.PRG's far image is {far_size} bytes, which is not over a "
           f"bank: this gate would not be testing what it exists to test")
-    print(f"  M31.G4A: format {ver}, far image {far_size} bytes over "
+    print(f"  M31.PRG: format {ver}, far image {far_size} bytes over "
           f"{far_banks} bank(s)")
 
     emu = launch(tag="m31", memsize="1088K", extra_args=["--disk", DISK])
@@ -119,7 +119,7 @@ def main(argv):
         runs = syms["sh_runs"]
         check(poll(b, runs, 1) >= 0, "the stand-in desktop never started")
 
-        # H: the shell loads M31.G4A and calls it.  It is a bigger file than
+        # H: the shell loads M31.PRG and calls it.  It is a bigger file than
         # anything else on the disk, so it gets longer to arrive.
         b.key("H")
         tt = poll(b, runs, 2, limit=9000)
@@ -137,7 +137,7 @@ def main(argv):
                    -4: "APP_E_FAR (no far bank)",
                    -5: "APP_E_FIXUP (an offset outside its part)",
                    -6: "APP_E_FILE", -7: "APP_E_READ"}.get(rc, f"status {rc}")
-            check(False, f"after H: M31.G4A did not run -- sh_runs "
+            check(False, f"after H: M31.PRG did not run -- sh_runs "
                          f"{b.peek16(runs)}, last load {why}")
             for ln in screen(b):
                 if ln.strip():
@@ -147,7 +147,7 @@ def main(argv):
         m = {n: hsym[n] + near - link_near
              for n in ("m31_ran", "m31_step", "m31_ok", "m31_badblk",
                        "m31_ptrok", "m31_sum")}
-        print(f"  M31.G4A ran {tt} frames after H; its near region is at "
+        print(f"  M31.PRG ran {tt} frames after H; its near region is at "
               f"${near:04X}")
         # Polled rather than given a fixed number of frames: it reads
         # 60,000 far bytes and dereferences 4,000 far pointers, and how
@@ -159,7 +159,7 @@ def main(argv):
 
         step = b.peek16(m["m31_step"])
         check(b.peek16(m["m31_ran"]) == 1,
-              f"M31.G4A did not reach its end -- it got to step {step} of 9 "
+              f"M31.PRG did not reach its end -- it got to step {step} of 9 "
               f"(1 entered main, 2 past appl_init, 3-5 read the three "
               f"blocks, 8 read the pointer table)")
 
@@ -185,7 +185,7 @@ def main(argv):
 
         b.key("RETURN")
         check(poll(b, runs, 3) >= 0,
-              "the shell did not come back to the desktop after M31.G4A")
+              "the shell did not come back to the desktop after M31.PRG")
     finally:
         emu.stop()
 

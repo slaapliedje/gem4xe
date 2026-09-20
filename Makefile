@@ -720,7 +720,7 @@ build/deskld/%.o: src/desk/%.c $(DESK_H)
 $(eval $(call g4a,desktop,$(DESK_OBJS),$(DESK_BSS),$(DESK_BITS),$(DESK_STACK),,,$(LIB_LD)))
 $(eval $(call g4a,m16_desk,$(G4A_LIB) build/app/m16_desk.o,$(APP_BSS),$(M16_BITS),$(APP_STACK)))
 
-# HELLO.G4A (src/hello_app.c): the desktop's hello-world demo, shipped in
+# HELLO.PRG (src/hello_app.c): the desktop's hello-world demo, shipped in
 # \APPS\ in place of the M11 gate app -- a real window a user can open and
 # close, not a fixture that flashes and exits (tools/mkdist.py).
 $(eval $(call g4a,hello_app,$(G4A_LIB) build/app/hello_app.o,$(APP_BSS),$(APP_BITS),$(APP_STACK)))
@@ -907,10 +907,10 @@ DISK_FILES = --add tests/fixtures/test.txt TEST.TXT --add build/test.rsc TEST.RS
 # desktop, and the gate application as the program the desktop launches.
 # On the runner's disks for test-m16, on the product's because that is the
 # product.
-SHELL_FILES = --add build/m16_desk.g4a DESKTOP.G4A --add build/m11_app.g4a M11.G4A
+SHELL_FILES = --add build/m16_desk.g4a DESKTOP.PRG --add build/m11_app.g4a M11.PRG
 SHELL_DEPS  = build/m16_desk.g4a build/m11_app.g4a
-DESK_FILES  = --add build/desktop.g4a DESKTOP.G4A --add build/desktop.rsc DESKTOP.RSC \
-              --add build/m11_app.g4a M11.G4A
+DESK_FILES  = --add build/desktop.g4a DESKTOP.PRG --add build/desktop.rsc DESKTOP.RSC \
+              --add build/m11_app.g4a M11.PRG
 DESK_DEPS   = build/desktop.g4a build/desktop.rsc build/prefs.rsc build/m11_app.g4a
 # The two accessories (src/apps), on the media with room for them: the
 # SpartaDOS floppy, the CF card, and test-m22's own disk.  A prerequisite
@@ -920,8 +920,8 @@ DESK_DEPS   = build/desktop.g4a build/desktop.rsc build/prefs.rsc build/m11_app.
 # live together in \APPS\, and finding the resource from there is the
 # thing test-m22 now covers (docs/phase29.md).
 APP_FILES = --mkdir APPS \
-            --add build/calc.g4a "APPS>CALC.G4A" --add build/calc.rsc "APPS>CALC.RSC" \
-            --add build/clock.g4a "APPS>CLOCK.G4A" --add build/clock.rsc "APPS>CLOCK.RSC"
+            --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
+            --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
 APP_DEPS  = build/calc.g4a build/calc.rsc build/clock.g4a build/clock.rsc
 # The gate accessory (src/m28_acc.c), in the system's own directory with
 # the extension the AES looks for there: an accessory is not in \APPS\
@@ -1031,7 +1031,7 @@ build/m3-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt b
 # dies when GEM hands the machine back.  720 sectors of 253 bytes hold
 # the system, DOS.SYS, DUP.SYS and the rest for applications, which is
 # what makes the disk a place to keep them rather than one program.
-# M11.G4A -- the demonstration program -- is NOT on this one: 180 KB is
+# M11.PRG -- the demonstration program -- is NOT on this one: 180 KB is
 # the tightest medium gem4xe ships on, and by the time the desktop could
 # save a layout (phase 25) the demo was the difference between having
 # room for somebody's own program and not.  The SpartaDOS floppy and the
@@ -1089,7 +1089,7 @@ build/dosclock.cfg: dist/gem4xe.cfg
 # under its floor of free sectors, and it and the applications are on
 # gem-apps.atr (docs/media.md) -- which a DOS 2 cannot read, so this disk
 # is a gate's more than anybody's way in.
-DOS2_FILES = --add build/desktop.g4a DESKTOP.G4A --add build/desktop.rsc DESKTOP.RSC \
+DOS2_FILES = --add build/desktop.g4a DESKTOP.PRG --add build/desktop.rsc DESKTOP.RSC \
 	     --add build/lang.rsc LANG.RSC --add build/816.com 816.COM
 # No GEM4XE.CFG on this one since phase 43: every value in the file is the
 # default, and the seven sectors were what File -> DOS command cost the
@@ -1117,7 +1117,7 @@ build/gem-antic.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/m11
 # SpartaDOS X's, and a machine with a drive to install onto has SpartaDOS X
 # in its flash (docs/media.md).
 SP_LAYOUT = --name "GEM>GEM.COM" --boot "CD >GEM|GEM" --mkdir GEM \
-	    --add build/desktop.g4a "GEM>DESKTOP.G4A" \
+	    --add build/desktop.g4a "GEM>DESKTOP.PRG" \
 	    --add build/desktop.rsc "GEM>DESKTOP.RSC" \
 	    --add build/prefs.rsc "GEM>PREFS.RSC" \
 	    --add build/lang.rsc "GEM>LANG.RSC" \
@@ -1130,8 +1130,8 @@ SP_APPS   = --mkdir APPS \
 	    --add build/cpanel.rsc "GEM>CPANEL.RSC" \
 	    --add build/calcacc.g4a "GEM>CALC.ACC" \
 	    --add build/calc.rsc "GEM>CALC.RSC" \
-	    --add build/calc.g4a "APPS>CALC.G4A" --add build/calc.rsc "APPS>CALC.RSC" \
-	    --add build/clock.g4a "APPS>CLOCK.G4A" --add build/clock.rsc "APPS>CLOCK.RSC"
+	    --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
+	    --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
 SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) tools/mkspdisk.py tools/atr.py
 
 build/gem-shots.atr: $(SP_DEPS)
@@ -1226,7 +1226,7 @@ build/m29-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt 
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
-	    --add build/m29_big.g4a M29.G4A
+	    --add build/m29_big.g4a M29.PRG
 
 # The far-resource gate's disk (test-m33): the stand-in desktop, the two
 # builds of the one program, and the resource neither could load before.
@@ -1234,7 +1234,7 @@ build/m33-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt 
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
-	    --add build/m33_farrsc.g4a M33.G4A --add build/m33s_farrsc.g4a M33S.G4A \
+	    --add build/m33_farrsc.g4a M33.PRG --add build/m33s_farrsc.g4a M33S.PRG \
 	    --add build/farrsc.rsc FARRSC.RSC
 
 # And the same again for the application whose far IMAGE crosses a bank
@@ -1245,15 +1245,15 @@ build/m31-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt 
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
-	    --add build/m31_huge.g4a M31.G4A
+	    --add build/m31_huge.g4a M31.PRG
 
 # The console gate's disk (test-m32), its own for the same reason: the
-# stand-in desktop, and the program as M32.G4A in the root.
+# stand-in desktop, and the program as M32.PRG in the root.
 build/m32-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt build/test.rsc $(SHELL_DEPS) build/m32_con.g4a build/m32_kid.g4a tools/mkspdisk.py tools/atr.py
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
-	    --add build/m32_con.g4a M32.G4A --add build/m32_kid.g4a M32KID.G4A
+	    --add build/m32_con.g4a M32.PRG --add build/m32_kid.g4a M32KID.PRG
 
 # The desktop gate's disk (test-m17): the runner again, with the real
 # desktop and its resource where test-m16's stand-in was.
@@ -1549,14 +1549,14 @@ test-m15u: build/m14-boot.atr
 test-m15d: build/m3-boot.atr build/m12-d2.atr
 	python3 tests/emu/m15_gdos.py --dos2
 
-# The shell loop: sh_main runs DESKTOP.G4A, what it asks for, the desktop
+# The shell loop: sh_main runs DESKTOP.PRG, what it asks for, the desktop
 # again, until it asks to shut down -- with the harness at the keyboard
 # and the screen checked against the model at each stop.  On the SpartaDOS
 # disk, the only runner disk with room for the .G4A files.
 test-m16: build/m14-boot.atr
 	python3 tests/emu/m16_shell.py
 
-# The desktop: DESKTOP.G4A under the shell, driven at the mouse and checked
+# The desktop: DESKTOP.PRG under the shell, driven at the mouse and checked
 # against tools/deskref.py -- the desktop itself transcribed against the AES
 # model (phase 14, milestone 4).
 test-m17: build/m17-boot.atr build/desktop.g4a build/desktop.sym
@@ -1570,7 +1570,7 @@ test-m22: build/m22-boot.atr build/calc.sym build/clock.sym
 
 # A program run from the desktop and the desktop's windows back after it
 # (phase 14, milestone 6): two runs of the desktop against the model, with
-# M11.G4A between them.
+# M11.PRG between them.
 test-m18: build/m17-boot.atr build/desktop.g4a build/desktop.sym
 	python3 tests/emu/m18_launch.py
 

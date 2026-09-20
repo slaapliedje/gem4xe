@@ -184,7 +184,7 @@ That it now fits *beside* the desktop rather than replacing it was not a
 size decision.  Replacing the desktop makes multitasking permanently
 harder to add, and this tree would rather keep shapes a multitasking AES
 could keep (`gem4xe-multitasking-request`).  `tools/ci_gem4xe.py` drives
-desktop -> DISK A -> `QED.G4A` and requires `sh_runs` to go 1 to 2 --
+desktop -> DISK A -> `QED.PRG` and requires `sh_runs` to go 1 to 2 --
 the desktop is still process one.
 
 ## The numbers

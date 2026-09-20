@@ -385,11 +385,11 @@ the next thing.  One departure, because the donor's desktop is in ROM
 and cannot fail to load while ours is a file: a desktop that will not
 load ends the loop with the reason (a negative `APP_*`), and a desktop
 that returns without asking for anything is a shutdown, not the desktop
-again forever.  `DESKTOP.G4A` is read once (`far_read_file`, in slices
+again forever.  `DESKTOP.PRG` is read once (`far_read_file`, in slices
 the size of the pool's spare room) and kept below every program's far
 memory, so a return to the desktop is a copy and a relocation, not a
 disk read.  `src/desk/desktop.c` is the v0 desktop: a line of help and
-three keys -- R runs `M11.G4A`, the ABI gate's program; X asks for a
+three keys -- R runs `M11.PRG`, the ABI gate's program; X asks for a
 program that is not there; Q shuts down.
 
 The gate plays the user: R, X, RETURN on the shell's alert, Q; the desk
@@ -525,7 +525,7 @@ authority):
 
 ## Milestone 4: the desktop
 
-`make test-m17` PASS.  `DESKTOP.G4A` is the GEM Desktop now, or the
+`make test-m17` PASS.  `DESKTOP.PRG` is the GEM Desktop now, or the
 first of it: `src/desk/desktop.c` and `deskobj.c` are the donor's
 deskmain.c and deskobj.c cut down to what this milestone shows -- the
 menu bar, a drive icon for each drive GEMDOS reports and the trash, an
@@ -752,10 +752,10 @@ milestone 4; the file is nearly twice the size).  The model's screens
 are what the target matched pixel for pixel; `--shot` keeps the
 target's in `build/shots/`.
 
-The DOS II+/D product disk holds GEM.COM, DESKTOP.G4A and DESKTOP.RSC
+The DOS II+/D product disk holds GEM.COM, DESKTOP.PRG and DESKTOP.RSC
 and nothing else now, 18 sectors free: `tools/atr.py` knows no double
 density, and the three fill a single-density disk.  The gate fixtures
-and M11.G4A are on the SpartaDOS disk only, which is where milestone 6
+and M11.PRG are on the SpartaDOS disk only, which is where milestone 6
 -- a program run from an icon, and the desktop back -- will find a
 program to run; what the DOS 2 disk runs is a question for then.
 
@@ -800,7 +800,7 @@ cleared at `sh_init` (the donor's is zeroed BSS, and the desktop tests
 its first byte for `#`) and copied far to far (`far_copy`, `far_fill`
 in `src/sys/farmem.c`), clamped to its 4192 bytes.  The bindings
 (`src/app/gemlib.c`) take `void __far *`.  `src/desk/deskwin.c` is
-1058 lines now (757), `DESKTOP.G4A` 19844 bytes (near 3584, far
+1058 lines now (757), `DESKTOP.PRG` 19844 bytes (near 3584, far
 14510, and 859 fixups).
 
 ### What was wrong on the way
@@ -853,25 +853,25 @@ the tight one (milestone 5).
 `tests/emu/m18_launch.py` is the desktop transcribed twice against one
 AES model: the first desktop's `shel_put` leaves the record in the
 model's shell buffer and the second's `shel_get` finds it there, as
-the target's does in the AES's.  M11.G4A between them is counted, not
+the target's does in the AES's.  M11.PRG between them is counted, not
 replayed: the shell's restart resets everything of the AES it touches
 (`m16_shell`'s model of it), so its 18 AES and VDI calls and 7 + n
 GEMDOS calls -- n the root entries its `Fsfirst`/`Fsnext` walk finds,
-made on the model's listing as M11.G4A makes it -- are what the ABI's
+made on the model's listing as M11.PRG makes it -- are what the ABI's
 counter counts between the two desktops, and the second desktop's
-plans key on the first's 148 calls plus M11.G4A's 34.  The far heap
+plans key on the first's 148 calls plus M11.PRG's 34.  The far heap
 is the same address on both runs because the shell winds it back to
 the desktop's blob after every program, so the second run's `Malloc`
 lands where the first's did; the model's brk is reset to the same
 derivation.  Checked: six screens (the desk, the window on A:, full,
-the window back on A: after M11.G4A, the File menu, Quit); `G` at the
-four waits; M11.G4A's return of 18 through `sh_lastret` while the
+the window back on A: after M11.PRG, the File menu, Quit); `G` at the
+four waits; M11.PRG's return of 18 through `sh_lastret` while the
 second desktop loads; 275 calls on both sides (148 + 34 + 93), none
 refused, three programs run and `sh_main` returning 3; the pool back
 at `$4800` with 8192 free and the far heap higher by the desktop's
 file exactly; the runner's stack low-water mark, 1223 of 2048, and the
 desktop's per run.  The first desktop is in its `rsrc_load` 638 frames
-after GO and up 150 later; M11.G4A loads, runs and returns and the
+after GO and up 150 later; M11.PRG loads, runs and returns and the
 second desktop is loading 210 frames after the double-click, in its
 `rsrc_load` the next frame, and up 185 frames later.
 
@@ -879,7 +879,7 @@ The DOS II+/D product disk lost the fixture DOS's demonstration
 programs (XMST, MEMTEST) to make the room: `tools/mkdisk.py --remove`,
 through `tools/atr.py`'s `delete`, frees the file's sectors in the
 VTOC and flags the entry deleted as the DOS does.  It holds GEM.COM,
-DESKTOP.G4A and DESKTOP.RSC with 41 sectors free; M11.G4A and the gate
+DESKTOP.PRG and DESKTOP.RSC with 41 sectors free; M11.PRG and the gate
 fixtures are on the SpartaDOS disk only, and what the DOS 2 disk runs
 is still the open question.
 

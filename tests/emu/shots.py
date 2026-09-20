@@ -9,7 +9,7 @@ boots into the desktop with nothing typed, exactly as tests/emu/
 product_boot.py has it, and the pointer is then walked and clicked by
 the same steps test-m23 and test-m28 use.  The disk is that floppy
 without the gate program on it (build/gem-shots.atr): \\APPS\\ is
-photographed, and M11.G4A is the tests' business.  Where things are on
+photographed, and M11.PRG is the tests' business.  Where things are on
 the screen is read out of the TARGET -- the desktop's own screen tree,
 the AES's menu tree and window frame, a dialog's tree once it is up --
 so the tour does not carry coordinates that go stale the day a
@@ -77,7 +77,7 @@ OUT = os.path.join(ROOT, "docs", "shots")
 NIL = -1
 PTR_NONE = 0                    # src/vdi/pointer.h
 BORDER = 16                     # the overlay's column in a 672-wide shot
-FOLDER, PROGRAM = "APPS", "CALC.G4A"
+FOLDER, PROGRAM = "APPS", "CALC.PRG"
 # The accessories' lines in the Desk box start at ABOUITEM + 2 (deskrsc:
 # the one between is the separator), but nothing here counts from it any
 # more -- Tour.desk_acc finds an accessory by the NAME it registered, so

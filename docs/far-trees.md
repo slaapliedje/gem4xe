@@ -89,9 +89,9 @@ is refused.
 **Stage C -- a resource that cannot fit.** `tools/farrsc.py` builds
 `FARRSC.RSC`: **42,364 bytes, 702 objects in 28 trees** -- three times the
 pool and inside one bank. `src/m33_farrsc.c` is built twice from one
-source: `--data-model=large` as `M33.G4A`, which loads it far, draws tree
+source: `--data-model=large` as `M33.PRG`, which loads it far, draws tree
 0 from there, hit-tests it, reads a free string through the address it
-was handed and frees it; and `--data-model=small` as `M33S.G4A`, which
+was handed and frees it; and `--data-model=small` as `M33S.PRG`, which
 must be refused with nothing else happening. `make test-m33` runs both
 under the stand-in desktop (keys F and G) and reads every result out of
 the program's near variables. On its first run the resource landed at
@@ -100,7 +100,7 @@ it, `form_center` placed the 40x28 dialog, and `objc_find` inside the OK
 button, a walk through 27 far objects, answered 24: the right one. The
 dialog's rectangle on the screen held 12,400 dark pixels where an empty
 box holds none; free string 0 read as `'F'` through the address
-`rsrc_gaddr` handed back; `rsrc_free` answered 1. `M33S.G4A`, from the
+`rsrc_gaddr` handed back; `rsrc_free` answered 1. `M33S.PRG`, from the
 same source, got 0 from `rsrc_load` and reached its wait with nothing
 else touched. `make test-m33` passes.
 

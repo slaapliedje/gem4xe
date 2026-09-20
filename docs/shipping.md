@@ -13,7 +13,7 @@ and expensive to retrofit.
 Measured, today:
 
     GEM.COM       111,518 bytes   the VDI, the AES, GEMDOS and the shell
-    DESKTOP.G4A    40,541         the desktop
+    DESKTOP.PRG    40,541         the desktop
     DESKTOP.RSC     6,398         its resource
                   --------
                   158,457
@@ -27,7 +27,7 @@ against what the formats hold, in bytes a file system can actually use:
 
 **The desktop's share of that has nearly doubled since phase 47, and the
 same change took its resource out of bank $00 altogether.**
-`DESKTOP.G4A` is a `--data-model=large` program now, which is why the
+`DESKTOP.PRG` is a `--data-model=large` program now, which is why the
 file is 40,541 bytes where it was 23,737 -- a large-data program carries
 its own far data and its own copy of the runtime; and `rs_load` prefers
 far memory for any caller that opts in, so `DESKTOP.RSC`'s 6,398 bytes
@@ -86,12 +86,12 @@ drive (`docs/media.md`).  The DOS 2 floppy has `DUP.SYS`, the full
 `GEM4XE.CFG` and 87 sectors free.
 
 **Phase 43 was the next.**  File -> DOS command is 3.4 KB more
-`DESKTOP.G4A` and 0.7 KB more `GEM.COM`, and the DOS 2 floppy went to 65
+`DESKTOP.PRG` and 0.7 KB more `GEM.COM`, and the DOS 2 floppy went to 65
 sectors free again.  This time the file went and the floor moved:
 `GEM4XE.CFG` is off the DOS 2 floppy -- every value in it is the
 default, so a machine without the file runs exactly as the file says,
 and the boot screen says *defaults* where it said the file's name -- and
-the floor is 72 sectors, 18 KB, still two programs of `HELLO.G4A`'s
+the floor is 72 sectors, 18 KB, still two programs of `HELLO.PRG`'s
 size.  The SpartaDOS X floppy and the card carry the file as before.
 Behind the decision is a plainer one: nobody runs DOS 2 now -- people
 run MyDOS or SpartaDOS X -- so the DOS 2 floppy is the third-party-DOS
@@ -102,7 +102,7 @@ so that swap is work of its own.
 
 **A caveat on every sector figure from here to the end of this
 section.**  They were measured before the desktop became a
-`--data-model=large` program in phase 47, which took `DESKTOP.G4A` from
+`--data-model=large` program in phase 47, which took `DESKTOP.PRG` from
 23,737 bytes to 40,541.  The argument each paragraph makes is unchanged
 -- and so is the floor, because what the floor guards is `DESKTOP.INF`
 and not a program -- but the free-sector counts below want re-measuring
@@ -188,9 +188,9 @@ fits on a disk beside GEM.
 **DOS 2.5 does run `AUTORUN.SYS`**, and its `DOS.SYS` is 37 sectors --
 one *less* than DOS II+/D's.  But its command processor is a separate
 `DUP.SYS` of 42 more, and an enhanced-density disk holds 1,009:
-`GEM.COM` (738), `DESKTOP.G4A` (190), `DESKTOP.RSC` (41) and `DOS.SYS`
+`GEM.COM` (738), `DESKTOP.PRG` (190), `DESKTOP.RSC` (41) and `DOS.SYS`
 (37) leave three, so `DUP.SYS` is 39 sectors short of fitting.  (**Those
-four counts predate the large-data desktop.**  `DESKTOP.G4A` is 40,541
+four counts predate the large-data desktop.**  `DESKTOP.PRG` is 40,541
 bytes now, which is 325 enhanced-density sectors of 125 rather than 190,
 and the system as a whole no longer fits 1,009 of them at all -- so the
 conclusion below holds the more strongly, and the arithmetic is left as
@@ -437,7 +437,7 @@ With a volume that has room, the system stops being one lump:
 
     \GEM\GEM.COM         the system: VDI, AES, GEMDOS, the shell
     \GEM\GEM4XE.CFG      the screen and the mouse -- see section 4a
-    \GEM\DESKTOP.G4A     the desktop
+    \GEM\DESKTOP.PRG     the desktop
     \GEM\DESKTOP.RSC     its resource (its own strings, its own layout)
     \GEM\LANG.RSC        the system's strings -- see below
     \GEM\*.ACC           desk accessories, with their resources
@@ -473,7 +473,7 @@ section 4a below and `docs/printing.md`; the file now also names
 shipped file had never mentioned.
 
 `CLOCK.ACC` was the first one shipped.  It is the same `src/apps/clock.c`
-as `\APPS\CLOCK.G4A`, with a different `main`: the program opens its
+as `\APPS\CLOCK.PRG`, with a different `main`: the program opens its
 panel once and exits, the accessory registers "Clock" in the Desk menu
 and waits to be asked.  It is on the card and on the applications
 floppy, and on no system floppy: it was on every product disk from phase
@@ -490,7 +490,7 @@ process store those seven records live in is 364 bytes of the pool.
 Beside the clock are `CONTROL.ACC`, the control panel
 (`src/apps/cpanel.c` and `src/apps/cpanelacc.c`, with `CPANEL.RSC`
 beside it), and `CALC.ACC`, the calculator (`src/apps/calcacc.c`, with
-`CALC.RSC`) -- which is the same `src/apps/calc.c` that `\APPS\CALC.G4A`
+`CALC.RSC`) -- which is the same `src/apps/calc.c` that `\APPS\CALC.PRG`
 is built from, split into `calc_start`, `calc_ws` and `calc_panel` so
 that one source ships twice, as the clock already did.  Both of the new
 ones are `--data-model=large`, so `rs_load` gives them their resources

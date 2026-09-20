@@ -830,7 +830,7 @@ void sh_put(uint32_t pdata, WORD len);
 void sh_envrn(const char **ppath, const char *psrch);
 WORD sh_find(char *pspec);
 void sh_cioname(const char *gem, char *cio);
-/* The shell loop: the desktop (DESKTOP.G4A on the default drive), the
+/* The shell loop: the desktop (DESKTOP.PRG on the default drive), the
  * programs it asks for, until a shutdown.  Returns how many programs it
  * ran, or a negative APP_* status when the desktop itself would not
  * load; the counters say what happened last. */

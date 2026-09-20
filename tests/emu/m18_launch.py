@@ -2,18 +2,18 @@
 """Phase 14, milestone 6 gate: a program run from the desktop, and the
 desktop's windows back afterwards.
 
-DESKTOP.G4A under sh_main on the SpartaDOS disk, with the harness at the
+DESKTOP.PRG under sh_main on the SpartaDOS disk, with the harness at the
 mouse: a double-click on drive A opens its window; the fuller grows it
-to the desk; a double-click on M11.G4A runs it -- do_aopen sets the
+to the desk; a double-click on M11.PRG runs it -- do_aopen sets the
 default directory, hands the name to shel_write(SHW_EXEC), and the
 desktop returns to the shell with its window recorded through
-shel_put; M11.G4A runs by itself and returns; the shell runs the
+shel_put; M11.PRG runs by itself and returns; the shell runs the
 desktop again, which reads the record back through shel_get and
 opens the window where it was; File -> Quit ends the session.  Four
 things are checked, as test-m17 checks them --
 
   the screen against the model at every stop of both runs: the desk
-  up, the window on A:, full, the window back on A: after M11.G4A,
+  up, the window on A:, full, the window back on A: after M11.PRG,
   the File menu dropped, Quit under the pointer;
 
   the desktop's globals G, read out of the target at every stop and
@@ -23,7 +23,7 @@ things are checked, as test-m17 checks them --
 
   the calls: the ABI's counter counts the three programs' calls in
   one run of the counter, so the second desktop's plans key on the
-  first's calls plus M11.G4A's -- 18 AES and VDI calls and 7 + n
+  first's calls plus M11.PRG's -- 18 AES and VDI calls and 7 + n
   GEMDOS calls, n the root entries the model's listing answers -- and
   the sys op's record at the end must say three programs ran, the
   model's calls in all, none refused;
@@ -35,7 +35,7 @@ things are checked, as test-m17 checks them --
 
 The model is tools/deskref.py twice against one AES model: the first
 desktop's shel_put leaves the record in the model's shell buffer, the
-second's shel_get finds it there.  M11.G4A's calls are not replayed on
+second's shel_get finds it there.  M11.PRG's calls are not replayed on
 the model -- the shell's restart (m16_shell) resets everything of the
 AES it touches -- only counted.
 """
@@ -64,7 +64,7 @@ from m17_desktop import (DISK, DESKTOP, DESK_RSC, rsc_imlen, desk_places,  # noq
                          GCLICK, header, listing, menu)
 from demo_aes import path                   # noqa: E402
 
-PROGRAM = "M11.G4A"                         # what the desktop runs
+PROGRAM = "M11.PRG"                         # what the desktop runs
 # the stops, in the order the plans take them: the first desktop's, then
 # the second's
 STOPS1 = ["desktop", "window-a", "full"]
@@ -116,17 +116,17 @@ def inputs_after(memo):
 
 
 def program_calls(a):
-    """M11.G4A's ABI calls (src/m11_app.c): the AES and VDI calls test-m11
+    """M11.PRG's ABI calls (src/m11_app.c): the AES and VDI calls test-m11
     lists, then Sversion, Dgetdrv, Fsetdta, Fsfirst on A:\\*.* and Fsnext
     until there is nothing more, Fopen, Malloc, Fgetdta -- the directory
-    walk made on the model's listing, as M11.G4A makes it."""
+    walk made on the model's listing, as M11.PRG makes it."""
     a.mem[STACK_STRING] = Text("A:\\*.*")
     r = a.gemdos(0x4E, (STACK_STRING & 0xFFFF, STACK_STRING >> 16, FA_SUBDIR))
     n = 0
     while r == 0:
         n += 1
         r = a.gemdos(0x4F, ())
-    # ...AND THE PROBES M11.G4A MAKES WITHOUT RECORDING THEM.  app_calls()
+    # ...AND THE PROBES M11.PRG MAKES WITHOUT RECORDING THEM.  app_calls()
     # is the sequence test-m11 compares against the model, and the
     # objc_sysvar, appl_find and appl_getinfo probes are deliberately
     # outside it -- but the ABI's counter, which is what this offset
@@ -153,7 +153,7 @@ def model_desk(v, a):
 def model(mark, brk, pointer, drvmap):
     """The prelude and both desktops against one model: (v, a, want, d1,
     d2, memo, m11).  `brk` is the far heap's cursor before the shell
-    reads the desktop's file to it; `m11` is M11.G4A's call count."""
+    reads the desktop's file to it; `m11` is M11.PRG's call count."""
     v, a, want = aesref.run(PRELUDE, [], {}, pointer=pointer, pool=mark)
     # Where the loader and rs_load put the desktop on EITHER run: app_free
     # winds the heap back to the blob's end, so each run takes the same
@@ -171,7 +171,7 @@ def model(mark, brk, pointer, drvmap):
     d1 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
                  inputs_before(memo), **pl)
     d1.main()
-    # M11.G4A: counted, not replayed
+    # M11.PRG: counted, not replayed
     m11 = program_calls(a)
     model_desk(v, a)
     a.dos_brk = arena
@@ -506,10 +506,10 @@ def main(argv):
         check(ncalls == total,
               f"the three programs made {ncalls} ABI calls; the model counts {total} "
               f"= {len(d1.script)} + {m11} + {len(d2.script)}")
-        # M11.G4A's one COP that is not gem4xe's (src/m11_cop.s), refused on
+        # M11.PRG's one COP that is not gem4xe's (src/m11_cop.s), refused on
         # this OS and counted as refused only -- which is why ncalls above
         # does not include it.
-        check(bad == 1, f"{bad} ABI calls refused, not M11.G4A's one foreign COP")
+        check(bad == 1, f"{bad} ABI calls refused, not M11.PRG's one foreign COP")
 
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]

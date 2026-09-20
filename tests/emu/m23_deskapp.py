@@ -8,12 +8,12 @@ inside it that then WAITS FOR THE MOUSE ITSELF.
     double-click drive A      ->  a window on A:\\*.*
     the fuller                ->  it grows to the desk, every item shown
     double-click APPS         ->  do_fopen: the same window, on A:\\APPS\\*.*
-    double-click CALC.G4A     ->  do_aopen: shel_write, the desktop returns,
+    double-click CALC.PRG     ->  do_aopen: shel_write, the desktop returns,
                                   the shell loads the calculator
     a key on the panel        ->  the calculator answers it
     Quit                      ->  the desktop again, its window restored
 
-Every gate before this one launched M11.G4A, which makes its calls and
+Every gate before this one launched M11.PRG, which makes its calls and
 returns without ever reading the mouse (test-m18), or launched the
 calculator from a stand-in desktop by a KEYPRESS (test-m22).  Neither
 crosses the seam this one does -- what the AES's input state is left
@@ -68,7 +68,7 @@ CALC = os.path.join(ROOT, "build", "calc.g4a")
 CALC_SYM = os.path.join(ROOT, "build", "calc.sym")
 
 FOLDER = "APPS"                             # the folder the desktop opens
-PROGRAM = "CALC.G4A"                        # and the program inside it
+PROGRAM = "CALC.PRG"                        # and the program inside it
 FMD_START, FMD_GROW, FMD_SHRINK, FMD_FINISH = 0, 1, 2, 3
 MAX_DEPTH = 7
 KEY = calcrsc.C7                            # the one key the gate presses

@@ -54,7 +54,7 @@ a buffer.  Compiled that way the engine wants **84 bytes of bank $00**.
 
 **A shell was what was missing, and it is not missing now.**  GACS's GEM
 shell was built for gem4xe on 2026-09-15 and has run, gated by `make
-g4a-check` in the GACS tree: `GACS.G4A`, two code banks and three
+g4a-check` in the GACS tree: `GACS.PRG`, two code banks and three
 far-variable banks, and 137,722 bytes rebuilt against 0.2 as a format 4
 image -- the wide-fixup format, which it wants at 7,001 bank fixups.  An
 estimate of one linker line stood here until somebody tried it, which is

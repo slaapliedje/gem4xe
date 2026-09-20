@@ -1,6 +1,6 @@
 /* clockacc.c -- the clock as a DESK ACCESSORY.
  *
- * The same src/apps/clock.c that CLOCK.G4A is built from, with the shape
+ * The same src/apps/clock.c that CLOCK.PRG is built from, with the shape
  * the donor's own accessory skeleton has: take what you need while the
  * AES is starting up, register a name in the Desk menu, then an
  * indefinite message loop that never exits.

@@ -6,7 +6,7 @@
  * can take a far address -- and this is that program, compiled
  * --data-model=large, whose kit sets the word in rsrc_load's int_in that
  * asks for one (src/app/gemlib.c).  The SAME SOURCE is also built
- * --data-model=small as M33S.G4A, whose kit passes no such word: for it
+ * --data-model=small as M33S.PRG, whose kit passes no such word: for it
  * rsrc_load must return 0 and nothing else may happen, because a program
  * holding 16-bit pointers handed a far resource would get them silently
  * truncated.  test-m33 runs both.

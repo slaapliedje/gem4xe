@@ -1,11 +1,11 @@
-/* hello_app.c -- HELLO.G4A, the desktop's hello-world.
+/* hello_app.c -- HELLO.PRG, the desktop's hello-world.
  *
  * The smallest thing that is a real GEM PROGRAM rather than a gate: it
  * opens one titled window with a closer and a mover, draws a line of
  * text in it, and runs the message loop a program runs -- redraw when
  * the AES asks, follow the window when it is dragged, and end when the
  * closer is clicked -- then puts the window away and returns to the
- * desktop.  It is what M11.G4A never was: a program you can leave open
+ * desktop.  It is what M11.PRG never was: a program you can leave open
  * and then close, instead of one that flashes for two-thirds of a second
  * and exits (docs, and the note in tools/mkdist.py).
  *

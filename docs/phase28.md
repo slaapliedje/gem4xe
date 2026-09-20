@@ -16,11 +16,11 @@ in the cheapest possible way.  Between them they use both shapes an
 application takes, so what they prove is not one path but the choice
 between paths:
 
-- **CALC.G4A is a form.**  Every key of the panel is a `SELECTABLE|EXIT`
+- **CALC.PRG is a form.**  Every key of the panel is a `SELECTABLE|EXIT`
   button, so the whole program is `form_do` returning the object that
   was pressed, an eight-case switch, and back in.  A GEM keypad dialog,
   as the donor writes one.
-- **CLOCK.G4A is an event loop.**  A clock cannot sit in `form_do`,
+- **CLOCK.PRG is an event loop.**  A clock cannot sit in `form_do`,
   because `form_do` does not return until something is pressed and a
   clock has to say something every second.  So it runs the loop a GEM
   program normally runs: `evnt_multi` with a timer and the button,
@@ -91,15 +91,15 @@ is now computed from the keypad it has to hold.
 
 ## Standing
 
-    CALC.G4A    5,796 bytes    3.2 KB of code in a far bank, 2 KB near
-    CLOCK.G4A   5,309 bytes    and a resource each, 650 and 268 bytes
+    CALC.PRG    5,796 bytes    3.2 KB of code in a far bank, 2 KB near
+    CLOCK.PRG   5,309 bytes    and a resource each, 650 and 268 bytes
 
-*(no longer true since Phase 47 -- `docs/phase47.md`: `CALC.G4A` is
-5,703 bytes and `CLOCK.G4A` is 5,195.)*
+*(no longer true since Phase 47 -- `docs/phase47.md`: `CALC.PRG` is
+5,703 bytes and `CLOCK.PRG` is 5,195.)*
 
 Both are on `test-m22`'s disk and neither is on the product's yet: the
 desktop has no way to put an application anywhere but a window, and
 `Install application` is still in `NOT_YET`.  *(no longer true since
 Phase 47 -- `docs/phase47.md`: both ship on the product media now, and
-the calculator ships twice from the one source -- `APPS>CALC.G4A` and
+the calculator ships twice from the one source -- `APPS>CALC.PRG` and
 `GEM>CALC.ACC`.)*

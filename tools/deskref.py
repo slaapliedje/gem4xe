@@ -14,7 +14,7 @@ the model as it goes.  What comes out is the same thing the gates always
 had: the list of records the desktop made (Desktop.script), the input
 each wait was given (Desktop.plan, keyed the way m7_form.drive wants
 it), and the model's screen at every ("shot",) step (AES.shots) -- to be
-compared with the target, which runs the real DESKTOP.G4A under sh_main.
+compared with the target, which runs the real DESKTOP.PRG under sh_main.
 
 The addresses are the target's, derived the way src/sys/app.c and
 src/aes/rsrc.c derive them from the application pool: the near region

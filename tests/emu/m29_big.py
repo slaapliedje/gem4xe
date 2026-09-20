@@ -63,7 +63,7 @@ BIG_SYM = os.path.join(ROOT, "build", "m29_big.sym")
 N = 3000
 SEED = [11, 22, 33, 44, 55, 66, 77, 88]
 
-# The window M29.G4A opens, and the strip of it the title lives in.  The
+# The window M29.PRG opens, and the strip of it the title lives in.  The
 # gate reads the SCREEN for the title rather than a returned word,
 # because wind_set answering 1 says only that the AES took the address.
 TITLE_X, TITLE_Y, TITLE_W, TITLE_H = 0, 16, 320, 20
@@ -90,7 +90,7 @@ def main(argv):
     bsym = symfile.load(BIG_SYM)
     link_near, near_size, far_banks = header(BIG)
     check(far_banks == 2,
-          f"M29.G4A's header asks for {far_banks} far bank(s), expected 2 -- "
+          f"M29.PRG's header asks for {far_banks} far bank(s), expected 2 -- "
           f"its variables are in the bank above its code")
 
     emu = launch(tag="m29", memsize="1088K", extra_args=["--disk", DISK])
@@ -116,10 +116,10 @@ def main(argv):
         runs = syms["sh_runs"]
         check(poll(b, runs, 1) >= 0, "the stand-in desktop never started")
 
-        # B: the shell loads M29.G4A and calls it.
+        # B: the shell loads M29.PRG and calls it.
         b.key("B")
         tt = poll(b, runs, 2)          # it waits for a key before it exits
-        check(tt >= 0, f"after B: M29.G4A did not run (sh_runs "
+        check(tt >= 0, f"after B: M29.PRG did not run (sh_runs "
                        f"{b.peek16(runs)})")
         if tt < 0:
             return 1
@@ -129,12 +129,12 @@ def main(argv):
         big = {n: bsym[n] + near - link_near
                for n in ("m29_ran", "m29_zeroed", "m29_seedok", "m29_sum",
                          "m29_first", "m29_last", "m29_step", "m29_alert", "m29_wfar", "m29_wnear")}
-        print(f"  M29.G4A ran {tt} frames after B; its near region is at "
+        print(f"  M29.PRG ran {tt} frames after B; its near region is at "
               f"${near:04X}, {far_banks} far banks")
 
         step = b.peek16(big["m29_step"])
         check(b.peek16(big["m29_ran"]) == 1,
-              f"M29.G4A did not reach its end -- it got to step {step} of 9 "
+              f"M29.PRG did not reach its end -- it got to step {step} of 9 "
               f"(1 entered main, 2 past appl_init, 3 read the far bss, "
               f"4 read the initialised far array, 5 wrote and summed them, "
               f"6-8 drew the window with a far, a near and an empty title, "
@@ -170,7 +170,7 @@ def main(argv):
         bars = {}
         for stage, which in ((6, "far"), (7, "near"), (8, "empty")):
             if not check(poll(b, big["m29_step"], stage) >= 0,
-                         f"M29.G4A never reached step {stage} (the {which} "
+                         f"M29.PRG never reached step {stage} (the {which} "
                          f"title); it is at {b.peek16(big['m29_step'])}"):
                 return 1
             b.frames(10)
@@ -203,7 +203,7 @@ def main(argv):
         # in --data-model=large that literal is far, and near_of would have
         # nulled it (the peer's GACS bug).  RETURN picks the default button.
         check(poll(b, big["m29_step"], 9) >= 0,
-              "M29.G4A never reached its form_alert")
+              "M29.PRG never reached its form_alert")
         b.frames(60)            # the modal is drawn and waiting by now
         b.screenshot(os.path.join(ROOT, "build", "m29-alert.png"))
         b.key("RETURN")
@@ -221,7 +221,7 @@ def main(argv):
         # Let it go, and see the shell put the desktop back over it.
         b.key("RETURN")
         check(poll(b, runs, 3) >= 0,
-              "the shell did not come back to the desktop after M29.G4A")
+              "the shell did not come back to the desktop after M29.PRG")
     finally:
         emu.stop()
 

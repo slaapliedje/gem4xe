@@ -5,7 +5,7 @@ FARRSC.RSC is 42 KB -- 702 objects in 28 trees (tools/farrsc.py) -- and
 the application pool is 14 KB of bank $00.  Two builds of one program
 (src/m33_farrsc.c) ask for it under the stand-in desktop:
 
-  F   M33.G4A, --data-model=large.  Its kit says it can take a far
+  F   M33.PRG, --data-model=large.  Its kit says it can take a far
       address, so rsrc_load puts the file in far memory, and the program
       draws tree 0 from there, hit-tests it, reads a free string through
       the address rsrc_gaddr handed back, and frees it.  The gate reads
@@ -13,7 +13,7 @@ the application pool is 14 KB of bank $00.  Two builds of one program
       the addresses to be ABOVE bank $00 -- which is the whole claim --
       and looks at the screen while the dialog is up.
 
-  G   M33S.G4A, --data-model=small.  Its kit passes no int_in, so it
+  G   M33S.PRG, --data-model=small.  Its kit passes no int_in, so it
       cannot ask, and a 16-bit program handed a far resource would have
       its pointers truncated with no error.  rsrc_load must answer 0 and
       nothing else may happen.
@@ -123,16 +123,16 @@ def main(argv=()):
         # ---- F: the large-data build, which may take a far address -------
         b.key("F")
         tf = poll(b, runs, 2)
-        check(tf >= 0, f"after F: M33.G4A did not start (sh_runs {b.peek16(runs)})")
+        check(tf >= 0, f"after F: M33.PRG did not start (sh_runs {b.peek16(runs)})")
         if tf < 0:
             return 1
         v, at, near = app_vars(b, syms, APP_SYM, APP)
         tw = poll(b, at["m33_step"], 7)     # drawn, and waiting for a key
         v, at, near = app_vars(b, syms, APP_SYM, APP)
-        print(f"  M33.G4A up {tf} frames after F; near ${near:04X}; "
+        print(f"  M33.PRG up {tf} frames after F; near ${near:04X}; "
               f"step {v['m33_step']}, {'waiting' if tw >= 0 else 'NOT waiting'} "
               f"{tw if tw >= 0 else ''}".rstrip())
-        check(v["m33_model"] == 4, f"M33.G4A's pointers are {v['m33_model']} bytes; expected 4")
+        check(v["m33_model"] == 4, f"M33.PRG's pointers are {v['m33_model']} bytes; expected 4")
         check(v["m33_loaded"] == 1, f"rsrc_load returned {v['m33_loaded']}, expected 1")
         if v["m33_loaded"]:
             hdr = (v["m33_hdrhi"] << 16) | v["m33_hdrlo"]
@@ -193,24 +193,24 @@ def main(argv=()):
                   f"rsrc_free returned {v['m33_gfree']} (step {v['m33_step']}), expected 1")
             b.key("RETURN")                 # and leave
         # sh_runs counts the desktop too: its return is run 3
-        check(poll(b, runs, 3) >= 0, f"the desktop did not come back after M33.G4A "
+        check(poll(b, runs, 3) >= 0, f"the desktop did not come back after M33.PRG "
                                      f"(sh_runs {b.peek16(runs)})")
         b.frames(60)
 
         # ---- G: the small-data build, which cannot, and must be refused ---
         b.key("G")
         tg = poll(b, runs, 4)
-        check(tg >= 0, f"after G: M33S.G4A did not start (sh_runs {b.peek16(runs)})")
+        check(tg >= 0, f"after G: M33S.PRG did not start (sh_runs {b.peek16(runs)})")
         if tg >= 0:
             vs, ats, nears = app_vars(b, syms, APPS_SYM, APPS)
             te = poll(b, ats["m33_step"], 9)    # refused, and waiting to be read
             vs, _, _ = app_vars(b, syms, APPS_SYM, APPS)
-            print(f"  M33S.G4A up {tg} frames after G; near ${nears:04X}; "
+            print(f"  M33S.PRG up {tg} frames after G; near ${nears:04X}; "
                   f"rsrc_load returned {vs['m33_loaded']}, step {vs['m33_step']}")
-            check(vs["m33_model"] == 2, f"M33S.G4A's pointers are {vs['m33_model']} bytes; expected 2")
+            check(vs["m33_model"] == 2, f"M33S.PRG's pointers are {vs['m33_model']} bytes; expected 2")
             check(vs["m33_loaded"] == 0,
                   f"rsrc_load gave a small-data program a resource that cannot fit the pool")
-            check(te >= 0, f"M33S.G4A did not reach its wait (step {vs['m33_step']})")
+            check(te >= 0, f"M33S.PRG did not reach its wait (step {vs['m33_step']})")
             b.key("RETURN")                 # and leave
     finally:
         emu.stop()

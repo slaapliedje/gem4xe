@@ -398,12 +398,24 @@ static void win_sinfo(WNODE *pw)
 
 /* -- the view ---------------------------------------------------------- */
 
-/* Which icon an entry gets: a folder, a program, or a document.  A
- * program is .G4A -- gem4xe's own executable -- or .PRG, the Atari
- * world's name for one, for anyone who would rather use that extension;
- * either way the loader reads the file's format, not its name, and
- * refuses a file that is not gem4xe's (src/sys/app.c, APP_E_MAGIC), so a
- * 68000 .PRG off a real Atari is turned away rather than run. */
+/* Which icon an entry gets: a folder, a program, or a document.
+ *
+ * A PROGRAM IS .PRG, which is what gem4xe ships since 2026-09-20 and what
+ * the Atari world reads as "double-click this".  .G4A is still taken,
+ * because it is what 0.5 and everything before it shipped and a disk
+ * somebody already has should keep working.
+ *
+ * The EXTENSION is the role and the FORMAT is the container: both of
+ * these are a .G4A inside (tools/mkg4a.py), the way a .PRG and a .ACC on
+ * an ST are both GEMDOS executables.  Which is also why a 68000 .PRG off
+ * a real Atari is safe here -- the loader reads the file's magic, not its
+ * name, and turns it away (src/sys/app.c, APP_E_MAGIC) rather than
+ * running it.
+ *
+ * NOT YET: .APP, .TOS and .TTP, which an ST also marks executable.  .TOS
+ * and .TTP would mean something real here -- GEMDOS has a VT-52 console
+ * and src/m32_con.c is a TOS program in all but name -- and .TTP's
+ * parameter prompt is the same missing dialog as a document's. */
 static WORD win_which(const FNODE FAR *pf)
 {
     const char FAR *s = pf->f_name;

@@ -20,7 +20,7 @@ shedding for three phases.
     make test-boot
 
     gem-boot.atr: ATRImage(256b x 720), a double-density DOS 2, AUTORUN.SYS
-      816.COM, AUTORUN.SYS, CLOCK.ACC, CLOCK.RSC, DESKTOP.G4A, DESKTOP.RSC,
+      816.COM, AUTORUN.SYS, CLOCK.ACC, CLOCK.RSC, DESKTOP.PRG, DESKTOP.RSC,
       DOS.SYS, DUP.SYS, GEM4XE.CFG, LANG.RSC
       122 sectors free, 30 KB -- DUP.SYS is on it, so GEM has a DOS to return to
       the boot screen, 560 frames after the switch:

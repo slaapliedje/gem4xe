@@ -76,11 +76,11 @@ static uint32_t sh_cmd_far, sh_tail_far, sh_buf_far;   /* 0 until sh_init */
  * donor's sh_chdef does exactly this for DESKTOP_APP.  The name is the
  * program the shell loads as the desktop: gem4xe keeps the default one
  * cached in far memory because it runs again after every program (a
- * copy, not a disk read), so a name that is still DESKTOP.G4A comes out
+ * copy, not a disk read), so a name that is still DESKTOP.PRG comes out
  * of the cache and any other is loaded from the file like a program.
  * That costs a disk read per return to the desktop for a caller that
  * changed it, which is the right way round. */
-#define SH_DESKNAME "DESKTOP.G4A"   /* what the shell runs unless told */
+#define SH_DESKNAME "DESKTOP.PRG"   /* what the shell runs unless told */
 #define SH_DESKLEN  13          /* LEN_ZFNAME: NAME.EXT and its NUL */
 #define SH_CDIRLEN  114         /* LEN_ZPATH: a path with its drive */
 static uint32_t sh_desk_far, sh_cdir_far;

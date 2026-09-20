@@ -301,9 +301,9 @@ def one(name, progname, how, batches, cart, keep, check):
     # Every product floppy is the system and nothing else since phase 42:
     # the applications and the desk accessory are on gem-apps.atr, which
     # apps_disk() reads (docs/media.md).
-    want = ({"GEM>GEM.COM": "gem.xex", "GEM>DESKTOP.G4A": "desktop.g4a",
+    want = ({"GEM>GEM.COM": "gem.xex", "GEM>DESKTOP.PRG": "desktop.g4a",
              "GEM>DESKTOP.RSC": "desktop.rsc", "GEM>LANG.RSC": "lang.rsc"} if sdfs else
-            {progname: "gem.xex", "DESKTOP.G4A": "desktop.g4a",
+            {progname: "gem.xex", "DESKTOP.PRG": "desktop.g4a",
              "DESKTOP.RSC": "desktop.rsc", "LANG.RSC": "lang.rsc"})
     strays = sorted(n for n in listed if n.startswith("APPS") or n.endswith(".ACC")
                     or (n.endswith(".G4A") and n not in want))

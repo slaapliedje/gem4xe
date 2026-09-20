@@ -256,7 +256,7 @@ A `.g4a` is a file like any other.  Put it beside `GEM.COM` and
 `DESKTOP.RSC` on a gem4xe disk, or in `\APPS\`, and the desktop will
 run it when you double-click it.  In the gem4xe source tree,
 `tools/mkspdisk.py <source.atr> <boot.xex> <out.atr> --add mine.g4a
-MINE.G4A` builds an image with it on.
+MINE.PRG` builds an image with it on.
 
 If your program has a resource, `rsrc_load("MINE.RSC")` reads it from
 the same disk, and it must be a real GEM `.RSC`: gem4xe's resource

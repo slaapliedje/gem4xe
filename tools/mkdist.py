@@ -100,23 +100,23 @@ DISKS = [
 # (file in build/, the name it takes on a disk)
 SYSTEM = [
     ("gem.xex", "GEM.COM"),
-    ("desktop.g4a", "DESKTOP.G4A"),
+    ("desktop.g4a", "DESKTOP.PRG"),
     ("desktop.rsc", "DESKTOP.RSC"),
     ("prefs.rsc", "PREFS.RSC"),
     ("lang.rsc", "LANG.RSC"),
     ("816.com", "816.COM"),
     ("gem4xe.cfg", "GEM4XE.CFG"),
-    ("hello_app.g4a", "HELLO.G4A"),
-    ("calc.g4a", "CALC.G4A"),
+    ("hello_app.g4a", "HELLO.PRG"),
+    ("calc.g4a", "CALC.PRG"),
     ("calc.rsc", "CALC.RSC"),
-    ("clock.g4a", "CLOCK.G4A"),
+    ("clock.g4a", "CLOCK.PRG"),
     ("clock.rsc", "CLOCK.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
 ]
 
 WHAT_IT_IS = {
     "GEM.COM": "the system: the VDI, the AES, GEMDOS and the shell",
-    "DESKTOP.G4A": "the desktop, which is an application like any other",
+    "DESKTOP.PRG": "the desktop, which is an application like any other",
     "DESKTOP.RSC": "its resource -- the menu, the dialogs, the icons",
     "PREFS.RSC": "the Set preferences chooser, loaded only while it is open",
     "LANG.RSC": "what the system says, so a translation is a file",
@@ -125,12 +125,12 @@ WHAT_IT_IS = {
     "GEM4XE.CFG": "the screen and the mouse, in plain text -- edit it from "
                   "the DOS prompt if the display comes up wrong.  Ships "
                   "with everything commented out and documented",
-    "HELLO.G4A": "a hello-world program: a window you open and close, "
+    "HELLO.PRG": "a hello-world program: a window you open and close, "
                  "to have something to double-click",
-    "CALC.G4A": "a calculator: whole numbers, and a division that "
+    "CALC.PRG": "a calculator: whole numbers, and a division that "
                 "truncates rather than pretending otherwise",
     "CALC.RSC": "its panel -- every key of it, and every word",
-    "CLOCK.G4A": "a clock.  With an Ultimate 1MB it shows the time; "
+    "CLOCK.PRG": "a clock.  With an Ultimate 1MB it shows the time; "
                  "without one it counts up from midnight, which is what "
                  "the machine knows",
     "CLOCK.RSC": "its panel, and the templates that decide how a time "

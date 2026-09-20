@@ -2,10 +2,10 @@
 """Phase 42 gate: GEMDOS's console, its standard handles, the memory calls
 and Pterm -- from a program that never calls the AES.
 
-M32.G4A (src/m32_con.c) is run from test-m16's stand-in desktop, through
+M32.PRG (src/m32_con.c) is run from test-m16's stand-in desktop, through
 the shell loop, the way a TOS program would be:
 
-    T  ->  M32.G4A writes a page of VT-52 -- every escape in the
+    T  ->  M32.PRG writes a page of VT-52 -- every escape in the
            Compendium's table -- and waits at the console;
            K, then "hi", BACKSPACE, "ey", RETURN, then Z, ^C and Q;
            it points its standard handles at a file and back, and reads
@@ -91,7 +91,7 @@ TYPED = [("H", b"h"), ("I", b"i"), ("BACKSPACE", b"\b \b"), ("E", b"e"),
          ("Y", b"y"), ("RETURN", b"\r")]
 
 EINVFN, EFILNF, EIHNDL, EIMBA, EGSBF = -32, -33, -37, -40, -67
-KID_FILE = b"kid hello\r\nend"             # M32KID.G4A's line, then its parent's
+KID_FILE = b"kid hello\r\nend"             # M32KID.PRG's line, then its parent's
 CEOF = 0xFF1A - 0x10000                     # GD_CEOF as the WORD it is read into
 HANDLE_BASE, DUP_BASE = 6, 14
 TO_FILE = b"to file\r\n!abc"
@@ -186,7 +186,7 @@ def main(argv):
         # ---- the program -------------------------------------------------
         b.key("T")
         t = poll(b, runs, 2)
-        check(t >= 0, f"after T: M32.G4A did not run (sh_runs {b.peek16(runs)})")
+        check(t >= 0, f"after T: M32.PRG did not run (sh_runs {b.peek16(runs)})")
         if t < 0:
             return 1
         near = b.peek16(syms["app_near"])
@@ -198,14 +198,14 @@ def main(argv):
 
         def reached(n, what):
             tt = poll(b, step, n)
-            check(tt >= 0, f"{what}: M32.G4A did not get to step {n} "
+            check(tt >= 0, f"{what}: M32.PRG did not get to step {n} "
                            f"(it is at {b.peek16(step)})")
             return tt >= 0
 
         if not reached(2, "the page"):
             return 1
         b.frames(SETTLE)
-        print(f"  M32.G4A up {t} frames after T; its near region is at ${near:04X}")
+        print(f"  M32.PRG up {t} frames after T; its near region is at ${near:04X}")
 
         model_desk()                        # app_free, the desk, then the program
         con = conref.Console(ref_a)
@@ -342,7 +342,7 @@ def main(argv):
               "Cconin and Cconrs read it back")
 
         # Pexec
-        want(52, 5, "Pexec of M32KID.G4A (its Pterm)")
+        want(52, 5, "Pexec of M32KID.PRG (its Pterm)")
         want(53, 1, "Malloc(-1) after the child is what it was before (1 = equal)")
         want(54, 3, "Fwrite to the parent's own file after the child")
         want(59, 0, "Fclose of the parent's file after the child")

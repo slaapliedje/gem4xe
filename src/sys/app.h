@@ -106,7 +106,7 @@ void    app_free(const APP *app);
  * how far it got. */
 int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len);
 
-/* app_load() on a file: the GEM name (X:\DIR\NAME.G4A, or a bare name on
+/* app_load() on a file: the GEM name (X:\DIR\NAME.PRG, or a bare name on
  * the default drive) through the DOS seam, read whole, then loaded.  The
  * file's bytes are left in far memory below the application's and go
  * back with them at app_free(). */

@@ -2,7 +2,7 @@
  *
  * The same bring-up as the conformance runner (src/m3_vdi.c) with no host
  * in the loop: DOS loads it, it takes the machine over, hands the screen
- * to the shell loop (src/aes/shel.c: DESKTOP.G4A, then whatever the
+ * to the shell loop (src/aes/shel.c: DESKTOP.PRG, then whatever the
  * desktop asks for, until the desktop asks to shut down), and gives the
  * machine back exactly as it found it.  Nothing here is poked from the
  * bridge, so the runner's STATUS block, its script buffers and its test

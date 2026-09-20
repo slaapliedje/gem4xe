@@ -1,29 +1,29 @@
 /* m16_desk.c -- the stand-in desktop of tests/emu/m16_shell.py.
  *
  * A gem4xe application like any other (src/app/gem.h), built as
- * DESKTOP.G4A on the milestone-3 disk (build/m14-boot.atr) in place of
+ * DESKTOP.PRG on the milestone-3 disk (build/m14-boot.atr) in place of
  * the real desktop (src/desk/), so that the shell loop in
  * src/aes/shel.c can be driven from the keyboard by a gate: it loads
  * this first, runs whatever it asks for with shel_write, and loads it
  * again when that returns, until it asks to shut down.  A line of help,
  * then a key:
  *
- *     R   run M11.G4A, the gate application, and come back
- *     C   run CALC.G4A, and K CLOCK.G4A -- the two programs, which
+ *     R   run M11.PRG, the gate application, and come back
+ *     C   run CALC.PRG, and K CLOCK.PRG -- the two programs, which
  *         are gated through this same loop (tests/emu/m22_apps.py)
- *     B   run M29.G4A, which is compiled --data-model=large and keeps
+ *     B   run M29.PRG, which is compiled --data-model=large and keeps
  *         its variables in far memory (tests/emu/m29_big.py)
- *     H   run M31.G4A, whose far IMAGE is bigger than a bank -- the
+ *     H   run M31.PRG, whose far IMAGE is bigger than a bank -- the
  *         format-2 loader path (tests/emu/m31_huge.py)
- *     T   run M32.G4A, a TOS program in all but name: GEMDOS's console,
+ *     T   run M32.PRG, a TOS program in all but name: GEMDOS's console,
  *         its standard handles and Pterm (tests/emu/m32_con.py)
- *     F   run M33.G4A, whose resource does not fit the pool and is loaded
- *         FAR; G runs M33S.G4A, the same program compiled small-data,
+ *     F   run M33.PRG, whose resource does not fit the pool and is loaded
+ *         FAR; G runs M33S.PRG, the same program compiled small-data,
  *         which must be refused (tests/emu/m33_farrsc.py)
- *     X   ask for NOPE.G4A, which is not there: the shell's alert, then
+ *     X   ask for NOPE.PRG, which is not there: the shell's alert, then
  *         the desktop again
  *     V   shel_wdef: the desktop's directory set to A:\SUB, then
- *         M11.G4A -- so the run AFTER this one is the one that starts
+ *         M11.PRG -- so the run AFTER this one is the one that starts
  *         somewhere the shell was told rather than the system's place
  *     Q   shut GEM down and return to DOS, having checked shel_rdef and
  *         shel_wdef and returned what it found as main()'s value: bit 0
@@ -77,7 +77,7 @@ int main(void)
     for (;;) {
         k = (WORD)(evnt_keybd() & 0x00FF);
         if (k == 'r' || k == 'R') {
-            shel_write(SHW_EXEC, 1, 0, "M11.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "M11.PRG", "\0");
             break;
         }
         /* Into the folder first, then the program by its full path --
@@ -87,27 +87,27 @@ int main(void)
          * its own resource beside it (docs/phase29.md). */
         if (k == 'c' || k == 'C') {
             Dsetpath("A:\\APPS");
-            shel_write(SHW_EXEC, 1, 1, "A:\\APPS\\CALC.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 1, "A:\\APPS\\CALC.PRG", "\0");
             break;
         }
         if (k == 'k' || k == 'K') {
             Dsetpath("A:\\APPS");
-            shel_write(SHW_EXEC, 1, 1, "A:\\APPS\\CLOCK.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 1, "A:\\APPS\\CLOCK.PRG", "\0");
             break;
         }
         /* B: the large-data program (src/m29_big.c).  It is in the root
          * rather than in \APPS\ because what test-m29 is about is the
          * MEMORY MODEL, not the path. */
         if (k == 'b' || k == 'B') {
-            shel_write(SHW_EXEC, 1, 0, "M29.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "M29.PRG", "\0");
             break;
         }
         if (k == 'f' || k == 'F') {
-            shel_write(SHW_EXEC, 1, 0, "M33.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "M33.PRG", "\0");
             break;
         }
         if (k == 'g' || k == 'G') {
-            shel_write(SHW_EXEC, 1, 0, "M33S.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "M33S.PRG", "\0");
             break;
         }
         /* H: the one whose far IMAGE crosses a bank (src/m31_huge.c).
@@ -115,20 +115,20 @@ int main(void)
          * them the packer refused it and the loader would have copied it
          * modulo 65,536 (src/sys/app.c, copy_far). */
         if (k == 'h' || k == 'H') {
-            shel_write(SHW_EXEC, 1, 0, "M31.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "M31.PRG", "\0");
             break;
         }
         if (k == 't' || k == 'T') {
-            shel_write(SHW_EXEC, 1, 0, "M32.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "M32.PRG", "\0");
             break;
         }
         if (k == 'x' || k == 'X') {
-            shel_write(SHW_EXEC, 1, 0, "NOPE.G4A", "\0");
+            shel_write(SHW_EXEC, 1, 0, "NOPE.PRG", "\0");
             break;
         }
         if (k == 'v' || k == 'V') {
-            shel_wdef("DESKTOP.G4A", "A:\\SUB");
-            shel_write(SHW_EXEC, 1, 0, "M11.G4A", "\0");
+            shel_wdef("DESKTOP.PRG", "A:\\SUB");
+            shel_write(SHW_EXEC, 1, 0, "M11.PRG", "\0");
             break;
         }
         if (k == 'q' || k == 'Q') {
@@ -138,13 +138,13 @@ int main(void)
              * the desktop is a new process and cannot carry the last
              * one's answers. */
             shel_rdef(cmd, dir);
-            if (samestr(cmd, "DESKTOP.G4A"))
+            if (samestr(cmd, "DESKTOP.PRG"))
                 verify |= 0x01;
             if (samestr(dir, "A:\\SUB"))
                 verify |= 0x02;
-            shel_wdef("NOPE.G4A", "");
+            shel_wdef("NOPE.PRG", "");
             shel_rdef(cmd, dir);
-            if (samestr(cmd, "NOPE.G4A"))
+            if (samestr(cmd, "NOPE.PRG"))
                 verify |= 0x04;
             if (dir[0] == 0)
                 verify |= 0x08;

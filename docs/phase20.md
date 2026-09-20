@@ -50,7 +50,7 @@ than a function pointer, because a handler is 24 bits under the large
 code model.
 
 **The cost to an application that uses none of it is 61 bytes.**  The
-linker drops what nothing calls: `DESKTOP.G4A` went from 28,117 bytes
+linker drops what nothing calls: `DESKTOP.PRG` went from 28,117 bytes
 to 28,178, and that is the `vdi()`/`vdi_sub()` refactor rather than the
 seventy new functions.
 

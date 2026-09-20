@@ -93,7 +93,7 @@ SYMS = os.path.join(BUILD, "gem.sym")
 ELF = os.path.join(BUILD, "gem.elf")
 FIXTURES = os.path.join(ROOT, "fixtures.toml")
 BOOT_LINE = b"CD >GEM\x9bGEM\x9b"
-WANT = {"GEM>GEM.COM": "gem.xex", "GEM>DESKTOP.G4A": "desktop.g4a",
+WANT = {"GEM>GEM.COM": "gem.xex", "GEM>DESKTOP.PRG": "desktop.g4a",
         "GEM>DESKTOP.RSC": "desktop.rsc"}
 # The PBI BIOS names itself as it mounts the card: "Ultimate PBI" in 1.25,
 # "U1MB SIDE2 PBI BIOS v.4.20, dev. 6" in 4.20.

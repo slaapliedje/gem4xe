@@ -1,4 +1,4 @@
-/* calcapp.c -- the calculator as a PROGRAM (APPS\\CALC.G4A).
+/* calcapp.c -- the calculator as a PROGRAM (APPS\\CALC.PRG).
  *
  * The same src/apps/calc.c the accessory is built from, with the main()
  * a launched program wants: take everything, run the one panel, give it
