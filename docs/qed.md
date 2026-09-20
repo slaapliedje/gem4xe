@@ -1,12 +1,31 @@
-# QED on gem4xe — what it would take
+# QED on gem4xe — what it took
 
 `qed` is a GEM text editor for the Atari ST, maintained in the FreeMiNT
 tree (<https://github.com/freemint/qed>).  It is the first candidate for
 something gem4xe has never had: **a real application somebody else wrote.**
 Everything in `\APPS\` so far is ours -- a calculator, a clock, a
-hello-world -- and a port of qed would say the platform is a platform.
+hello-world, and since phase 47 the calculator is a Desk accessory as
+well as a program, with a control panel accessory beside it -- and a port
+of qed would say the platform is a platform.
 
-This is a scoping note, not a plan of record.  Nothing is ported yet.
+**This began as a scoping note and has been overtaken: qed IS ported and
+it works.**  Menus, editing and saving through the file selector all run
+and are gated, and since phase 47 it LAUNCHES FROM THE DESKTOP rather
+than being installed in its place -- its near region came down from
+11,520 bytes to 6,144, so it fits beside the desktop instead of
+replacing it.  Replacing the desktop was never only a size question: it
+would make multitasking permanently harder to add, and this tree would
+rather keep the shapes a multitasking AES could keep.
+
+The port lives in a checkout of its own (`~/dev/qed`, branch `gem4xe`),
+not in this tree, and its remote is upstream's, so it is not pushed
+there.  `tools/ci_gem4xe.py` in that checkout drives the whole thing:
+the desktop comes up, opens a drive, and runs `QED.G4A`, requiring
+`sh_runs` to go 1 to 2 -- the desktop is still process one.
+
+What follows is the scoping as it was written, kept because the
+reasoning is what made the port cheap, with the counts corrected where
+the engine has since closed a gap.
 
 ## The licence is Public Domain, and that took checking
 
@@ -60,32 +79,43 @@ question a port has to answer is still where cflib comes from.
 ## What gem4xe already answers
 
 Counted rather than guessed, by matching every AES/VDI call in `src/*.c`
-against `src/app/gem.h`: **qed's own sources make 74 distinct GEM calls
-and gem4xe has 59 of them.**  That is a count of qed, not of a running
-qed -- what cflib calls on its behalf is not in it, as above.  The
-fifteen that are missing are not fifteen pieces of work:
+against `src/app/gem.h`, the count opened at **74 distinct GEM calls in
+qed's own sources, 59 of them served**.  That was a count of qed, not of
+a running qed -- what cflib calls on its behalf is not in it, as above.
+
+**The AES half of that gap is closed.**  On 2026-09-19 the engine
+reached all 79 AES opcodes (`docs/phase46.md`), and `tools/opcodes.py`,
+which reads the dispatchers rather than the header, answers `0 AES ...
+opcodes are not served`.  So what remains in the table below is not AES
+work at all: two of its rows are cflib's and gemlib's own functions
+rather than opcodes, one is MultiTOS's AV extensions that a port trims,
+and one is the GDOS printing path qed already gates itself out of.  The
+single call still genuinely outstanding is a **VDI** one,
+`vqt_real_extent` at opcode 240.  The rows are kept because each still
+says what KIND of gap it was, which is what a port has to plan around:
 
 | | calls | what it is |
 |---|---|---|
 | cflib helpers, not AES | `menu_help`, `menu_key`, `v_slider` | comes with the cflib subset |
 | GRECT wrappers | `wind_create_grect`, `wind_open_grect` | trivial; the calls under them exist |
-| AV / MultiTOS | `appl_find`, `appl_search`, `appl_control`, `appl_xgetinfo` | trim, or stub as "no extensions" |
+| AV / MultiTOS | `appl_search`, `appl_control` | trim, or stub as "no extensions" -- `appl_find` (13) and `appl_getinfo` (130) are **served now** |
 | the clipboard | `scrp_read`, `scrp_write` | **served now** — the AES keeps the scrap directory (`src/aes/scrap.c`), gated in `make test-m12` |
 | GDOS printing | `v_opnprn`, `vq_devinfo`, `vs_document_info`, `vqt_ext_name` | **already skipped**: qed gates these on `gl_gdos`, and our `vq_gdos()` answers 0 |
 
 The scrap manager is built now (`src/aes/scrap.c`), so with AV and
-printing trimmed, **what is left is the three calls cflib drags in
-behind it.**  `menu_popup` (36) is what every popup in `find.c`,
-`options.c`, `makro.c`, `prn_cfg.c` and `dd.c` reaches through cflib's
-`handle_popup`; `objc_sysvar` (48) arrives twice over, through
-`get_objframe` and through cflib's own `init_userdef`; and
-`vqt_real_extent` is a real VDI call at **opcode 240**, in the FSM/GDOS
-range and so outside our 1-39 and 100-131 entirely -- though it sits
-behind the same `gl_gdos` gate as the rest of the printing path.
+printing trimmed, **what is left is the one call cflib drags in behind
+it.**  The other two have been served since: `menu_popup` (36), which is
+what every popup in `find.c`, `options.c`, `makro.c`, `prn_cfg.c` and
+`dd.c` reaches through cflib's `handle_popup`, arrived in phase 46, and
+`objc_sysvar` (48), which enters twice over -- through `get_objframe`
+and through cflib's own `init_userdef` -- arrived in phase 45.  That
+leaves `vqt_real_extent`, a real VDI call at **opcode 240**, in the
+FSM/GDOS range and so outside our 1-39 and 100-131 entirely -- though it
+sits behind the same `gl_gdos` gate as the rest of the printing path.
 
-**Those three are qed-as-built, not qed-as-ported.**  They enter its
+**That one is qed-as-built, not qed-as-ported.**  It enters qed's
 surface only because it links cflib, and a port has to replace cflib
-rather than link it, so they become the replacement layer's choice.  The
+rather than link it, so it becomes the replacement layer's choice.  The
 scrap manager is the one that survives either path, because qed calls it
 directly -- and cflib reaches `scrp_read` as well, through
 `get_scrapdir`, which makes that verdict firmer rather than looser.
@@ -121,19 +151,22 @@ is copied into the AES's pool instead, up to 511 bytes.
 `wind_set(WF_NAME)` and `WF_INFO` pass a string the window manager
 *keeps*: it reads the title again at every redraw, so there is nothing to
 copy into a scratch that would still be alive when the drawing happened.
-The answer was to copy it where the drawing happens instead.  The WINDOW
-record holds all 24 bits of the address and `w_bldactive` brings a far
-title down into a near buffer each time it lays the frame out
-(`src/aes/wind.c`, `w_ptext`), which keeps the ST's contract in both
-directions: the address is re-read every redraw, so an application may
-still edit its title in place.  It cost 114 bytes of bank $00 that bank
-$00 did not have, and the LoRAM/Near boundary moved 192 bytes to find
+The answer was to keep the address rather than the characters.  The
+WINDOW record holds all 24 bits of it, and since phase 47 `w_ptext`
+(`src/aes/wind.c`) simply ASSIGNS that address into the TEDINFO the
+frame is drawn from, because a `te_ptext` is a far pointer now like
+every other address in a tree (`docs/far-trees.md`).  That keeps the
+ST's contract in both directions -- the address is re-read every redraw,
+so an application may still edit its title in place -- and it costs bank
+$00 nothing: the near buffers `w_bldactive` used to copy a far title
+into are deleted, and **there is no cap on a title's length** in either
+memory.  It was not always so: the copy cost 114 bytes of bank $00 that
+bank $00 did not have, the LoRAM/Near boundary moved 192 bytes to find
 them (`src/gem4xe.scm`, which records the two places that were tried
-first and the gates that refused them).  A far title is capped at forty
-characters, which is what buying that margin cost; a near title is used
-where it lies and has no cap.  `make test-m29` draws the same eleven
-characters from a far address and from a near one and requires the two
-title bars to be the same pixels.
+first and the gates that refused them), and a far title was capped at
+forty characters for as long as the buffer existed.  `make test-m29`
+draws the same eleven characters from a far address and from a near one
+and requires the two title bars to be the same pixels.
 
 RetroWP's titles are still blank, but that is now RetroWP's own doing
 rather than a limit of the system.

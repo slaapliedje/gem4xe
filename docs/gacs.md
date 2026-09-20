@@ -40,10 +40,13 @@ discipline that makes it portable to a 68000 makes it portable to a
 
 **The memory model is the decision.**  `ad_tables` is 22 KB and
 `ad_sheet` is another 33; gem4xe's application pool is 14,336 bytes of
-bank $00 -- `$4800-$7FFF`, shared with the process records, an accessory
-and the desktop -- and 14 MB above it, reached through GEMDOS's
-`Malloc`.  How much of the pool a program takes is set when it links:
-GACS asks for 2 KB and RetroWP for 8.  So an
+bank $00 -- `$4800-$7FFF`, shared with the process records (364 bytes
+for seven of them, which is the six Desk-menu accessory slots and the
+program that is running), with the three accessories that ship, and with
+the desktop, of which only the 1,280-byte near region is in the pool at
+all, `DESKTOP.RSC` having gone far in phase 47 -- and 14 MB above it,
+reached through GEMDOS's `Malloc`.  How much of the pool a program takes
+is set when it links: GACS asks for 2 KB and RetroWP for 8.  So an
 application compiles `--data-model=large`, where a pointer is 24 bits,
 and works out of far memory -- which is exactly the shape GACS already
 has, because its first prime directive is that a shell hands the engine
@@ -129,7 +132,14 @@ Measured against `shells/gem/main.c`, not assumed:
   `Fseek`, `Fdelete` and `Malloc`.
 - **`GACS.RSC` is the format we read**: version 0, 2,792 bytes, 73
   objects, two trees, no colour icons.  It fits the application pool
-  with room to spare.
+  with room to spare, which is what matters: **whichever model the port
+  is built in, this resource loads.**  Where it lands follows from that
+  choice rather than from its size -- `rs_load` gives far memory to a
+  caller that asks for it (`int_in[0]` bit 0, which the large-data kit
+  sets) and the pool to one that cannot hold a 24-bit address -- and the
+  engine compiles clean in both (7/7 files each, above), so the decision
+  is still open.  At 2,792 bytes neither answer is tight
+  (`docs/phase47.md`).
 - **And it fits the screen.**  The two trees are 80x25 and 42x12
   CHARACTER CELLS; on gem4xe's 8x8 cell that is 640x200 and 336x96
   inside a 640x240 screen.  A resource laid out in cells travels, which

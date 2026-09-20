@@ -7,7 +7,7 @@ in principle Antonia), and **Ultimate 1MB**.
 The target surface is **640 × 240, 16 colours** — VBXE's HR overlay, 4bpp chunky.
 That is a better GEM surface than the Atari ST's medium resolution.
 
-Current version **0.4** — `VERSION` at the top of the tree is where it
+Current version **0.5** — `VERSION` at the top of the tree is where it
 lives; `make dist` stamps a build with it and the commit, and `make
 release` is the same for the public, without the DOS 2 floppy (its DOS is
 not gem4xe's to give away) and named by the version alone.
@@ -42,7 +42,8 @@ overlay with its rows doubled, which is what a monitor shows.
 
 The rest are in [`docs/shots/`](docs/shots/): the bare desk, the Desk and
 File menus, the About box, a folder in icon and text view, Show Info, and
-the clock accessory over the desktop.
+the three desk accessories — the control panel, the calculator and the
+clock — each open over a window.
 
 ## Why it is shaped the way it is
 
@@ -269,8 +270,13 @@ to break it.
 and seven; the 608 bytes of fill patterns — 23% of all the near memory
 there is — went to `cfar` with the far code, and the boundary moved to
 share what that bought. It moved again on 2026-09-16, 192 bytes, to buy
-the far window title what it needs: **346 bytes free in LoRAM and 179 in
-Near** today, which `make memcheck` prints.
+the far window title the two 41-byte buffers it bounced through, and a
+third time on 2026-09-19, 16 bytes, for the owner `wind_get(WF_OWNER)`
+has to answer with. The title buffers were then given back: `w_ptext`
+stopped copying and reads the far string where it lies, which is 82
+bytes of LoRAM returned and the forty-character cap gone with them
+(`docs/phase47.md`). **323 bytes free in LoRAM and 167 in Near** today,
+which `make memcheck` prints.
 
 **Which boundary, though, took two red gates to learn.** Growing `zwin`
 at the application pool's expense went first, and `test-m28` answered

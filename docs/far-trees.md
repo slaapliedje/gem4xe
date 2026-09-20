@@ -1,12 +1,22 @@
 # Object trees in far memory
 
-Status: **steps 1 and 2 built and gated, 2026-09-18** -- every tree the
-AES touches is addressed as a FAR pointer, and a resource that does not
-fit the pool loads into far memory for a program that has said it can
-take a far address, and is refused for one that has not (`test-m33`).
-Step 3, QED, is next. Designed the same day from measurements of the
-tree as it was, so the argument rests on what the code does rather than
-on what it is remembered to do.
+Status: **all three steps built and gated.** Steps 1 and 2 landed
+2026-09-18 -- every tree the AES touches is addressed as a FAR pointer,
+and a resource loads into far memory for a program that has said it can
+take a far address (`test-m33`). Step 3 landed 2026-09-19/20.
+Designed from measurements of the tree as it was, so the argument rests
+on what the code does rather than on what it is remembered to do.
+
+> **⚠ THIS DOCUMENT IS THE DESIGN, AND THE POLICY IT DESCRIBES HAS SINCE
+> CHANGED.** It was written while far memory was the FALLBACK -- taken
+> when a resource would not fit the pool. Since 2026-09-19 far memory is
+> the **PREFERENCE**: `rs_load` takes it for any caller that opts in,
+> whatever the size of the file, and the pool is the exception for
+> small-data callers and colour-icon resources. The desktop became a
+> `--data-model=large` program to use it. Every "when it does not fit"
+> below is therefore the design's wording and not the rule; the rule,
+> the fourteen truncated addresses the change cost, and the current
+> figures are in **`docs/phase47.md`**.
 
 ## Step 1, as it went
 
@@ -129,6 +139,15 @@ single string -- and it is one resource, loaded once, reached through 33
 and 258 while a resource is loading (`tools/memreport.py`), so the pool
 cannot grow and nothing large can be bounced down.
 
+> **Those are the BEFORE figures -- the measurement this design was
+> argued from, kept because the argument rests on it.** Today
+> `tools/memreport.py` prints **8,192 bytes free** with the desktop and
+> *three* accessories resident, and the loading peak is gone: the
+> desktop is a large-data program now, so its 6,398-byte resource never
+> enters the pool at all. QED's near region also came down from 11,520
+> bytes to 6,144, so it launches from the desktop rather than replacing
+> it. `docs/phase47.md`.
+
 So a tree has to be usable where it lies, in far memory, by the AES that
 draws it, finds in it, edits it and hangs a menu from it.
 
@@ -223,12 +242,22 @@ Editable fields are the other direction: `objc_edit` and `form_do` write
 `te_ptext` in place. Those become far writes -- `far_write8`, or a FAR
 `char *` -- at the sites that store a character or move the cursor.
 
-The far-title bounce in `wind.c:123` stays. A window title is a TEDINFO
+The far-title bounce in `wind.c` stays. A window title is a TEDINFO
 the *VDI* re-reads at every redraw through `te_ptext`, and the reasoning
 there -- copy at draw time because the application may edit it in place --
 is unchanged by any of this. It could later be replaced by the same far
 read, which would lift its forty-character cap; that is a follow-up, not
 part of this.
+
+> **The follow-up happened (2026-09-20).** `w_ptext` no longer copies
+> anything -- it assigns the 24-bit address, because `objc_draw` already
+> reads a `G_TEXT`'s string through a far pointer and the frame's name
+> takes that same path. The two 41-byte buffers were deleted (+82 bytes
+> of LoRAM) and **there is no forty-character cap**. It was not an
+> optimisation: the desktop's own `w_name` is fifty bytes, so a deep
+> path drew short from the moment `G` moved to far memory, and
+> `tools/aesref.py` never modelled the cap -- model and target had
+> quietly stopped agreeing. `docs/phase47.md`.
 
 ### Who may receive a far address
 

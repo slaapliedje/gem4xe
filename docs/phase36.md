@@ -285,13 +285,18 @@ the bank.  It was the first thing tried.
     its context   2,048 bytes of far memory for the parked extent
     the table       208 bytes of the pool, four process records
 
+*(no longer true since Phase 47 -- `docs/phase47.md`: the table is 364
+bytes and seven process records, six of them accessory slots.)*
+
 The binding constraint is not the Desk menu's six slots.  It is the
 **application pool**: 14,336 bytes of bank $00, of which the desktop's
-near region is 3,712 and `DESKTOP.RSC` is 6,226, leaving 4,190.  An
-accessory trimmed to what it measurably uses is about 1,900 of that
-including its resource, so the slots stay at six and the loader stops when
-the pool says no -- which is also what the donor does when its one
-allocation for all the accessories fails.
+near region is 3,712 and `DESKTOP.RSC` is 6,226, leaving 4,190.  *(no
+longer true since Phase 47 -- `docs/phase47.md`: the desktop's near
+region is 1,280, and its resource loads far and is charged 0 against the
+pool.)*  An accessory trimmed to what it measurably uses is about 1,900
+of that including its resource, so the slots stay at six and the loader
+stops when the pool says no -- which is also what the donor does when its
+one allocation for all the accessories fails.
 
 ## Knowing where bank $00 has gone
 
@@ -311,7 +316,9 @@ the desktop and its resource, with a program's region page-aligned as
 `app.c` aligns it.  Simulating rather than summing is the point: the
 report prints `$5200` for the desktop's near region, which is the address
 `test-boot` reads off the live machine, and 3,246 bytes free, which is
-the number the machine reports too.  `tests/host/test_memory.py` runs it,
+the number the machine reports too.  *(no longer true since Phase 47 --
+`docs/phase47.md`: the report prints `$5B00` and 8,192 bytes free, with
+all three accessories resident.)*  `tests/host/test_memory.py` runs it,
 so `make test` says so without being asked, and `test-boot` asserts the
 LIVE figure against the same floor -- GEMDOS reads files and directories
 through a slice of whatever the pool has spare, so falling under 2 KB is
@@ -331,7 +338,9 @@ that does not, and nothing else would fail if it went.
     the pool has 3,246 bytes, and the calculator wants about 2,400 of
     them -- which would leave GEMDOS under the 2 KB its read slice wants.
     The next 1,536 bytes are probably the desktop's own: it reserves
-    3,840 and the map says it uses 3,235.
+    3,840 and the map says it uses 3,235.  *(no longer true since Phase
+    47 -- `docs/phase47.md`: three accessories are resident together, and
+    the calculator is one of them.)*
   * **An accessory may not call `menu_bar`.**  The donor does not stop it
     either, and the Compendium's "desk accessories should not use a menu
     bar" is not style advice: `gl_mntree` is one global, so an accessory

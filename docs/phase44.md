@@ -25,7 +25,7 @@ the structs an ST resource or binding names -- `CICON`, `CICONBLK`,
 and which had never been declared here at all.  Each carries a line in
 `gem.h` saying what THIS AES does with it, which is not always what the
 ST's does: `G_CICON` draws its mono form, `G_USERDEF` draws nothing yet,
-`menu_popup` is not served.  A name that compiles and then quietly does
+`menu_popup` is not served *(it is, since Phase 46 -- `docs/phase46.md`)*.  A name that compiles and then quietly does
 something else is worse than one that is missing.
 
 One of them is numbered from the VDI's own table rather than the

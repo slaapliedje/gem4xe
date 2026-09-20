@@ -62,8 +62,11 @@ page less of the pool for the accessory beside it (test-m28).  So the
 window keeps seven direct-page scalars, the tree and the line live on
 the stack for the one `objc_draw` that reads them, and the title is the
 far buffer's first bytes -- the AES brings a far title near to draw it
-(phase 41's `w_ptext`).  The dialog lives beside the chooser in
-`PREFS.RSC`, loaded only while it is up, for the same reason.
+(phase 41's `w_ptext`) *(no longer true since Phase 47 --
+`docs/phase47.md`: `w_ptext` assigns the 24-bit address instead of
+copying, the near buffers are gone and a title has no length cap)*.  The
+dialog lives beside the chooser in `PREFS.RSC`, loaded only while it is
+up, for the same reason.
 
 Two things learned on the way: an *initialised* static costs a G4A
 program its bytes twice, the image and the copy, so it is no way to

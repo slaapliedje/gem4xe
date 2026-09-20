@@ -55,8 +55,14 @@ byte at a time is the right shape, and they compile into `farcode` with
 the rest of the C and cost bank $00 nothing.  GEM.COM got 34 bytes
 smaller.
 
-The applications -- the desktop, the calculator, the clock, the
-accessory -- never linked any of it.
+The applications -- the desktop, the calculator, the clock, and the
+three accessories (`CLOCK.ACC`, `CONTROL.ACC`, `CALC.ACC`) -- never
+linked any of it.  Which runtime archive they take makes no difference
+to that claim: the desktop, the control panel accessory and the
+calculator accessory are `--data-model=large` and so link
+`clib-lc-ld.a`, where the calculator, the clock and the clock accessory
+link `clib-lc-sd.a`, and `tests/host/test_licence.py` reads every map in
+`build/` against both spellings rather than one.
 
 ## The compiler's runtime, and why it is not a problem
 

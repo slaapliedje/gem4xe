@@ -12,11 +12,11 @@ and expensive to retrofit.
 
 Measured, today:
 
-    GEM.COM        92,230 bytes   the VDI, the AES, GEMDOS and the shell
-    DESKTOP.G4A    23,737         the desktop
-    DESKTOP.RSC     5,082         its resource
+    GEM.COM       111,518 bytes   the VDI, the AES, GEMDOS and the shell
+    DESKTOP.G4A    40,541         the desktop
+    DESKTOP.RSC     6,398         its resource
                   --------
-                  121,049
+                  158,457
 
 against what the formats hold, in bytes a file system can actually use:
 
@@ -24,6 +24,15 @@ against what the formats hold, in bytes a file system can actually use:
     enhanced          1009 x 125 = 126,125  the system, and 5 KB over
     double density     707 x 253 = 178,871  the system, and 15 KB over
     SDFS, our gates   2048 x 128 = 262,144  the system, and 96 KB over
+
+**The desktop's share of that has nearly doubled since phase 47, and the
+same change took its resource out of bank $00 altogether.**
+`DESKTOP.G4A` is a `--data-model=large` program now, which is why the
+file is 40,541 bytes where it was 23,737 -- a large-data program carries
+its own far data and its own copy of the runtime; and `rs_load` prefers
+far memory for any caller that opts in, so `DESKTOP.RSC`'s 6,398 bytes
+are charged **0** against the application pool rather than the 5,082 the
+pool used to lose to it (`docs/phase47.md`, `docs/far-trees.md`).
 
 (The system is **168 KB** now, not 121 -- 681 sectors of 253 on the disk,
 which is the figure the arithmetic below uses.  GEM.COM carries BOTH
@@ -90,6 +99,14 @@ tester it was built as, and its sectors are not worth a feature.  A
 MyDOS tester disk could be double-sided and the question would not
 arise, but MyDOS is the DOS section 2 caught mangling the staged image,
 so that swap is work of its own.
+
+**A caveat on every sector figure from here to the end of this
+section.**  They were measured before the desktop became a
+`--data-model=large` program in phase 47, which took `DESKTOP.G4A` from
+23,737 bytes to 40,541.  The argument each paragraph makes is unchanged
+-- and so is the floor, because what the floor guards is `DESKTOP.INF`
+and not a program -- but the free-sector counts below want re-measuring
+against the disk as it is built today.
 
 **Phase 45 was the third, and the argument was already made.**
 `wind_get(WF_OWNER)` was handing back the top and bottom of the window
@@ -172,7 +189,12 @@ fits on a disk beside GEM.
 one *less* than DOS II+/D's.  But its command processor is a separate
 `DUP.SYS` of 42 more, and an enhanced-density disk holds 1,009:
 `GEM.COM` (738), `DESKTOP.G4A` (190), `DESKTOP.RSC` (41) and `DOS.SYS`
-(37) leave three, so `DUP.SYS` is 39 sectors short of fitting.  Built
+(37) leave three, so `DUP.SYS` is 39 sectors short of fitting.  (**Those
+four counts predate the large-data desktop.**  `DESKTOP.G4A` is 40,541
+bytes now, which is 325 enhanced-density sectors of 125 rather than 190,
+and the system as a whole no longer fits 1,009 of them at all -- so the
+conclusion below holds the more strongly, and the arithmetic is left as
+it was measured rather than restated for a disk nothing builds.)  Built
 without `DUP.SYS` the disk does boot GEM -- and then dies the moment GEM
 hands the machine back, because DOS 2.5 goes looking for `DUP.SYS` and
 it is not there (an illegal instruction inside DOS at `$144C`, measured;
@@ -450,7 +472,7 @@ section 4a below and `docs/printing.md`; the file now also names
 `PRINTER` and `PRINTTO`, which the parser had accepted all along and the
 shipped file had never mentioned.
 
-`CLOCK.ACC` is the first one shipped.  It is the same `src/apps/clock.c`
+`CLOCK.ACC` was the first one shipped.  It is the same `src/apps/clock.c`
 as `\APPS\CLOCK.G4A`, with a different `main`: the program opens its
 panel once and exits, the accessory registers "Clock" in the Desk menu
 and waits to be asked.  It is on the card and on the applications
@@ -460,6 +482,23 @@ rest of GEMDOS took that disk under its floor of free sectors in phase 42
 and every floppy became the system and nothing else (section 1).  The
 applications floppy's `INSTALL.BAT` puts it in the installed `\GEM\`,
 where the AES finds it.
+
+**Three accessories ship now, and the Desk menu has six slots for
+them.**  `NUM_PROCS` is 7 in `src/aes/proc.h` -- six accessories and the
+application that is running, which is TOS's own number -- and the
+process store those seven records live in is 364 bytes of the pool.
+Beside the clock are `CONTROL.ACC`, the control panel
+(`src/apps/cpanel.c` and `src/apps/cpanelacc.c`, with `CPANEL.RSC`
+beside it), and `CALC.ACC`, the calculator (`src/apps/calcacc.c`, with
+`CALC.RSC`) -- which is the same `src/apps/calc.c` that `\APPS\CALC.G4A`
+is built from, split into `calc_start`, `calc_ws` and `calc_panel` so
+that one source ships twice, as the clock already did.  Both of the new
+ones are `--data-model=large`, so `rs_load` gives them their resources
+in far memory and **what those resources cost bank $00 is nothing**
+(`docs/phase47.md`).  All three are on the card and on the applications
+floppy, whose `INSTALL.BAT` carries them to the installed `\GEM\` where
+the AES looks -- `tools/mkcf.py`'s `APPS` table is the one list both
+media are filled from.
 
 `build/gem-cf.img` is that layout, less the two files that do not exist
 yet (section 5's `LANG.RSC` and a font).  The desktop opens a folder in

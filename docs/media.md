@@ -83,7 +83,8 @@ drive.
           PREFS.RSC  LANG.RSC  GEM4XE.CFG  816.COM
       AUTOEXEC.BAT, if the drive has none    ---->  AUTOEXEC.BAT
     the applications floppy, gem-apps.atr
-      GEM>CLOCK.ACC  CLOCK.RSC               ---->  GEM>...
+      GEM>CLOCK.ACC  CLOCK.RSC  CONTROL.ACC  ---->  GEM>...
+          CPANEL.RSC  CALC.ACC  CALC.RSC
       APPS>HELLO.G4A  CALC.G4A  CALC.RSC     ---->  APPS>...
           CLOCK.G4A  CLOCK.RSC
 
@@ -100,11 +101,14 @@ there alone and says what it wants; installing a newer gem4xe is the
 same again, over the old.  `make test-install` does exactly that under
 SpartaDOS X 4.50 -- a blank drive, both floppies, the system a second
 time over the first -- and then cold-starts the drive into the desktop
-with the clock accessory loaded beside it.
+with all three desk accessories loaded beside it.  The gate counts the
+processes, so that number is the media's to change: four is the desktop
+and the three the applications floppy installed.
 
 **Why two floppies and not one.**  Until phase 42 each SpartaDOS floppy
-carried the applications and the accessory as well.  The rest of GEMDOS
-took the smallest disk, the DOS 2 floppy, under its floor of free
+carried the applications and the accessories as well -- one accessory
+then, and three of them since phase 47.  The rest of GEMDOS took the
+smallest disk, the DOS 2 floppy, under its floor of free
 sectors (`docs/phase42.md`), and the answer was not to squeeze it: a
 floppy is where gem4xe starts, not where it lives, so every floppy became
 the system and nothing else, and the rest went onto a floppy of its own
@@ -122,9 +126,10 @@ to build and gate for nobody.  **`gem-sdx.atr`** and
 **`gem-apps.atr`** (`tools/mkfloppy.py`) are the two that can travel:
 double-sided double-density SDFS disks, 1440 sectors of 256 bytes, with
 **no DOS**, their boot sectors the blank disk's stub.  The first is the
-system -- the card's `\GEM\` without the accessory, the card's
+system -- the card's `\GEM\` without the accessories, the card's
 `AUTOEXEC.BAT` and `INSTALL.BAT` -- and the second the applications and
-the accessory, with an `INSTALL.BAT` of its own and nothing that boots.
+the three accessories, with an `INSTALL.BAT` of its own and nothing that
+boots.
 
 The system floppy boots under SpartaDOS X, which is the one DOS that
 lives in the machine rather than on the disk: a cartridge, or an
