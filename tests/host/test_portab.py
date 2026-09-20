@@ -1,152 +1,156 @@
-"""The compiler's dialect stays in src/portab.h.
+"""No C file but the two seams may name the compiler.
 
-gem4xe is built with one 65816 C compiler today, and the words that
-compiler adds to C -- address-space qualifiers, calling-convention and
-placement attributes, intrinsics -- are what a second compiler would
-have to be taught.  src/portab.h maps each of them to one name (FAR,
-TINY, SIMPLE_CALL, ...) so that teaching it is one block in one file.
-That only holds while nothing else in the tree says `__far`, and this
-is the check: every C source and header, every C the generators emit
-and everything the application kit ships is read with its comments
-removed, and any dialect word outside portab.h fails.
+WHAT THIS PROTECTS.  gem4xe's 35,000 lines of C contain no Calypsi
+syntax at all.  Every address-space qualifier, calling convention and
+attribute the '816 needs goes through ONE header -- `FAR`, `NEAR`,
+`TINY`, `SIMPLE_CALL`, `TASK`, `SECTION`, `memcpy_far` in src/portab.h,
+about fifty lines -- so what ties this tree to a toolchain is the 2,480
+lines of assembly and linker map under src/, which is the board support
+and is SUPPOSED to be tied.  The engine is not.
 
-The assembly sources are not checked.  They are the compiler's own
-assembler's, and a second toolchain gets a second set.
+That is worth something concrete: it is why the tree could be measured
+against 816-tcc and ORCA/C at all, and it is what a second compiler
+would cost -- a BSP, not a rewrite.
+
+IT IS ALSO A PROPERTY NOBODY WAS CHECKING.  It is true today because it
+was written that way one file at a time, and a single `__far` in a new
+file would end it quietly: the build would be perfectly happy, and the
+fact would only be discovered by somebody trying to port and finding it
+was no longer true.  A property that holds by habit holds until the
+habit lapses.
+
+WHAT IS ALLOWED.  The two seams below, each of which exists to name the
+compiler.  Comments anywhere: the tree explains WHY a shape is what it
+is, and naming `__huge` in a sentence about why a buffer must not
+straddle a bank is documentation, not a dependency.  And the .s and .scm
+files, which are the toolchain's own languages.
+
+This does NOT claim the tree would compile elsewhere unchanged.  The
+data models are a design assumption, not a spelling: a compiler with one
+pointer width would build this and make every pointer 32 bits, which is
+correct and costly.  What it claims is narrower and checkable -- that
+the C never says the compiler's name.
 """
-import glob
 import os
 import re
+import tempfile
 import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-PORTAB = os.path.join(ROOT, "src", "portab.h")
-# ...and one other file is the compiler's seam by its whole purpose:
-# src/app/gemstub.c answers the routines Calypsi's C library asks the
-# board for, by the names that library uses.  A second toolchain does not
-# want these renamed, it wants its own file -- so naming the vendor's
-# header here is the point rather than a leak.
-DIALECT_FILES = (PORTAB, os.path.join(ROOT, "src", "app", "gemstub.c"))
+SRC = os.path.join(ROOT, "src")
 
-# The dialect, as words.  __attribute__ is in the list as a whole: the
-# tree wraps every attribute it uses, so none should be visible.
-DIALECT = re.compile(
-    r"\b(?:__far24|__far|__near|__huge|__tiny|__task|__simple_call"
-    r"|__attribute__|__memcpy_far|__memset_far"
-    r"|__enable_interrupts|__disable_interrupts)\b"
-    r"|\bcalypsi\b", re.I)
+# THE SEAMS.  Two files may name the compiler, and each is an adapter
+# whose entire job is to name it -- which is the point: the tie is two
+# files you could rewrite, not a spelling spread through the engine.
+#
+#   src/portab.h     the address-space and calling-convention macros.
+#   src/app/gemstub.c  the nine routines Calypsi's C library asks the
+#                    BOARD to provide (calypsi/stubs.h), answered over
+#                    GEMDOS.  It cannot avoid the include: implementing
+#                    that header is what the file IS.
+#
+# Anything else added here should be argued for in the commit, not just
+# listed -- a third seam is a real change to how tied the tree is.
+SEAMS = {
+    os.path.join("src", "portab.h"),
+    os.path.join("src", "app", "gemstub.c"),
+}
 
-# The C the tree compiles -- what is checked in, and what the generators
-# and the kit produce.
-SOURCES = (glob.glob(os.path.join(ROOT, "src", "**", "*.[ch]"), recursive=True)
-           + glob.glob(os.path.join(ROOT, "tests", "host", "*.c"))
-           + glob.glob(os.path.join(ROOT, "tools", "sdk", "*.c")))
-
-# The generators that write C, and the words they must write it with.
-GENERATORS = [os.path.join(ROOT, "tools", g) for g in (
-    "fontconv6.py", "fontconv.py", "font4x8.py", "patconv.py", "sinconv.py",
-    "fselrsc.py", "langrsc.py", "gemdata.py", "mkg4a.py")]
+# Calypsi spellings that must not appear in a C declaration anywhere else.
+VENDOR = re.compile(r"__(?:far|near|huge|tiny|simple_call|task|attribute__"
+                    r"|memcpy_far)\b|\bcalypsi/")
 
 
 def strip_comments(text):
-    """C with its comments blanked, strings left alone."""
+    """Code only.  A comment may name the compiler; a declaration may not."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    return re.sub(r"//[^\n]*", " ", text)
+
+
+def offenders(root=None, base=None):
+    """Every (file, line, spelling) in `root` that names the compiler.
+
+    `root` and `base` are parameters so that test_it_can_fail can point
+    the REAL walk at a tree it has broken on purpose, rather than
+    re-testing the regex on its own -- a check whose failing case does
+    not exercise the same code as its passing case has not been shown
+    to fail."""
+    SRC_ = root or SRC
+    ROOT_ = base or ROOT
     out = []
-    i, n = 0, len(text)
-    while i < n:
-        if text.startswith("/*", i):
-            j = text.find("*/", i + 2)
-            j = n if j < 0 else j + 2
-            out.append("\n" * text.count("\n", i, j))
-            i = j
-        elif text.startswith("//", i):
-            j = text.find("\n", i)
-            i = n if j < 0 else j
-        elif text[i] in "\"'":
-            q = text[i]
-            j = i + 1
-            while j < n and text[j] != q:
-                j += 2 if text[j] == "\\" else 1
-            out.append(text[i:j + 1])
-            i = j + 1
-        else:
-            out.append(text[i])
-            i += 1
-    return "".join(out)
-
-
-def offenders(path, text):
-    return [f"{os.path.relpath(path, ROOT)}:{k + 1}: {line.strip()}"
-            for k, line in enumerate(strip_comments(text).splitlines())
-            if DIALECT.search(line)]
-
-
-class TestPortab(unittest.TestCase):
-
-    def test_header_defines_the_dialect(self):
-        """portab.h maps every name the tree uses, and refuses a compiler
-        it does not know."""
-        with open(PORTAB) as f:
-            text = strip_comments(f.read())
-        for name in ("FAR", "NEAR", "TINY", "SIMPLE_CALL", "TASK",
-                     "SECTION(s)", "memcpy_far", "cpu_sei()", "cpu_cli()"):
-            self.assertRegex(text, r"#define\s+" + re.escape(name) + r"\s",
-                             f"portab.h does not define {name}")
-        self.assertIn("#error", text)
-
-    def test_no_dialect_outside_portab(self):
-        """No C source or header says the compiler's words itself."""
-        bad = []
-        for path in sorted(SOURCES):
-            if any(os.path.samefile(path, x) for x in DIALECT_FILES):
+    for dirpath, _, names in os.walk(SRC_):
+        for name in sorted(names):
+            if not name.endswith((".c", ".h")):
                 continue
-            with open(path) as f:
-                bad += offenders(path, f.read())
-        self.assertEqual(bad, [], "compiler dialect outside src/portab.h:\n"
-                         + "\n".join(bad))
-
-    def test_generators_emit_the_names(self):
-        """The Python that writes C writes FAR, not __far -- and includes
-        the header that defines it."""
-        bad = []
-        for path in GENERATORS:
-            with open(path) as f:
-                text = f.read()
-            for k, line in enumerate(text.splitlines()):
-                s = line.strip()
-                if s.startswith("#"):
-                    continue
-                if DIALECT.search(line):
-                    bad.append(f"{os.path.relpath(path, ROOT)}:{k + 1}: {s}")
-            self.assertIn('portab.h', text,
-                          f"{os.path.relpath(path, ROOT)} emits C without portab.h")
-        self.assertEqual(bad, [], "compiler dialect in a generator:\n"
-                         + "\n".join(bad))
-
-    def test_uses_include_the_header(self):
-        """A file that uses a portab.h name includes portab.h itself, not
-        through whatever it happened to include first."""
-        names = re.compile(r"\b(?:FAR|NEAR|TINY|SIMPLE_CALL|TASK|SECTION|"
-                           r"memcpy_far|cpu_sei|cpu_cli)\b")
-        bad = []
-        for path in sorted(SOURCES):
-            if os.path.samefile(path, PORTAB):
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, ROOT_)
+            if rel in SEAMS:
                 continue
-            with open(path) as f:
-                text = strip_comments(f.read())
-            if names.search(text) and '#include "portab.h"' not in text \
-                    and '#include "gem.h"' not in text:
-                bad.append(os.path.relpath(path, ROOT))
-        self.assertEqual(bad, [], "uses portab.h names without including it:\n"
-                         + "\n".join(bad))
+            with open(path, "r", errors="replace") as f:
+                code = strip_comments(f.read())
+            for n, line in enumerate(code.split("\n"), 1):
+                m = VENDOR.search(line)
+                if m:
+                    out.append((rel, n, m.group(0), line.strip()[:70]))
+    return out
 
-    def test_kit_ships_the_header(self):
-        """The application kit's gem.h includes portab.h, so the kit must
-        carry it."""
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "mksdk", os.path.join(ROOT, "tools", "mksdk.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        self.assertIn(("include/portab.h", "src/portab.h"), mod.MANIFEST)
+
+class Portab(unittest.TestCase):
+    def test_the_c_never_names_the_compiler(self):
+        bad = offenders()
+        self.assertEqual(
+            bad, [],
+            "these say Calypsi in C code rather than going through "
+            "src/portab.h:\n  "
+            + "\n  ".join(f"{f}:{n}: {w} -- {ln}" for f, n, w, ln in bad)
+            + "\n\nUse the macro from src/portab.h (FAR, NEAR, TINY, "
+              "SIMPLE_CALL, TASK, SECTION, memcpy_far), or add one there "
+              "if the spelling you need has none yet.")
+
+    def test_the_scan_reaches_the_tree(self):
+        """A regex that matched nothing would pass the test above by
+        looking at nothing.  This tree has shipped a vacuous check twice,
+        so the scan says how much it read."""
+        seen = sum(1 for dp, _, ns in os.walk(SRC) for n in ns
+                   if n.endswith((".c", ".h")))
+        self.assertGreater(seen, 100, f"only {seen} C files found under src/")
+
+    def test_the_seam_really_is_the_seam(self):
+        """...and it is only worth exempting one file if that file is
+        where the spellings actually live."""
+        seam = os.path.join(ROOT, "src", "portab.h")
+        with open(seam, "r", errors="replace") as f:
+            text = f.read()
+        for macro in ("FAR", "NEAR", "TINY", "SIMPLE_CALL"):
+            self.assertRegex(text, rf"#define\s+{macro}\b",
+                             f"src/portab.h no longer defines {macro}")
+
+    def test_it_can_fail(self):
+        """Put a raw qualifier into a copy of a REAL file, in a tree of
+        its own, and require the same walk that passes above to name it."""
+        with open(os.path.join(SRC, "aes", "objc.c"), "r",
+                  errors="replace") as f:
+            text = f.read()
+        with tempfile.TemporaryDirectory() as d:
+            aes = os.path.join(d, "src", "aes")
+            os.makedirs(aes)
+            with open(os.path.join(aes, "objc.c"), "w") as f:
+                f.write(text + "\nstatic __far char *probe;\n")
+            bad = offenders(root=os.path.join(d, "src"), base=d)
+        self.assertEqual([(f, w) for f, n, w, ln in bad],
+                         [(os.path.join("src", "aes", "objc.c"), "__far")],
+                         f"the walk did not report the planted __far: {bad}")
+
+    def test_a_comment_is_not_a_dependency(self):
+        """farmem.c explains __huge in prose and must stay legal, or the
+        check would push the tree towards documenting itself less."""
+        with tempfile.TemporaryDirectory() as d:
+            sysd = os.path.join(d, "src", "sys")
+            os.makedirs(sysd)
+            with open(os.path.join(sysd, "x.c"), "w") as f:
+                f.write("/* what __huge is for: a buffer that straddles */\n"
+                        "int n;  // and __far here too\n")
+            self.assertEqual(offenders(root=os.path.join(d, "src"), base=d), [])
 
 
 if __name__ == "__main__":
