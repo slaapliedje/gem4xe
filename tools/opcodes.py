@@ -101,7 +101,14 @@ def vdi_table(name):
     # makes any such loss loud instead.
     for m in re.finditer(r"(\w+)\s*,?\s*/\*\s*(\d+)\s*([^*]*?)\s*\*/", body):
         handler, op, note = m.group(1), int(m.group(2)), m.group(3).strip()
-        out[op] = (handler, re.sub(r"\s*\(nop\)$", "", note))
+        # A `(nop)` marker, or a note saying the opcode does not exist, is
+        # the TABLE stating that the slot is settled rather than unwritten.
+        # Keeping that apart from a bare v_nop is the difference between
+        # "five decisions" and "five things to go and do" -- this tool
+        # reported the former as the latter once, and it sent somebody
+        # looking to close them before a release.
+        settled = note.endswith("(nop)") or "does not exist" in note
+        out[op] = (handler, re.sub(r"\s*\(nop\)$", "", note), settled)
     return out
 
 
@@ -146,18 +153,28 @@ def main(argv):
     aserved = aes_served()
     amiss = report("AES", aserved, an, show_all)
 
-    # The VDI: a slot is served unless its handler is v_nop.
-    vnames, vserved = {}, set()
+    # The VDI: a slot is served unless its handler is v_nop -- and a
+    # v_nop the table MARKS `(nop)` is a decision, not a gap.
+    vnames, vserved, vsettled = {}, set(), {}
     for tbl in ("jmptb1", "jmptb2"):
-        for op, (handler, note) in vdi_table(tbl).items():
+        for op, (handler, note, settled) in vdi_table(tbl).items():
             if handler == "v_nop":
                 vnames[op] = note or f"(slot {op})"
+                if settled:
+                    vsettled[op] = note or f"(slot {op})"
+                    vserved.add(op)        # dispatched, deliberately empty
             else:
                 vnames[op] = handler[4:] if handler.startswith("vdi_") else handler
                 vserved.add(op)
     contiguous(vnames, 1, 39, "jmptb1")
     contiguous(vnames, 100, 131, "jmptb2")
     vmiss = report("VDI", vserved, vnames, show_all)
+
+    if vsettled:
+        print(f"\n{len(vsettled)} VDI opcode(s) dispatch to v_nop ON PURPOSE "
+              f"(src/vdi/vdi.c says why each one):")
+        for op in sorted(vsettled):
+            print(f"    nop  {op:4d}  {vsettled[op]}")
 
     print(f"\n{len(amiss)} AES and {len(vmiss)} VDI opcodes are not served.")
     print("tools/surface.py answers the other half: which NAMES the kit "

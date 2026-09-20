@@ -13,6 +13,16 @@ in `crysbind`, and what answers `-1`.
 
     AES: 63 of 79 opcodes served      VDI: 66 of 71
 
+The AES number is a real gap and Phase 46 closed it.  **The VDI's five
+were never a gap at all**, and the tool has since been taught to say so:
+they dispatch to `v_nop` on purpose -- `v_clswk`, because nothing closes
+the physical workstation on this machine; `cellarray`, `vq_cellarray`
+and `valuator`, because DRI's own GEM/3.1 screen driver nops those too;
+and 34, which is not an opcode.  It reads 71 of 71 now, with the five
+listed as decisions.  Nothing was implemented to make that happen, which
+is exactly why reporting a settled decision as a miss was worth fixing:
+it sent somebody looking to close them before a release.
+
 The two audits disagreed in both directions, which is the point of
 having the second one.  `WF_SCREEN` (17) and `WF_OWNER` (20) were
 **served and not declared** -- so a port had to `#define` them itself,

@@ -2582,9 +2582,34 @@ typedef void (*VDI_OP)(void);
 /* Two flat tables, split exactly as DRI split them: 1..39 and 100..137.
  * FAR: 284 bytes of function pointers, and bank $00 has none to spare
  * (tools/memreport.py); a far fetch of the pointer costs a VDI call a
- * few cycles, which nothing here can measure. */
+ * few cycles, which nothing here can measure.
+ *
+ * A SLOT MARKED `(nop)` IS DELIBERATE, not unwritten, and tools/opcodes.py
+ * reads that marker rather than guessing -- an audit that reported five
+ * settled decisions as a gap once sent somebody looking to close them.
+ * The five, and why each one is v_nop here:
+ *
+ *   2   v_clswk      nothing closes the PHYSICAL workstation on this
+ *                    machine.  The AES opens it at boot and it lives
+ *                    until the machine goes back to DOS, which tears
+ *                    down more than this call could; v_clsvwk already
+ *                    refuses handle 0 and says so.  An application
+ *                    opens and closes a VIRTUAL workstation (100/101).
+ *   10  cellarray    DRI's own GEM/3.1 screen driver nops it.
+ *   27  vq_cellarray   likewise -- and with 10 unwritten there is
+ *                    nothing for it to inquire about.
+ *   29  valuator     likewise.  There is no valuator device here;
+ *                    vsin_mode (33) still accepts the mode and
+ *                    vq_choice/v_locator serve the devices there ARE.
+ *   34               not an opcode.  The slot exists because the table
+ *                    is flat and 33 and 35 both are.
+ *
+ * So the VDI is complete at 71 of 71 DISPATCHED.  The one call this port
+ * genuinely does not serve is vqt_real_extent (240), which is in the
+ * FSM/GDOS range outside both tables -- and gem4xe has no GDOS by
+ * design, which vq_gdos() answers 0 to so a program can ask. */
 static const VDI_OP FAR jmptb1[] = {
-    vdi_v_opnwk,     /*  1 */  v_nop,           /*  2 v_clswk        */
+    vdi_v_opnwk,     /*  1 */  v_nop,           /*  2 v_clswk (nop) */
     vdi_v_clrwk,     /*  3 */  vdi_v_updwk,     /*  4 */
     vdi_v_escape,    /*  5 */                   vdi_v_pline,     /*  6 */
     vdi_v_pmarker,   /*  7 */                   vdi_v_gtext,     /*  8 */
