@@ -26,8 +26,9 @@ floppy drives and a third drive to install onto:
      It says the AUTOEXEC.BAT is kept, and reports no error.
   5. A cold start.  SpartaDOS X runs D1:'s AUTOEXEC.BAT, GEM switches the
      Rapidus and comes up, the desktop reaches its first wait with
-     nothing refused, and the clock accessory -- which came from the
-     applications disk -- has been loaded beside it.
+     nothing refused, and the three desk accessories -- CLOCK, CONTROL
+     and CALC, which came from the applications disk -- have been loaded
+     beside it.
 
 The disk the batch writes stays in the emulator (its --disk mounts are
 not written back), which is why steps 3 and 5 read the machine rather
@@ -191,8 +192,13 @@ def main(argv):
         check(n >= FIRST_WAIT, f"GEM from D1: stopped at the desktop's call {n}, "
                                f"short of its first wait at {FIRST_WAIT}")
         procs = b.peek16(syms["proc_n"])
-        check(procs == 2, f"{procs} process(es) after booting D1:, not the desktop "
-                          f"and the clock accessory")
+        # The desktop and EVERY accessory the applications disk installed:
+        # CLOCK.ACC, CONTROL.ACC and CALC.ACC (tools/mkcf.py's APPS table).
+        # The Desk menu has six slots since phase 47, so this number is the
+        # media's to change and not the engine's -- if it moves, the disk
+        # gained or lost an accessory.
+        check(procs == 4, f"{procs} process(es) after booting D1:, not the desktop "
+                          f"and the three accessories")
         check(b.peek16(syms["gem_bad"]) == 0, f"{b.peek16(syms['gem_bad'])} call(s) refused")
         check(b.peek(syms["irq_fault"]) == 0, f"irq_fault {b.peek(syms['irq_fault'])}")
         print(f"  a cold start from D1: reaches the desktop's first wait "

@@ -53,12 +53,27 @@ SYSTEM = [("build/gem.xex", "GEM>GEM.COM"),
           # the escape hatch the page promises "on the disk": switches a
           # Rapidus by hand if the loader somehow did not (tools/mk816.py)
           ("build/816.com", "GEM>816.COM")]
-# ...and what is not the system: the desk accessory, in the system's
+# ...and what is not the system: the desk accessories, in the system's
 # directory -- which is where the AES looks for *.ACC, and not in \APPS\
 # with the programs -- and the applications.  The card carries both
 # tables; the floppies carry one each (tools/mkfloppy.py, docs/media.md).
+#
+# THREE ACCESSORIES, and the Desk menu has six slots (src/aes/proc.h,
+# NUM_PROCS 7).  CONTROL.ACC and CALC.ACC are --data-model=large, so
+# rs_load puts their resources in far memory and they cost bank $00
+# nothing beyond their near regions (docs/phase47.md).
+#
+# The calculator ships TWICE, from one source: APPS>CALC.G4A is the
+# program and GEM>CALC.ACC the accessory (src/apps/calcapp.c and
+# calcacc.c around src/apps/calc.c).  They share one CALC.RSC, which is
+# on the disk twice because \GEM\ and \APPS\ are installed separately
+# and either may be the only one present.
 APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         ("build/clock.rsc", "GEM>CLOCK.RSC"),
+        ("build/cpanelacc.g4a", "GEM>CONTROL.ACC"),
+        ("build/cpanel.rsc", "GEM>CPANEL.RSC"),
+        ("build/calcacc.g4a", "GEM>CALC.ACC"),
+        ("build/calc.rsc", "GEM>CALC.RSC"),
         ("build/hello_app.g4a", "APPS>HELLO.G4A"),
         ("build/calc.g4a", "APPS>CALC.G4A"),
         ("build/calc.rsc", "APPS>CALC.RSC"),
