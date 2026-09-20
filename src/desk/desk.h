@@ -276,7 +276,10 @@ WORD act_count(WORD root, WORD *pfirst);
 /* ...and what a rubber band leaves: everything the box touches. */
 void act_allselect(WORD wh, WORD root, const GRECT *box);
 WORD do_open(WORD wh, WORD obj);
-WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name);
+WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
+               const char *args);   /* args: a .TTP's line, or "" */
+WORD fun_askline(char *line);           /* one line, in the PREFS dialog */
+void do_docu(WNODE *pw, const char FAR *name);   /* Show / Print / Cancel */
 void win_rebld(WNODE *pw);
 /* The listing entry an item object shows, or 0. */
 FNODE FAR *win_fnode(WNODE *pw, WORD obj);
@@ -287,6 +290,8 @@ void do_wfull(WORD wh);
 #define LEN_ZCMD    64                  /* the DOS's line buffer, LBUF */
 void cmd_init(void);                    /* greys the item on a DOS without */
 void cmd_run(const char *line);         /* run it, and show the output */
+WORD cmd_file(const char *path, const char *title);   /* show a document */
+WORD cmd_print(const char *path);       /* ...or send it to PRN: */
 WORD cmd_msg(const WORD *msg);          /* TRUE: the message was its window's */
 void cmd_exit(void);
 void app_start(void);

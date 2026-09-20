@@ -711,15 +711,24 @@ void fun_mkdir(WNODE *pw)
  * into the dialog that lives beside the chooser in PREFS.RSC (desktop.c
  * do_prefs says why that file), and run by deskcmd.c, which shows what
  * it printed.  Nothing is returned: the desktop's loop goes on. */
-void fun_command(void)
+/* ASK FOR ONE LINE, in the dialog that lives beside the chooser in
+ * PREFS.RSC.  Two callers want exactly this and they want it identically:
+ * File -> DOS command, and a .TTP, which by definition is a program that
+ * Takes Parameters and so must be asked for them before it runs.
+ *
+ * `line` is LEN_ZCMD.  TRUE when OK was pressed and something was typed;
+ * the trailing blanks the edit field pads with are cut here, so a caller
+ * never sees them.  The resource is loaded over the desktop's and freed
+ * again before returning, which is why the dialog costs the pool nothing
+ * at rest (src/aes/rsrc.c nests it). */
+WORD fun_askline(char *line)
 {
     OBJECT *tree;
-    char line[LEN_ZCMD];
     WORD ok, n;
 
     if (!rsrc_load("PREFS.RSC")) {
         fun_alert(1, STNOPREF);
-        return;
+        return FALSE;
     }
     rsrc_gaddr(R_TREE, ADCMDBOX, (void **)&tree);
     inf_sset(tree, CMLINE, "");
@@ -731,12 +740,19 @@ void fun_command(void)
         inf_sget(tree, CMLINE, line);
     rsrc_free();                                /* the nested one */
     if (!ok)
-        return;
+        return FALSE;
     for (n = 0; line[n]; n++)                   /* less the field's padding */
         ;
     while (n > 0 && line[n - 1] == ' ')
         line[--n] = 0;
-    if (n)
+    return (WORD)(n != 0);
+}
+
+void fun_command(void)
+{
+    char line[LEN_ZCMD];
+
+    if (fun_askline(line))
         cmd_run(line);
 }
 

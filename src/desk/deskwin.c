@@ -416,19 +416,54 @@ static void win_sinfo(WNODE *pw)
  * and .TTP would mean something real here -- GEMDOS has a VT-52 console
  * and src/m32_con.c is a TOS program in all but name -- and .TTP's
  * parameter prompt is the same missing dialog as a document's. */
-static WORD win_which(const FNODE FAR *pf)
+/* THE EXTENSIONS THAT MEAN "A PROGRAM", in the ST's vocabulary.
+ *
+ *   PRG  a GEM program: what gem4xe ships.
+ *   G4A  the same thing under the container's own name, which is what
+ *        0.5 and everything before it shipped -- kept so a disk somebody
+ *        already has keeps working.
+ *   APP  a GEM program under its other Atari name.
+ *   TOS  a program that does not use the AES.  It means something real
+ *        here rather than being accepted for the look of it: GEMDOS has
+ *        a VT-52 console on GEM's screen and src/m32_con.c is exactly
+ *        such a program (docs/phase42.md).
+ *   TTP  a TOS program that Takes Parameters -- the desktop asks for a
+ *        command line before running it, which is the whole difference,
+ *        and the one extension that changes what do_open does.
+ *
+ * The extension is the ROLE.  The FORMAT is checked by the loader, which
+ * reads the file's magic and refuses anything that is not gem4xe's
+ * (src/sys/app.c, APP_E_MAGIC) -- so a 68000 .PRG or .TOS off a real
+ * Atari is turned away with a message rather than run. */
+static const char FAR win_exts[][4] = {
+    "PRG", "G4A", "APP", "TOS", "TTP"
+};
+#define WIN_NEXTS  5
+#define WIN_TTP    4                    /* its index above: the one that asks */
+
+/* Which of win_exts[] the name ends in, or -1.  The name is the DOS's
+ * own upper case, so a plain compare is the right one. */
+static WORD win_extof(const FNODE FAR *pf)
 {
     const char FAR *s = pf->f_name;
+    WORD i;
 
-    if (pf->f_attr & FA_SUBDIR)
-        return IB_FOLDER;
     while (*s && *s != '.')
         s++;
-    if (s[0] == '.' && !s[4]
-        && ((s[1] == 'G' && s[2] == '4' && s[3] == 'A')
-         || (s[1] == 'P' && s[2] == 'R' && s[3] == 'G')))
-        return IB_APPL;
-    return IB_DOCU;
+    if (s[0] != '.' || s[4])
+        return -1;
+    for (i = 0; i < WIN_NEXTS; i++)
+        if (s[1] == win_exts[i][0] && s[2] == win_exts[i][1]
+            && s[3] == win_exts[i][2])
+            return i;
+    return -1;
+}
+
+static WORD win_which(const FNODE FAR *pf)
+{
+    if (pf->f_attr & FA_SUBDIR)
+        return IB_FOLDER;
+    return (WORD)(win_extof(pf) >= 0 ? IB_APPL : IB_DOCU);
 }
 
 /* What an item of the current view fills, and the space in front of it
@@ -1064,7 +1099,8 @@ static WORD do_fopen(WNODE *pw, WORD curr, const char FAR *name)
  * do_open's frame under every window it opens -- the desktop's deepest
  * stack, 164 bytes deeper (milestone 6).  External, it keeps its own
  * frame, paid only on the way out to a program. */
-WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name)
+WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
+              const char *args)
 {
     char app_path[LEN_ZPATH];
     char tail[SH_TAILLEN];
@@ -1095,12 +1131,74 @@ WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name)
     for (i = 0; i < SH_TAILLEN; i++)            /* pro_run: no arguments, */
         tail[i] = 0;                            /* the CR after the NUL */
     tail[2] = 0x0D;
+    /* ...UNLESS IT TAKES PARAMETERS.  A .TTP is a program that wants a
+     * command line, which is the only thing the extension means, so the
+     * desktop asks for one and passes it in the ST's shape: a length
+     * byte, the characters, then the CR.  Cancelling the prompt runs it
+     * with none rather than not running it, which is what the ST's
+     * desktop does -- an empty line is a legitimate answer. */
+    if (args && args[0]) {
+        for (k = 0; args[k] && k < SH_TAILLEN - 3; k++)
+            tail[k + 1] = args[k];
+        tail[0] = (char)k;
+        tail[k + 1] = 0x0D;
+        tail[k + 2] = 0;
+    }
     desk_busy(TRUE);                            /* pro_exec */
     ret = shel_write(SHW_EXEC, 1, 1, app_path, tail);
     if (!ret)
         desk_busy(FALSE);
     do_wopen(FALSE, pw->w_id, curr, &G.g_desk);
     return ret;
+}
+
+/* A DOCUMENT in a window: the GEM Desktop's Show / Print / Cancel.
+ *
+ * Until now this was the one thing the desktop knew about and did
+ * nothing with -- win_which has answered IB_DOCU since it was written,
+ * and do_open then returned FALSE, so a double-click on a text file was
+ * indistinguishable from a double-click on nothing.  Knowing and staying
+ * silent is worse than not knowing.
+ *
+ * Neither half inspects the file.  Show renders any byte safely
+ * (deskcmd.c cmd_line) and Print sends it as it lies, which is what
+ * makes the dialog honest for a document of any kind rather than only a
+ * text one -- and is what the ST's does.
+ *
+ * Its own frame, like do_aopen's above and for the same reason: the path
+ * would otherwise sit in do_open's frame under every window the desktop
+ * opens. */
+void do_docu(WNODE *pw, const char FAR *name)
+{
+    char path[LEN_ZPATH];
+    const char *spec = pw->w_path.p_spec;
+    WORD n = 0, k = 0, i;
+
+    while (spec[n])                             /* "A:\SUB\*.*" less the "*.*" */
+        n++;
+    n -= 3;
+    while (name[k])
+        k++;
+    if (n + k >= LEN_ZPATH)
+        return;
+    for (i = 0; i < n; i++)
+        path[i] = spec[i];
+    for (k = 0; name[k]; k++)
+        path[i++] = name[k];
+    path[i] = 0;
+
+    switch (fun_alert(3, STDOCUMT)) {           /* Cancel is the default */
+    case 1:
+        if (!cmd_file(path, (const char *)name))
+            fun_alert(1, STCMDMEM);             /* no far memory, or no read */
+        break;
+    case 2:
+        if (!cmd_print(path))
+            fun_alert(1, STPRNERR);
+        break;
+    default:
+        break;                                  /* Cancel */
+    }
 }
 
 /* Open item obj of window wh (DESKWH: the desk): a drive icon in a new
@@ -1127,9 +1225,15 @@ WORD do_open(WORD wh, WORD obj)
         do_fopen(pw, obj, pf->f_name);
         return FALSE;
     }
-    if (win_which(pf) == IB_APPL)
-        return do_aopen(pw, obj, pf->f_name);
-    return FALSE;                               /* a document */
+    if (win_which(pf) == IB_APPL) {
+        char args[LEN_ZCMD];
+        args[0] = 0;
+        if (win_extof(pf) == WIN_TTP)           /* Takes Parameters */
+            (void)fun_askline(args);
+        return do_aopen(pw, obj, pf->f_name, args);
+    }
+    do_docu(pw, pf->f_name);
+    return FALSE;                               /* a document: never a run */
 }
 
 /* Close the window, or -- close_window FALSE -- the folder it shows,

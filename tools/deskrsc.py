@@ -224,6 +224,25 @@ CMD_ALERT = [
     (STCMDMEM, "STCMDMEM", "[1][There is no memory|for the output.][ OK ]"),
 ]
 
+# WHAT A DOCUMENT DOES WHEN IT IS OPENED.  The desktop has always known a
+# document from a program -- win_which answers IB_DOCU -- and then did
+# NOTHING with it, which is the worst of both: it knew, and said nothing.
+# This is the GEM Desktop's own answer, and the buttons are its three.
+#
+# Show reads the file into the window the DOS command output already uses
+# (src/desk/deskcmd.c); Print copies it to GEMDOS handle 3, which is PRN:.
+# Neither needs to know what the file IS, which is the point -- the ST's
+# dialog is what you get for any document, and being told "show or print"
+# about a binary is better than a double-click that does nothing.
+STDOCUMT = 26
+STPRNERR = 27
+DOCU_ALERT = [
+    (STDOCUMT, "STDOCUMT",
+     "[1][This file cannot be opened.|Show it, print it, or cancel?]"
+     "[Show|Print|Cancel]"),
+    (STPRNERR, "STPRNERR", "[1][The printer did not|take the file.][ OK ]"),
+]
+
 # PREFS.RSC's second tree: the DOS command dialog, beside the chooser
 # for the same reason the chooser is there -- loaded only while it is
 # up (src/desk/desktop.c do_prefs; deskfun.c fun_command).  Fifty places
@@ -243,6 +262,7 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
+    ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
     ("ADCMDBOX", ADCMDBOX), ("CMTITLE", CMTITLE), ("CMLINE", CMLINE),
     ("CMOK", CMOK), ("CMCNCL", CMCNCL),
     ("ADPREF", ADPREF), ("PRTITLE", PRTITLE), ("PRBGLBL", PRBGLBL),
@@ -634,6 +654,8 @@ def build():
     for i, name, text in PREF_ALERT:
         assert r.free_string(text) == i, (name, i)
     for i, name, text in CMD_ALERT:
+        assert r.free_string(text) == i, (name, i)
+    for i, name, text in DOCU_ALERT:
         assert r.free_string(text) == i, (name, i)
     for ib, ig in IB_TABLE:
         (mask, data, char, xchar, ychar, xicon, yicon, wicon, hicon,

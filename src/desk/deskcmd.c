@@ -342,6 +342,86 @@ void cmd_run(const char *line)
         fun_alert(1, STNOWIND);
 }
 
+/* SHOW A FILE in the same window, which is the whole reason it is worth
+ * having one: the desktop has known a document from a program since
+ * win_which was written and then did nothing with it (deskwin.c do_open).
+ *
+ * The file goes where a command's output goes and is read by the same
+ * code, so it is shown, scrolled and closed identically -- cmd_line
+ * already renders unprintable bytes safely, which is what makes it
+ * honest to offer Show for ANY document rather than only a text one.  A
+ * file longer than the buffer is shown to CMD_BUF and no further; this
+ * is a viewer, not an editor, and saying so in the title beats refusing.
+ *
+ * TRUE if anything was shown.  The caller reports the failure, because it
+ * knows which of the two alerts is the right one. */
+WORD cmd_file(const char *path, const char *title)
+{
+    LONG h, n;
+
+    if (!cmd_buf) {
+        LONG a = Malloc(CMD_BUF);
+        if (a <= 0)
+            return FALSE;
+        cmd_buf = (char FAR *)a;
+    }
+    desk_busy(TRUE);
+    h = Fopen(path, 0);                         /* read only */
+    if (h < 0) {
+        desk_busy(FALSE);
+        return FALSE;
+    }
+    n = Fread((WORD)h, CMD_BUF - CMD_TEXT, cmd_buf + CMD_TEXT);
+    Fclose((WORD)h);
+    desk_busy(FALSE);
+    if (n < 0)
+        n = 0;
+    cmd_len = (UWORD)n;
+    cmd_count();
+    return cmd_show(title);
+}
+
+/* PRINT A FILE: GEMDOS handle 3 is PRN:, which every program gets open
+ * (src/app/gemstub.c).  Straight through, byte for byte -- the file is
+ * whatever it is and this is not the place to decide it should have been
+ * something else; a printer that wants a form feed gets one from the
+ * file, as it would from any other DOS.
+ *
+ * It borrows cmd_buf rather than taking a second one, so printing after
+ * showing costs no memory and the shown text is simply replaced.  FALSE
+ * on any failure to open or to write it all. */
+WORD cmd_print(const char *path)
+{
+    LONG h, n, w;
+    WORD ok = TRUE;
+
+    if (!cmd_buf) {
+        LONG a = Malloc(CMD_BUF);
+        if (a <= 0)
+            return FALSE;
+        cmd_buf = (char FAR *)a;
+    }
+    h = Fopen(path, 0);
+    if (h < 0)
+        return FALSE;
+    desk_busy(TRUE);
+    for (;;) {
+        n = Fread((WORD)h, CMD_BUF - CMD_TEXT, cmd_buf + CMD_TEXT);
+        if (n <= 0)
+            break;                              /* end, or a read error */
+        w = Fwrite(3, n, cmd_buf + CMD_TEXT);   /* 3 is PRN: */
+        if (w != n) {
+            ok = FALSE;
+            break;
+        }
+    }
+    desk_busy(FALSE);
+    Fclose((WORD)h);
+    cmd_len = 0;                                /* the window's text is gone */
+    cmd_lines = 0;
+    return (WORD)(ok && n >= 0);
+}
+
 /* The window's messages; FALSE for anybody else's. */
 WORD cmd_msg(const WORD *msg)
 {

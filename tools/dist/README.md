@@ -153,12 +153,17 @@ Besides those:
   SpartaDOS 3.2 and SpartaDOS X answer "file not found" for a
   directory, so Show info shows a folder's name greyed rather than
   offering something the DOS will refuse.
-- **nothing prints yet, though the printer driver is in there.**  The VDI
-  has a printer device — 640 x 800 dots, which `v_updwk` writes out as
-  PCL 5 or PostScript to wherever `PRINTTO=` names — and `PRINTER=` in
-  `GEM4XE.CFG` turns it on.  What is missing is a *Print* item: no
-  program opens the workstation yet, so there is nothing to click.  An
-  application you write yourself can use it today.
+- **a document prints, but the printer DRIVER has nothing clicking it.**
+  Double-click a file that is not a program and the desktop offers
+  *Show*, *Print* or *Cancel*, as the ST's does; Print sends the file to
+  `PRN:` byte for byte, which is what you want for text and what any DOS
+  would do.  That is the plain-character path and it needs no driver.
+
+  Separately, the VDI has a *graphics* printer device — 640 x 800 dots,
+  which `v_updwk` writes out as PCL 5 or PostScript to wherever
+  `PRINTTO=` names, turned on by `PRINTER=` in `GEM4XE.CFG`.  Nothing in
+  the desktop opens that workstation yet, so a printed page of GEM
+  graphics is still something an application you write yourself does.
 - **a clipboard with nothing using it yet.**  `scrp_read` and
   `scrp_write` are served, so two programs can agree on a scrap
   directory and pass files through it, which is what the GEM clipboard
