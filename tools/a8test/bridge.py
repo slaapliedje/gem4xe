@@ -137,6 +137,16 @@ class Bridge:
         d = self.memdump(addr, 2)
         return d[0] | (d[1] << 8)
 
+    def peek24(self, addr):
+        """A Calypsi __far pointer as it lies in memory: the 16-bit offset
+        then the BANK IN BYTE 2.  A near pointer read this way answers
+        itself, because the byte above it is the bank 0 it means -- so this
+        is the safe read for anything that MIGHT be far, which since the
+        desktop moved to the large data model is most of what a gate
+        follows (src/aes/aes.h's OBJECT FAR *)."""
+        d = self.memdump(addr, 3)
+        return d[0] | (d[1] << 8) | (d[2] << 16)
+
     def poke(self, addr, value):
         return self.ok(f"POKE ${addr:04X} ${value & 0xFF:02X}")
 

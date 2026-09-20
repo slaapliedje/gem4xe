@@ -59,9 +59,11 @@ from deskrsc import (THEBAR, THEACTIVE, THEDROPS,           # noqa: E402
                      VIEWBOX, ICONITEM, TEXTITEM,
                      DEOK, FICNCL)
 from calcrsc import (C1, C2, C3, C4, C5, C6, CMUL, CEQ, CQUIT)   # noqa: E402
-from m7_form import poke16, apply_step, F, M, B, CLICK, DCLICK   # noqa: E402
+from m7_form import (poke16, apply_step, F, M, B, K, CLICK,   # noqa: E402
+                     DCLICK, RETURN)
 from m14_sparta import screen               # noqa: E402
-from m17_desktop import header, DESKTOP, DESK_SYM   # noqa: E402
+from m17_desktop import (header, DESKTOP, DESK_SYM,   # noqa: E402
+                         desk_g, desk_places)
 from demo_aes import path                   # noqa: E402
 from product_boot import REFUSAL, STEP, BOOT_WAIT, boot_screen   # noqa: E402
 
@@ -76,8 +78,10 @@ NIL = -1
 PTR_NONE = 0                    # src/vdi/pointer.h
 BORDER = 16                     # the overlay's column in a 672-wide shot
 FOLDER, PROGRAM = "APPS", "CALC.G4A"
-ACC_ITEM = ABOUITEM + 2         # the first accessory's line in the Desk box
-                                # (deskrsc: 10 is the separator)
+# The accessories' lines in the Desk box start at ABOUITEM + 2 (deskrsc:
+# the one between is the separator), but nothing here counts from it any
+# more -- Tour.desk_acc finds an accessory by the NAME it registered, so
+# adding one does not quietly re-aim the pictures at a different one.
 SUM = [C1, C2, C3, C4, CMUL, C5, C6, CEQ]      # 1234 x 56
 
 
@@ -98,17 +102,32 @@ def children(b, tree, parent):
     return out
 
 
+# An object tree is a handful deep -- the desk, a window, its items.  The
+# bound is not tidiness: read a tree from the WRONG ADDRESS and the
+# nonsense there has cycles, and this used to follow them until Python ran
+# out of stack and raised RecursionError from inside the bridge's JSON
+# decode, which names neither the tree nor the address.  That is what a
+# far G looked like to a gate that still expected a near one.
+MAX_TREE_DEPTH = 12
+
+
 def placed(b, tree, root=0):
     """{obj: (x, y, w, h)} on the screen, for every object under root."""
     out = {}
 
-    def walk(i, ox, oy):
+    def walk(i, ox, oy, depth):
+        if depth > MAX_TREE_DEPTH:
+            raise RecursionError(
+                f"object tree at ${tree:06X} is more than {MAX_TREE_DEPTH} "
+                f"deep at object {i} -- it is almost certainly not a tree: "
+                f"check the address (a large-data program's G is in FAR "
+                f"memory, m17_desktop.desk_g)")
         o = obj(b, tree, i)
         x, y = ox + o["x"], oy + o["y"]
         out[i] = (x, y, o["w"], o["h"])
         for c in children(b, tree, i):
-            walk(c, x, y)
-    walk(root, 0, 0)
+            walk(c, x, y, depth + 1)
+    walk(root, 0, 0, 0)
     return out
 
 
@@ -176,14 +195,18 @@ class Tour:
 
     # -- where things are ----------------------------------------------------
     def G(self):
-        """The desktop's G, where the loader put it this time."""
-        return self.b.peek16(self.syms["app_near"]) + (self.dsym["G"] - self.dlink)
+        """The desktop's G, wherever the loader put it this time -- far bss
+        for a large-data build, which is what it is since its resource went
+        far (src/sys/app.c exports app_far for exactly this)."""
+        return desk_g(self.b, self.syms)
 
     def g_screen(self):
         return self.G() + g_offset("g_screen")
 
     def tree_of(self, field):
-        return self.b.peek16(self.G() + g_offset(field))
+        """peek24: a_menu and its kind are FAR pointers now -- the
+        resource they point into is in far memory."""
+        return self.b.peek24(self.G() + g_offset(field))
 
     def desk_icon(self, label):
         """A drive or the trash: the desk's own children."""
@@ -226,12 +249,36 @@ class Tour:
     def menu(self, title, item=None):
         """The middle of a title of the bar, and of an item in its
         drop-down: the item's y under the title's x, straight down."""
-        tree = self.b.peek16(self.syms["gl_mntree"])
+        # peek24: gl_mntree is an OBJECT FAR * into the desktop's
+        # resource, which is in far memory (src/aes/rsrc.c)
+        tree = self.b.peek24(self.syms["gl_mntree"])
         rects = placed(self.b, tree)
         t = middle(rects[title])
         if item is None:
             return t
         return (t[0], middle(rects[item])[1])
+
+    def desk_acc(self, name):
+        """An accessory's item in the Desk menu, BY NAME.
+
+        Not by index.  The items were ACC_ITEM and ACC_ITEM + 1 while there
+        were two accessories, and a third (the calculator, 2026-09-20)
+        shifted nothing but silently left the newcomer unphotographed --
+        the tour went on picking the first two and looked fine.  The AES
+        writes each accessory's title into the Desk box's children as it
+        registers (src/aes/menu.c menu_fixup), so the name is readable
+        where the picture will show it.
+        """
+        tree = self.b.peek24(self.syms["gl_mntree"])
+        themenus = obj(self.b, tree, 0)["tail"]
+        dabox = obj(self.b, tree, themenus)["head"]
+        seen = []
+        for i in children(self.b, tree, dabox):
+            text = cstring(self.b, obj(self.b, tree, i)["spec"], 32).strip()
+            seen.append(text)
+            if text == name:
+                return i
+        raise KeyError(f"{name!r} is not in the Desk menu: {seen}")
 
     def dialog(self, field, which):
         """An object of one of the desktop's dialogs, once it is up."""
@@ -267,7 +314,7 @@ class Tour:
         self.settle()
 
     def bar_up(self):
-        return self.b.peek16(self.syms["gl_mntree"]) != 0
+        return self.b.peek24(self.syms["gl_mntree"]) != 0
 
     def cancel_menu(self):
         # a click on the desk, well away from the bar, takes the menu up
@@ -395,7 +442,21 @@ def main(argv):
         t.shot("calc")
         t.launch(lambda: t.click(middle(keys[CQUIT])), "the desktop", t.bar_up)
 
-        t.choose(DESKMENU, ACC_ITEM)
+        # Each accessory in turn, BY NAME (desk_acc) rather than by the
+        # index it happened to have when there were two of them.  RETURN
+        # puts a form away: OK is the DEFAULT button, so no coordinate
+        # arithmetic is needed and the next one can have the screen.
+        for name, shot in (("Control Panel", "cpanel"),
+                           ("Calculator", "calc-acc")):
+            t.choose(DESKMENU, t.desk_acc(name))
+            b.frames(60)
+            t.go((400, 200))
+            b.frames(30)
+            t.shot(shot)
+            t.run([K("RETURN", RETURN), F(40)])
+
+        # The clock last: it has no default button and ends on a key.
+        t.choose(DESKMENU, t.desk_acc("Clock"))
         b.frames(60)
         t.go((400, 200))
         b.frames(60)

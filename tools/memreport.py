@@ -37,7 +37,7 @@ BUILD = os.path.join(ROOT, "build")
 # The engine's own take from the pool, before any program: the process
 # records (src/aes/proc.h, NUM_PROCS * sizeof(PROC)) and an eight-message
 # queue for each accessory that loads.  test-boot checks the live number.
-PROC_STORE = 4 * 52
+PROC_STORE = 7 * 52
 ACC_QUEUE = 8 * 8 * 2
 
 # What must be left, and why.
@@ -138,6 +138,28 @@ def main(argv):
     desk = g4a_near(os.path.join(BUILD, "desktop.g4a"))
     desk_rsc, desk_far, desk_peak = rsc_pool(os.path.join(BUILD,
                                                           "desktop.rsc"))
+
+    def large_data(name):
+        """Was this program linked against the LARGE-data kit?  That is what
+        decides where its resource goes: a program holding 32-bit pointers
+        may be handed a far address, and rs_load puts the resource there
+        rather than in the pool (src/aes/rsrc.c).  Read out of the map's
+        own command line -- clib-lc-ld.a against clib-lc-sd.a -- so it
+        follows the build instead of being restated here and drifting."""
+        p = os.path.join(BUILD, name + ".map")
+        try:
+            with open(p, "r", errors="replace") as f:
+                return "clib-lc-ld.a" in f.read(4096)
+        except OSError:
+            return False
+
+    # THE DESKTOP'S RESOURCE GOES FAR TOO once it is a large-data program,
+    # and it is the largest single thing the pool ever held.  Charged 0
+    # here, with the whole file counted as far rather than just its icons.
+    if large_data("desktop"):
+        desk_far = desk_rsc + desk_far
+        desk_rsc = desk_peak = 0
+
     def accessories(*want):
         """(name, near, resident, peak) for each accessory that loads."""
         out = []
@@ -145,10 +167,10 @@ def main(argv):
             p = os.path.join(BUILD, name + ".g4a")
             if not os.path.exists(p):
                 continue
-            if rsc:
+            if rsc and not large_data(name):
                 pr, _, pk = rsc_pool(os.path.join(BUILD, rsc + ".rsc"))
             else:
-                pr = pk = 0
+                pr = pk = 0          # no resource, or one that goes far
             out.append((name.upper(), g4a_near(p), pr, pk))
         return out
 
@@ -193,11 +215,12 @@ def main(argv):
         if loud:
             say(f"  {'-- permanent below here':<34} {'':6}   ${brk:04X}")
         take(desk, 0x100, "the desktop")
-        take(desk_rsc, 2, "its resource", desk_peak)
+        if desk_rsc:
+            take(desk_rsc, 2, "its resource", desk_peak)
         free = top - brk
         if loud:
             say(f"  {'= free':<34} {free:6d}   "
-                f"({desk_far} bytes of icons are far, not here)")
+                f"({desk_far} bytes of resource are far, not here)")
             say(f"  {'= free while it was loading':<34} {worst:6d}   "
                 f"(rs_load holds the whole file: src/aes/rsrc.c)")
         return free, worst
@@ -217,7 +240,9 @@ def main(argv):
     # pool is deliberately smaller and has always been under it; what the
     # runner must satisfy is the hard one, that the peak fits at all.
     for mapname, accs, floor, title in (
-            ("gem.map", accessories(("clockacc", "clock")), POOL_FLOOR[0],
+            ("gem.map", accessories(("clockacc", "clock"),
+                                    ("cpanelacc", "cpanel"),
+                                    ("calcacc", "calc")), POOL_FLOOR[0],
              "the application pool, with everything the product "
              "ships resident"),
             ("m3desk.map", accessories(("m28_acc", None)), 0,

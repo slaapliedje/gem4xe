@@ -162,13 +162,33 @@ WIN_YCELL = (6, 8, 10, 13)
 # GLOBES, field by field in the order desk.h declares them; sizes as
 # cc65816 lays them out (WORD 2, a near pointer 2, a far pointer 4,
 # GRECT 8, no padding).
-GLOBES = [("a_menu", 2), ("a_info", 2), ("a_mkdir", 2), ("a_delete", 2),
-          ("a_finfo", 2), ("a_iblist", 2), ("g_handle", 2),
+# A PLAIN POINTER IS TWO BYTES OR FOUR, and which it is follows the
+# desktop's data model rather than being restated here: under
+# --data-model=large every `OBJECT *` and `const char *` in desk.h's G is
+# a 32-bit address.  Its `FAR *` fields (g_dta, g_opdta, g_cnxsave,
+# g_shelbuf, g_copybuf) are four in BOTH models and are not listed here.
+# Measured rather than assumed: G is 2054 bytes small and 2070 large, and
+# the eight fields below are exactly that difference.
+def _desk_large():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "..", "build", "desktop.map"),
+                  "r", errors="replace") as f:
+            return "clib-lc-ld.a" in f.read(4096)
+    except OSError:
+        return False
+
+
+PTR = 4 if _desk_large() else 2
+
+GLOBES = [("a_menu", PTR), ("a_info", PTR), ("a_mkdir", PTR),
+          ("a_delete", PTR),
+          ("a_finfo", PTR), ("a_iblist", PTR), ("g_handle", 2),
           ("g_wchar", 2), ("g_hchar", 2), ("g_wbox", 2), ("g_hbox", 2),
           ("g_desk", 8), ("g_wicon", 2), ("g_hicon", 2),
           ("g_iview", 2), ("g_isort", 2), ("g_ifit", 2),
           ("g_iwext", 2), ("g_ihext", 2), ("g_iwint", 2),
-          ("g_ihint", 2), ("g_fline", 2), ("g_fmark", 2),
+          ("g_ihint", 2), ("g_fline", PTR), ("g_fmark", PTR),
           ("g_icw", 2),
           ("g_ich", 2), ("g_icols", 2), ("g_screenfree", 2), ("g_rmsg", 16),
           ("g_wcnt", 2), ("g_nfiles", 4), ("g_ndirs", 4), ("g_opsize", 4),
@@ -198,6 +218,11 @@ def w(x):
 def dw(x):
     """A LONG."""
     return (x & 0xFFFFFFFF).to_bytes(4, "little")
+
+
+def p(x):
+    """A plain pointer, as wide as the desktop's data model makes it."""
+    return dw(x) if PTR == 4 else w(x)
 
 
 def signed(x):
@@ -321,13 +346,25 @@ class Desktop:
     are at that moment."""
 
     def __init__(self, v, a, mark, link_near, near_size, g_link, drvmap, inputs,
-                 imbase=None):
+                 imbase=None, far_base=None, link_bank=2, rsc_far=None,
+                 dos_brk=None):
         self.v, self.a = v, a
-        # app_load: pool_alloc(near_size, 0x100), then rs_load's
-        # pool_alloc(size, 2) (src/sys/app.c, src/aes/rsrc.c)
         self.near = (mark + 0xFF) & ~0xFF
-        self.G = self.near + (g_link - link_near)
-        self.rsc_base = (self.near + near_size + 1) & ~1
+        if far_base is None:
+            # SMALL DATA: app_load's pool_alloc(near_size, 0x100) holds the
+            # globals, and rs_load's pool_alloc(size, 2) follows it
+            # (src/sys/app.c, src/aes/rsrc.c).
+            self.G = self.near + (g_link - link_near)
+            self.rsc_base = (self.near + near_size + 1) & ~1
+        else:
+            # LARGE DATA: the globals are in far bss, which app_load placed
+            # with the rest of the far image (src/sys/app.c, app_far), and
+            # rs_load put the resource far as well rather than in the pool
+            # -- which is the whole point, the pool being 14 KB of bank $00
+            # against 14.9 MB out here.
+            self.G = (far_base + (((g_link >> 16) - link_bank) << 16)
+                      + (g_link & 0xFFFF))
+            self.rsc_base = rsc_far
         # where rs_load put the resource's icon bitmaps: far, when it moved
         # them, which is what lets the pool have them back (src/aes/rsrc.c)
         self.imbase = imbase
@@ -468,6 +505,12 @@ class Desktop:
             a.trees[r.addr(R_TREE, t, self.rsc_base)] = objs
         a.mem.update(mem)
         return 1
+
+    def wind_str(self, wh, field, addr):
+        """WF_NAME / WF_INFO: the address in two words, HIGH FIRST, as the
+        ST passes it and as src/aes/wind.c takes it.  Both words carry
+        something once G is in far memory (src/desk/deskwin.c)."""
+        self.wind_set(wh, field, addr >> 16, addr & 0xFFFF)
 
     def rsrc_gaddr(self, rtype, index):
         self.call(RSRC_GADDR, (rtype, index))
@@ -809,7 +852,7 @@ class Desktop:
 
     def win_sinfo(self, pw):
         pw.info.put(f" {pw.path.size} bytes used in {pw.path.count} items.")
-        self.wind_set(pw.id, WF_INFO, 0, pw.addr + WN_INFO)
+        self.wind_str(pw.id, WF_INFO, pw.addr + WN_INFO)
 
     @staticmethod
     def win_which(pf):
@@ -1114,7 +1157,7 @@ class Desktop:
         self.pn_active(pw.path)
         self.win_sname(pw)
         self.win_sinfo(pw)
-        self.wind_set(pw.id, WF_NAME, 0, pw.addr + WN_NAME)
+        self.wind_str(pw.id, WF_NAME, pw.addr + WN_NAME)
         self.do_wopen(new_win, pw.id, curr, pt)
         if new_win:
             self.win_top(pw)
@@ -1159,7 +1202,7 @@ class Desktop:
         self.pn_active(pw.path)
         self.win_sname(pw)
         self.win_sinfo(pw)
-        self.wind_set(pw.id, WF_NAME, 0, pw.addr + WN_NAME)
+        self.wind_str(pw.id, WF_NAME, pw.addr + WN_NAME)
         self.desk_verify(pw.id)
         self.do_wredraw(pw.id, self.wind_get_rect(pw.id, WF_WXYWH))
         self.busy(False)
@@ -2365,7 +2408,9 @@ class Desktop:
             self.call(APPL_EXIT)
             return 1
         self.app_start()
-        self.call(WIND_SET, (DESKWH, WF_NEWDESK, 0, self.g_screen_addr, DROOT, 0))
+        self.call(WIND_SET, (DESKWH, WF_NEWDESK,
+                             self.g_screen_addr >> 16,
+                             self.g_screen_addr & 0xFFFF, DROOT, 0))
         self.call(WIND_UPDATE, (BEG_UPDATE,))
         self.do_wredraw(DESKWH, self.desk)
         self.cnx_get()
@@ -2404,14 +2449,17 @@ class Desktop:
         """G packed as desk.h declares it: what a dump of the target's G
         should read at the same moment."""
         d = self.desk
-        out = b"".join(w(x) for x in (
+        out = b"".join(p(x) for x in (
             self.a_menu, self.a_info, self.a_mkdir, self.a_delete,
-            self.a_finfo, self.a_iblist, self.handle,
-            self.wchar, self.hchar, self.wbox, self.hbox,
+            self.a_finfo, self.a_iblist))
+        out += b"".join(w(x) for x in (
+            self.handle, self.wchar, self.hchar, self.wbox, self.hbox,
             d.x, d.y, d.w, d.h, self.wicon, self.hicon,
             self.iview, self.isort, self.ifit, self.iwext, self.ihext,
-            self.iwint, self.ihint,
-            self.fline, self.fmark, self.icw, self.ich, self.icols,
+            self.iwint, self.ihint))
+        out += p(self.fline) + p(self.fmark)
+        out += b"".join(w(x) for x in (
+            self.icw, self.ich, self.icols,
             self.screenfree)) + b"".join(w(x) for x in self.rmsg)
         out += (w(self.wcnt) + dw(self.nfiles) + dw(self.ndirs)
                 + dw(self.opsize)

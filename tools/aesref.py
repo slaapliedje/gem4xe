@@ -68,6 +68,10 @@ FORWARD, BACKWARD, DEFLT = 0, 1, 2
 NUM_WIN, NUM_ORECT, NUM_MSGS, NUM_ELEM = 8, 80, 16, 19
 AP_MSGWORDS, AP_MSGBYTES = 8, 16      # src/aes/aes.h: a message
 NUM_ACCS = 6                    # the Desk box's slots (src/aes/proc.h)
+NUM_PROCS = 7                   # the application, and one per Desk slot
+# How many can actually register: an accessory needs a process record, so
+# three is the most there can be however many slots the box can draw.
+MAX_ACCS = NUM_PROCS - 1
 DESKWH = 0
 VF_INUSE, VF_BROKEN, VF_ISOPEN = 1, 2, 4
 WS_FULL, WS_CURR, WS_PREV, WS_WORK, WS_TRUE = 0, 1, 2, 3, 4
@@ -1694,7 +1698,7 @@ class AES:
         # lands in the tree.  Registrations outlive every application --
         # the donor registers once at AES start-up and never clears them
         # -- so this is set up HERE, in ct_init, and not in mn_init.
-        self.gl_acctitle = [None] * NUM_ACCS
+        self.gl_acctitle = [None] * MAX_ACCS
         self.gl_accreg = 0
         self.gl_dafirst = 0
 
@@ -3010,7 +3014,9 @@ class AES:
             if wh != self.gl_wtop:
                 self.wm_mktop(wh)
         elif field == WF_NEWDESK:
-            addr = pinwds[1] & 0xFFFF
+            # both words, high first, as the ST passes it and as
+            # src/aes/wind.c takes it -- a far tree needs the bank
+            addr = ((pinwds[0] & 0xFFFF) << 16) | (pinwds[1] & 0xFFFF)
             self.gl_newdesk = self.trees[addr] if addr else None
             self.gl_newroot = pinwds[2]
         elif field == WF_HSLSIZ:
@@ -4036,9 +4042,9 @@ class AES:
             ob = dabox + i
             self.ob_add(tree, dabox, ob)
             if i > 2:                       # the names, after the separator
-                while slot < NUM_ACCS and self.gl_acctitle[slot] is None:
+                while slot < MAX_ACCS and self.gl_acctitle[slot] is None:
                     slot += 1
-                if slot >= NUM_ACCS:
+                if slot >= MAX_ACCS:
                     break
                 tree[ob].ob_spec = self.gl_acctitle[slot]
                 slot += 1
@@ -4514,9 +4520,9 @@ class AES:
         reason an accessory's title has to outlive the accessory's
         start-up.  The id is the SLOT, found by looking for a free one, so
         that six ids stay six ids however they were handed out."""
-        if pid < 0 or self.gl_accreg >= NUM_ACCS:
+        if pid < 0 or self.gl_accreg >= MAX_ACCS:
             return -1
-        for slot in range(NUM_ACCS):
+        for slot in range(MAX_ACCS):
             if self.gl_acctitle[slot] is None:
                 break
         else:

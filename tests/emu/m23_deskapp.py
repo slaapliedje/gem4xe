@@ -55,7 +55,7 @@ from m12_file import Runner                 # noqa: E402
 from m13_alert import ALLOC, SHOT, SETTLE   # noqa: E402
 from m14_sparta import boot, screen         # noqa: E402
 from m16_shell import SHELL, poll           # noqa: E402
-from m17_desktop import (DESKTOP, DESK_RSC, rsc_imlen,  # noqa: E402
+from m17_desktop import (DESKTOP, DESK_RSC, rsc_imlen, desk_places,  # noqa: E402
                          DESK_SYM, SYMS, PROBE, DRVBYT,
                          GCLICK, header, listing)
 from m18_launch import model_desk           # noqa: E402
@@ -138,25 +138,18 @@ def poll_nonzero(b, addr, limit=2000, step=10):
 def model(mark, brk, pointer, drvmap):
     """The prelude and the desktop against the model: (v, a, want, d, memo)."""
     v, a, want = aesref.run(PRELUDE, [], {}, pointer=pointer, pool=mark)
-    link_near, near_size, far_banks = header(DESKTOP)
-    desk_len = (os.path.getsize(DESKTOP) + 3) & ~3
-    # ...and the resource's icon bitmaps, taken by rs_load before the
-    # desktop Mallocs anything and given back by app_free with the rest
-    # (src/aes/rsrc.c).  Each run of the desktop takes them again, which
-    # is why the arena is the same on both.
-    im_base = ((brk + desk_len + 0xFFFF) & ~0xFFFF) + (far_banks << 16)
-    im_len = rsc_imlen(DESK_RSC)
-    arena = im_base + ((im_len + 3) & ~3)
-    if not im_len:
-        im_base = None                  # they stayed in the pool
+    # Each run of the desktop takes the resource again, which is why the
+    # arena is the same on both (desk_places, in m17_desktop.py).
+    pl = desk_places(brk)
+    arena = pl.pop("dos_brk")
     a.dos_dirs = listing(DISK)
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
 
     model_desk(v, a)
     a.dos_brk = arena
-    d = Desktop(v, a, mark, link_near, near_size, g_link, drvmap, inputs(memo),
-                imbase=im_base)
+    d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
+                g_link, drvmap, inputs(memo), **pl)
     d.main()
     return v, a, want, d, memo
 

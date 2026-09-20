@@ -122,7 +122,7 @@ def main(argv):
         runs = syms["sh_runs"]
         for _ in range(0, 4000, 10):
             b.frames(10)
-            if b.peek16(runs) >= 1 and b.peek16(syms["gl_mntree"]):
+            if b.peek16(runs) >= 1 and b.peek24(syms["gl_mntree"]):
                 break
         check(b.peek16(runs) >= 1, "the shell never started the desktop")
         b.frames(120)
@@ -138,7 +138,7 @@ def main(argv):
 
         # 2. it registered, and the AES kept ITS pointer
         reg = b.peek16(syms["gl_accreg"])
-        title = b.peek16(syms["gl_acctitle"])
+        title = b.peek24(syms["gl_acctitle"])
         check(reg == 1, f"{reg} names registered, expected 1")
         if not check(title != 0, "the AES holds no title pointer"):
             return 1
@@ -157,7 +157,10 @@ def main(argv):
               f"ap_id {acc_id}; its near region is at ${near:04X}")
 
         # 3. the Desk drop-down grew by a separator and a name
-        mntree = b.peek16(syms["gl_mntree"])
+        # peek24: gl_mntree is an OBJECT FAR *, and the desktop's menu
+        # tree is in its resource -- which is in FAR memory since the
+        # desktop became a large-data program (src/aes/rsrc.c).
+        mntree = b.peek24(syms["gl_mntree"])
         if not check(mntree != 0, "the desktop has installed no menu bar"):
             return 1
         themenus = obj(b, mntree, 0)["tail"]

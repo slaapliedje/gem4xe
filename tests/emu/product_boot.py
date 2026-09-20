@@ -90,6 +90,7 @@ from m7_form import F                       # noqa: E402
 from m14_sparta import screen               # noqa: E402
 from langrsc import STRINGS as LANG, BOOT_LABEL  # noqa: E402  the boot screen's words
 from m17_desktop import (header, listing, menu, rsc_imlen,  # noqa: E402
+                         desk_places,
                          DESKTOP, DESK_RSC, DESK_SYM, SHOT)
 
 BUILD = os.path.join(ROOT, "build")
@@ -143,24 +144,16 @@ def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False):
     a.gr_mouse(aesref.ARROW)   # the form is one global here (shel.c)
     a.tree = a.W_TREE
     a.draw(0, 0, (0, 0, a.gl_width, a.gl_height))
-    link_near, near_size, far_banks = header(DESKTOP)
-    desk_len = (os.path.getsize(DESKTOP) + 3) & ~3
-    # ...and the resource's icon bitmaps, which rs_load copies up before
-    # the desktop Mallocs anything (src/aes/rsrc.c).  Read from the .RSC's
-    # own header so it cannot drift from the file.
-    im_base = ((brk + desk_len + 0xFFFF) & ~0xFFFF) + (far_banks << 16)
-    im_len = rsc_imlen(DESK_RSC)
-    a.dos_brk = im_base + ((im_len + 3) & ~3)
-    if not im_len:
-        im_base = None                  # they stayed in the pool
+    pl = desk_places(brk)
+    a.dos_brk = pl.pop("dos_brk")
     a.dos_dirs = dirs
     g_link = symfile.load(DESK_SYM)["G"]
 
     def first_wait(d):
         return [F(3), SHOT, *menu(d, FILEMENU, QUITITEM, False)[1:]]
 
-    d = Desktop(v, a, mark, link_near, near_size, g_link, drvmap, [first_wait],
-                 imbase=im_base)
+    d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
+                g_link, drvmap, [first_wait], **pl)
     a.psystem = psystem                 # the DOS's command processor, or not
     d.main()
     return v, a, d

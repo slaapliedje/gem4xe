@@ -85,7 +85,8 @@ class Licence(unittest.TestCase):
         """Not a licence claim but a budget one, and this is where the
         evidence already is: float32.o is 1.5 KB of far code the engine
         has never needed.  The runners may have it; GEM.COM may not."""
-        for name in ("gem.map", "desktop.map", "calc.map", "clockacc.map"):
+        for name in ("gem.map", "desktop.map", "calc.map", "clockacc.map",
+                     "cpanelacc.map", "calcacc.map"):
             p = os.path.join(BUILD, name)
             if os.path.exists(p):
                 self.assertNotIn("float32.o", units(p),

@@ -46,7 +46,8 @@ from m4_aes import SHOTDIR                  # noqa: E402
 from m7_form import F, B, K, apply_step     # noqa: E402
 from m11_abi import os_profile              # noqa: E402
 from m14_sparta import screen               # noqa: E402
-from m17_desktop import header, DESKTOP, DESK_SYM   # noqa: E402
+from m17_desktop import (header, DESKTOP, DESK_SYM,   # noqa: E402
+                         desk_g)
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
 DISK = os.path.join(BUILD, "sdx816-boot.atr")
@@ -60,6 +61,8 @@ COMMAND = "VER"                             # what the dialog is given
 BANNER = "SpartaDOS"                        # ...and what it prints, drawn
 MEMLO = 0x02E7
 OB_SIZE = 24
+W_NAME = 3                                  # the title in the frame tree
+                                            # (src/aes/aes.h, W_ACTIVE[])
 CMD_TEXT = 64 + 4                           # where the text starts in the far
                                             # buffer: its title comes first
                                             # (src/desk/deskcmd.c)
@@ -133,11 +136,13 @@ def command(b, syms, shot):
     link_near, _, _ = header(DESKTOP)
     dsyms = symfile.load(DESK_SYM)
     near = b.peek16(syms["app_near"])
-    g = near + dsyms["G"] - link_near
+    # G is not in the near region when the desktop is a large-data
+    # program -- it is in far bss (src/sys/app.c, app_far).
+    g = desk_g(b, syms)
 
     def var(name):                              # a direct-page scalar of deskcmd.c
         return near + dsyms[name] - link_near
-    a_menu = b.peek16(g)                        # G.a_menu, its first field
+    a_menu = b.peek24(g)                        # G.a_menu: a far pointer now
     # The bridge reads memory above $FFFF now (tools/altirra/
     # altirra-sdl-bridge-memory-24bit.patch): first a fact -- a far string
     # of gem4xe's own, in the accelerator's RAM -- then the command's
@@ -205,9 +210,14 @@ def command(b, syms, shot):
     lines = b.peek16(var("cmd_lines"))
     wh = b.peek16(var("cmd_id"))
     buf = int.from_bytes(b.memdump(var("cmd_buf"), 3), "little")
-    # the window's title is far, and the AES brings it near to draw it
-    # (src/aes/wind.c w_ptext): what gl_nbuf holds is what was drawn
-    title = bytes(b.memdump(syms["gl_nbuf"], 41)).split(b"\0")[0].decode("latin-1")
+    # The window's title is FAR and nothing brings it near any more: since
+    # phase 47 w_ptext assigns the 24-bit address straight into the frame
+    # TEDINFO's te_ptext and the VDI reads the string where it lies.  So
+    # follow what the DRAWING follows -- the frame tree's W_NAME object,
+    # its TEDINFO, and te_ptext at offset 0 of it -- rather than reading a
+    # near copy, which is what gl_nbuf was and is now deleted.
+    ted = obj(b, b.peek24(syms["gl_awind"]), W_NAME)["spec"]
+    title = bytes(b.memdump(b.peek24(ted), 41)).split(b"\0")[0].decode("latin-1")
     b.screenshot(shot)
     where = find_text(shot, BANNER)
     text = bytes(b.memdump(buf + CMD_TEXT, n)) if n and buf else b""

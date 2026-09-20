@@ -115,6 +115,80 @@ def header(path):
     return link_near, near_size, d[15]
 
 
+def link_bank(path):
+    """The bank the far image was LINKED at (byte 14): a far link address L
+    relocates to ((base >> 16) + (L >> 16) - link_bank) << 16 | (L & 0xFFFF).
+    Only a large-data program needs it -- that is where its globals are."""
+    with open(path, "rb") as f:
+        return f.read(16)[14]
+
+
+def desk_large():
+    """Is the desktop a --data-model=large program?  Read out of its map's
+    own command line -- clib-lc-ld.a against clib-lc-sd.a, the same test
+    tools/memreport.py makes -- so it follows the build rather than being
+    restated here.  It decides where G and the resource live."""
+    try:
+        with open(os.path.join(ROOT, "build", "desktop.map"),
+                  "r", errors="replace") as f:
+            return "clib-lc-ld.a" in f.read(4096)
+    except OSError:
+        return False
+
+
+def rsc_rssize(path):
+    """rsh_rssize: what rs_load allocates, near or far (src/aes/rsrc.c)."""
+    return struct.unpack(">18H", open(path, "rb").read(36))[17]
+
+
+def desk_g(b, syms):
+    """Where the desktop's G is in the RUNNING machine.
+
+    A small-data build keeps it in the near region the pool gave it
+    (app_near); a large-data one keeps it in far bss, placed with the rest
+    of the far image (app_far).  src/sys/app.c exports both addresses for
+    exactly this, because a gate cannot otherwise find a large-data
+    program's globals -- its .sym gives a LINK address in bank $02 or $03,
+    not where the loader put it.
+    """
+    dsyms = symfile.load(DESK_SYM)
+    g_link = dsyms["G"]
+    link_near, _, _ = header(DESKTOP)
+    if not desk_large():
+        return b.peek16(syms["app_near"]) + g_link - link_near
+    d = b.memdump(syms["app_far"], 3)
+    base = d[0] | (d[1] << 8) | (d[2] << 16)
+    return (base + (((g_link >> 16) - link_bank(DESKTOP)) << 16)
+            + (g_link & 0xFFFF))
+
+
+def desk_places(brk):
+    """Where app_load and rs_load put the desktop, as the model must see it.
+
+    The .g4a blob sits at `brk` (shel.c far_read_file), the code's banks
+    start at the next bank boundary (app.c app_load, farmem.c
+    far_alloc_banks), and what follows them is the resource: the WHOLE file
+    when the desktop is a large-data program, because rs_load puts it far
+    rather than in the pool, or just the icon bitmaps rs_fixit moved up
+    when it is not (src/aes/rsrc.c).
+
+    Returns the keywords Desktop() wants, so the five gates that build the
+    model share one copy of this arithmetic instead of five.
+    """
+    link_near, near_size, far_banks = header(DESKTOP)
+    desk_len = (os.path.getsize(DESKTOP) + 3) & ~3
+    far_base = (brk + desk_len + 0xFFFF) & ~0xFFFF
+    after = far_base + (far_banks << 16)
+    large = desk_large()
+    rlen = rsc_rssize(DESK_RSC) if large else rsc_imlen(DESK_RSC)
+    return dict(link_near=link_near, near_size=near_size,
+                far_base=far_base if large else None,
+                link_bank=link_bank(DESKTOP),
+                rsc_far=after if large else None,
+                imbase=after if (not large and rlen) else None,
+                dos_brk=after + ((rlen + 3) & ~3))
+
+
 def listing(disk):
     """The image's directories as the target's Fsfirst/Fsnext report
     them (src/sys/gemdos.c gd_next over SDX's raw entries): {path: [(name,
@@ -313,24 +387,15 @@ def model(mark, brk, pointer, drvmap):
     a.gr_mouse(aesref.ARROW)   # the form is one global here (shel.c)
     a.tree = a.W_TREE
     a.draw(0, 0, (0, 0, a.gl_width, a.gl_height))
-    link_near, near_size, far_banks = header(DESKTOP)
-    # the far heap as the desktop's Malloc finds it: the file's blob at
-    # brk (shel.c far_read_file), the code's banks from the next boundary
-    # (app.c app_load, farmem.c far_alloc_banks), and then the RESOURCE'S
-    # ICON BITMAPS, which rs_load copies up and hands the pool back
-    # (src/aes/rsrc.c).  That last one is read out of the .RSC's own header
-    # rather than written down here, so it cannot drift from the file.
-    desk_len = (os.path.getsize(DESKTOP) + 3) & ~3
-    im_base = ((brk + desk_len + 0xFFFF) & ~0xFFFF) + (far_banks << 16)
-    im_len = rsc_imlen(DESK_RSC)
-    a.dos_brk = im_base + ((im_len + 3) & ~3)
-    if not im_len:
-        im_base = None                  # they stayed in the pool
+    # Where the loader and rs_load put the desktop: desk_places() above,
+    # shared with the other four gates that build this model.
+    pl = desk_places(brk)
+    a.dos_brk = pl.pop("dos_brk")
     a.dos_dirs = listing(DISK)
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
-    d = Desktop(v, a, mark, link_near, near_size, g_link, drvmap, inputs(memo),
-                imbase=im_base)
+    d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
+                g_link, drvmap, inputs(memo), **pl)
     d.main()
     return v, a, want, d, memo
 
@@ -549,7 +614,12 @@ def main(argv):
         check(lrc == 0, f"the last load's status {lrc}, not 0")
         check(ncalls == len(script),
               f"the desktop made {ncalls} ABI calls; the model made {len(script)}")
-        check(bad == 0, f"{bad} ABI calls refused")
+        # ...and WHICH call, not just how many: near_of() refuses a far
+        # address from several opcodes and the default arm refuses one
+        # that does not exist (src/sys/abi.c, gem_badop).
+        badop = b.peek16(syms["gem_badop"]) if "gem_badop" in syms else -1
+        check(bad == 0, f"{bad} ABI calls refused, the last in AES "
+                        f"opcode {badop}")
 
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]

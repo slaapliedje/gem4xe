@@ -59,7 +59,7 @@ from m12_file import Runner                 # noqa: E402
 from m13_alert import ALLOC                 # noqa: E402
 from m14_sparta import DISK as M14_DISK, boot, screen   # noqa: E402
 from m16_shell import SHELL, poll           # noqa: E402
-from m17_desktop import (DISK, DESKTOP, DESK_RSC, rsc_imlen,  # noqa: E402
+from m17_desktop import (DISK, DESKTOP, DESK_RSC, rsc_imlen, desk_places,  # noqa: E402
                          DESK_SYM, SYMS, SHOT, PROBE, DRVBYT,
                          GCLICK, header, listing, menu)
 from demo_aes import path                   # noqa: E402
@@ -155,21 +155,13 @@ def model(mark, brk, pointer, drvmap):
     d2, memo, m11).  `brk` is the far heap's cursor before the shell
     reads the desktop's file to it; `m11` is M11.G4A's call count."""
     v, a, want = aesref.run(PRELUDE, [], {}, pointer=pointer, pool=mark)
-    link_near, near_size, far_banks = header(DESKTOP)
-    # the far heap as the desktop's Malloc finds it on either run: the
-    # file's blob at brk (shel.c far_read_file, kept between programs),
-    # the code's banks from the next boundary (app.c app_load, farmem.c
-    # far_alloc_banks); app_free winds the heap back to the blob's end
-    desk_len = (os.path.getsize(DESKTOP) + 3) & ~3
-    # ...and the resource's icon bitmaps, taken by rs_load before the
-    # desktop Mallocs anything and given back by app_free with the rest
-    # (src/aes/rsrc.c).  Each run of the desktop takes them again, which
-    # is why the arena is the same on both.
-    im_base = ((brk + desk_len + 0xFFFF) & ~0xFFFF) + (far_banks << 16)
-    im_len = rsc_imlen(DESK_RSC)
-    arena = im_base + ((im_len + 3) & ~3)
-    if not im_len:
-        im_base = None                  # they stayed in the pool
+    # Where the loader and rs_load put the desktop on EITHER run: app_free
+    # winds the heap back to the blob's end, so each run takes the same
+    # addresses again and the arena is the same on both (desk_places, in
+    # m17_desktop.py).
+    pl = desk_places(brk)
+    arena = pl.pop("dos_brk")
+    link_near, near_size = pl.pop("link_near"), pl.pop("near_size")
     a.dos_dirs = listing(DISK)
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
@@ -177,14 +169,14 @@ def model(mark, brk, pointer, drvmap):
     model_desk(v, a)
     a.dos_brk = arena
     d1 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_before(memo), imbase=im_base)
+                 inputs_before(memo), **pl)
     d1.main()
     # M11.G4A: counted, not replayed
     m11 = program_calls(a)
     model_desk(v, a)
     a.dos_brk = arena
     d2 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_after(memo), imbase=im_base)
+                 inputs_after(memo), **pl)
     d2.main()
     return v, a, want, d1, d2, memo, m11
 
