@@ -17,6 +17,7 @@
 #include "aes.h"
 #include "../vdi/vdi.h"
 #include "../sys/zwin.h"
+#include "../sys/farmem.h"      /* far_get/far_strget/far_strput, below */
 
 /* GEM's scratch strings for formatting and editing a field (the D structure
  * in the donor).  A field longer than MAX_LEN-1 is out of contract. */
@@ -54,8 +55,9 @@ static WORD str_cpy(char *dst, const char *src)
 
 /* ---- addresses in ob_spec ---------------------------------------------
  * ob_spec is a 32-bit GEM address, and ALL TWENTY-FOUR BITS OF IT MATTER:
- * a resource too big for the pool loads into far memory and its strings,
- * TEDINFOs and BITBLKs are addressed there (docs/far-trees.md).  This
+ * a resource loads into far memory for any program that can hold a 24-bit
+ * address -- whatever its size -- and its strings, TEDINFOs and BITBLKs
+ * are addressed there (docs/phase47.md, src/aes/rsrc.c).  This
  * comment used to say the opposite -- "everything the AES reaches lives
  * in bank $00, so the low 16 bits are the pointer" -- which was true
  * before far trees and is what mn_text was still doing afterwards, with

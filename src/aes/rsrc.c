@@ -638,7 +638,7 @@ WORD rs_load(const char *name, WORD wants_far)
     int16_t fd;
     uint8_t *mem;
     uint32_t base, fmark = 0;
-    WORD ok, far = 0;
+    WORD ok, gofar, far = 0;
 
     if (rs_1 && rs_2)               /* one resident and one nested is all */
         return 0;
@@ -657,8 +657,28 @@ WORD rs_load(const char *name, WORD wants_far)
         cio_close(fd);
         return 0;
     }
+    /* WHERE A RESOURCE GOES, and why the pool is the second choice rather
+     * than the first.  The pool is 14,336 bytes of bank $00 -- what is
+     * left of the Atari's first 64 KB after the OS, this program's near
+     * code and data, zwin and the MEMAC window (src/gem4xe.scm) -- and it
+     * is shared by the desktop, every accessory and every program's near
+     * region.  Far memory is 14.9 MB.  A resource is read once and then
+     * walked by pointer, which a 32-bit pointer does as well as a 16-bit
+     * one, so a caller that HOLDS 32-bit pointers has no reason to spend
+     * bank $00 on one.
+     *
+     * So: far whenever the caller said it can take a far address, not
+     * merely when the file would not fit.  This was the fallback until
+     * 2026-09-19, which meant a small resource always landed in the pool
+     * and the pool ran out with 14 MB unused -- two accessories beside
+     * the desktop did not fit, and qed had to replace the desktop rather
+     * than launch beside it.
+     *
+     * Colour icons stay pool-only, as they were: rs_fixit's new-format
+     * path has not been taught far addresses. */
     mark = pool_mark();
-    mem = pool_alloc(size, 2);
+    gofar = wants_far && !(hdr.rsh_vrsn & NEW_FORMAT_RSC);
+    mem = gofar ? NULL : pool_alloc(size, 2);
     if (mem) {
         base = (uint32_t)(uint16_t)mem;
         memcpy(mem, &raw, sizeof raw);  /* rs_fixit takes the file as it is */
@@ -670,15 +690,15 @@ WORD rs_load(const char *name, WORD wants_far)
                 return 0;
             }
         }
-    } else if (wants_far && !(hdr.rsh_vrsn & NEW_FORMAT_RSC)) {
-        /* THE FAR PATH.  The file does not fit the pool, and the caller has
-         * said it can take a far address (docs/far-trees.md, "who may
-         * receive a far address": a small-data program never gets here,
-         * because its kit passes no int_in and aes_entry zeroes them).
-         * One far_alloc, so the whole resource is inside one bank and
-         * tree[obj] is safe to index; streamed up through a small buffer
-         * because the pool it could not fit is also where a big one would
-         * have gone.  Colour icons stay a pool-only feature for now. */
+    } else if (gofar) {
+        /* THE FAR PATH, taken whenever the caller can receive a far
+         * address (docs/far-trees.md, "who may receive a far address": a
+         * small-data program never gets here, because its kit passes no
+         * int_in and aes_entry zeroes them).  One far_alloc, so the whole
+         * resource is inside one bank and tree[obj] is safe to index --
+         * far pointer arithmetic does not carry into the bank byte.
+         * Streamed up through a small buffer, because a resource that
+         * wanted the pool is exactly what there may be no room for. */
         uint8_t buf[128];
         uint16_t left, n, off;
 
