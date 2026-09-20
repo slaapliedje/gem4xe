@@ -104,6 +104,30 @@ their own -- the SpartaDOS X floppy and the card are, and both have room
 to spare.  Eight sectors of margin rather than two, so that the next two
 hundred bytes are not another conversation.
 
+**Phase 46 was the fourth, and it changed the QUESTION rather than the
+number.**  The last ten AES opcodes -- `scrp_clear`, `appl_read`, the
+four menu calls, the two shell calls and the two tape calls, which took
+the AES to all 79 -- put the floppy at 52 against a floor of 64.  Three
+paragraphs above argue that nobody puts a program on this disk, the
+Makefile calls it "a gate's more than anybody's way in", and the way in
+is the INSTALLER: both floppies carry `INSTALL.BAT`, SpartaDOS X copies
+them onto a drive and the machine boots from that (`test-install`,
+`docs/media.md`).  So the floor was guarding a use this file had already
+written off, which is why it produced a conversation every two hundred
+bytes.
+
+It guards one real thing now: `DESKTOP.INF`, which is what a person can
+write to this disk, when they arrange the desktop and choose Options ->
+Save desktop.  Its size is BOUNDED rather than guessed -- `inf_write`
+builds the text in the shell buffer (`src/desk/deskwin.c`) and
+`SIZE_SHELBUF` is 4,192 bytes, 17 double-density sectors of 253, plus
+one for the directory entry.  **The floor is 20**, and the rest of the
+margin is given back.  Splitting the system across two floppies was the
+other option on the table and is not needed here: the *product* already
+is split that way, and the desktop draws one icon per drive in GEMDOS's
+map, D1: to D8: (`src/desk/desktop.c`, `MAX_DRIVES` 8), so a machine
+with four drives already shows four.
+
 That is the honest shape of the thing rather than a regression to be
 fixed: a 640x240 GUI with a resident AES belongs on a volume measured in
 megabytes, and the machine this project targets (Rapidus, VBXE, U1MB) is
