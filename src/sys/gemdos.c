@@ -1422,6 +1422,32 @@ static LONG gd_term(WORD code)
     return (LONG)code;
 }
 
+/* TERMINATE AND STAY RESIDENT, which on this machine is all or nothing.
+ *
+ * The ST's Ptermres(keep, code) keeps `keep` bytes from the basepage on,
+ * because a 68000 program is one contiguous block and the caller says
+ * where to cut it.  gem4xe has no basepage and a program is TWO regions
+ * -- a near one in the bank-$00 pool and a far image -- each taken whole
+ * from a bump allocator.  There is nothing to cut: the unit is the
+ * region, so `keep` is read and ignored, and what is kept is the
+ * program.  Saying that plainly beats honouring a number that cannot
+ * mean here what it means there.
+ *
+ * WHO ACTS ON IT: the shell, and only for a program it ran out of the
+ * AUTO folder before the keep mark (src/aes/shel.c, sh_auto).  A program
+ * launched from the desktop runs ABOVE that mark, and the allocators
+ * wind back past it whatever this says -- so gd_termres is cleared
+ * before every run and a late caller is simply ignored rather than
+ * quietly corrupting the next program's memory. */
+uint16_t gd_termres;                    /* the last program asked to stay */
+
+static LONG gd_ptermres(LONG keep, WORD code)
+{
+    (void)keep;                         /* see above: the unit is the region */
+    gd_termres = 1;
+    return gd_term(code);
+}
+
 /* What standard handle n reaches. */
 static WORD gd_stdt(WORD n)
 {
@@ -1792,8 +1818,8 @@ static LONG gd_nopath(WORD fn)
     case GD_PTERM:
         r = gd_term(arg_w(6));
         break;
-    case GD_PTERMRES:                   /* nothing is left resident */
-        r = gd_term(arg_w(10));
+    case GD_PTERMRES:                   /* ...and stay resident: see above */
+        r = gd_ptermres(arg_l(6), arg_w(10));
         break;
     case GD_CCONIN:
         r = gd_conin(1);

@@ -335,6 +335,201 @@ static WORD sh_ldacc(const char *name)
     return TRUE;
 }
 
+/* ---- the AUTO folder ---------------------------------------------------
+ *
+ * \GEM\AUTO\, read before the accessories and before the keep mark, one
+ * program at a time in the order the directory lists them -- which is
+ * the ST's order and the only one a user can control, by the order they
+ * copy the files in.
+ *
+ * WHY \GEM\AUTO\ AND NOT \AUTO\.  The ST puts it at the root because
+ * TOS is the machine; here the system lives in \GEM\ and the accessories
+ * are already \GEM\*.ACC rather than the root's, for the same reason --
+ * the system is a directory you install, not a machine you boot.  So
+ * AUTO goes beside them, travels with the system floppy's INSTALL.BAT,
+ * and a second gem4xe on another drive keeps its own.
+ *
+ * WHAT RESIDENT MEANS, which is the whole of the design.  A program run
+ * here is loaded and executed exactly as any other; when it returns, its
+ * two regions are given back UNLESS it ended with Ptermres, in which
+ * case they are simply not released and the next program is loaded above
+ * them.  That works because both allocators are bump allocators and this
+ * runs BEFORE pool_keep_mark(): a resident program's memory becomes part
+ * of the permanent floor, exactly as an accessory's does, and a program
+ * that exits normally is released in reverse order, which is the only
+ * order a bump allocator has.
+ *
+ * So the ST's contract is kept -- run at boot, stay if you ask to -- by
+ * the machinery accessories already proved, rather than by a second
+ * allocator nobody needs yet.
+ *
+ * WHAT A RESIDENT PROGRAM CAN DO is up to it: it has run, so it has had
+ * every chance to take a VDI vector (vex_timv and its kind), open files,
+ * or leave data where something else will find it.  What it does NOT get
+ * is a process record or a turn -- that is an accessory, and an
+ * accessory is what to write if you want events.  A lister of what is
+ * resident wants this table, which is why the names are kept rather than
+ * counted.
+ */
+/* WHICH FILES AUTO RUNS.  TOS runs *.PRG and nothing else, and the
+ * reason generalises: every program here is started with NO command
+ * line, so an extension whose entire meaning is "takes parameters"
+ * cannot be one of them.  .TTP is therefore deliberately absent, and
+ * .G4A is present because it is what 0.5 shipped.  The desktop's list is
+ * win_exts[] (src/desk/deskwin.c) and this one is that list less .TTP;
+ * they are separate because they answer different questions -- what a
+ * person may double-click, and what boots without being asked. */
+static WORD sh_isprog(const char *name)
+{
+    static const char FAR exts[][4] = { "PRG", "G4A", "APP", "TOS" };
+    const char *s = name;
+    WORD i;
+
+    while (*s && *s != '.')
+        s++;
+    if (s[0] != '.' || s[4])
+        return FALSE;
+    for (i = 0; i < 4; i++)
+        if (s[1] == exts[i][0] && s[2] == exts[i][1] && s[3] == exts[i][2])
+            return TRUE;
+    return FALSE;
+}
+
+#define AUTO_DIR    "AUTO"
+#define AUTO_MAX    6                   /* named, so a lister can show them;
+                                         * six as the accessories are, and the
+                                         * names are collected on the engine
+                                         * stack exactly as sh_accs does it */
+
+WORD sh_nauto;                          /* programs run out of AUTO */
+WORD sh_nres;                           /* ...of which stayed resident */
+/* THE NAMES ARE FAR, and memreport made that decision rather than me:
+ * as a bank-$00 array this table was 104 bytes and took LoRAM from 323
+ * free to 213, under its floor of 256, and the build failed.  Which is
+ * the right answer anyway and the one the head of this file already
+ * argues -- what the shell keeps FOR applications, across their
+ * lifetimes, belongs in far memory; only what the AES reads itself has
+ * to be near.  Nothing reads this but a lister. */
+static uint32_t sh_res_far;             /* AUTO_MAX x ACC_NAMELEN, or 0 */
+static uint32_t sh_auto_far;            /* ...and what the scan found */
+
+/* One AUTO program: run it, and keep it only if it asked. */
+static void sh_ldauto(const char *path, const char *name)
+{
+    APP  app;
+    WORD st;
+
+    if (app_load_file(path, &app) != APP_OK)
+        return;                         /* a bad one is skipped, not fatal */
+    proc_name(proc_app, name);
+    gd_termres = 0;                     /* it has to ask, every time */
+    sh_nauto++;
+    (void)app_exec(&app);
+    st = gd_termres;
+    gd_termres = 0;
+    if (!st) {
+        app_free(&app);
+        return;
+    }
+    /* IT STAYS.  Nothing is released, so the bump allocators keep it and
+     * the keep mark below will make that permanent.  Past AUTO_MAX it is
+     * still resident -- refusing to keep a program that has already run
+     * and installed itself would be worse than not listing it -- so only
+     * the NAME is dropped. */
+    /* THE NAME, NOT THE PATH.  ACC_NAMELEN is NAME.EXT and its NUL, the
+     * width a directory entry has; "AUTO>" in front of it is five bytes
+     * this field does not have and the directory is not news to anybody
+     * reading the list.  The gate caught the truncation, which is what a
+     * fixed-width copy does instead of failing. */
+    if (sh_nres < AUTO_MAX && sh_res_far)
+        far_strput(sh_res_far + (uint32_t)sh_nres * ACC_NAMELEN,
+                   name, ACC_NAMELEN);
+    sh_nres++;
+}
+
+/* THE SCAN, IN A FRAME OF ITS OWN, and that is the whole reason it is a
+ * separate function rather than the top of sh_auto.
+ *
+ * sh_ldauto RUNS A PROGRAM.  Whatever is on the engine stack when it does
+ * is underneath that program for as long as it lives -- and this is
+ * called from sh_start, so the scan's buffers would be under it too.
+ * With the names collected in one frame and the programs run in another,
+ * the first is gone before the second begins.  m17 measured the
+ * difference: collected and run in one frame the engine stack came
+ * within 216 bytes of its bottom and the gate said so.
+ *
+ * sh_accs never had the problem because ctx_switch gives an accessory a
+ * stack of its own; an AUTO program runs on this one, as a program does.
+ *
+ * NOT STATIC, because this compiler inlines a static with one call site
+ * (the same reason do_aopen is not, src/desk/deskwin.c) -- and inlining
+ * it would put the buffers straight back into sh_auto's frame and undo
+ * exactly what it is for.
+ *
+ * Returns how many names went into sh_auto_far. */
+WORD sh_autoscan(void)
+{
+    char cio[CIO_NAME_MAX + 1], line[ACC_DIRLINE + 8], fname[ACC_NAMELEN];
+    WORD n = 0;
+    int16_t fd;
+
+    sh_cioname(AUTO_DIR ">*.*", cio);
+    fd = cio_open(cio, CIO_A_DIR, 0);
+    if (fd < 0)
+        return 0;                       /* no AUTO folder: nothing to do */
+    /* Taken only when there IS one, and before the keep mark like every
+     * other thing this file keeps, so a machine with no AUTO folder pays
+     * nothing for the feature. */
+    if (!sh_auto_far) {
+        sh_auto_far = far_alloc(AUTO_MAX * ACC_NAMELEN);
+        sh_res_far  = far_alloc(AUTO_MAX * ACC_NAMELEN);
+    }
+    if (!sh_auto_far || !sh_res_far) {
+        cio_close(fd);
+        return 0;
+    }
+    while (n < AUTO_MAX) {
+        uint16_t got = 0;
+        uint8_t  st = cio_getrec(fd, line, sizeof line, &got);
+        if (st != CIO_OK && st != CIO_OK_EOF)
+            break;
+        if ((dos_dirline(line, got, fname, 0) & DOS_ENT_KIND) == DOS_ENT_FILE
+            && sh_isprog(fname)) {
+            far_strput(sh_auto_far + (uint32_t)n * ACC_NAMELEN,
+                       fname, ACC_NAMELEN);
+            n++;
+        }
+        if (st == CIO_OK_EOF)
+            break;
+    }
+    cio_close(fd);
+    return n;
+}
+
+/* Run what the scan found, in the order the directory gave -- which is
+ * the ST's order, and the only one a user controls, by the order they
+ * copy the files in.  The scan's frame is gone by now. */
+static void sh_auto(void)
+{
+    WORD n = sh_autoscan();
+    WORD i;
+
+    for (i = 0; i < n; i++) {
+        char path[ACC_NAMELEN + sizeof AUTO_DIR + 2];
+        WORD k, j;
+
+        for (k = 0; k < (WORD)(sizeof AUTO_DIR) - 1; k++)
+            path[k] = AUTO_DIR[k];
+        path[k++] = '>';
+        far_strget(path + k, sh_auto_far + (uint32_t)i * ACC_NAMELEN,
+                   ACC_NAMELEN);
+        for (j = 0; path[k + j]; j++)
+            ;
+        path[k + j] = 0;
+        sh_ldauto(path, path + k);
+    }
+}
+
 static void sh_accs(void)
 {
     char  names[NUM_PROCS - 1][ACC_NAMELEN];
@@ -479,6 +674,11 @@ WORD sh_main(void)
             return rs;
         }
     }
+    /* AUTO FIRST, then the accessories, which is TOS's order -- an AUTO
+     * program is meant to be able to set up something an accessory then
+     * finds.  Both are before the keep mark below, so a program that
+     * ended with Ptermres is as permanent as an accessory is. */
+    sh_auto();
     sh_accs();                  /* before the first program: see above */
 
     /* EVERYTHING TAKEN SO FAR IS PERMANENT, and from here the machine

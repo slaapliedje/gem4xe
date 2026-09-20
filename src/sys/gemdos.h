@@ -219,4 +219,12 @@ void gd_cioname(const char *name, char *cio);
 extern uint16_t gemdos_calls;   /* calls made */
 extern uint16_t gemdos_bad;     /* of which EINVFN */
 
+/* Set by Ptermres, cleared by whoever is about to run a program.  It is
+ * all or nothing here: a gem4xe program is a near region and a far image,
+ * each taken whole from a bump allocator, so there is no `keep` byte
+ * count to honour (src/sys/gemdos.c says the rest).  Only the shell's
+ * AUTO folder acts on it -- everything else runs above the keep mark,
+ * where the allocators wind back regardless. */
+extern uint16_t gd_termres;
+
 #endif /* GEM4XE_GEMDOS_H */
