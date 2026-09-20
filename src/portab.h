@@ -45,6 +45,14 @@
 #define TINY         __attribute__((tiny))
 #define SIMPLE_CALL  __simple_call
 #define TASK         __task
+/* A function that establishes its OWN direct page and data bank on entry
+ * and gives the caller's back on exit.  What it costs is `phb phd`, two
+ * immediate loads and `pld plb`; what it buys is a function that can be
+ * called from a separately linked module and still find its own globals.
+ * That is exactly a control panel extension's entry point (src/app/cpx.h)
+ * -- without it a module reads its host's memory at its own addresses,
+ * silently, which is this project's oldest failure shape. */
+#define SAVEDS       __attribute__((saveds))
 #define SECTION(s)   __attribute__((section(s)))
 #define memcpy_far   __memcpy_far
 #define cpu_sei()    __disable_interrupts()
