@@ -82,6 +82,15 @@ WORD ap_read(WORD ap_id, WORD length, uint32_t buf)
 #define AI_MESSAGE      12
 #define AI_OBJECT       13
 #define AI_FORM         14
+/* AND ONE OF GEM4XE'S OWN.  appl_getinfo exists so a program can ASK
+ * rather than guess from a version number, and its subject numbers are
+ * the extension point -- so a question this AES answers and no other
+ * does belongs here rather than in an opcode nobody else would serve.
+ * Atari's go up to 14; this starts where a private one cannot collide
+ * with a future Atari subject by accident.  A program that asks an AES
+ * which does not know it gets FALSE from the default below, which is
+ * the correct answer and exactly what the call is for. */
+#define AI_CPX          64
 
 /* THE RESOLUTION NUMBER: gem4xe has none, and says so.
  *
@@ -283,6 +292,32 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
          * ended on -- ob_edit writes through the index and the shim
          * copies it out -- which is the third word. */
         *out3 = 1;
+        break;
+
+    case AI_CPX:
+        /* THE CONTROL PANEL'S EXTENSIONS: how many are loaded, and where
+         * the table of them is.  The address is FAR and so takes two of
+         * the four words, high first -- the same order wind_set(WF_NAME)
+         * takes one in, because a 24-bit address in a 16-bit word is
+         * this project's oldest bug and one convention for all of them
+         * is how it stays fixed.
+         *
+         * The panel reads the table itself rather than asking for a
+         * module at a time: it is a --data-model=large program, the
+         * table is a flat array of (CPXINFO address, CPXHEAD), and a
+         * call per field would be a call per icon per redraw.
+         *
+         *   out1  modules loaded
+         *   out2  the table's address, high word
+         *   out3  ...and low
+         *   out4  the size of one entry, so the panel can stride it
+         *         without this file and src/app/cpx.h having to agree
+         *         about padding
+         */
+        *out1 = sh_ncpx;
+        *out2 = (WORD)(sh_cpxtable() >> 16);
+        *out3 = (WORD)(sh_cpxtable() & 0xFFFF);
+        *out4 = (WORD)sh_cpxstride();
         break;
 
     default:

@@ -23,16 +23,10 @@
 /* The module's own, which it must define. */
 extern CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr);
 
-/* The slot: a 32-bit CPXINFO address, then the header.  It must agree
- * with src/aes/shel.c's CPXE_INFO and CPXE_HDR, which cannot include
- * this file -- the AES is small-data and this is the application's
- * model -- so the two say the same thing in two places on purpose and
- * tests/host/test_cpxslot.py is the third, from neither. */
-typedef struct {
-    uint32_t info;
-    CPXHEAD  hdr;
-} CPXSLOT;
-
+/* CPXSLOT is src/app/cpx.h's -- the same layout the panel reads through
+ * cpx_slot().  The AES lays it out again by hand (src/aes/shel.c's
+ * CPXE_INFO and CPXE_HDR) because it cannot include this header, and
+ * tests/host/test_cpx.py is the third writing that holds the two to it. */
 int main(void)
 {
     char cmd[128], tail[128];

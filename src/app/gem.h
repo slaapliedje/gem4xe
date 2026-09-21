@@ -985,6 +985,15 @@ WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
 #define AES_MESSAGE     12
 #define AES_OBJECT      13
 #define AES_FORM        14
+/* gem4xe's own subject, which no Atari AES has: the control panel's
+ * extensions.  A program that asks an AES which does not know it gets 0
+ * back, which is the right answer and what appl_getinfo is for.
+ *   out1  modules loaded
+ *   out2  the table's address, HIGH word   out3  ...and low
+ *   out4  one entry's size, to stride it
+ * src/app/cpx.h's cpx_count and cpx_slot wrap this; there is no reason
+ * to assemble the address by hand. */
+#define AES_CPX         64
 /* AES_LARGEFONT / AES_SMALLFONT's ap_gout3 */
 #define SYSTEM_FONT     0
 #define OUTLINE_FONT    1

@@ -836,6 +836,8 @@ void sh_cioname(const char *gem, char *cio);
 extern WORD sh_ncpx;
 extern WORD sh_cpxbad;
 uint32_t sh_cpxinfo(WORD i);
+uint32_t sh_cpxtable(void);     /* the flat table, for appl_getinfo */
+WORD     sh_cpxstride(void);    /* one entry's size */
 uint32_t sh_cpxhdr(WORD i);
 
 /* The shell loop: the desktop (DESKTOP.PRG on the default drive), the

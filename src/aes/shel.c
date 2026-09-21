@@ -702,6 +702,20 @@ uint32_t sh_cpxinfo(WORD i)
     return info;
 }
 
+/* THE WHOLE TABLE, for appl_getinfo(AI_CPX): a program strides it
+ * itself rather than asking for one field at a time, which would be a
+ * call per icon per redraw.  0 when nothing is loaded -- and nothing is
+ * allocated then either, so a machine with no modules pays nothing. */
+uint32_t sh_cpxtable(void)
+{
+    return sh_ncpx ? sh_cpx_far : 0;
+}
+
+WORD sh_cpxstride(void)
+{
+    return CPXE_SIZE;
+}
+
 /* ...and its header, copied out for a lister: the title, the icon and
  * the flags the module filled in at load time. */
 uint32_t sh_cpxhdr(WORD i)

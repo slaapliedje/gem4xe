@@ -17,9 +17,10 @@
  * WHAT IS NOT THE ST'S, AND WHY.
  *
  * A .CPX ON AN ST IS A 68000 GEMDOS EXECUTABLE.  Nothing can change that,
- * so a gem4xe CPX is a .G4A (tools/mkg4a.py) with this header in front of
- * it.  The header travels; the machine code cannot.  A port is a
- * recompile plus whatever the two AESes differ by, not a translation.
+ * so a gem4xe CPX is a .G4A (tools/mkg4a.py) carrying this header INSIDE
+ * it -- see the file section below for why it is not in front.  The
+ * header travels; the machine code cannot.  A port is a recompile plus
+ * whatever the two AESes differ by, not a translation.
  *
  * THE CALLBACKS TAKE ORDINARY ARGUMENTS.  COPS passes every multi-argument
  * callback as a STRUCT BY VALUE -- `struct Sl_xy_args`, `struct
@@ -79,9 +80,9 @@
 /* THE HEADER IS 512 BYTES AND EVERY OFFSET IS ATARI'S.  Do not measure it
  * with sizeof in a constant expression -- this compiler answers two
  * different numbers for a struct with a trailing array (B7,
- * tools/ccbug) -- and do not reorder it.  test_cpxhead.py asserts the
- * offsets against this comment rather than against the struct, so that
- * the struct cannot quietly drift away from the format.
+ * tools/ccbug) -- and do not reorder it.  tests/host/test_cpx.py asserts
+ * the offsets against this comment rather than against the struct, so
+ * that the struct cannot quietly drift away from the format.
  *
  *    0  u16  magic
  *    2  u16  flags
@@ -92,9 +93,12 @@
  *  120  u16  i_info          colour and character (see below)
  *  122  char title_txt[18]   the dialog's title
  *  140  u16  t_info          the title's colours
- *  142  char buffer[64]      THE MODULE'S OWN SETTINGS, written back into
- *                            the file by CPX_Save -- which is how a CPX
- *                            remembers anything at all
+ *  142  char buffer[64]      THE MODULE'S OWN SETTINGS.  The ST writes
+ *                            these back into the .CPX itself, which it
+ *                            can because its header is in the file;
+ *                            CPX_Save here puts them in a file beside
+ *                            the module, so a module is never written
+ *                            to while it is loaded
  *  206  char reserved[306]
  *  512
  */
@@ -221,5 +225,41 @@ typedef struct {
  * to a file of their own beside the module, so that a module is never
  * written to while it is loaded -- see CPX_Save. */
 #define CPX_ENTRY  SAVEDS
+
+/* ---- what the PANEL uses ----------------------------------------------
+ * A control panel asks the AES what is loaded and reads the table.  It
+ * is a flat array of slots, each a 32-bit CPXINFO address followed by
+ * that module's CPXHEAD, and the AES reports the stride so this header
+ * and the AES need not agree about padding.
+ *
+ * Both of these are inline rather than library code because a panel is
+ * the only caller and they are four lines; and they exist at all so
+ * that nobody assembles a 24-bit address out of two words by hand,
+ * which is where this project's oldest bug lives.
+ */
+typedef struct {
+    uint32_t info;              /* the module's CPXINFO, 0 if none */
+    CPXHEAD  hdr;               /* what it filled in at load time */
+} CPXSLOT;
+
+/* How many modules the AES has loaded, and where they are.  Returns the
+ * count; *table is the far address of slot 0 and *stride one slot's
+ * size.  0 on an AES that has no extensions, or knows no such subject. */
+static __inline WORD cpx_count(uint32_t *table, WORD *stride)
+{
+    WORD n = 0, hi = 0, lo = 0, st = 0;
+
+    if (!appl_getinfo(AES_CPX, &n, &hi, &lo, &st))
+        return 0;
+    *table  = ((uint32_t)(UWORD)hi << 16) | (UWORD)lo;
+    *stride = st;
+    return n;
+}
+
+/* Slot i, as a far pointer the panel can read the header out of. */
+static __inline CPXSLOT FAR *cpx_slot(uint32_t table, WORD stride, WORD i)
+{
+    return (CPXSLOT FAR *)(table + (uint32_t)i * (UWORD)stride);
+}
 
 #endif /* GEM4XE_CPX_H */
