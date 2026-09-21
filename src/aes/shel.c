@@ -530,6 +530,200 @@ static void sh_auto(void)
     }
 }
 
+/* ---- the control panel's extensions ------------------------------------
+ *
+ * \GEM\*.CPX, loaded here beside the accessories and for the same
+ * reasons: a module is a .G4A, it is kept for the life of the machine,
+ * and this is before the keep mark so keeping it costs nothing extra.
+ *
+ * WHY NOT ON DEMAND, which is what a control panel would rather do.
+ * Both allocators are bump allocators.  Memory taken while the desktop
+ * is up sits ABOVE the desktop's own mark, and app_free winds back to
+ * that mark the moment the desktop exits to run a program -- so a module
+ * the panel loaded when you opened it would be freed out from under it
+ * by the next thing you launched, with nothing failing at the time.
+ * Loading them all here is what the allocator allows, and it is what
+ * accessories have always done.
+ *
+ * WHAT THE SHELL DOES AND DOES NOT DO.  It finds them, loads them, calls
+ * each one's entry, and keeps the vtable and the header.  It does not
+ * draw anything: the panel (CONTROL.ACC) asks for the list and drives
+ * whichever the user picks.  That split is the point of a CPX -- the
+ * host owns the window and the event loop, the module owns the dialog.
+ */
+#define CPX_EXT     "CPX"
+#define CPX_MAX     6                   /* as the accessories are */
+
+WORD sh_ncpx;                           /* modules loaded */
+WORD sh_cpxbad;                         /* ...and found but refused: the gate */
+static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD) */
+
+/* One entry of the table, laid out by hand because this file must agree
+ * with src/app/cpx.h without including it -- the AES is small-data and
+ * cpx.h is the application's header, in the application's model. */
+#define CPXE_INFO   0                   /* uint32_t: the module's CPXINFO  */
+#define CPXE_HDR    4                   /* CPX_HDR_SIZE bytes of header    */
+#define CPX_HDR_SZ  512
+#define CPXE_SIZE   (CPXE_HDR + CPX_HDR_SZ)
+
+/* What the module is handed.  Far, because the module holds it for as
+ * long as it lives and this file's near memory is the AES's.  Only the
+ * first three words are filled today -- cpx.h says every callback may be
+ * 0 and a module must cope, which is how this grows without breaking a
+ * module built against it. */
+static uint32_t sh_xcpb;
+#define XCPB_SIZE   64
+
+/* ONE MODULE, AND WHY IT IS RUN RATHER THAN CALLED.
+ *
+ * The obvious thing is to load the module and call its cpx_init through
+ * a far pointer -- Calypsi compiles that to a real long indirect call
+ * and it works.  IT WOULD BE WRONG.  A program's initialised data is not
+ * in its image: the crt installs it, walking data_init_table
+ * (src/app/crt_gemapp.s).  Enter a module anywhere but its crt and every
+ * initialised global it has is whatever was in that memory before --
+ * silently, which is the failure shape this project keeps meeting.
+ *
+ * So a module is RUN, as a program, through app_run, and it ends with
+ * Ptermres so the shell keeps it -- the AUTO folder's machinery exactly
+ * (sh_ldauto above), for the same reason and with the same guarantee.
+ * By the time it returns its data is live, its dialog is built, and the
+ * vtable it published is callable.
+ *
+ * HOW IT PUBLISHES.  Its command tail carries the address of its own
+ * slot in the table below -- three bytes, in the ST's tail shape, a
+ * length byte then the bytes -- and the kit's cpx glue writes the
+ * header and the CPXINFO pointer there before returning.  The tail is
+ * how a program has always been told what to do, so nothing new had to
+ * be invented for it. */
+static void sh_ldcpx(const char *path, const char *name)
+{
+    APP      app;
+    uint32_t e = sh_cpx_far + (uint32_t)sh_ncpx * CPXE_SIZE;
+    uint8_t  tail[5];
+    uint32_t info = 0;
+
+    (void)name;
+    if (app_load_file(path, &app) != APP_OK) {
+        sh_cpxbad++;
+        return;
+    }
+    tail[0] = 3;                        /* the ST's tail: a length, then it */
+    tail[1] = (uint8_t)(e & 0xFF);
+    tail[2] = (uint8_t)((e >> 8) & 0xFF);
+    tail[3] = (uint8_t)((e >> 16) & 0xFF);
+    tail[4] = 0x0D;
+    far_put(sh_tail_far, tail, sizeof tail);
+    far_strput(sh_cmd_far, path, SH_CMDLEN);
+    gd_termres = 0;
+    (void)app_run(app.entry);
+    far_get((uint8_t *)&info, e + CPXE_INFO, 4);
+    if (!info || !gd_termres) {
+        /* It declined, or ended without asking to stay -- either way
+         * there is nothing to keep and keeping it would be a leak that
+         * never comes back, since this is below the keep mark. */
+        app_free(&app);
+        sh_cpxbad++;
+        gd_termres = 0;
+        return;
+    }
+    gd_termres = 0;
+    sh_ncpx++;                          /* kept, as an accessory is */
+}
+
+/* The scan, in a frame of its own, for sh_autoscan's reason: sh_ldcpx
+ * RUNS the module's entry, and the scan's buffers must not be under it. */
+WORD sh_cpxscan(void)
+{
+    char cio[CIO_NAME_MAX + 1], line[ACC_DIRLINE + 8], fname[ACC_NAMELEN];
+    WORD n = 0;
+    int16_t fd;
+
+    char names[CPX_MAX][ACC_NAMELEN];
+    WORD i;
+
+    sh_cioname("*." CPX_EXT, cio);
+    fd = cio_open(cio, CIO_A_DIR, 0);
+    if (fd < 0)
+        return 0;
+    /* THE NAMES FIRST, AND THE TABLE ONLY IF THERE ARE ANY.  Opening a
+     * WILDCARD as a directory succeeds whether or not anything matches
+     * -- unlike the AUTO folder, where a missing directory fails to open
+     * and the question never arises.  Allocating here regardless cost
+     * every machine 3,160 bytes of far memory for a table it had no
+     * modules to put in, and test-m16 said so: it checks that the far
+     * heap moved by the desktop's file and nothing else, which is
+     * exactly the kind of quiet growth it exists to catch. */
+    while (n < CPX_MAX) {
+        uint16_t got = 0;
+        uint8_t  st = cio_getrec(fd, line, sizeof line, &got);
+        if (st != CIO_OK && st != CIO_OK_EOF)
+            break;
+        if ((dos_dirline(line, got, fname, 0) & DOS_ENT_KIND) == DOS_ENT_FILE
+            && dos_wildcmp("*." CPX_EXT, fname)) {
+            for (i = 0; i < ACC_NAMELEN && fname[i]; i++)
+                names[n][i] = fname[i];
+            names[n][i] = 0;
+            n++;
+        }
+        if (st == CIO_OK_EOF)
+            break;
+    }
+    cio_close(fd);
+    if (!n)
+        return 0;                       /* no modules: nothing is taken */
+    if (!sh_cpx_far) {
+        sh_cpx_far = far_alloc(CPX_MAX * CPXE_SIZE);
+        sh_xcpb    = far_alloc(XCPB_SIZE);
+        if (sh_xcpb)
+            far_fill(sh_xcpb, 0, XCPB_SIZE);
+    }
+    if (!sh_cpx_far || !sh_xcpb)
+        return 0;
+    far_fill(sh_cpx_far, 0, CPX_MAX * CPXE_SIZE);
+    for (i = 0; i < n; i++)             /* the name, until it fills it */
+        far_strput(sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR,
+                   names[i], ACC_NAMELEN);
+    return n;
+}
+
+/* WHAT THE PANEL ASKS FOR.  The module's vtable, by index, or 0.  This
+ * is the whole of the shell's side of the contract: it finds and loads
+ * and keeps, and hands back what it kept.  Drawing and events are the
+ * panel's (CONTROL.ACC), because a CPX's entire shape is that the host
+ * owns the window and the module owns the dialog. */
+uint32_t sh_cpxinfo(WORD i)
+{
+    uint32_t info = 0;
+
+    if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
+        return 0;
+    far_get((uint8_t *)&info, sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_INFO, 4);
+    return info;
+}
+
+/* ...and its header, copied out for a lister: the title, the icon and
+ * the flags the module filled in at load time. */
+uint32_t sh_cpxhdr(WORD i)
+{
+    if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
+        return 0;
+    return sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR;
+}
+
+static void sh_cpx(void)
+{
+    WORD n = sh_cpxscan();
+    WORD i;
+
+    for (i = 0; i < n; i++) {
+        char name[ACC_NAMELEN];
+        far_strget(name, sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR,
+                   ACC_NAMELEN);
+        sh_ldcpx(name, name);
+    }
+}
+
 static void sh_accs(void)
 {
     char  names[NUM_PROCS - 1][ACC_NAMELEN];
@@ -679,7 +873,8 @@ WORD sh_main(void)
      * finds.  Both are before the keep mark below, so a program that
      * ended with Ptermres is as permanent as an accessory is. */
     sh_auto();
-    sh_accs();                  /* before the first program: see above */
+    sh_accs();
+    sh_cpx();   /* the panel's modules, kept as the accessories are */                  /* before the first program: see above */
 
     /* EVERYTHING TAKEN SO FAR IS PERMANENT, and from here the machine
      * keeps that rather than this file arranging it.  Above this mark is

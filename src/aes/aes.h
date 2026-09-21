@@ -830,6 +830,14 @@ void sh_put(uint32_t pdata, WORD len);
 void sh_envrn(const char **ppath, const char *psrch);
 WORD sh_find(char *pspec);
 void sh_cioname(const char *gem, char *cio);
+/* The control panel's extensions, loaded beside the accessories: how
+ * many there are, each one's published CPXINFO (a far address, 0 if
+ * none) and each one's header (src/app/cpx.h). */
+extern WORD sh_ncpx;
+extern WORD sh_cpxbad;
+uint32_t sh_cpxinfo(WORD i);
+uint32_t sh_cpxhdr(WORD i);
+
 /* The shell loop: the desktop (DESKTOP.PRG on the default drive), the
  * programs it asks for, until a shutdown.  Returns how many programs it
  * ran, or a negative APP_* status when the desktop itself would not

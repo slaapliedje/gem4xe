@@ -47,8 +47,24 @@
 #include "gem.h"
 
 /* ---- the file ---------------------------------------------------------
- * A gem4xe CPX is a .G4A whose first 512 bytes are the header below, so
- * the panel can list every module without loading any of them.
+ * A gem4xe CPX is a .G4A named *.CPX.  Nothing is in front of it: the
+ * header below is a variable INSIDE the module, which the module copies
+ * into the panel's when its entry is called.
+ *
+ * THE ST PUTS THE HEADER IN THE FILE so XCONTROL can list every module
+ * without loading any -- it reads 512 bytes and closes the file again.
+ * That buys nothing here, because every module IS loaded, at boot,
+ * before the keep mark (src/aes/shel.c, sh_cpx).  And it has to be:
+ * both of gem4xe's allocators are bump allocators, so memory taken
+ * while the desktop is up sits ABOVE the desktop's own mark and
+ * app_free reclaims it the moment the desktop exits to run a program.
+ * A module loaded on demand would be freed out from under the panel by
+ * the next thing the user launched, silently.
+ *
+ * So: loaded when the accessories are, kept as long as they are, and a
+ * header that travels in the module rather than in front of it -- which
+ * also means the loader needs no special case and a CPX is a .G4A the
+ * ordinary tools already build.
  */
 #define CPX_MAGIC    0x6811         /* 'CPX' for this machine: not $601A,
                                      * which is a 68000 `bra.s` and would
@@ -182,12 +198,28 @@ typedef struct {
     void (*cpx_close)(WORD flag);
 } CPXINFO;
 
-/* THE ENTRY POINT.  A module defines exactly one, named cpx_init, and the
- * panel calls it once after loading.  It must be saveds, because the
- * direct page and data bank on entry are the PANEL's.
+/* THE ENTRY POINT.  A module defines exactly one, named cpx_init, and
+ * the panel calls it ONCE after loading:
  *
- *     CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb);
- */
+ *     CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr);
+ *
+ * It fills *hdr with its own header -- its title, its icon, its flags,
+ * and the 64 bytes it keeps settings in -- and returns its vtable, or 0
+ * to decline (a module that finds no hardware it can configure should
+ * decline rather than appear and do nothing).
+ *
+ * IT MUST BE saveds, which is the whole reason CPX_ENTRY is a macro and
+ * not a comment.  A module is linked separately from the panel, so the
+ * direct page and data bank live on entry are the PANEL's; without
+ * saveds a module reads its own globals at the panel's addresses,
+ * silently, which is this project's oldest failure shape.  Every other
+ * entry in CPXINFO needs SAVEDS on it too, for the same reason -- the
+ * panel calls those directly.
+ *
+ * WHERE SETTINGS GO.  The ST writes the 64 bytes back into the .CPX file
+ * itself, which it can because the header is in the file.  Here they go
+ * to a file of their own beside the module, so that a module is never
+ * written to while it is loaded -- see CPX_Save. */
 #define CPX_ENTRY  SAVEDS
 
 #endif /* GEM4XE_CPX_H */

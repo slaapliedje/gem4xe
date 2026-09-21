@@ -963,6 +963,19 @@ AUTO_GO_OBJS  = $(G4A_LIB) build/app/m34_go.o
 $(eval $(call g4a,m34_auto,$(AUTO_RES_OBJS),512,128,384,,))
 $(eval $(call g4a,m34_go,$(AUTO_GO_OBJS),512,128,384,,))
 
+# The control panel extension gate (src/m35_cpx.c): a module, built with
+# the kit's cpx glue (src/app/cpxmain.c) exactly as any CPX would be.
+# --data-model=small, because a module's data must be initialised by its
+# own crt and the small model is the plainest way to show that working.
+build/app/cpxmain.o: src/app/cpxmain.c src/app/cpx.h src/app/gem.h
+	@mkdir -p build/app
+	$(CC) $(CFLAGS) -I src/app -o $@ $<
+build/app/m35_cpx.o: src/m35_cpx.c src/app/cpx.h src/app/gem.h
+	@mkdir -p build/app
+	$(CC) $(CFLAGS) -I src/app -o $@ $<
+CPX_OBJS = $(G4A_LIB) build/app/cpxmain.o build/app/m35_cpx.o
+$(eval $(call g4a,m35_cpx,$(CPX_OBJS),1024,256,512,,))
+
 # The far-resource gate application (src/m33_farrsc.c), built TWICE from
 # one source: --data-model=large, whose kit asks for far addresses, and
 # --data-model=small, whose kit does not.  FARRSC.RSC is 42 KB against a
@@ -1238,6 +1251,16 @@ build/m34-boot.atr: build/m3.xex build/m34_auto.g4a build/m34_go.g4a \
 	    --mkdir AUTO --add build/m34_auto.g4a "AUTO>M34RES.PRG" \
 	    --add build/m34_go.g4a "AUTO>M34GO.PRG"
 
+# The CPX gate's disk (test-m35): test-m16's, with one module in the
+# system directory, which is where the shell scans for *.CPX.
+build/m35-boot.atr: build/m3.xex build/m35_cpx.g4a tests/fixtures/test.txt \
+                    tests/fixtures/out.txt build/test.rsc $(SHELL_DEPS) \
+                    tools/mkspdisk.py tools/atr.py
+	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
+	    --add build/m35_cpx.g4a M35.CPX
+
 # The accessories' disk (test-m22): test-m16's, with the two programs
 # and their resources added.  A disk of its own rather than SHELL_FILES,
 # because the file layer's gates count what is in a directory -- the
@@ -1348,7 +1371,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-boot test-install
+test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-boot test-install
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1592,6 +1615,12 @@ test-m16: build/m14-boot.atr
 test-m34: build/m34-boot.atr
 	python3 tests/emu/m34_auto.py
 
+# A control panel extension: loaded beside the accessories, entered
+# through its own crt, and called back into through the vtable it
+# published.
+test-m35: build/m35-boot.atr
+	python3 tests/emu/m35_cpx.py
+
 # The desktop: DESKTOP.PRG under the shell, driven at the mouse and checked
 # against tools/deskref.py -- the desktop itself transcribed against the AES
 # model (phase 14, milestone 4).
@@ -1794,4 +1823,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
