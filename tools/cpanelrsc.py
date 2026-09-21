@@ -42,20 +42,28 @@ ADCPANEL = 0
 N_DC = 5                        # evnt_dclick takes 0..4
 N_MN = 4                        # the delays this panel offers
 
+N_CPX = 6                       # the AES loads at most this many
+
 (CPROOT, CPTITLE, CPDCLBL, CPDCBOX,
  CPDC0, _DC1, _DC2, _DC3, _DC4,
  CPTSTLBL, CPTEST,
  CPMNLBL, CPMNBOX,
  CPMN0, _MN1, _MN2, _MN3,
- CPOK, CPCNCL) = range(19)
-NOBS_CPANEL = 19
+ CPXLBL, CPXBOX,
+ CPX0, _CX1, _CX2, _CX3, _CX4, _CX5,
+ CPXOPEN,
+ CPOK, CPCNCL) = range(28)
+NOBS_CPANEL = 28
 
-W, H = 40, 15
+W, H = 40, 25
 TITLE = "Control Panel"
 DCLBL = "Double-click speed"
 TSTLBL = "Test"
 TEST = "Double-click here"
 MNLBL = "Sub-menu delay"
+CPXLBLT = "Extensions"
+CPXOPENT = "Open"
+CPX_W = 20           # title_txt is 18 and the frame wants a little
 
 DC_W, DC_STEP = 4, 5            # five numbered boxes, the donor's shape
 MN_W, MN_STEP = 8, 8            # named, so they touch and read as one strip
@@ -90,7 +98,7 @@ def cpanel_tree(r):
                  r.string(TEST), ch(11), ch(6), ch(len(TEST) + 3), ch(1)))
     objs.append((CPMNBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(MNLBL),
                  ch(GROUP_X), ch(8), ch(len(MNLBL)), ch(1)))
-    objs.append((CPOK, CPMN0, CPMN0 + N_MN - 1, G_IBOX, NONE, NORMAL,
+    objs.append((CPXLBL, CPMN0, CPMN0 + N_MN - 1, G_IBOX, NONE, NORMAL,
                  0x00000000,
                  ch(GROUP_X), ch(9),
                  ch((N_MN - 1) * MN_STEP + MN_W), ch(1)))
@@ -99,10 +107,26 @@ def cpanel_tree(r):
                      NIL, NIL, G_BUTTON, RADIO, NORMAL,
                      r.string(MN_NAMES[i]),
                      ch(i * MN_STEP), ch(0), ch(MN_W), ch(1)))
+    # THE EXTENSIONS.  Six rows because that is what the AES loads
+    # (src/aes/shel.c, CPX_MAX); the panel hides the ones it has no
+    # module for rather than showing empty buttons, and the strings here
+    # are PLACEHOLDERS -- cpanel.c points each row's ob_spec at a title
+    # it copied out of the AES's table at start-up.
+    objs.append((CPXBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(CPXLBLT),
+                 ch(GROUP_X), ch(11), ch(len(CPXLBLT)), ch(1)))
+    objs.append((CPXOPEN, CPX0, CPX0 + N_CPX - 1, G_IBOX, NONE, NORMAL,
+                 0x00000000,
+                 ch(GROUP_X), ch(12), ch(CPX_W), ch(N_CPX)))
+    for i in range(N_CPX):
+        objs.append((CPX0 + i + 1 if i < N_CPX - 1 else CPXBOX,
+                     NIL, NIL, G_BUTTON, RADIO, NORMAL, r.string(" " * 18),
+                     ch(0), ch(i), ch(CPX_W), ch(1)))
+    objs.append((CPOK, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
+                 r.string(CPXOPENT), ch(26), ch(12), ch(9), ch(1)))
     objs.append((CPCNCL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT,
-                 NORMAL, r.string("OK"), ch(9), ch(12), ch(9), ch(1)))
+                 NORMAL, r.string("OK"), ch(9), ch(22), ch(9), ch(1)))
     objs.append((CPROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB,
-                 NORMAL, r.string("Cancel"), ch(22), ch(12), ch(9), ch(1)))
+                 NORMAL, r.string("Cancel"), ch(22), ch(22), ch(9), ch(1)))
     assert len(objs) == NOBS_CPANEL, (len(objs), NOBS_CPANEL)
     return r.tree(objs)
 
@@ -110,7 +134,9 @@ def cpanel_tree(r):
 INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTITLE", CPTITLE),
            ("CPDCLBL", CPDCLBL), ("CPDCBOX", CPDCBOX), ("CPDC0", CPDC0),
            ("CPTSTLBL", CPTSTLBL), ("CPTEST", CPTEST), ("CPMNLBL", CPMNLBL),
-           ("CPMNBOX", CPMNBOX), ("CPMN0", CPMN0), ("CPOK", CPOK),
+           ("CPMNBOX", CPMNBOX), ("CPMN0", CPMN0), ("CPXLBL", CPXLBL), ("CPXBOX", CPXBOX),
+           ("CPX0", CPX0), ("CPXOPEN", CPXOPEN), ("N_CPX", N_CPX),
+           ("CPOK", CPOK),
            ("CPCNCL", CPCNCL), ("N_DC", N_DC), ("N_MN", N_MN),
            ("NOBS_CPANEL", NOBS_CPANEL)]
 

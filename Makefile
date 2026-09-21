@@ -1159,9 +1159,10 @@ SP_APPS   = --mkdir APPS \
 	    --add build/cpanel.rsc "GEM>CPANEL.RSC" \
 	    --add build/calcacc.g4a "GEM>CALC.ACC" \
 	    --add build/calc.rsc "GEM>CALC.RSC" \
+	    --add build/m35_cpx.g4a "GEM>TEST.CPX" \
 	    --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
 	    --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
-SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) tools/mkspdisk.py tools/atr.py
+SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a tools/mkspdisk.py tools/atr.py
 
 build/gem-shots.atr: $(SP_DEPS)
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
