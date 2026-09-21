@@ -110,6 +110,18 @@ def children(b, tree, parent):
 # far G looked like to a gate that still expected a near one.
 MAX_TREE_DEPTH = 12
 
+# The Extensions list's first row, and the Open button, in the Control
+# Panel as form_center places it.
+#
+# MEASURED OFF docs/shots/10-cpanel.png AND HALVED, which is the part
+# that is easy to get wrong: publish() crops the border and DOUBLES THE
+# ROWS, so a y read off a published picture is twice the y the pointer
+# wants.  The first attempt clicked at the published number, missed both
+# objects, and produced a picture of the panel doing nothing -- which
+# looked like a broken feature rather than a wrong coordinate.
+CPX_ROW1 = (270, 125)
+CPX_OPEN = (403, 125)
+
 
 def placed(b, tree, root=0):
     """{obj: (x, y, w, h)} on the screen, for every object under root."""
@@ -453,6 +465,29 @@ def main(argv):
             t.go((400, 200))
             b.frames(30)
             t.shot(shot)
+            if name == "Control Panel":
+                # ...and one of its extensions, opened.  THE POINT OF THE
+                # WHOLE SHAPE: the panel lists what the AES loaded and
+                # calls that module's cpx_call, so what appears next is a
+                # dialog belonging to a separately linked file the panel
+                # has never heard of.
+                #
+                # The two places clicked are MEASURED off the panel's own
+                # picture (10-cpanel.png) rather than read out of its
+                # tree: the panel is an accessory, so its objects are in
+                # its own memory and reaching them wants symbols and a
+                # near base this tour does not carry.  That is a fair
+                # trade here because the PICTURE is the check -- if the
+                # layout moves, 13-general-cpx.png shows the wrong thing
+                # instead of passing quietly.
+                t.click(CPX_ROW1)
+                b.frames(20)
+                t.click(CPX_OPEN)
+                b.frames(60)
+                t.go((400, 200))
+                b.frames(30)
+                t.shot("general-cpx")
+                t.run([K("RETURN", RETURN), F(40)])   # the module's OK
             t.run([K("RETURN", RETURN), F(40)])
 
         # The clock last: it has no default button and ends on a key.

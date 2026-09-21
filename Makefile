@@ -933,7 +933,8 @@ ACC_DEPS  = build/m28_acc.g4a
 # directory rather than \APPS\, because an accessory is not a program the
 # desktop launches -- the AES loads it once at start-up and it outlives
 # every program (src/aes/shel.c).
-ACCP_DEPS = build/clockacc.g4a build/clock.rsc \
+ACCP_DEPS = build/general.g4a build/general.rsc \
+            build/clockacc.g4a build/clock.rsc \
             build/cpanelacc.g4a build/cpanel.rsc \
             build/calcacc.g4a build/calc.rsc
 
@@ -962,6 +963,21 @@ AUTO_RES_OBJS = $(G4A_LIB) build/app/m34_auto.o
 AUTO_GO_OBJS  = $(G4A_LIB) build/app/m34_go.o
 $(eval $(call g4a,m34_auto,$(AUTO_RES_OBJS),512,128,384,,))
 $(eval $(call g4a,m34_go,$(AUTO_GO_OBJS),512,128,384,,))
+
+# GENERAL.CPX (src/apps/general.c): the first real module -- the two
+# settings the panel used to own, and the clock.  --data-model=large, so
+# rs_load puts its resource in far memory and it costs bank $00 nothing
+# beyond its near region, which is what a module wants to be.
+build/general.rsc build/generalrsc.h: tools/generalrsc.py tools/rsc.py tools/aesref.py
+	python3 tools/generalrsc.py build/general.rsc build/generalrsc.h
+build/appsld/general.o: src/apps/general.c src/app/cpx.h src/app/gem.h build/generalrsc.h
+	@mkdir -p build/appsld
+	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
+build/appsld/cpxmain.o: src/app/cpxmain.c src/app/cpx.h src/app/gem.h
+	@mkdir -p build/appsld
+	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -o $@ $<
+GENERAL_OBJS = $(G4A_LIB_LD) build/appsld/cpxmain.o build/appsld/general.o
+$(eval $(call g4a,general,$(GENERAL_OBJS),1024,256,512,,,$(LIB_LD)))
 
 # The control panel extension gate (src/m35_cpx.c): a module, built with
 # the kit's cpx glue (src/app/cpxmain.c) exactly as any CPX would be.
@@ -1159,10 +1175,12 @@ SP_APPS   = --mkdir APPS \
 	    --add build/cpanel.rsc "GEM>CPANEL.RSC" \
 	    --add build/calcacc.g4a "GEM>CALC.ACC" \
 	    --add build/calc.rsc "GEM>CALC.RSC" \
+	    --add build/general.g4a "GEM>GENERAL.CPX" \
+	    --add build/general.rsc "GEM>GENERAL.RSC" \
 	    --add build/m35_cpx.g4a "GEM>TEST.CPX" \
 	    --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
 	    --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
-SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a tools/mkspdisk.py tools/atr.py
+SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a build/general.g4a build/general.rsc tools/mkspdisk.py tools/atr.py
 
 build/gem-shots.atr: $(SP_DEPS)
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
