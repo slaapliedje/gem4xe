@@ -87,6 +87,92 @@ static void cp_findcpx(void)
     }
 }
 
+/* ---- driving an event CPX ----------------------------------------------
+ *
+ * The module has drawn itself and asked to be driven, so from here the
+ * PANEL owns the loop and the module owns what is inside the rectangle.
+ * That is the whole reason a CPX is worth the machinery: a module that
+ * never blocks its host can show the effect of a control while the
+ * control is being moved.
+ *
+ * WHAT IS FORWARDED is what a dialog needs and no more: a key, a button,
+ * a timer tick, and a redraw when something covered it.  Each entry is
+ * given a `quit` zeroed first, and the loop ends the moment one comes
+ * back non-zero -- so a module says "I am done" once and is not asked
+ * again, which is the difference between this and polling it.
+ *
+ * AN ENTRY MAY BE 0, and most of a simple module's are.  cpx.h promises
+ * that, so every call here is guarded rather than assumed; a module that
+ * wants only keys writes only cpx_key.
+ *
+ * THE TIMER IS ALWAYS ASKED FOR, at a rate the panel chooses rather than
+ * the module.  Set_Evnt_Mask is how XCONTROL lets a module say what it
+ * wants instead, and it is an XCPB callback -- which this panel does not
+ * hand out yet (cpxmain.c passes 0 and cpx.h says every callback may be
+ * 0).  Until it does, a fixed 100 ms is a rate a clock or a sound can
+ * work with and costs a module that ignores cpx_timer nothing.
+ */
+#define CPX_TICK  100L
+
+/* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
+ * a module is handed its address and reads it there (src/app/cpx.h says
+ * why every entry takes one uint32_t rather than arguments). */
+static CPXPB cp_pb;
+
+static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)
+{
+    WORD msg[8], mx, my, mb, ks, kr, nc;
+    uint32_t pb = (uint32_t)(CPXPB FAR *)&cp_pb;
+
+    cp_pb.rect = *r;
+    for (;;) {
+        WORD ev = evnt_multi(MU_KEYBD | MU_BUTTON | MU_TIMER | MU_MESAG,
+                             2, 1, 1,
+                             0, 0, 0, 0, 0,
+                             0, 0, 0, 0, 0,
+                             msg,
+                             (WORD)(CPX_TICK & 0xFFFFL),
+                             (WORD)(CPX_TICK >> 16),
+                             &mx, &my, &mb, &ks, &kr, &nc);
+        cp_pb.mouse.x = mx;
+        cp_pb.mouse.y = my;
+        cp_pb.mouse.buttons = mb;
+        cp_pb.mouse.kstate = ks;
+        cp_pb.quit = 0;
+
+        if ((ev & MU_KEYBD) && info->cpx_key) {
+            cp_pb.kstate = ks;
+            cp_pb.key = kr;
+            info->cpx_key(pb);
+        }
+        if ((ev & MU_BUTTON) && info->cpx_button) {
+            cp_pb.nclicks = nc;
+            info->cpx_button(pb);
+        }
+        if ((ev & MU_TIMER) && info->cpx_timer)
+            info->cpx_timer(pb);
+        if (ev & MU_MESAG) {
+            /* A redraw of the panel's own dialog is a redraw of the
+             * module's rectangle too: it is drawn INSIDE ours, so the
+             * module is told rather than the panel guessing what of it
+             * survived. */
+            WORD i;
+            for (i = 0; i < 8; i++)
+                cp_pb.msg[i] = msg[i];
+            if (msg[0] == WM_REDRAW && info->cpx_draw)
+                info->cpx_draw(pb);
+        }
+        /* A key the module did not take closes it, so a module with no
+         * cpx_key is not a dialog nobody can get out of. */
+        if ((ev & MU_KEYBD) && !info->cpx_key)
+            cp_pb.quit = 1;
+        if (cp_pb.quit)
+            break;
+    }
+    if (info->cpx_close)
+        info->cpx_close(pb);
+}
+
 /* Open the selected module: its cpx_call, through the vtable it
  * published when it loaded.  A separately linked module reached by a
  * runtime long-indirect call -- which is safe because every entry in a
@@ -107,7 +193,14 @@ static WORD cp_opencpx(WORD i, WORD x, WORD y, WORD w, WORD h)
     if (!info->cpx_call)
         return 0;
     r.g_x = x; r.g_y = y; r.g_w = w; r.g_h = h;
-    return info->cpx_call(&r);
+    cp_pb.rect = r;
+    cp_pb.quit = 0;
+    cp_pb.ret = 0;
+    info->cpx_call((uint32_t)(CPXPB FAR *)&cp_pb);
+    if (!cp_pb.ret)
+        return 0;                       /* a form CPX: it has finished */
+    cp_drivecpx(info, &r);              /* an event CPX: it wants events */
+    return 1;
 }
 
 /* Which button a live value lights.  NEAREST rather than exact: another

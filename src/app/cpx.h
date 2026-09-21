@@ -179,27 +179,79 @@ typedef struct {
 #define XAL_SHUTDOWN       11
 
 /* ---- what the module hands back --------------------------------------
- * The module's entry point is called ONCE, with the block above, and
- * returns this.  Everything in it may be 0 except cpx_call.
  *
- * EVERY ONE OF THESE MUST BE `saveds` in the module that defines them --
- * see the head of this file.  CPX_ENTRY spells that for the entry point;
- * a module writes SAVEDS on the rest itself.
+ * EVERY ENTRY TAKES ONE uint32_t, the far address of the CPXPB below,
+ * and that is forced by the compiler rather than chosen.
+ *
+ * A vtable entry must be `saveds` (see the head of this file), and
+ * Calypsi's saveds switches to the callee's direct page BEFORE the body
+ * reads its arguments -- which the CALLER left in ITS direct page.  Only
+ * A and X survive the prologue, so:
+ *
+ *     ONE 16-bit argument      safe   (kept in A across the switch)
+ *     ONE 32-bit integer       safe   (in X:C, untouched)
+ *     ONE POINTER              LOST   (read from [_Dp] after the switch)
+ *     TWO arguments or more    LOST from the second on
+ *
+ * and nothing warns.  The first draft of this header took a `const GRECT
+ * *` and three-argument event entries; the module drew its box in the
+ * wrong corner of the screen and then printed the rectangle it had been
+ * handed -- x=01E1 y=0000 w=3006 h=0000 against 00A0 0016 0140 00CD.
+ *
+ * So: one address, a block behind it.  Which is GEM's own call ABI
+ * anyway (contrl/intin/ptsin/intout/ptsout), so a CPX author writing
+ * against this is writing in the idiom the rest of the system uses.
  */
+
+/* The block.  The host fills what the call needs, the module reads it
+ * and writes back `quit` and `ret`.  It is the HOST's memory and lives
+ * only for the call. */
 typedef struct {
-    /* open: draw into `r`, or return 0 to decline.  A CPX_SETONLY module
-     * does its work here and returns 0. */
-    WORD (*cpx_call)(const GRECT *r);
-    void (*cpx_draw)(const GRECT *clip);
-    void (*cpx_wmove)(const GRECT *work);
-    void (*cpx_timer)(WORD *quit);
-    void (*cpx_key)(WORD kstate, WORD key, WORD *quit);
-    void (*cpx_button)(const MRETS *m, WORD nclicks, WORD *quit);
-    void (*cpx_m1)(const MRETS *m, WORD *quit);
-    void (*cpx_m2)(const MRETS *m, WORD *quit);
-    WORD (*cpx_hook)(WORD event, WORD *msg, const MRETS *m,
-                     WORD *key, WORD *nclicks);
-    void (*cpx_close)(WORD flag);
+    GRECT rect;                 /* cpx_call, cpx_draw, cpx_wmove */
+    MRETS mouse;                /* cpx_button, cpx_m1, cpx_m2 */
+    WORD  kstate, key;          /* cpx_key */
+    WORD  nclicks;              /* cpx_button */
+    WORD  event;                /* cpx_hook: which evnt_multi bit */
+    WORD  msg[8];               /* cpx_hook: the message, when there is one */
+    WORD  quit;                 /* SET THIS to be closed.  The host zeroes
+                                 * it before every call and stops asking
+                                 * the moment it comes back non-zero. */
+    WORD  ret;                  /* cpx_call's answer: see below */
+} CPXPB;
+
+typedef struct {
+    /* OPEN.  Draw into pb->rect, and say which KIND of module this is by
+     * what you put in pb->ret -- XCONTROL's convention, and the only
+     * thing that tells the two apart:
+     *
+     *   0  FINISHED.  A form CPX that ran its own dialog and closed it,
+     *      or a CPX_SETONLY module that acted and had nothing to show.
+     *      The host takes the screen back and asks nothing further.
+     *
+     *   1  DRIVE ME.  An event CPX: it has drawn itself into pb->rect
+     *      and now wants events, one at a time, through the entries
+     *      below.  The host runs its loop and calls cpx_key, cpx_button,
+     *      cpx_timer and cpx_draw until one of them sets pb->quit, then
+     *      cpx_close.
+     *
+     * A form CPX is the simpler thing and needs nothing of the host; an
+     * event CPX is what a module with live feedback wants -- a slider
+     * that shows the effect of dragging it, a sound that plays while the
+     * dialog is up -- because it never blocks the host's loop. */
+    void (*cpx_call)(uint32_t pb);
+
+    /* THE REST ARE FOR AN EVENT CPX ONLY.  Any of them may be 0 and a
+     * host must check: a module that wants only keys writes only
+     * cpx_key.  Each is given pb->quit zeroed. */
+    void (*cpx_draw)(uint32_t pb);
+    void (*cpx_wmove)(uint32_t pb);
+    void (*cpx_timer)(uint32_t pb);
+    void (*cpx_key)(uint32_t pb);
+    void (*cpx_button)(uint32_t pb);
+    void (*cpx_m1)(uint32_t pb);
+    void (*cpx_m2)(uint32_t pb);
+    void (*cpx_hook)(uint32_t pb);
+    void (*cpx_close)(uint32_t pb);
 } CPXINFO;
 
 /* THE ENTRY POINT.  A module defines exactly one, named cpx_init, and
@@ -217,8 +269,18 @@ typedef struct {
  * direct page and data bank live on entry are the PANEL's; without
  * saveds a module reads its own globals at the panel's addresses,
  * silently, which is this project's oldest failure shape.  Every other
- * entry in CPXINFO needs SAVEDS on it too, for the same reason -- the
- * panel calls those directly.
+ * entry in CPXINFO needs SAVEDS on it too, for the same reason.
+ *
+ * cpx_init is the ONE EXCEPTION to the one-argument rule above, and it
+ * gets away with two because it is not called through the vtable: the
+ * kit's glue calls it (src/app/cpxmain.c), compiled INTO the module and
+ * so sharing its direct page.  Everything the PANEL calls obeys the
+ * rule.
+ *
+ * AND A MODULE MUST BE BUILT --data-model=large, the panel's model.  A
+ * vtable is a shared ABI, so both sides have to agree how wide a
+ * uint32_t argument is passed; built small, the first test module read
+ * its parameter block from the wrong place.
  *
  * WHERE SETTINGS GO.  The ST writes the 64 bytes back into the .CPX file
  * itself, which it can because the header is in the file.  Here they go

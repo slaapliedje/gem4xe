@@ -120,6 +120,7 @@ MAX_TREE_DEPTH = 12
 # objects, and produced a picture of the panel doing nothing -- which
 # looked like a broken feature rather than a wrong coordinate.
 CPX_ROW1 = (270, 125)
+CPX_ROW2 = (270, 133)           # a row is one 8-pixel cell below the last
 CPX_OPEN = (403, 125)
 
 
@@ -488,6 +489,21 @@ def main(argv):
                 b.frames(30)
                 t.shot("general-cpx")
                 t.run([K("RETURN", RETURN), F(40)])   # the module's OK
+                # ...and the second module, which is the OTHER kind: an
+                # EVENT CPX.  It draws itself, returns 1, and the panel
+                # then drives it -- so what is photographed here is a
+                # module being fed events by a host that owns the loop,
+                # which is the half of the contract GENERAL does not use.
+                # Any key closes it, which is what the module's cpx_key
+                # does with the `quit` it is given.
+                t.click(CPX_ROW2)
+                b.frames(20)
+                t.click(CPX_OPEN)
+                b.frames(60)
+                t.go((400, 200))
+                b.frames(30)
+                t.shot("event-cpx")
+                t.run([K("RETURN", RETURN), F(40)])   # any key closes it
             t.run([K("RETURN", RETURN), F(40)])
 
         # The clock last: it has no default button and ends on a key.

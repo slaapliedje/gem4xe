@@ -11,14 +11,17 @@
  * decorative: the same two controls, the same live behaviour, in a file
  * the panel has never heard of and can be shipped without.
  *
- * A FORM CPX, WHICH IS THE SIMPLE HALF OF THE CONTRACT.  XCONTROL has
- * two kinds: a form CPX whose dialog the host runs, and an event CPX
- * that is handed events one at a time.  cpx_call here runs its own
- * form_do and returns when the dialog closes, so the host's loop is
- * simply blocked for the duration.  That is honest for a settings
- * dialog and needs nothing the AES does not already do; an event CPX
- * wants the panel to forward cpx_key and its kind, which is the next
- * piece of work and is why those entries exist in CPXINFO already.
+ * A FORM CPX, AND IT SAYS SO BY RETURNING 0.  XCONTROL has two kinds:
+ * a form CPX that runs its own dialog and is finished when cpx_call
+ * returns, and an event CPX that draws itself, returns 1, and is then
+ * handed events one at a time by the host.  This is the first, which is
+ * the honest shape for a settings dialog -- form_do is exactly the right
+ * tool for a page of radio buttons and two fields, and blocking the
+ * panel's loop for the seconds it is up costs nothing.
+ *
+ * The other kind is worth having for a module whose control has to show
+ * its own effect while it is being moved -- a mouse speed, a sound --
+ * and src/m35_cpx.c is the worked example of it.
  *
  * EVERY PICK APPLIES IMMEDIATELY, as the panel's did, and for the same
  * reason: the only question a double-click number raises is "can I
@@ -170,13 +173,14 @@ static void gn_apply_clock(void)
 
 /* ---- the contract -----------------------------------------------------*/
 
-static SAVEDS WORD gn_cpx_call(const GRECT *r)
+static SAVEDS void gn_cpx_call(uint32_t pbaddr)
 {
+    CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
     WORD x, y, w, h, ret, ob, i, j;
 
-    (void)r;
+    pb->ret = 0;                        /* a FORM CPX: see the end */
     if (!tree)
-        return 0;
+        return;
 
     dc0 = evnt_dclick(0, 0);
     {
@@ -220,12 +224,15 @@ static SAVEDS WORD gn_cpx_call(const GRECT *r)
     tree[GNCNCL].ob_state = NORMAL;
     form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
-    return 1;
+    /* pb->ret stays 0: A FORM CPX, and finished.  The dialog above ran
+     * and has already closed, so there is nothing for the host to drive
+     * -- a 1 here would leave the panel forwarding events to a module
+     * with no dialog left to put them in (src/app/cpx.h). */
 }
 
-static SAVEDS void gn_cpx_close(WORD flag)
+static SAVEDS void gn_cpx_close(uint32_t pbaddr)
 {
-    (void)flag;
+    (void)pbaddr;
 }
 
 CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)

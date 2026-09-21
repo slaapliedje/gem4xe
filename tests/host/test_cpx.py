@@ -119,7 +119,8 @@ class CpxContract(unittest.TestCase):
         The gate module is the worked example a porter copies, so if it
         stopped being saveds the example would teach the bug."""
         mod = text(os.path.join(ROOT, "src", "m35_cpx.c"))
-        for fn in ("m35_cpx_call", "m35_cpx_draw", "m35_cpx_close"):
+        for fn in ("m35_cpx_call", "m35_cpx_draw", "m35_cpx_close",
+                   "m35_cpx_key", "m35_cpx_button", "m35_cpx_timer"):
             self.assertTrue(
                 re.search(rf"SAVEDS\s+\w[\w ]*\*?\s*{fn}\b", mod),
                 f"{fn} is in a CPXINFO and is not SAVEDS")

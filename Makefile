@@ -983,14 +983,18 @@ $(eval $(call g4a,general,$(GENERAL_OBJS),1024,256,512,,,$(LIB_LD)))
 # the kit's cpx glue (src/app/cpxmain.c) exactly as any CPX would be.
 # --data-model=small, because a module's data must be initialised by its
 # own crt and the small model is the plainest way to show that working.
-build/app/cpxmain.o: src/app/cpxmain.c src/app/cpx.h src/app/gem.h
-	@mkdir -p build/app
-	$(CC) $(CFLAGS) -I src/app -o $@ $<
-build/app/m35_cpx.o: src/m35_cpx.c src/app/cpx.h src/app/gem.h
-	@mkdir -p build/app
-	$(CC) $(CFLAGS) -I src/app -o $@ $<
-CPX_OBJS = $(G4A_LIB) build/app/cpxmain.o build/app/m35_cpx.o
-$(eval $(call g4a,m35_cpx,$(CPX_OBJS),1024,256,512,,))
+# --data-model=LARGE, and that is a REQUIREMENT rather than a choice:
+# a module's entries are called through a vtable by the panel, so the two
+# must agree about how wide a pointer argument is.  The panel is
+# large-data (a `const GRECT *` is 32 bits there); built small, this
+# module read the rectangle it was handed as a 16-bit address and drew
+# in the top-left corner of the screen.  src/app/cpx.h says so and
+# tests/host/test_cpx.py holds the Makefile to it.
+build/appsld/m35_cpx.o: src/m35_cpx.c src/app/cpx.h src/app/gem.h
+	@mkdir -p build/appsld
+	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -o $@ $<
+CPX_OBJS = $(G4A_LIB_LD) build/appsld/cpxmain.o build/appsld/m35_cpx.o
+$(eval $(call g4a,m35_cpx,$(CPX_OBJS),1024,256,512,,,$(LIB_LD)))
 
 # The far-resource gate application (src/m33_farrsc.c), built TWICE from
 # one source: --data-model=large, whose kit asks for far addresses, and
