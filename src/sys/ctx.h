@@ -5,11 +5,12 @@
  * its own stack that blocks inside evnt_multi while the dispatcher runs
  * somebody else (EmuTOS aes/gemdisp.c, aes/gemasm.S).  gem4xe cannot
  * copy that shape directly, and the reason is measured rather than
- * argued: the engine's stack is 2 KB at $2DAF-$35AE and the gates find
- * about 1,390 bytes of it used at the low-water mark, with 346 bytes
- * free in LoRAM -- and 1,024 of what looks spare is reserved anyway, for
- * a child's calls under a Pexec (GD_PEXEC_STACK, src/sys/gemdos.c).
- * There is no room in bank $00 for a second one.
+ * argued: the engine's stack is 2 KB and the gates find most of it used
+ * at the low-water mark -- 1,660 bytes on 2026-09-22 (test-m17 prints
+ * the number, so read it there rather than trusting this line) -- with
+ * a few hundred bytes free in LoRAM, and 1,024 of what looks spare is
+ * reserved anyway for a child's calls under a Pexec (GD_PEXEC_STACK,
+ * src/sys/gemdos.c).  There is no room in bank $00 for a second one.
  *
  * Nor may a second one live anywhere else.  An application's OWN stack
  * is in the pool at $4800 and that is safe, because of an invariant the
