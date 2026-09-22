@@ -69,6 +69,14 @@ static WORD gn_index(LONG ms)
     return best;
 }
 
+static LONG ms_now(void)
+{
+    MN_SET set;
+
+    menu_settings(MNS_GET, &set);
+    return set.mn_display;
+}
+
 static void gn_setdelay(LONG ms)
 {
     MN_SET set;
@@ -173,6 +181,56 @@ static void gn_apply_clock(void)
 
 /* ---- the contract -----------------------------------------------------*/
 
+/* ---- remembering ------------------------------------------------------
+ *
+ * The 64 bytes in this module's own header, which the panel reaches
+ * through XCPB and writes to a file beside the module (src/app/cpx.h).
+ * Three bytes are used:
+ *
+ *   [0]  a mark, so an unsaved buffer of zeroes is not read as "rate 0"
+ *   [1]  the double-click rate
+ *   [2]  which sub-menu delay
+ *
+ * A MARK RATHER THAN A LENGTH, because a buffer that has never been
+ * saved is all zeroes and every field in it is a legal value.  Without
+ * something that cannot occur by accident, a machine that had never
+ * saved would come up claiming the fastest double-click and no delay --
+ * which is a setting nobody chose, arriving silently. */
+#define GN_MARK   0x47                  /* 'G' */
+
+static XCPB FAR *gn_xcpb;
+
+static void gn_restore(void)
+{
+    const char FAR *b;
+    WORD dc, mn;
+
+    if (!gn_xcpb || !gn_xcpb->buffer)
+        return;
+    b = (const char FAR *)gn_xcpb->buffer;
+    if ((b[0] & 0xFF) != GN_MARK)
+        return;                         /* nothing has been saved yet */
+    dc = b[1] & 0xFF;
+    mn = b[2] & 0xFF;
+    if (dc >= 0 && dc < N_DC)
+        evnt_dclick(dc, 1);
+    if (mn >= 0 && mn < N_MN)
+        gn_setdelay(gn_ms[mn]);
+}
+
+static void gn_remember(WORD dc, WORD mn)
+{
+    char FAR *b;
+
+    if (!gn_xcpb || !gn_xcpb->buffer || !gn_xcpb->CPX_Save)
+        return;
+    b = (char FAR *)gn_xcpb->buffer;
+    b[0] = (char)GN_MARK;
+    b[1] = (char)dc;
+    b[2] = (char)mn;
+    gn_xcpb->CPX_Save((uint32_t)gn_xcpb);
+}
+
 static SAVEDS void gn_cpx_call(uint32_t pbaddr)
 {
     CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
@@ -181,6 +239,13 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
     pb->ret = 0;                        /* a FORM CPX: see the end */
     if (!tree)
         return;
+    /* The panel's block arrives here rather than at cpx_init, because
+     * the AES loads a module at boot and the panel is not in that
+     * conversation.  Kept, and what was saved last time is applied
+     * BEFORE the dialog is filled in from the live values -- so the
+     * dialog shows what the machine is actually doing either way. */
+    gn_xcpb = (XCPB FAR *)pb->xcpb;
+    gn_restore();
 
     dc0 = evnt_dclick(0, 0);
     {
@@ -213,8 +278,10 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
             gn_setdelay(gn_ms[ob - GNMN0]);
     }
 
-    if (ob == GNOK)
+    if (ob == GNOK) {
         gn_apply_clock();
+        gn_remember(evnt_dclick(0, 0), gn_index(ms_now()));
+    }
     else {                              /* exactly what was there */
         evnt_dclick(dc0, 1);
         gn_setdelay(ms0);

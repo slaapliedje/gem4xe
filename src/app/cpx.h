@@ -135,40 +135,52 @@ typedef struct {
 } MRETS;
 
 /* ---- what the panel hands the module ---------------------------------
- * XCONTROL's parameter block, with the argument lists flattened.  Every
- * pointer here is the PANEL's, live for as long as the module is open.
+ *
+ * XCONTROL's parameter block.  Its callbacks run INSIDE THE PANEL and
+ * are reached from the module, which is the same cross-link call as a
+ * CPXINFO entry in the other direction -- so they obey the same two
+ * rules, for the same reasons (see CPXINFO below): each is `saveds` in
+ * the panel, and each takes ONE uint32_t, the address of this block.
+ *
+ * WHICH IS WHY THERE ARE NO ARGUMENTS AND NO RETURN VALUES.  A callback
+ * reads what it needs out of the block and writes its answer back into
+ * it.  COPS passes every argument list as a struct by value instead,
+ * which is a 68000 alignment workaround; this is a 65816 one, and it is
+ * forced rather than chosen.
+ *
+ * Every field and every callback may be 0.  A module must cope: that is
+ * what lets this grow without breaking a module built against an older
+ * panel, and it is why cpx.h can promise a module anything at all.
  */
 typedef struct {
-    WORD  handle;               /* the panel's VDI workstation */
+    WORD  handle;               /* the panel's VDI workstation, or 0 */
     WORD  booting;              /* non-zero during boot-time init */
     WORD  country;              /* the system's country code */
+    WORD  which;                /* WHICH module is calling.  The panel
+                                 * fills this before it opens one, so a
+                                 * callback needs nothing to identify
+                                 * its caller. */
 
-    /* the module's own 64 bytes out of its header, to read and change */
-    void FAR * (*Get_Buffer)(void);
-    /* ...and written back into the file.  0 on failure. */
-    WORD  (*CPX_Save)(const void FAR *p, LONG bytes);
+    /* THE MODULE'S OWN 64 BYTES, in the AES's table -- its header's
+     * buffer[].  Read them at cpx_call and they are whatever was last
+     * saved; write them and call CPX_Save to keep them. */
+    uint32_t buffer;
 
-    /* a resource the module brought with it */
-    void  (*rsh_fix)(WORD nobs, WORD nte, WORD nib, WORD nbb,
-                     OBJECT FAR *ob, TEDINFO FAR *te, ICONBLK FAR *ib,
-                     BITBLK FAR *bb, LONG FAR *frstr, LONG FAR *frimg,
-                     LONG FAR *trindex);
-    void  (*rsh_obfix)(OBJECT FAR *tree, WORD obj);
+    /* Write `buffer` to the module's settings file.  ok is 1 when it
+     * went, 0 when it did not.
+     *
+     * THE ST WRITES THOSE BYTES BACK INTO THE .CPX ITSELF, which it can
+     * because its header is in the file.  Here the header travels inside
+     * the module, so the settings go to a file of their own beside it --
+     * which also means a module is never written to while it is loaded,
+     * and a module that will not save cannot corrupt itself trying. */
+    void (*CPX_Save)(uint32_t xcpb);
 
-    /* the panel's window, for a module that draws its own */
-    WORD  (*GetFirstRect)(GRECT *r);
-    WORD  (*GetNextRect)(GRECT *r);
-
-    /* a form that returns instead of blocking: the panel keeps the event
-     * loop, so a module never calls form_do */
-    WORD  (*Xform_do)(OBJECT FAR *tree, WORD edit_obj, WORD FAR *msg);
-
-    /* what the module wants added to the panel's evnt_multi */
-    void  (*Set_Evnt_Mask)(WORD mask, const MOBLK *m1, const MOBLK *m2,
-                           LONG evtime);
-
-    /* the canned alerts, so every panel says the same thing */
-    WORD  (*XGen_Alert)(WORD which);
+    /* One of the canned alerts, so every panel says the same thing.
+     * `alert` is XAL_*; ok is the button. */
+    void (*XGen_Alert)(uint32_t xcpb);
+    WORD  alert;
+    WORD  ok;                   /* what the last callback answered */
 } XCPB;
 
 /* XGen_Alert's numbers are Atari's. */
@@ -207,6 +219,13 @@ typedef struct {
  * and writes back `quit` and `ret`.  It is the HOST's memory and lives
  * only for the call. */
 typedef struct {
+    /* THE PANEL'S OWN BLOCK, handed over at cpx_call.  It is here rather
+     * than at cpx_init because the AES loads a module at boot and the
+     * panel is not in that conversation -- it learns about its modules
+     * afterwards, through appl_getinfo(AES_CPX).  A module that wants it
+     * keeps it from its first cpx_call. */
+    uint32_t xcpb;
+
     GRECT rect;                 /* cpx_call, cpx_draw, cpx_wmove */
     MRETS mouse;                /* cpx_button, cpx_m1, cpx_m2 */
     WORD  kstate, key;          /* cpx_key */
@@ -301,6 +320,9 @@ typedef struct {
  */
 typedef struct {
     uint32_t info;              /* the module's CPXINFO, 0 if none */
+    char     file[14];          /* its file name, which is what its
+                                 * settings file is named after -- the
+                                 * module never knows it and never has to */
     CPXHEAD  hdr;               /* what it filled in at load time */
 } CPXSLOT;
 

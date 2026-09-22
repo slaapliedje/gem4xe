@@ -38,8 +38,11 @@ HDR_FIELDS = [                      # (offset, bytes, name)
     (206, 306, "reserved"),
 ]
 SUBJECT = 64                        # appl_getinfo's, gem4xe's own
-SLOT_INFO = 4                       # a 32-bit CPXINFO address, then the header
-SLOT_SIZE = SLOT_INFO + HDR_SIZE
+SLOT_INFO = 4                       # a 32-bit CPXINFO address...
+SLOT_FILE = 14                      # ...the module's file name, for CPX_Save
+SLOT_HDR = SLOT_INFO + SLOT_FILE    # ...then the header
+SLOT_SIZE = SLOT_HDR + HDR_SIZE
+HDR_BUF, HDR_BUFLEN = 142, 64       # the settings inside it
 
 
 def text(path):
@@ -83,12 +86,18 @@ class CpxContract(unittest.TestCase):
         it out as a struct.  Neither can include the other."""
         shel = text(SHEL_C)
         self.assertEqual(define(shel, "CPXE_INFO"), 0)
-        self.assertEqual(define(shel, "CPXE_HDR"), SLOT_INFO,
-                         "the header does not follow a 32-bit CPXINFO")
+        self.assertEqual(define(shel, "CPXE_FILE"), SLOT_INFO,
+                         "the file name does not follow the CPXINFO")
+        self.assertEqual(define(shel, "CPXE_HDR"), SLOT_HDR,
+                         "the header does not follow the file name")
+        self.assertEqual(define(shel, "CPXH_BUF"), HDR_BUF,
+                         "the AES's idea of where the settings are has "
+                         "drifted from Atari's map")
+        self.assertEqual(define(shel, "CPXH_BUFLEN"), HDR_BUFLEN)
         m = re.search(r"^#define\s+CPXE_SIZE\s+\(CPXE_HDR \+ CPX_HDR_SZ\)",
                       shel, re.M)
         self.assertTrue(m, "CPXE_SIZE is no longer CPXE_HDR + CPX_HDR_SZ")
-        self.assertEqual(SLOT_INFO + HDR_SIZE, SLOT_SIZE)
+        self.assertEqual(SLOT_HDR + HDR_SIZE, SLOT_SIZE)
 
     def test_the_subject_number_agrees(self):
         """AI_CPX in the AES, AES_CPX in the kit: one number, two files,
@@ -112,6 +121,38 @@ class CpxContract(unittest.TestCase):
         self.assertGreater(SUBJECT, max(atari) + 16,
                            f"subject {SUBJECT} is too close to Atari's "
                            f"highest ({max(atari)})")
+
+    def test_every_vtable_entry_takes_one_address(self):
+        """THE RULE THE COMPILER IMPOSES.  Calypsi's saveds switches to
+        the callee's direct page before the body reads its arguments,
+        which the caller left in ITS direct page -- so only the first
+        argument survives, and not even that if it is a pointer.  Every
+        entry therefore takes exactly one uint32_t.
+
+        Checked on the HEADER, because that is the contract a porter
+        writes against; a module with the wrong signature compiles and
+        then reads garbage."""
+        src = text(CPX_H)
+        body = src[src.index("} XCPB;"):src.index("} CPXINFO;")]
+        for m in re.finditer(r"\(\*(\w+)\)\(([^)]*)\)", body):
+            name, args = m.group(1), m.group(2).strip()
+            self.assertEqual(args, "uint32_t pb",
+                             f"CPXINFO's {name} takes {args!r}; every entry "
+                             f"must take one uint32_t (see the header)")
+
+    def test_every_xcpb_callback_takes_one_address(self):
+        """...and the same in the other direction: an XCPB callback runs
+        in the PANEL and is called BY a module, which is the same
+        cross-link call and the same rule."""
+        src = text(CPX_H)
+        body = src[src.index("typedef struct {"):src.index("} XCPB;")]
+        found = 0
+        for m in re.finditer(r"\(\*(\w+)\)\(([^)]*)\)", body):
+            name, args = m.group(1), m.group(2).strip()
+            self.assertEqual(args, "uint32_t xcpb",
+                             f"XCPB's {name} takes {args!r}, not one address")
+            found += 1
+        self.assertGreater(found, 0, "no XCPB callbacks found to check")
 
     def test_every_vtable_entry_is_saveds(self):
         """A CPXINFO entry is called by the PANEL, across a link boundary,

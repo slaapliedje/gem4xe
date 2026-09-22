@@ -562,9 +562,17 @@ static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD) */
  * with src/app/cpx.h without including it -- the AES is small-data and
  * cpx.h is the application's header, in the application's model. */
 #define CPXE_INFO   0                   /* uint32_t: the module's CPXINFO  */
-#define CPXE_HDR    4                   /* CPX_HDR_SIZE bytes of header    */
+#define CPXE_FILE   4                   /* char[14]: its file name         */
+#define CPXE_HDR    18                  /* CPX_HDR_SIZE bytes of header    */
 #define CPX_HDR_SZ  512
 #define CPXE_SIZE   (CPXE_HDR + CPX_HDR_SZ)
+/* Where a module's settings live inside its header, and how many.  The
+ * panel reaches them through XCPB's `buffer` and writes them back with
+ * CPX_Save; the shell reads them off the disk below.  Atari's offsets
+ * (src/app/cpx.h's map). */
+#define CPXH_BUF    142
+#define CPXH_BUFLEN 64
+#define CPX_CFGEXT  "CFG"
 
 /* What the module is handed.  Far, because the module holds it for as
  * long as it lives and this file's near memory is the AES's.  Only the
@@ -596,6 +604,44 @@ static uint32_t sh_xcpb;
  * header and the CPXINFO pointer there before returning.  The tail is
  * how a program has always been told what to do, so nothing new had to
  * be invented for it. */
+/* A MODULE'S SETTINGS, read off the disk into its header AFTER its entry
+ * has run -- which is the order that works here and is not the ST's.
+ *
+ * The ST keeps the whole header in the .CPX file, so XCONTROL reads the
+ * saved bytes BEFORE the module runs and hands them over with everything
+ * else.  Here the header travels inside the module, so the module fills
+ * it first (with its defaults) and the saved bytes are laid over the top
+ * afterwards.  A module therefore sees them at cpx_call, not at
+ * cpx_init -- which src/app/cpx.h says, so a module that wants a setting
+ * at BOOT reads its own file and does not wait to be told.
+ *
+ * A missing file is the normal case and is silent: it means nothing has
+ * been saved yet, and the defaults the module just wrote stand. */
+static void sh_cpxcfg(uint32_t e, const char *name)
+{
+    char cfg[CIO_NAME_MAX + 1], base[ACC_NAMELEN + 8];
+    uint8_t buf[CPXH_BUFLEN];
+    int16_t fd;
+    uint16_t got = 0;
+    WORD i;
+
+    for (i = 0; i < ACC_NAMELEN - 1 && name[i] && name[i] != '.'; i++)
+        base[i] = name[i];
+    base[i++] = '.';
+    base[i++] = CPX_CFGEXT[0];
+    base[i++] = CPX_CFGEXT[1];
+    base[i++] = CPX_CFGEXT[2];
+    base[i] = 0;
+    sh_cioname(base, cfg);
+    fd = cio_open(cfg, CIO_A_READ, 0);
+    if (fd < 0)
+        return;                         /* nothing saved yet */
+    if (cio_read(fd, buf, (uint16_t)CPXH_BUFLEN, &got) == CIO_OK
+        || got == CPXH_BUFLEN)
+        far_put(e + CPXE_HDR + CPXH_BUF, buf, CPXH_BUFLEN);
+    cio_close(fd);
+}
+
 static void sh_ldcpx(const char *path, const char *name)
 {
     APP      app;
@@ -614,6 +660,7 @@ static void sh_ldcpx(const char *path, const char *name)
     tail[3] = (uint8_t)((e >> 16) & 0xFF);
     tail[4] = 0x0D;
     far_put(sh_tail_far, tail, sizeof tail);
+    far_strput(e + CPXE_FILE, name, 14);        /* for CPX_Save */
     far_strput(sh_cmd_far, path, SH_CMDLEN);
     gd_termres = 0;
     (void)app_run(app.entry);
@@ -628,6 +675,7 @@ static void sh_ldcpx(const char *path, const char *name)
         return;
     }
     gd_termres = 0;
+    sh_cpxcfg(e, name);                 /* what it saved last time */
     sh_ncpx++;                          /* kept, as an accessory is */
 }
 

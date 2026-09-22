@@ -114,6 +114,66 @@ static void cp_findcpx(void)
  */
 #define CPX_TICK  100L
 
+/* ---- what the panel hands a module -------------------------------------
+ *
+ * The XCPB, and its one working callback.  These run INSIDE THIS PANEL
+ * and are called BY a module, so they are the same cross-link call as a
+ * CPXINFO entry in the other direction and obey the same rules: SAVEDS,
+ * and one uint32_t argument, which is the block's own address
+ * (src/app/cpx.h says why).  A callback reads what it needs out of the
+ * block and writes its answer back into it.
+ */
+static XCPB cp_xcpb;
+
+/* CPX_Save: the module's 64 bytes, to a file named after the MODULE and
+ * not after anything it chose.  The panel knows the file name because
+ * the AES's table carries it (src/aes/shel.c, CPXE_FILE) -- a module
+ * never learns its own name and never has to, which is what stops two
+ * modules from arguing over one settings file.
+ *
+ * The ST writes these bytes back into the .CPX itself.  Here they go
+ * beside it, so a module is never written to while it is loaded and one
+ * that will not save cannot corrupt itself trying. */
+static SAVEDS void cp_cpx_save(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    CPXSLOT FAR *sl;
+    char name[20];
+    uint8_t buf[64];
+    LONG h;
+    WORD i, j;
+
+    pb->ok = 0;
+    if (pb->which < 0 || pb->which >= cpx_n || !cpx_table)
+        return;
+    sl = cpx_slot(cpx_table, cpx_stride, pb->which);
+    for (i = 0; i < 13 && sl->file[i] && sl->file[i] != '.'; i++)
+        name[i] = sl->file[i];
+    name[i++] = '.';
+    name[i++] = 'C'; name[i++] = 'F'; name[i++] = 'G';
+    name[i] = 0;
+    for (j = 0; j < 64; j++)
+        buf[j] = (uint8_t)sl->hdr.buffer[j];
+    h = Fcreate(name, 0);
+    if (h < 0)
+        return;
+    pb->ok = (WORD)(Fwrite((WORD)h, 64L, buf) == 64L);
+    Fclose((WORD)h);
+}
+
+static void cp_xcpb_init(void)
+{
+    cp_xcpb.handle = 0;                 /* this panel opens no workstation */
+    cp_xcpb.booting = 0;
+    cp_xcpb.country = 0;
+    cp_xcpb.CPX_Save = cp_cpx_save;
+    /* XGen_Alert stays 0, which cpx.h allows and a module must cope
+     * with.  Its text would have to come from CPANEL.RSC -- no string a
+     * person reads belongs in this C -- and the panel has no alerts of
+     * its own yet to put beside it. */
+    cp_xcpb.XGen_Alert = 0;
+}
+
 /* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
  * a module is handed its address and reads it there (src/app/cpx.h says
  * why every entry takes one uint32_t rather than arguments). */
@@ -193,6 +253,9 @@ static WORD cp_opencpx(WORD i, WORD x, WORD y, WORD w, WORD h)
     if (!info->cpx_call)
         return 0;
     r.g_x = x; r.g_y = y; r.g_w = w; r.g_h = h;
+    cp_xcpb.which = i;                  /* who is about to call back */
+    cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
+    cp_pb.xcpb = (uint32_t)(XCPB FAR *)&cp_xcpb;
     cp_pb.rect = r;
     cp_pb.quit = 0;
     cp_pb.ret = 0;
@@ -273,6 +336,7 @@ void cp_panel(void)
     for (i = 0; i < N_MN; i++)
         tree[CPMN0 + i].ob_state = (UWORD)(i == j ? SELECTED : NORMAL);
     cp_findcpx();
+    cp_xcpb_init();
     tree[CPXOPEN].ob_state = NORMAL;
     tree[CPTEST].ob_state = NORMAL;
     tree[CPOK].ob_state = NORMAL;
