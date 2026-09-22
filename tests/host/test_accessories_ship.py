@@ -1,4 +1,11 @@
-"""Every desk accessory the build makes must be on the product media.
+"""Everything the AES loads by itself must be on the product media.
+
+That is the accessories AND, since phase 48, the control panel's
+extensions: a `.CPX` is built by the same rules, listed in the same
+ACCP_DEPS, copied by the same APPS table and scanned out of the same
+directory (`src/aes/shel.c`).  It is the identical failure with a
+different extension, so it is checked here rather than somewhere new.
+
 
 WHY THIS EXISTS.  On 2026-09-20 CONTROL.ACC and CALC.ACC were built for
 the card and the applications floppy and never copied onto either.  The
@@ -83,6 +90,67 @@ class AccessoriesShip(unittest.TestCase):
                 any(d.startswith("GEM>") and d.endswith(".ACC") for d in dsts),
                 f"{src} is installed as {sorted(dsts)}; an accessory must be "
                 f"GEM>NAME.ACC or the AES never scans it")
+
+    # -- and the same question for everything else in ACCP_DEPS -------------
+
+    def loaded_kinds(self):
+        """Where each binary in ACCP_DEPS lands in \\GEM\\, by extension.
+
+        Deliberately NOT keyed off the build name.  An accessory is
+        build/<x>acc.g4a and a module is build/<x>.g4a, so a rule that
+        reads the source name has to be taught every new kind; this asks
+        the only question that matters -- what the AES will see in its own
+        directory -- and a kind nobody thought of still has to answer it.
+        """
+        kinds = {}
+        for dep in sorted(self.deps):
+            if not dep.endswith(".g4a"):
+                continue
+            dsts = self.carried.get(dep, set())
+            sysd = {d for d in dsts if d.startswith("GEM>")}
+            kinds[dep] = {d.rsplit(".", 1)[-1] for d in sysd if "." in d}
+        return kinds
+
+    def test_everything_loaded_at_startup_is_scannable(self):
+        """The AES scans its own directory for *.ACC and *.CPX and loads
+        what it finds.  A binary built for the media that installs under
+        any other name, or outside \\GEM\\, is never seen -- and nothing
+        reports it, because not finding a file is what an empty directory
+        looks like too."""
+        for dep, exts in sorted(self.loaded_kinds().items()):
+            self.assertTrue(
+                exts & {"ACC", "CPX"},
+                f"{dep} is in ACCP_DEPS -- it is built FOR the product "
+                f"media -- but tools/mkcf.py installs it as "
+                f"{sorted(self.carried.get(dep, set())) or 'nothing'}. The "
+                f"AES only ever scans \\GEM\\*.ACC and \\GEM\\*.CPX, so it "
+                f"will not be loaded.")
+
+    def test_the_cpx_branch_is_not_vacuous(self):
+        """The check above passes for a tree with no modules in it at all,
+        and would go on passing if the .CPX were dropped from ACCP_DEPS
+        rather than from the APPS table.  So: at least one module, really
+        installed as one."""
+        exts = set()
+        for e in self.loaded_kinds().values():
+            exts |= e
+        self.assertIn("CPX", exts,
+                      "no .CPX is built for the product media, so the "
+                      "extension check above proves nothing about modules")
+
+    def test_every_startup_resource_lands_in_the_system_directory(self):
+        """A resource is found by bare name against the system directory
+        (`rsrc_load`), so one installed only into \\APPS\\ leaves the thing
+        that loads it drawing an empty tree rather than failing."""
+        for dep in sorted(self.deps):
+            if not dep.endswith(".rsc"):
+                continue
+            dsts = self.carried.get(dep, set())
+            self.assertTrue(
+                any(d.startswith("GEM>") for d in dsts),
+                f"{dep} is built for the product media and installed as "
+                f"{sorted(dsts) or 'nothing'}; it must also be in \\GEM\\ "
+                f"beside whatever rsrc_load's bare name resolves against")
 
     def test_every_accessory_has_its_own_resource_beside_it(self):
         """An .ACC whose .RSC did not ship comes up and finds nothing --
