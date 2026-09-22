@@ -46,6 +46,7 @@
 #define GEM4XE_CPX_H
 
 #include "gem.h"
+#include <stddef.h>          /* offsetof, for the slot layout check below */
 
 /* ---- the file ---------------------------------------------------------
  * A gem4xe CPX is a .G4A named *.CPX.  Nothing is in front of it: the
@@ -318,13 +319,34 @@ typedef struct {
  * that nobody assembles a 24-bit address out of two words by hand,
  * which is where this project's oldest bug lives.
  */
+/* Where the header starts in a slot.  THE AES LAYS THIS OUT BY HAND
+ * (src/aes/shel.c, CPXE_HDR) because it cannot include this file, so the
+ * number below and that one have to be the same -- and the compiler is
+ * made to check it, two lines down, rather than a gate finding out
+ * later.
+ *
+ * IT IS 20 AND NOT 18, which is the whole reason the check exists: the
+ * file name is fourteen useful bytes and this compiler pads it to
+ * sixteen (B7, tools/ccbug -- a struct's size is not the sum of its
+ * fields).  Written as 14 it built cleanly on both sides, the AES wrote
+ * a module's header two bytes below where the panel read it, and the
+ * panel saw every module's flags as whatever was in the gap.  So the
+ * field is sixteen and says so. */
+#define CPX_SLOT_HDR  20
+
 typedef struct {
     uint32_t info;              /* the module's CPXINFO, 0 if none */
-    char     file[14];          /* its file name, which is what its
+    char     file[16];          /* its file name, which is what its
                                  * settings file is named after -- the
-                                 * module never knows it and never has to */
+                                 * module never knows it and never has to.
+                                 * SIXTEEN, not fourteen: see above. */
     CPXHEAD  hdr;               /* what it filled in at load time */
 } CPXSLOT;
+
+/* The check.  A negative array bound is a compile error, so a slot whose
+ * header moves stops the build here instead of drawing the wrong word. */
+typedef char cpx_slot_layout_holds[
+    (offsetof(CPXSLOT, hdr) == CPX_SLOT_HDR) ? 1 : -1];
 
 /* How many modules the AES has loaded, and where they are.  Returns the
  * count; *table is the far address of slot 0 and *stride one slot's

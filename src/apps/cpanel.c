@@ -40,6 +40,9 @@ static OBJECT *tree;
  * (the trap docs/phase*.md keeps recording). */
 WORD acc_far;
 
+/* Modules boot-initialised, for a gate to read. */
+WORD cp_boots;
+
 /* The delays offered, in milliseconds, against mn_display.  200 is the
  * AES's own initial value (src/aes/menu.c MN_INIT_DISPLAY), so "Normal"
  * is the machine as it starts. */
@@ -161,6 +164,57 @@ static SAVEDS void cp_cpx_save(uint32_t xcpb)
     Fclose((WORD)h);
 }
 
+/* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
+ * a module is handed its address and reads it there (src/app/cpx.h says
+ * why every entry takes one uint32_t rather than arguments). */
+static CPXPB cp_pb;
+
+static void cp_xcpb_init(void);
+static void cp_findcpx(void);
+
+/* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT is opened
+ * once at start-up with xcpb->booting set, so it can put back what it
+ * saved -- the double-click rate, a screen setting -- before anybody
+ * sees the machine.  It draws nothing: `booting` is how it knows, and
+ * cpx.h tells a module to act and return without a dialog.
+ *
+ * This is the PANEL's job and not the AES's.  The AES loads the modules
+ * and could call them, but it would have to learn the shape of CPXPB and
+ * XCPB to do it -- a second place for two layouts that already exist in
+ * src/app/cpx.h, and a second place for them to drift.  The shell loads
+ * modules BEFORE accessories so that this can happen here instead
+ * (src/aes/shel.c says so where the order is set). */
+void cp_bootinit(void)
+{
+    WORD i;
+
+    cp_findcpx();
+    cp_xcpb_init();
+    if (!cpx_n)
+        return;
+    cp_xcpb.booting = 1;
+    for (i = 0; i < cpx_n; i++) {
+        CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, i);
+        CPXINFO FAR *info;
+
+        if (!sl->info || !(sl->hdr.flags & CPX_BOOTINIT))
+            continue;
+        info = (CPXINFO FAR *)sl->info;
+        if (!info->cpx_call)
+            continue;
+        cp_xcpb.which = i;
+        cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
+        cp_pb.xcpb = (uint32_t)(XCPB FAR *)&cp_xcpb;
+        cp_pb.rect.g_x = cp_pb.rect.g_y = 0;
+        cp_pb.rect.g_w = cp_pb.rect.g_h = 0;
+        cp_pb.quit = 0;
+        cp_pb.ret = 0;
+        info->cpx_call((uint32_t)(CPXPB FAR *)&cp_pb);
+        cp_boots++;
+    }
+    cp_xcpb.booting = 0;
+}
+
 static void cp_xcpb_init(void)
 {
     cp_xcpb.handle = 0;                 /* this panel opens no workstation */
@@ -173,11 +227,6 @@ static void cp_xcpb_init(void)
      * its own yet to put beside it. */
     cp_xcpb.XGen_Alert = 0;
 }
-
-/* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
- * a module is handed its address and reads it there (src/app/cpx.h says
- * why every entry takes one uint32_t rather than arguments). */
-static CPXPB cp_pb;
 
 static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)
 {

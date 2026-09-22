@@ -556,14 +556,20 @@ static void sh_auto(void)
 
 WORD sh_ncpx;                           /* modules loaded */
 WORD sh_cpxbad;                         /* ...and found but refused: the gate */
+WORD sh_cpxcfgs;                        /* settings files found and read */
 static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD) */
 
 /* One entry of the table, laid out by hand because this file must agree
  * with src/app/cpx.h without including it -- the AES is small-data and
  * cpx.h is the application's header, in the application's model. */
 #define CPXE_INFO   0                   /* uint32_t: the module's CPXINFO  */
-#define CPXE_FILE   4                   /* char[14]: its file name         */
-#define CPXE_HDR    18                  /* CPX_HDR_SIZE bytes of header    */
+#define CPXE_FILE   4                   /* char[16]: its file name         */
+#define CPXE_FILELEN 16                 /* SIXTEEN: fourteen useful bytes,
+                                         * padded, because the application
+                                         * side is a struct and this
+                                         * compiler pads one (src/app/cpx.h
+                                         * says what that cost) */
+#define CPXE_HDR    20                  /* CPX_HDR_SIZE bytes of header    */
 #define CPX_HDR_SZ  512
 #define CPXE_SIZE   (CPXE_HDR + CPX_HDR_SZ)
 /* Where a module's settings live inside its header, and how many.  The
@@ -637,8 +643,10 @@ static void sh_cpxcfg(uint32_t e, const char *name)
     if (fd < 0)
         return;                         /* nothing saved yet */
     if (cio_read(fd, buf, (uint16_t)CPXH_BUFLEN, &got) == CIO_OK
-        || got == CPXH_BUFLEN)
+        || got == CPXH_BUFLEN) {
         far_put(e + CPXE_HDR + CPXH_BUF, buf, CPXH_BUFLEN);
+        sh_cpxcfgs++;
+    }
     cio_close(fd);
 }
 
@@ -660,7 +668,7 @@ static void sh_ldcpx(const char *path, const char *name)
     tail[3] = (uint8_t)((e >> 16) & 0xFF);
     tail[4] = 0x0D;
     far_put(sh_tail_far, tail, sizeof tail);
-    far_strput(e + CPXE_FILE, name, 14);        /* for CPX_Save */
+    far_strput(e + CPXE_FILE, name, CPXE_FILELEN);   /* for CPX_Save */
     far_strput(sh_cmd_far, path, SH_CMDLEN);
     gd_termres = 0;
     (void)app_run(app.entry);
@@ -934,9 +942,21 @@ WORD sh_main(void)
      * program is meant to be able to set up something an accessory then
      * finds.  Both are before the keep mark below, so a program that
      * ended with Ptermres is as permanent as an accessory is. */
+    /* AUTO, THEN THE MODULES, THEN THE ACCESSORIES -- and that order is
+     * load-bearing rather than tidy.  A control panel extension may want
+     * its settings applied at BOOT (CPX_BOOTINIT, src/app/cpx.h), and it
+     * is the PANEL that does that, because the panel is the host and
+     * already knows the shape of both parameter blocks; the AES would
+     * have to learn them to do it here, in a second place where they
+     * could drift.  So the modules have to EXIST by the time CONTROL.ACC
+     * starts: an accessory runs its main() at load and parks at its
+     * first evnt_ call, which is after it has had the chance.
+     *
+     * All three are before the keep mark below, so everything any of
+     * them took is permanent. */
     sh_auto();
+    sh_cpx();                   /* ...so the panel can boot-init them */
     sh_accs();
-    sh_cpx();   /* the panel's modules, kept as the accessories are */                  /* before the first program: see above */
 
     /* EVERYTHING TAKEN SO FAR IS PERMANENT, and from here the machine
      * keeps that rather than this file arranging it.  Above this mark is

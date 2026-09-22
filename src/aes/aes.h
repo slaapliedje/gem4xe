@@ -835,6 +835,7 @@ void sh_cioname(const char *gem, char *cio);
  * none) and each one's header (src/app/cpx.h). */
 extern WORD sh_ncpx;
 extern WORD sh_cpxbad;
+extern WORD sh_cpxcfgs;
 uint32_t sh_cpxinfo(WORD i);
 uint32_t sh_cpxtable(void);     /* the flat table, for appl_getinfo */
 WORD     sh_cpxstride(void);    /* one entry's size */

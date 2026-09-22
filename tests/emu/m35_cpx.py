@@ -57,7 +57,7 @@ MOD_SYM = os.path.join(ROOT, "build", "m35_cpx.sym")
 
 M35_SIG = 0x3535
 WANT_TITLE = "Test CPX"
-CPXE_HDR = 18                    # src/aes/shel.c: info, the file name,
+CPXE_HDR = 20                    # src/aes/shel.c: info, the file name,
                                  # then the header.  tests/host/test_cpx.py
                                  # holds all three writings of this to one
                                  # number; this one is the fourth, from the

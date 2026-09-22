@@ -28,6 +28,7 @@
 
 WORD cp_start(void);
 void cp_panel(void);
+void cp_bootinit(void);
 
 static char acc_title[] = "  Control Panel";
 
@@ -44,8 +45,15 @@ int main(void)
     acc_id = appl_init();
     if (!cp_start())
         acc_menu = -1;
-    else
+    else {
         acc_menu = menu_register(acc_id, acc_title);
+        /* BEFORE THE FIRST evnt_, which is where this accessory parks:
+         * a module that saved a setting gets it put back now, so the
+         * machine comes up the way it was left rather than the way it
+         * ships.  The AES loads the modules before the accessories for
+         * exactly this (src/aes/shel.c). */
+        cp_bootinit();
+    }
 
     for (;;) {
         evnt_mesag(msg);

@@ -246,6 +246,11 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
      * dialog shows what the machine is actually doing either way. */
     gn_xcpb = (XCPB FAR *)pb->xcpb;
     gn_restore();
+    /* BOOTING: act and return, with no dialog.  The panel opens a
+     * CPX_BOOTINIT module once at start-up purely so it can do the line
+     * above; there is nobody to show anything to yet (src/app/cpx.h). */
+    if (gn_xcpb && gn_xcpb->booting)
+        return;
 
     dc0 = evnt_dclick(0, 0);
     {
@@ -320,7 +325,7 @@ CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
         return (CPXINFO FAR *)0;
 
     hdr->magic = CPX_MAGIC;
-    hdr->flags = 0;
+    hdr->flags = CPX_BOOTINIT;          /* put my settings back at boot */
     hdr->cpx_id = 0x47454E4CL;          /* 'GENL' */
     hdr->cpx_version = 1;
     for (i = 0; title[i] && i < 17; i++)

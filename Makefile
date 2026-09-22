@@ -1191,6 +1191,19 @@ build/gem-shots.atr: $(SP_DEPS)
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) $(SP_LAYOUT) $(SP_APPS)
 
+# The persistence gate's disk (test-m36): the product disk, plus a
+# GENERAL.CFG that says what a person saved LAST time.  The bytes are the
+# module's own (src/apps/general.c: a mark, the double-click rate, the
+# sub-menu delay) and they are deliberately NOT the AES's defaults, so
+# the gate cannot pass by a machine that restored nothing.
+build/general.cfg: tools/mkgencfg.py
+	python3 tools/mkgencfg.py $@
+build/m36-boot.atr: $(SP_DEPS) build/general.cfg
+	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) $(SP_LAYOUT) $(SP_APPS) \
+	    --add build/general.cfg "GEM>GENERAL.CFG"
+
 # The CF card: an APT table and two SDFS partitions, with the system in
 # \GEM\ and the demonstration application in \APPS\ -- the install
 # layout of docs/shipping.md section 4, on the volume it was written for.
@@ -1394,7 +1407,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-boot test-install
+test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-boot test-install
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1644,6 +1657,10 @@ test-m34: build/m34-boot.atr
 test-m35: build/m35-boot.atr
 	python3 tests/emu/m35_cpx.py
 
+# A module's settings, saved and put back at the NEXT boot.
+test-m36: build/m36-boot.atr
+	python3 tests/emu/m36_cpxsave.py
+
 # The desktop: DESKTOP.PRG under the shell, driven at the mouse and checked
 # against tools/deskref.py -- the desktop itself transcribed against the AES
 # model (phase 14, milestone 4).
@@ -1846,4 +1863,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
