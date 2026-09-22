@@ -51,8 +51,16 @@
  *
  * PROCESSES.  Pterm, Pterm0 and Ptermres end the program there and then:
  * the COP does not return to it, and its loader sees the code as it would
- * have seen main()'s (src/sys/abi.s).  Nothing stays resident after
- * Ptermres; there is nothing on this machine for a TSR to hook.  Pexec
+ * have seen main()'s (src/sys/abi.s).  Ptermres KEEPS the program: its
+ * near region and its far image are not given back, so what it installed
+ * -- a vector it took, a service it published -- is still there for the
+ * next program to find.  All or nothing, and not the ST's byte count: the
+ * unit here is the region, because both allocators are bump allocators
+ * and a partial release would leave a hole neither can use.  That is what
+ * the AUTO folder is built on (src/aes/shel.c, docs/phase48.md): the
+ * shell runs \GEM\AUTO\ before the accessories and sets the keep mark
+ * after them, so a program that ends this way lands below the mark and
+ * outlives every program the desktop launches afterwards.  Pexec
  * runs another program and has it back: mode 0, load and go, with the
  * child above its parent in the pool and the far heap and given back
  * when it ends, and what GEMDOS keeps per process -- the handles, the

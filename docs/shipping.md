@@ -441,20 +441,38 @@ With a volume that has room, the system stops being one lump:
     \GEM\DESKTOP.RSC     its resource (its own strings, its own layout)
     \GEM\LANG.RSC        the system's strings -- see below
     \GEM\*.ACC           desk accessories, with their resources
+    \GEM\*.CPX           control panel extensions, with their resources
     \GEM\*.FNT           fonts, when they are loadable
+    \GEM\AUTO\           programs run at start-up, in name order
     \APPS\...            applications, one directory each
     \...                 the user's documents
 
-**The accessories are in `\GEM\`, not `\APPS\`, and the distinction is
-not filing.**  An application is something the desktop launches: the AES
-loads it, runs it, frees it, and the desktop comes back.  An accessory is
-loaded once, by the AES itself, before the first program -- and it stays,
-through every program that runs afterwards, which is why it appears in
-the Desk menu rather than as an icon.  So the AES looks for `*.ACC`
-in its OWN directory, the one `GEM.COM` was started from, and never in
-`\APPS\`.  `docs/phase36.md` has the reason it must be loaded first: both
-allocators are bump allocators, and anything taken after a program has
-loaded is freed underneath it when that program exits.
+**What is in `\GEM\` and what is in `\APPS\` is not a filing decision.**
+The system's own directory -- the one `GEM.COM` was started from -- holds
+everything the AES loads *itself*, before the first program and before
+the keep mark; `\APPS\` holds what the desktop launches afterwards.  Four
+kinds of thing, and the difference between them is what survives:
+
+| | loaded by | when it ends | how it is reached |
+|---|---|---|---|
+| an application | the desktop | freed; the desktop comes back | its icon |
+| a desk accessory | the AES | never; it outlives every program | the Desk menu |
+| an AUTO program | the AES | `Ptermres`, and it stays; or returns, and is freed | nothing -- it is a vector or a service |
+| a CPX module | the AES | stays, but gets no process and no turn | the control panel lists it |
+
+An AUTO program has no process record and is never given a turn: it runs
+once, installs whatever it installs, and the machine goes on without it
+in the loop.  A CPX module is a program that is only ever *called* --
+`CONTROL.ACC` drives it, one event at a time, through the vtable it
+published (`src/app/cpx.h`, `docs/phase48.md`).
+
+`docs/phase36.md` has the reason all of them must be loaded before the
+first program: both allocators are bump allocators, and anything taken
+after a program has loaded is freed underneath it when that program
+exits.  `src/aes/shel.c` runs `\GEM\AUTO\`, then loads `*.CPX`, then
+`*.ACC`, and only then sets the mark that fixes the permanent floor --
+the modules before the accessories on purpose, so that the panel exists
+after the things it hosts.
 
 Every SpartaDOS X medium carries the same `GEM4XE.CFG`, with every
 setting in it commented out, so that finding the file is finding its
@@ -502,7 +520,7 @@ media are filled from.
 
 `build/gem-cf.img` is that layout, less the two files that do not exist
 yet (section 5's `LANG.RSC` and a font).  The desktop opens a folder in
-a window and runs a `.G4A` from its icon, and `make test-cf` boots the
+a window and runs a `.PRG` from its icon, and `make test-cf` boots the
 card into that desktop, so the layout is not a plan.  Two things follow for the loader: an
 application is found by path, not by being on `D1:`, and the shell's
 command tail (`SH_TAILLEN`, 128 bytes) is what carries arguments -- both

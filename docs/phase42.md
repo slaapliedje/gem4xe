@@ -96,6 +96,11 @@ call so the interrupt state comes back too.  The loader cannot tell a
 Pterm from a return, which is the point.  Nothing stays resident after
 `Ptermres`: there is nothing on this machine for a TSR to hook.
 
+> **Overtaken by phase 48.**  `Ptermres` keeps the program now, and the
+> AUTO folder is built on it.  It is all-or-nothing rather than the ST's
+> byte count, because both allocators are bump allocators.
+> See `docs/phase48.md`.
+
 ## Pexec
 
 Mode 0, load and go.  The child is loaded above its parent -- the pool
