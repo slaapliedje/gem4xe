@@ -55,9 +55,9 @@ byte at a time is the right shape, and they compile into `farcode` with
 the rest of the C and cost bank $00 nothing.  GEM.COM got 34 bytes
 smaller.
 
-The applications -- the desktop, the calculator, the clock, and the
-three accessories (`CLOCK.ACC`, `CONTROL.ACC`, `CALC.ACC`) -- never
-linked any of it.  Which runtime archive they take makes no difference
+The applications -- the desktop, the calculator, the clock, the three
+accessories (`CLOCK.ACC`, `CONTROL.ACC`, `CALC.ACC`) and the control
+panel extension (`GENERAL.CPX`) -- never linked any of it.  Which runtime archive they take makes no difference
 to that claim: the desktop, the control panel accessory and the
 calculator accessory are `--data-model=large` and so link
 `clib-lc-ld.a`, where the calculator, the clock and the clock accessory

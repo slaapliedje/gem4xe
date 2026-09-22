@@ -85,6 +85,7 @@ drive.
     the applications floppy, gem-apps.atr
       GEM>CLOCK.ACC  CLOCK.RSC  CONTROL.ACC  ---->  GEM>...
           CPANEL.RSC  CALC.ACC  CALC.RSC
+          GENERAL.CPX  GENERAL.RSC
       APPS>HELLO.PRG  CALC.PRG  CALC.RSC     ---->  APPS>...
           CLOCK.PRG  CLOCK.RSC
 
@@ -101,9 +102,11 @@ there alone and says what it wants; installing a newer gem4xe is the
 same again, over the old.  `make test-install` does exactly that under
 SpartaDOS X 4.50 -- a blank drive, both floppies, the system a second
 time over the first -- and then cold-starts the drive into the desktop
-with all three desk accessories loaded beside it.  The gate counts the
+with all three desk accessories loaded beside it, and the control panel
+extension the applications floppy also carries.  The gate counts the
 processes, so that number is the media's to change: four is the desktop
-and the three the applications floppy installed.
+and the three accessories.  The module is not among them -- a CPX gets
+no process record and no turn in the event loop; the panel calls it.
 
 **Why two floppies and not one.**  Until phase 42 each SpartaDOS floppy
 carried the applications and the accessories as well -- one accessory
@@ -127,9 +130,9 @@ to build and gate for nobody.  **`gem-sdx.atr`** and
 double-sided double-density SDFS disks, 1440 sectors of 256 bytes, with
 **no DOS**, their boot sectors the blank disk's stub.  The first is the
 system -- the card's `\GEM\` without the accessories, the card's
-`AUTOEXEC.BAT` and `INSTALL.BAT` -- and the second the applications and
-the three accessories, with an `INSTALL.BAT` of its own and nothing that
-boots.
+`AUTOEXEC.BAT` and `INSTALL.BAT` -- and the second the applications, the
+three accessories and the control panel extension, with an `INSTALL.BAT`
+of its own and nothing that boots.
 
 The system floppy boots under SpartaDOS X, which is the one DOS that
 lives in the machine rather than on the disk: a cartridge, or an

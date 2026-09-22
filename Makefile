@@ -1661,7 +1661,7 @@ test-m15d: build/m3-boot.atr build/m12-d2.atr
 # The shell loop: sh_main runs DESKTOP.PRG, what it asks for, the desktop
 # again, until it asks to shut down -- with the harness at the keyboard
 # and the screen checked against the model at each stop.  On the SpartaDOS
-# disk, the only runner disk with room for the .G4A files.
+# disk, the only runner disk with room for the programs.
 test-m16: build/m14-boot.atr
 	python3 tests/emu/m16_shell.py
 

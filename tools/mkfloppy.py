@@ -14,8 +14,9 @@ the stub every blank SDFS disk has.
                 on the disk: from a cartridge or from Ultimate 1MB flash,
                 SDX comes up, changes to the disk in D1: and runs its
                 AUTOEXEC.BAT, and that is GEM.
-  gem-apps.atr  THE APPLICATIONS: \\APPS\\, the desk accessory in \\GEM\\,
-                and an INSTALL.BAT of its own.  Not a boot disk: it goes
+  gem-apps.atr  THE APPLICATIONS: \\APPS\\, the desk accessories and the
+                control panel extension in \\GEM\\, and an INSTALL.BAT
+                of its own.  Not a boot disk: it goes
                 in another drive beside the system, and the desktop opens
                 it there.
 

@@ -174,7 +174,10 @@ Besides those:
 `sdk/gem4xe-sdk.tar.gz` is everything needed to build one, and nothing
 of gem4xe itself — an application links against none of it.  Unpack it,
 read its `README.md`, and `make` turns its commented example into a
-`.g4a` you can put on the disk beside the others and double-click.
+program you can put on the disk beside the others and double-click.
+Install it as `.PRG`, which is what the Atari world reads as "run me";
+`.APP`, `.TOS` and `.TTP` work too, and so does the container's own
+`.G4A`, which is what 0.5 installed.
 
 ## If something is wrong
 

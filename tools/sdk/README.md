@@ -254,7 +254,12 @@ not the one your own code makes.
 
 A `.g4a` is a file like any other.  Put it beside `GEM.COM` and
 `DESKTOP.RSC` on a gem4xe disk, or in `\APPS\`, and the desktop will
-run it when you double-click it.  In the gem4xe source tree,
+run it when you double-click it -- but install it under a name the
+desktop reads as a program: `.PRG` is the one to use, and `.APP`,
+`.TOS`, `.TTP` and `.G4A` are also taken.  The extension is the role;
+the loader checks the file's magic and refuses anything that is not
+gem4xe's, so a 68000 `.PRG` off a real Atari is turned away rather
+than run.  In the gem4xe source tree,
 `tools/mkspdisk.py <source.atr> <boot.xex> <out.atr> --add mine.g4a
 MINE.PRG` builds an image with it on.
 
