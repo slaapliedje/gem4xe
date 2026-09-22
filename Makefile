@@ -912,6 +912,25 @@ SHELL_DEPS  = build/m16_desk.g4a build/m11_app.g4a
 DESK_FILES  = --add build/desktop.g4a DESKTOP.PRG --add build/desktop.rsc DESKTOP.RSC \
               --add build/m11_app.g4a M11.PRG
 DESK_DEPS   = build/desktop.g4a build/desktop.rsc build/prefs.rsc build/m11_app.g4a
+# ONE FILE PER EXECUTABLE EXTENSION, on the desktop gate's disk only.
+#
+# The desktop marks five extensions as programs (src/desk/deskwin.c,
+# win_exts) and the model has to agree about all five.  Until these were
+# here it could not be wrong about them: no gate disk carried a .APP, a
+# .TOS or a .TTP, so tools/deskref.py went on calling them documents and
+# every gate stayed green -- the model and the target quietly disagreeing,
+# which is the failure this project keeps a note about.
+#
+# They are TEXT, and that is deliberate rather than lazy.  The EXTENSION
+# is the role, and it is all the desktop looks at when it picks an icon;
+# the FORMAT is the loader's business, and it reads the file's magic and
+# turns away anything that is not gem4xe's (src/sys/app.c, APP_E_MAGIC).
+# So a document named .TOS gets a program's icon and is refused if anyone
+# opens it, which is exactly the split the two layers are supposed to
+# have.  Not on the product media: there they would be three lies.
+DESK_EXTS   = --add tests/fixtures/test.txt SAMPLE.APP \
+              --add tests/fixtures/test.txt SAMPLE.TOS \
+              --add tests/fixtures/test.txt SAMPLE.TTP
 # The two accessories (src/apps), on the media with room for them: the
 # SpartaDOS floppy, the CF card, and test-m22's own disk.  A prerequisite
 # list is expanded where it is written, so these live above every rule
@@ -1350,7 +1369,7 @@ build/m32-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt 
 build/m17-boot.atr: build/m3desk.xex tests/fixtures/test.txt tests/fixtures/out.txt build/test.rsc $(DESK_DEPS) tools/mkspdisk.py tools/atr.py
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
-	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(DESK_FILES)
+	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(DESK_FILES) $(DESK_EXTS)
 
 # The desktop-and-accessory gate's disk (test-m23): test-m17's, with the
 # two accessories in \APPS\ as the product media carries them.  This is

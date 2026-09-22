@@ -854,12 +854,30 @@ class Desktop:
         pw.info.put(f" {pw.path.size} bytes used in {pw.path.count} items.")
         self.wind_str(pw.id, WF_INFO, pw.addr + WN_INFO)
 
-    @staticmethod
-    def win_which(pf):
+    # THE EXTENSIONS AN ST CALLS EXECUTABLE, written here from the ST's
+    # own vocabulary rather than from src/desk/deskwin.c -- a model that
+    # copies the target proves only that the copy was faithful.
+    #
+    #   PRG  a GEM program
+    #   APP  the same, under its other Atari name
+    #   TOS  a program that does not open the AES
+    #   TTP  a TOS program that Takes Parameters
+    #
+    # plus G4A, which is not the ST's and is gem4xe's own: the container's
+    # name, which is what 0.5 and everything before it installed, kept so
+    # that a disk somebody already has goes on working.
+    #
+    # NAME ONLY.  Whether the file is really a program is the loader's
+    # question, answered by its magic, and a document called SAMPLE.TOS
+    # gets a program's icon here and a refusal there.
+    EXEC_EXTS = (".PRG", ".G4A", ".APP", ".TOS", ".TTP")
+
+    @classmethod
+    def win_which(cls, pf):
         if pf.attr & FA_SUBDIR:
             return IB_FOLDER
         k = pf.name.find(".")
-        if k >= 0 and pf.name[k:] in (".G4A", ".PRG"):   # .PRG: the same, by an Atari name
+        if k >= 0 and pf.name[k:] in cls.EXEC_EXTS:
             return IB_APPL
         return IB_DOCU
 
