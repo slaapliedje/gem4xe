@@ -7,7 +7,7 @@ in principle Antonia), and **Ultimate 1MB**.
 The target surface is **640 × 240, 16 colours** — VBXE's HR overlay, 4bpp chunky.
 That is a better GEM surface than the Atari ST's medium resolution.
 
-Current version **0.5** — `VERSION` at the top of the tree is where it
+Current version **0.6** — `VERSION` at the top of the tree is where it
 lives; `make dist` stamps a build with it and the commit, and `make
 release` is the same for the public, without the DOS 2 floppy (its DOS is
 not gem4xe's to give away) and named by the version alone.
@@ -43,7 +43,12 @@ overlay with its rows doubled, which is what a monitor shows.
 The rest are in [`docs/shots/`](docs/shots/): the bare desk, the Desk and
 File menus, the About box, a folder in icon and text view, Show Info, and
 the three desk accessories — the control panel, the calculator and the
-clock — each open over a window.
+clock — each open over a window. Two of them are taken from *inside* the
+control panel, which is the point of the shape: the panel lists what the
+AES loaded and calls a module's entry, so what is photographed is a
+dialog belonging to a separately linked file the panel has never heard
+of — one a settings CPX, one an event CPX being fed events by a host
+that owns the loop.
 
 ## Why it is shaped the way it is
 
@@ -58,7 +63,7 @@ full-screen repaints.
 
 | Gate | | |
 |---|---|---|
-| `make test-host` | 192/192 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
+| `make test-host` | 262/262 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
 | `make test-emu` | 5/5 | VBXE FX 1.26 / Rapidus / MEMAC A / CPU switch |
 | `make test-m1` | 5/5 | Calypsi C on the 65C816 |
 | `make test-m2` | PASS | 640×240×4bpp HR overlay, 153,600/153,600 pixels |
@@ -77,9 +82,9 @@ full-screen repaints.
 | `make test-m14` | PASS | SpartaGEM on SpartaDOS 3.2: the DOS identified behind CIO, paths mapped into its `>` syntax, files read through subdirectories, and the file selector walked into a folder and back out -- listings and strings against the reference, pixel for pixel |
 | `make test-m14x` | PASS | the same on SpartaDOS X 4.50, the cartridge -- with the application pool and the test stage moved out of its way, into the banked window it services calls from |
 | `make test-m15` | PASS | GEMDOS: the ST's trap #1 as gem4xe's third `COP` face, answered from CIO and the DOS seam -- directory searches, paths, files, far memory, attributes and errors, every answer against the disk image; and the four calls that used to be holes (`docs/phase16.md`): `Dfree` exact from the file system's own count rather than three characters of a listing, `Fseek` through all three modes, `Fdatime` without disturbing a search, `Tgetdate`/`Tgettime` off the Ultimate 1MB's DS1305 — `test-m15x` on SpartaDOS X, `test-m15d` on DOS 2, `test-m15u` on the U1MB machine, where the clock is compared with the host's own |
-| `make test-m16` | PASS | the shell loop: DESKTOP.G4A loaded and run, a program run from it and the desktop back, a missing program's alert, shutdown -- the screen against the reference at each stop, the pool and the far heap back where they were, the stack's low-water mark (1199 of 2048 bytes); the VDI's virtual workstations (one per program) under it. GEM.COM, the product, does the same from the DOS prompt and returns to it |
-| `make test-m17` | PASS | the GEM Desktop: DESKTOP.G4A's menu bar, drive icons and trash, an icon clicked, Desk -> About and its dialog, a drive opened into a folder window, a folder opened in it and closed back out, the fuller, the arrows, the closer, File -> Quit -- driven at the mouse and checked against `tools/deskref.py`, the desktop itself transcribed against the AES model, its directory listings answered from the disk image: thirteen screens, the desktop's 1984 bytes of globals byte for byte at nine of them, 252 calls on both sides, the pool and far heap back, the runner's and the desktop's stack low-water marks (1223 of 2048, 292 of 640) |
-| `make test-m18` | PASS | a program run from the desktop: drive A opened, the window full, M11.G4A double-clicked -- the desktop puts its window's place in the shell buffer as DESKTOP.INF text and exits, the shell runs the program, the desktop comes back and opens the window where it was, File -> Quit -- the desktop transcribed twice against one AES model with the program's calls counted between: six screens, `G` at four waits, 275 calls over the three programs, the pool and far heap back, each run's stack low-water mark (425 and 268 of 640) |
+| `make test-m16` | PASS | the shell loop: DESKTOP.PRG loaded and run, a program run from it and the desktop back, a missing program's alert, shutdown -- the screen against the reference at each stop, the pool and the far heap back where they were, the stack's low-water mark (1199 of 2048 bytes); the VDI's virtual workstations (one per program) under it. GEM.COM, the product, does the same from the DOS prompt and returns to it |
+| `make test-m17` | PASS | the GEM Desktop: DESKTOP.PRG's menu bar, drive icons and trash, an icon clicked, Desk -> About and its dialog, a drive opened into a folder window, a folder opened in it and closed back out, the fuller, the arrows, the closer, File -> Quit -- driven at the mouse and checked against `tools/deskref.py`, the desktop itself transcribed against the AES model, its directory listings answered from the disk image: eighteen screens, the desktop's 2070 bytes of globals byte for byte at fourteen of them, 421 calls on both sides, the pool and far heap back, the runner's and the desktop's stack low-water marks (1660 of 2048, 399 of 640) |
+| `make test-m18` | PASS | a program run from the desktop: drive A opened, the window full, M11.PRG double-clicked -- the desktop puts its window's place in the shell buffer as DESKTOP.INF text and exits, the shell runs the program, the desktop comes back and opens the window where it was, File -> Quit -- the desktop transcribed twice against one AES model with the program's calls counted between: six screens, `G` at four waits, 299 calls over the three programs, the pool and far heap back, each run's stack low-water mark (515 and 323 of 640) |
 | `make test-m19` | PASS | the desktop's writes to a disk: File -> New folder, the name typed into its dialog, `Dcreate`, the folder in the listing; the same name again, refused, and the alert -- text and all -- out of DESKTOP.RSC's free strings; an item dragged into the new folder and copied there, the walk a DTA deep per level; the window fulled and File -> Show info on the folder -- what it holds, counted -- and then on a file, whose extension is edited in place and whose OK renames it (`Frename`); the SUB tree selected and File -> Delete, counted first, confirmed in a dialog whose counts tick down, and the tree gone; then Options -> Save desktop and Options -> Read .INF file, the layout written to `DESKTOP.INF` and read straight back with the windows closed and opened again from it -- seventeen screens, `G` at ten waits, 605 calls on both sides, and the disk image itself read back afterwards, the INF included |
 | `make test-m20` | PASS | what the system says comes off the disk: `form_error` on three disks — the product's `LANG.RSC`, a German translation of it, and no file at all — each compared with the model given the strings that disk carries, so the first and third draw the same screen and the second draws the translation |
 | `make test-m21` | PASS | a loadable font: the system font inverted so every glyph differs, read as `SYSTEM.FNT` at start-up off one disk and absent from another, with `vqt_name`, `vst_font` and GDOS's `vst_load_fonts`/`vst_unload_fonts` answering for the right face either way |
@@ -94,6 +99,10 @@ full-screen repaints.
 | `make test-m30` | PASS | **the VDI on a printer** — the third device through the seam and the first that is not a screen: 640×800 dots in one far bank, drawn by the same `vdi.c`, written out by `v_updwk` as PCL 5 and as PostScript, both files read back out of the disk image. The PCL is decoded back to a page and compared with `vdiref` on `devref.Printer` — all 512,000 dots — and the Atari's own **PostScript is rendered by Ghostscript** and compared with the same page, which is what checks the y-flip and the DeviceGray inversion |
 | `make test-m31` | PASS | **an application whose far image is bigger than a bank** — GACS's GEM shell, 100 KB of far code and another 11 KB of constants, loaded, relocated across banks and run. Two limits had been sitting behind that and neither would have announced itself: the far fixup offsets were 16-bit, so an address past `$FFFF` of the image could not be named at all, and `tools/mkg4a.py` refused a multi-bank image up front — a refusal guarding an invariant the packer does not own |
 | `make test-m32` `test-m32n` | PASS | **the rest of GEMDOS, from a program that never calls the AES** — and, as `test-m32n`, the same program on an **NTSC** machine, the first gate that boots one: `evnt_timer(500)` spans 488 ms of 16.7 ms frames there, where a 20 ms tick assumed gave 417, and `clock()` agrees to the millisecond; the screens are not compared, the models being laid out on a PAL frame — a page of VT-52 using every escape in the Compendium's table and the echoes of typed keys, both held **pixel for pixel against `tools/conref.py`**; `Cconin`, `Cconrs`, `Cnecin`, `Crawcin` and `Cconis` at the keyboard; handle 1 forced onto a file with `Fforce` and put back through `Fdup`'s handle, the file read back through handle 0; `Mxalloc`/`Mshrink`/`Mfree` moving the far heap by exactly the block; a child run with `Pexec` that reads its command tail, writes through the handle it inherited and ends with `Pterm(5)`; and `Pterm(42)` from inside a function, the shell's record saying 42 and not the 7 `main()` returns after the call; and **the clock**: `Tgettimeofday` — MiNT's call, served from the ~4 kHz POKEY timer the pointer sampler already runs — seen monotonic and 499 ms across `evnt_timer(500)`, with the kit's `clock()` agreeing in its header's own units |
+| `make test-m33` | PASS | **a resource in far memory** — a `.RSC` too big for the 14 KB of bank $00 loaded into the 15 MB instead, every tree and every object address a far one, and **the same file refused** to a caller that cannot take it. Which caller can is the kit's to say, not the AES's to guess: a large-data program sets a bit in `int_in[0]` and gets the far load, a small-data one asks for the same file and is told no rather than handed pointers it would truncate |
+| `make test-m34` | PASS | **the AUTO folder**: two programs in `\GEM\AUTO\`, run in name order before the accessories and before the keep mark, one ending in `Ptermres` and one returning — and afterwards the resident one is still there and the other's memory is not. All or nothing, and not the ST's byte count: both allocators are bump allocators, so the unit that can be kept is the region |
+| `make test-m35` | PASS | **a control panel extension**: a separately linked module loaded by the AES, entered through **its own crt** so its initialised data is really installed, publishing a vtable the panel then calls — and staying, with the permanent floor moved by the 1,536 bytes that are the module. Both halves of the contract: a form CPX that runs its own `form_do`, and an **event CPX** that draws, returns 1 and is driven by the host one event at a time until it says stop |
+| `make test-m36` | PASS | **a module's settings across a reboot** — the claim a control panel exists for, and the one that cannot be checked while the machine is up. A `GENERAL.CFG` on the disk stands for somebody having pressed OK last time; the AES lays it over the module's defaults and the panel calls every `CPX_BOOTINIT` module once before anybody sees the desk. **And the control**: the same system booted without that file must come up at the AES's own defaults, or "it was restored" and "nothing happened" are the same picture |
 | `make test-boot` | PASS | the product disks booting into the desktop with **nothing typed and nothing poked** — the loader finds the Rapidus behind the 6502 the machine came up as and switches it itself: `build/gem-boot.atr` (a double-density DOS 2 with `DUP.SYS`, the system named `AUTORUN.SYS`, no `GEM4XE.CFG` since phase 43, at least 72 sectors free) and `build/gem-sdx.atr` (a double-sided SDFS disk with **no DOS on it**, the one the release carries, booted under the SpartaDOS X cartridge fixture), each the system and nothing else, with `build/gem-apps.atr`, the applications, read file by file; the 6502 boot runs GEM by itself and ends in the loader's refusal; `COLDST` and the Rapidus switch bring the machine up cold as a 65C816, the DOS starts GEM again, **the boot screen** is read back off E: while it is held and every line checked against the machine that wrote it, and the far image is spot-checked against the linker's output before the desk is compared pixel for pixel with the desktop model at its first wait |
 | `make test-install` | PASS | **the installer**: the SpartaDOS X cartridge with a blank drive and both floppies beside it, `-INSTALL D1:` from the system floppy and from the applications floppy, the drive listed and holding exactly `tools/mkcf.py`'s two tables and an `AUTOEXEC.BAT`, the system installed again over itself keeping that `AUTOEXEC.BAT`, and a cold start from the drive reaching the desktop with the clock accessory loaded beside it |
 | `make test-cf` | PASS | the product **CF card** booting into the desktop: `build/gem-cf.img`, an APT table and two SDFS partitions, on a SIDE 2's IDE bus, with SpartaDOS X *and* the PBI BIOS that mounts those partitions coming from a real Ultimate 1MB flash image. The gate walks the U1MB BIOS setup itself (PBI BIOS on, hard disk on, an ID that is not the Rapidus's) from a fresh profile of its own, keeps the SIDE's SDX bank unmapped so the PBI BIOS will touch the disk, and then runs the same boot as `test-boot` -- refusal, switch, desk against the model. Needs the U1MB fixture and the patched emulator, so not in `make test`. `make test-cf-dosclock` boots the same card with `CLOCK=DOS` in its `GEM4XE.CFG`, so that the SpartaDOS X kernel -- `kd_gettd`, the clock of a machine with no U1MB and no SIDE, an Antonia with an IDE Plus 2 say -- answers instead of the chip, and its answer is compared with the host's clock |
@@ -102,7 +111,7 @@ full-screen repaints.
 | `make test-sdx816` | PASS | the desktop under **Rapidus OS with SpartaDOS X's `65816.SYS` loaded** — the driver that stopped both 0.1.2 and 0.2 at the desktop's first `rsrc_load`, saying `DESKTOP.RSC` was not on the boot disk. It was not the DOS: `proc_init()` cleared a process record field by field and not the two resource slots the record gained later, so the desktop started out holding resources it had never loaded and `rs_load` refused a third. Then **File -> DOS command...**: `VER` typed into the dialog runs through SpartaDOS X's own command processor (`XCOMLI`, GEMDOS `Psystem`) with GEM's screen left as it is, and its banner is read off the screen in the window the desktop opens on it (`docs/phase43.md`). Needs the Rapidus OS, SDX and `65816.SYS` fixtures |
 | `make test-sd` | PASS | the same card in the shape a **SubCart / AVGCART** wants — a FAT32 partition first, the APT after it — booted the same way as `test-cf`. Needs `[u1mb].flash` |
 | `make test-cf-firmware` | PASS | the same card booted on **every Ultimate 1MB firmware in `[u1mb.firmware]`** — 1.25, 2, 3.02, 3.10, 4.0 and 4.20 — because the BIOS setup screens differ between them, so the gate walks each one by what its screen actually says rather than by a fixed key sequence. Needs the firmware list, so not in `make test` |
-| `make check-cc` | PASS | the sixteen compiler bugs worked around, in the vendor's simulator |
+| `make check-cc` | PASS | the compiler bugs worked around, in the vendor's simulator: twenty-three shapes, eighteen of them still present |
 | `make movie` | PASS | a session with the AES itself, filmed frame by frame and checked as a gate: `build/movie/gem4xe.mp4` |
 | `make bench` | — | GEMBench's tests on this machine, in milliseconds, not a gate (`docs/bench.md`) |
 
@@ -372,7 +381,7 @@ patches add the switches, and the two `*u` gates boot SpartaDOS X from
 the machine's own flash.
 
 **The desktop** (`docs/phase14.md`, milestones 3 to 7). The AES's shell
-loop runs `DESKTOP.G4A`, then whatever it asks for, then the desktop
+loop runs `DESKTOP.PRG`, then whatever it asks for, then the desktop
 again; `GEM.COM` is that loop from the DOS prompt, back to it at
 shutdown. The desktop is the donor's deskmain.c, deskobj.c and
 deskwin.c cut to what shows so far -- the bar, an icon for each drive
@@ -412,6 +421,35 @@ through POKEY's IRQEN, which froze the machine in an interrupt storm:
 the gate's post-mortem -- which call the target is inside, what the
 delete had counted, the CPU's last thirty-two instructions -- is how
 that was read back.
+
+**What a double-click means** (`docs/phase48.md`). The desktop reads the
+ST's vocabulary: `.PRG`, `.APP`, `.TOS` and `.TTP` are programs, and so
+is `.G4A`, the container's own name, which is what 0.5 installed and is
+kept so a disk somebody already has goes on working. `.TTP` asks for a
+command line first, which is the whole of what the extra P means.
+Anything else is a document, and a document double-clicked puts up
+**Show | Print | Cancel** — Show pages it through the desktop's text
+window, Print sends it to whatever `GEM4XE.CFG` names. The extension is
+the *role*; the *format* is the loader's business, and it reads the
+file's magic, so a 68000 `.PRG` off a real Atari is turned away with a
+message instead of run.
+
+**What starts before the desktop does** (`docs/phase48.md`). `\GEM\AUTO\`
+is run in name order before anything else, and a program there that ends
+with `Ptermres` is kept — all or nothing, the region being the unit,
+because both allocators are bump allocators and a partial release leaves
+a hole neither can use. Then `*.CPX`, then `*.ACC`, and only then the
+mark that fixes the permanent floor. **The control panel is a host**: it
+asks the AES for the modules it loaded (`appl_getinfo(AES_CPX)`, the
+sixteenth subject), lists them, and calls the one you open through the
+vtable that module published — a form CPX runs its own `form_do`, an
+event CPX draws and is then fed events one at a time until it says stop.
+`GENERAL.CPX` is the worked example: double-click speed, menu delay, the
+date and the time, saved to a file of its own and **put back at the next
+boot** before anybody sees the desk. The ABI is one `uint32_t` per entry
+and not the pointer it wants to be, because a `saveds` function on this
+compiler switches its direct page before it reads a second argument, or
+a first one that is a pointer — measured, not assumed.
 
 **What is not built yet, and is written down so it shapes what is**
 (`docs/shipping.md`). The system is 145 KB of files — 168 KB once it is
