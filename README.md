@@ -7,7 +7,7 @@ in principle Antonia), and **Ultimate 1MB**.
 The target surface is **640 × 240, 16 colours** — VBXE's HR overlay, 4bpp chunky.
 That is a better GEM surface than the Atari ST's medium resolution.
 
-Current version **0.6** — `VERSION` at the top of the tree is where it
+Current version **0.6.1** — `VERSION` at the top of the tree is where it
 lives; `make dist` stamps a build with it and the commit, and `make
 release` is the same for the public, without the DOS 2 floppy (its DOS is
 not gem4xe's to give away) and named by the version alone.
@@ -446,7 +446,10 @@ vtable that module published — a form CPX runs its own `form_do`, an
 event CPX draws and is then fed events one at a time until it says stop.
 `GENERAL.CPX` is the worked example: double-click speed, menu delay, the
 date and the time, saved to a file of its own and **put back at the next
-boot** before anybody sees the desk. The ABI is one `uint32_t` per entry
+boot** before anybody sees the desk. A module can also put up one of the
+panel's canned alerts, by number rather than by carrying a sentence of
+its own — so every module says "that file was not found" in the same
+words, and a translator translates it once. The ABI is one `uint32_t` per entry
 and not the pointer it wants to be, because a `saveds` function on this
 compiler switches its direct page before it reads a second argument, or
 a first one that is a pointer — measured, not assumed.

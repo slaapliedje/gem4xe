@@ -126,9 +126,42 @@ voice.  `appl_getinfo(AES_CPX)` is how the panel finds the modules at
 all; it is the sixteenth subject the call answers, and it exists so the
 panel needs no private channel into the AES.
 
-`CPX_Save` is a `SAVEDS` callback with one argument, for the reason
-above.  `XGen_Alert` is still 0 -- the alert strings belong in
-`CPANEL.RSC` and no reader-visible string belongs in the C.
+Both are `SAVEDS` callbacks taking one argument, for the reason above.
+
+### The canned alerts (0.6.1)
+
+`XGen_Alert` was 0 for the whole of 0.6.  `cpx.h` allows that and says a
+module must cope, so nothing was refused and no gate went red while a
+module asking for an alert simply got silence -- the same shape as every
+other fault in this phase.
+
+**The point of a canned alert is that the words are not the module's.**
+Every module that cannot read its file says the same sentence, and a
+translator translates it once.  So the four texts are free strings of
+`CPANEL.RSC`, which is also the only place a translator could reach
+them: a sentence compiled into a separately linked module is unreachable
+from outside it.  A module names an alert by number and carries no prose
+at all, and `src/m35_cpx.c` is checked for not containing the words of
+the alert it asks for.
+
+The numbers are Atari's, from the Compendium's table: `SAVE_DEFAULTS` 0,
+`MEM_ERR` 1, `FILE_ERR` 2, `FILE_NOT_FOUND` 3.  **`XAL_SHUTDOWN` is
+gone.**  The header carried it as 11 and said the numbers were Atari's;
+it is in neither that table nor the GEM source corpus, and nothing here
+ever used it.  A constant that claims an authority it does not have gets
+believed later.
+
+The Compendium's rule about the ANSWER is kept **structurally** rather
+than by a special case in the panel.  It says `XGen_Alert` "returns TRUE
+if 'OK' was selected or FALSE if 'Cancel' was selected.  Alerts 1-3
+always returns TRUE" -- so those three are given ONE button, and
+`form_alert` can then only answer 1.  A test asserts the button counts,
+which is what makes the promise true.
+
+And two places now count the same four alerts -- `cpx.h`'s `XAL_NALERT`,
+which a module compiles against, and the resource's `N_XALERT` -- so
+`cpanel.c` fails to build if they ever disagree.  Same negative array
+bound as the slot-layout check above, same reason.
 
 ## Settings that survive a reboot
 
