@@ -68,6 +68,12 @@ from demo_aes import path                   # noqa: E402
 from product_boot import REFUSAL, STEP, BOOT_WAIT, boot_screen   # noqa: E402
 
 BUILD = os.path.join(ROOT, "build")
+# What the tour wrote, beside the pictures: see Tour.manifest.
+MANIFEST = "MANIFEST"
+# The boot screen is photographed before the Tour exists -- it happens
+# while the machine is still coming up -- so it is outside the shot
+# numbering and has to be named in one place for both of them.
+BOOT_SHOT = "00-boot.png"
 SYMS = os.path.join(BUILD, "gem.sym")
 CALC = os.path.join(BUILD, "calc.g4a")
 CALC_SYM = os.path.join(BUILD, "calc.sym")
@@ -162,6 +168,9 @@ class Tour:
         self.clink, _, _ = header(CALC)
         self.csym = symfile.load(CALC_SYM)
         self.n = 0
+        # The boot screen is already written by the time a Tour is
+        # made (main, below), and it is a picture this owns too.
+        self.wrote = [BOOT_SHOT]
 
     # -- driving -----------------------------------------------------------
     def here(self):
@@ -202,9 +211,35 @@ class Tour:
         raw = os.path.join(BUILD, "shots", f"tour-{name}.png")
         self.b.frames(2)
         self.b.screenshot(raw)
-        fn = os.path.join(self.out, f"{self.n:02d}-{name}.png")
+        base = f"{self.n:02d}-{name}.png"
+        fn = os.path.join(self.out, base)
         publish(raw, fn)
+        self.wrote.append(base)
         print(f"  {fn}")
+
+    def manifest(self):
+        """What this tour wrote, in order, beside the pictures.
+
+        THE TOUR HAS TO SAY THIS ITSELF.  The names are numbered by the
+        order the shots happen in, and one of them is not even a literal
+        -- the accessory loop names its shot after the accessory -- so
+        nothing can work the list out by reading this file.  Inserting a
+        picture renumbers every one after it, which has now happened
+        twice and left four superseded PNGs checked in both times; a
+        stale picture RENDERS, so it is worse than a broken link.
+
+        tools/readme.py reads this and says which files in docs/shots
+        are no longer written and which the README still points at."""
+        p = os.path.join(self.out, MANIFEST)
+        with open(p, "w") as f:
+            f.write("# written by tests/emu/shots.py -- do not edit\n")
+            f.write("".join(s + "\n" for s in self.wrote))
+        stale = sorted(n for n in os.listdir(self.out)
+                       if n.endswith(".png") and n not in set(self.wrote))
+        for n in stale:
+            print(f"  STALE: {n} is checked in and the tour no longer "
+                  f"writes it")
+        return stale
 
     # -- where things are ----------------------------------------------------
     def G(self):
@@ -372,7 +407,7 @@ def boot(b, syms, out):
         raise SystemExit("the boot screen never showed its hint")
     raw = os.path.join(BUILD, "shots", "tour-boot.png")
     b.screenshot(raw)
-    fn = os.path.join(out, "00-boot.png")
+    fn = os.path.join(out, BOOT_SHOT)
     publish(raw, fn)
     print(f"  {fn}")
     calls = syms["app_calls"]
@@ -524,7 +559,9 @@ def main(argv):
         t.shot("clock")
     finally:
         emu.stop()
-    return 0
+    # ...and what it wrote, so a renumbering cannot leave a superseded
+    # picture behind it (Tour.manifest).
+    return 1 if t.manifest() else 0
 
 
 if __name__ == "__main__":

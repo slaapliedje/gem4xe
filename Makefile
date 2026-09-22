@@ -1863,6 +1863,16 @@ movie: build/m3-boot.atr
 shots: build/gem-shots.atr build/desktop.sym build/calc.sym
 	python3 tests/emu/shots.py --disk build/gem-shots.atr
 
+# README.md's facts, put back from the tree they describe: how many tests
+# the host suite collects, and which version this is.  It writes NUMBERS
+# AND NEVER PROSE -- a gate the table has never heard of is reported for
+# a person to write a sentence about, because a wrong number looks wrong
+# and an invented description does not.  tests/host/test_readme.py is the
+# same tool asking rather than telling, so the page cannot drift again
+# between releases the way it did between 0.4 and 0.6.
+readme:
+	python3 tools/readme.py --write
+
 # GEMBench's tests, shaped for this machine: the dialog, text, graphics,
 # window, divide, float, RAM, ROM and blit rows timed to a VCOUNT tick
 # and reported in milliseconds.  Not a gate; the baseline is docs/bench.md.
@@ -1882,4 +1892,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean

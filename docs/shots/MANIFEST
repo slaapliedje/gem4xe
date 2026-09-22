@@ -1,0 +1,17 @@
+# written by tests/emu/shots.py -- do not edit
+00-boot.png
+01-desk.png
+02-window.png
+03-menu-desk.png
+04-menu-file.png
+05-about.png
+06-folder.png
+07-info.png
+08-text.png
+09-calc.png
+10-cpanel.png
+11-general-cpx.png
+12-event-cpx.png
+13-cpx-alert.png
+14-calc-acc.png
+15-clock.png
