@@ -40,6 +40,7 @@ import unittest
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import mkcf                                             # noqa: E402
+import mkdist                                           # noqa: E402
 
 
 def accp_deps():
@@ -137,6 +138,41 @@ class AccessoriesShip(unittest.TestCase):
         self.assertIn("CPX", exts,
                       "no .CPX is built for the product media, so the "
                       "extension check above proves nothing about modules")
+
+    # -- and the THIRD list, which is the release's loose folder ------------
+
+    def test_the_release_folder_carries_them_too(self):
+        """`make release` unpacks a `system/` directory of loose files and
+        its own page tells the reader to copy them onto a disk of their
+        own.  That is a third list (`tools/mkdist.py`'s SYSTEM), in a
+        third place, and nothing read it against the other two.
+
+        It had drifted: at 0.5 the folder carried CLOCK.ACC and neither
+        CONTROL.ACC nor CALC.ACC, so somebody following the release page
+        got a machine with no control panel -- while every disk in the
+        same release had one, which is why no gate noticed.
+        """
+        loose = {src for src, _name in mkdist.SYSTEM}
+        for dep in sorted(self.deps):
+            self.assertIn(
+                os.path.basename(dep), loose,
+                f"{dep} is on the product media but not in "
+                f"tools/mkdist.py's SYSTEM, so `make release`'s system/ "
+                f"folder leaves it out. Anyone building a disk from those "
+                f"loose files gets a machine without it, and every disk in "
+                f"the same release has it -- so no gate that boots one "
+                f"will ever say so.")
+
+    def test_the_release_folder_describes_what_it_carries(self):
+        """Each loose file has a line on the release page saying what it
+        is.  A file with no line is worse than absent: the reader sees it
+        in the folder, finds nothing about it, and copies or skips it by
+        guess."""
+        for _src, name in mkdist.SYSTEM:
+            self.assertIn(name, mkdist.WHAT_IT_IS,
+                          f"{name} ships in the release's system/ folder "
+                          f"with no entry in WHAT_IT_IS, so the page lists "
+                          f"it and says nothing about it")
 
     def test_every_startup_resource_lands_in_the_system_directory(self):
         """A resource is found by bare name against the system directory

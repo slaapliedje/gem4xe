@@ -219,7 +219,7 @@ copied off the target proves only that the copy was faithful.
 | a CPX module's near region | 1,536 bytes, off the permanent floor |
 | `appl_getinfo` subjects | 15 -> **16** (`AI_CPX`) |
 | executable extensions the desktop knows | 2 -> **5** |
-| host suite | **262** tests |
+| host suite | **264** tests |
 | new on the product media | `GENERAL.CPX`, `GENERAL.RSC` |
 
 The 104-byte resident-name table went to far memory when LoRAM came in
@@ -233,7 +233,7 @@ contract), `test-m36` (settings across a reboot, **with the control**:
 the same system booted without the saved file must come up at the AES's
 own defaults, or "it was restored" and "nothing happened" are the same
 picture).  Plus `m1`-`m36`, `test-boot`, `test-install`, `test-sdx816`,
-the host suite (262), `tools/memreport.py`, `tools/nearcast.py` and
+the host suite (264), `tools/memreport.py`, `tools/nearcast.py` and
 `tools/opcodes.py`.
 
 Four of this phase's bugs were found by **looking at a picture**, not by

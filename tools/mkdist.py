@@ -112,6 +112,11 @@ SYSTEM = [
     ("clock.g4a", "CLOCK.PRG"),
     ("clock.rsc", "CLOCK.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
+    ("cpanelacc.g4a", "CONTROL.ACC"),
+    ("cpanel.rsc", "CPANEL.RSC"),
+    ("calcacc.g4a", "CALC.ACC"),
+    ("general.g4a", "GENERAL.CPX"),
+    ("general.rsc", "GENERAL.RSC"),
 ]
 
 WHAT_IT_IS = {
@@ -142,6 +147,21 @@ WHAT_IT_IS = {
                  "An accessory goes in the system's own directory, never "
                  "in \\APPS\\ -- it is not something the desktop "
                  "launches",
+    "CONTROL.ACC": "THE CONTROL PANEL, a desk accessory: the settings that "
+                   "belong to the machine rather than to a program, and a "
+                   "host for the extensions below.  Beside GEM.COM with "
+                   "CPANEL.RSC",
+    "CPANEL.RSC": "its panel and the list it shows the extensions in",
+    "CALC.ACC": "the same calculator as a desk accessory, so it is "
+                "reachable from inside whatever you are running.  It "
+                "shares CALC.RSC with CALC.PRG",
+    "GENERAL.CPX": "A CONTROL PANEL EXTENSION, the ST's .CPX: the "
+                   "double-click speed, the menu delay, and the date and "
+                   "time.  Put it beside GEM.COM with GENERAL.RSC and the "
+                   "control panel grows a page -- the AES loads every "
+                   "*.CPX it finds there and CONTROL.ACC lists them.  What "
+                   "you set is saved and put back at the next boot",
+    "GENERAL.RSC": "its dialog",
 }
 
 
