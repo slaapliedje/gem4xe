@@ -98,6 +98,8 @@ record of zeroes compares equal to the empty string over its whole
 width, so `appl_find("")` would have been answered with a pid.
 
 **`appl_getinfo` (130)** -- fifteen subjects and fifteen true answers.
+(Sixteen since phase 48, which added `AI_CPX`: the control panel asks it
+for the modules the AES loaded.)
 Five real callers in cflib, the library QED links: `appinit.c` asks
 subject 0 for the font metric it lays every dialog out with,
 `sendchan.c` asks 10 before it will speak the AV protocol, and

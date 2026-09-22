@@ -171,7 +171,7 @@ into `calc_start()`, `calc_ws()` and `calc_panel()` with no `main()`;
 `calcapp.c` supplies the program's `main()` in the original call order,
 so `test-m22` still measures what it measured, and `calcacc.c` supplies
 the accessory's.  `make shots` photographs all three accessories by
-name, and `docs/shots/11-calc-acc.png` is the calculator open over a
+name, and `docs/shots/13-calc-acc.png` is the calculator open over a
 window on `A:\APPS\*.*` -- which is the point of the shape.
 
 ## QED launches from the desktop

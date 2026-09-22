@@ -479,7 +479,7 @@ def main(argv):
                 # its own memory and reaching them wants symbols and a
                 # near base this tour does not carry.  That is a fair
                 # trade here because the PICTURE is the check -- if the
-                # layout moves, 13-general-cpx.png shows the wrong thing
+                # layout moves, 11-general-cpx.png shows the wrong thing
                 # instead of passing quietly.
                 t.click(CPX_ROW1)
                 b.frames(20)
