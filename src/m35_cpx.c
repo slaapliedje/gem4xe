@@ -44,6 +44,8 @@ WORD m35_n_draw;
 WORD m35_n_close;
 WORD m35_after_quit;      /* anything at all after quit was set: must be 0 */
 WORD m35_sig_seen;        /* m35_sig, read from inside a forwarded call */
+WORD m35_alert_asked;     /* the host handed out XGen_Alert at all */
+WORD m35_alert_ok;        /* ...and what it answered: 1, for alerts 1-3 */
 WORD m35_got_x, m35_got_y, m35_got_w, m35_got_h;   /* the GRECT as read */
 
 static WORD m35_quit;     /* our own copy, to notice a host that ignores it */
@@ -100,9 +102,33 @@ static SAVEDS void m35_cpx_call(uint32_t pbaddr)
 static SAVEDS void m35_cpx_key(uint32_t pbaddr)
 {
     CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
+    XCPB FAR *x;
 
     m35_n_key++;
     m35_note();
+
+    /* ONE CANNED ALERT ON THE WAY OUT, which is the other half of the
+     * XCPB and the half a module cannot fake.  The words are the
+     * PANEL'S, in CPANEL.RSC -- this module names the alert by number
+     * and carries no sentence at all, which is the whole point: every
+     * module says "that file was not found" in the same words, and a
+     * translator translates it once.
+     *
+     * GUARDED, because cpx.h says every callback may be 0 and a module
+     * that assumes otherwise crashes on a host that hands out fewer
+     * than this one does.  It was 0 for the whole of 0.6's development.
+     *
+     * FILE_NOT_FOUND is one of the three that always answer TRUE (the
+     * Compendium), so m35_alert_ok is 1 or the panel is not obeying
+     * Atari's rule about which alerts can say no. */
+    x = (XCPB FAR *)pb->xcpb;
+    if (x && x->XGen_Alert) {
+        m35_alert_asked = 1;
+        x->alert = XAL_FILE_NOT_FOUND;
+        x->XGen_Alert(pb->xcpb);
+        m35_alert_ok = x->ok;
+    }
+
     m35_quit = 1;
     pb->quit = 1;                       /* any key closes it */
 }

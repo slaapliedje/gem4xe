@@ -503,7 +503,17 @@ def main(argv):
                 t.go((400, 200))
                 b.frames(30)
                 t.shot("event-cpx")
-                t.run([K("RETURN", RETURN), F(40)])   # any key closes it
+                # The key does two things: the module puts up one of the
+                # PANEL'S canned alerts through XGen_Alert and then asks
+                # to be closed.  The alert is worth a picture because it
+                # is the one part of the XCPB a module cannot fake --
+                # those words are in CPANEL.RSC, not in the module, so
+                # what is on the screen is the host speaking on the
+                # module's behalf.  Its one button is the default, so a
+                # second RETURN takes it away.
+                t.run([K("RETURN", RETURN), F(40)])
+                t.shot("cpx-alert")
+                t.run([K("RETURN", RETURN), F(40)])   # ...and it closes
             t.run([K("RETURN", RETURN), F(40)])
 
         # The clock last: it has no default button and ends on a key.

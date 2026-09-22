@@ -21,9 +21,12 @@ allowed to be the authority for a FILE FORMAT.
 """
 import os
 import re
+import sys
 import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import cpanelrsc                                    # noqa: E402
 CPX_H = os.path.join(ROOT, "src", "app", "cpx.h")
 GEM_H = os.path.join(ROOT, "src", "app", "gem.h")
 SHEL_C = os.path.join(ROOT, "src", "aes", "shel.c")
@@ -165,6 +168,98 @@ class CpxContract(unittest.TestCase):
             self.assertTrue(
                 re.search(rf"SAVEDS\s+\w[\w ]*\*?\s*{fn}\b", mod),
                 f"{fn} is in a CPXINFO and is not SAVEDS")
+
+
+class XGenAlert(unittest.TestCase):
+    """The canned alerts, whose numbers are Atari's and whose words are
+    the panel's.
+
+    The Compendium's table for (*xcpb->XGen_Alert)() is stated here --
+    a fourth place, on purpose -- because it is an ABI a ported module
+    compiles against: a module that says XAL_FILE_ERR on an ST and gets
+    the memory alert here is worse than one that gets nothing.
+    """
+
+    # Atari's, from the Compendium: SAVE_DEFAULTS 0, MEM_ERR 1,
+    # FILE_ERR 2, FILE_NOT_FOUND 3.  Four, and no others.
+    ATARI = [("XAL_SAVE_DEFAULTS", 0), ("XAL_MEM_ERR", 1),
+             ("XAL_FILE_ERR", 2), ("XAL_FILE_NOT_FOUND", 3)]
+
+    def setUp(self):
+        self.h = text(CPX_H)
+
+    def test_the_numbers_are_ataris(self):
+        for name, want in self.ATARI:
+            self.assertEqual(define(self.h, name), want,
+                             f"{name} must be {want}: a module ported from "
+                             f"an ST names the alert by number")
+
+    def test_the_kit_and_the_resource_count_the_same_four(self):
+        """src/apps/cpanel.c has the compile-time version of this and the
+        build fails without it; this says so on a machine with no tool
+        chain, and names the two so a reader can find them."""
+        self.assertEqual(define(self.h, "XAL_NALERT"), len(self.ATARI))
+        self.assertEqual(cpanelrsc.N_XALERT, len(self.ATARI),
+                         "CPANEL.RSC carries a different number of alert "
+                         "strings than cpx.h says there are")
+
+    def test_each_number_has_a_string(self):
+        """Indexed straight into the free strings from CPXAL0, so a gap
+        would draw whatever string happened to be at that index."""
+        have = {i for i, _name, _text in cpanelrsc.XALERTS}
+        self.assertEqual(have, {n for _name, n in self.ATARI})
+        self.assertEqual(cpanelrsc.CPXAL0, 0,
+                         "the first alert is not the resource's first free "
+                         "string, so cpanel.c's CPXAL0 + id is wrong")
+
+    def test_each_string_is_an_alert_form_alert_can_parse(self):
+        """[icon][text][buttons] -- the grammar fm_alert parses.  A
+        translation that loses a bracket loses the alert entirely."""
+        for _i, name, s in cpanelrsc.XALERTS:
+            self.assertRegex(s, r"^\[[0-3]\]\[.+\]\[.+\]$", name)
+
+    def test_only_alert_zero_asks_a_question(self):
+        """The Compendium: XGen_Alert "returns TRUE if 'OK' was selected
+        or FALSE if 'Cancel' was selected.  Alerts 1-3 always returns
+        TRUE."  A one-button alert is what makes that true here rather
+        than a special case in the panel -- form_alert can only answer 1
+        when there is one button."""
+        for i, name, s in cpanelrsc.XALERTS:
+            buttons = s[s.rindex("][") + 2:-1].split("|")
+            if i == 0:
+                self.assertEqual(len(buttons), 2,
+                                 f"{name} is the one alert that asks, so it "
+                                 f"needs a second button to say no with")
+            else:
+                self.assertEqual(len(buttons), 1,
+                                 f"{name} has {len(buttons)} buttons, so it "
+                                 f"can answer something other than TRUE, "
+                                 f"which the Compendium says it never does")
+
+    def test_the_panel_publishes_it(self):
+        """It was 0 for the whole of 0.6's development, which cpx.h
+        allows and a module must cope with -- so nothing was refused and
+        no gate went red while the callback did not exist."""
+        panel = text(os.path.join(ROOT, "src", "apps", "cpanel.c"))
+        self.assertRegex(
+            panel, r"XGen_Alert\s*=\s*cp_gen_alert",
+            "the panel does not hand out XGen_Alert, so every module that "
+            "asks for an alert silently gets none")
+        self.assertRegex(
+            panel, r"SAVEDS\s+void\s+cp_gen_alert",
+            "cp_gen_alert is called by a module across a link boundary "
+            "and is not SAVEDS")
+
+    def test_no_alert_text_is_in_the_c(self):
+        """The point of a canned alert is that the panel owns the words,
+        which is also the only way a translator reaches them."""
+        for _i, _name, s in cpanelrsc.XALERTS:
+            body = s[s.index("][") + 2:s.rindex("][")]
+            for path in (CPX_H, os.path.join(ROOT, "src", "apps", "cpanel.c"),
+                         os.path.join(ROOT, "src", "m35_cpx.c")):
+                self.assertNotIn(body, text(path),
+                                 f"{os.path.basename(path)} carries an "
+                                 f"alert's words; they belong in CPANEL.RSC")
 
 
 if __name__ == "__main__":

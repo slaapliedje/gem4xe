@@ -39,6 +39,45 @@ from aesref import (G_BOX, G_IBOX, G_STRING, G_BUTTON,   # noqa: E402
 
 ADCPANEL = 0
 
+# ---- XGen_Alert's canned alerts ---------------------------------------
+#
+# THE POINT OF A CANNED ALERT is that every module says the same thing in
+# the same words: a person who has seen "that file was not found" once
+# should not have to read a second module's version of it.  So the text
+# belongs to the PANEL, not to the module, and a module names an alert by
+# number instead of carrying a sentence of its own.
+#
+# WHICH ALSO MAKES IT TRANSLATABLE, which is the other reason it is here.
+# A string in the module's C could not be reached by a translator at all;
+# these are free strings of CPANEL.RSC beside everything else the panel
+# says (docs/shipping.md, "no reader-visible string in the C").
+#
+# THE NUMBERS ARE ATARI'S, from the Compendium's table for
+# (*xcpb->XGen_Alert)(): SAVE_DEFAULTS 0, MEM_ERR 1, FILE_ERR 2,
+# FILE_NOT_FOUND 3.  That table has four entries and no others, so the
+# free strings are laid out at those indices and the panel indexes
+# straight into them -- CPXAL0 exists so that stays true if a string is
+# ever added in front.
+#
+# ONLY ALERT 0 ASKS A QUESTION.  The Compendium: "returns TRUE if 'OK'
+# was selected or FALSE if 'Cancel' was selected.  Alerts 1-3 always
+# returns TRUE."  So the other three get one button, and a module that
+# checks the answer after one of them gets the same TRUE an ST gives it.
+XALSAVE, XALMEM, XALFILE, XALNOFILE = range(4)
+CPXAL0 = XALSAVE
+
+XALERTS = [
+    (XALSAVE, "XALSAVE",
+     "[2][Save these settings|as the defaults?][Save|Cancel]"),
+    (XALMEM, "XALMEM",
+     "[3][There is not enough|memory to do that.][ OK ]"),
+    (XALFILE, "XALFILE",
+     "[1][The file could not be|read or written.][ OK ]"),
+    (XALNOFILE, "XALNOFILE",
+     "[1][That file was|not found.][ OK ]"),
+]
+N_XALERT = len(XALERTS)
+
 N_DC = 5                        # evnt_dclick takes 0..4
 N_MN = 4                        # the delays this panel offers
 
@@ -138,12 +177,15 @@ INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTITLE", CPTITLE),
            ("CPX0", CPX0), ("CPXOPEN", CPXOPEN), ("N_CPX", N_CPX),
            ("CPOK", CPOK),
            ("CPCNCL", CPCNCL), ("N_DC", N_DC), ("N_MN", N_MN),
+           ("CPXAL0", CPXAL0), ("N_XALERT", N_XALERT),
            ("NOBS_CPANEL", NOBS_CPANEL)]
 
 
 def build():
     r = rsc.Rsc()
     assert cpanel_tree(r) == ADCPANEL
+    for i, name, text in XALERTS:
+        assert r.free_string(text) == i, (name, i)
     return r
 
 

@@ -164,6 +164,50 @@ static SAVEDS void cp_cpx_save(uint32_t xcpb)
     Fclose((WORD)h);
 }
 
+/* XGen_Alert: one of the canned alerts, drawn in the panel's voice.
+ *
+ * THE WHOLE POINT IS THAT THE WORDS ARE NOT THE MODULE'S.  Every module
+ * that cannot read its file says the same sentence, and a translator
+ * translates it once, in CPANEL.RSC, where free strings are how the
+ * desktop says everything too (src/desk/deskfun.c, fun_alert).  A
+ * sentence compiled into a module could not be reached from outside it
+ * at all.
+ *
+ * The id indexes the free strings directly -- Atari's numbers are 0..3
+ * and CPXAL0 is where this resource puts the first of them, so the two
+ * stay together if a string is ever added in front (tools/cpanelrsc.py).
+ *
+ * AN ID THAT IS NOT ONE OF THE FOUR draws nothing and answers 0.  There
+ * is no sentence for a number nobody defined, and answering 1 would be
+ * reporting a decision the person was never asked to make.
+ *
+ * THE ANSWER IS ATARI'S TOO: alert 0 asks, and 1 means its first button;
+ * alerts 1-3 have one button and always answer 1, which is what the
+ * Compendium promises a module that tests ok after one of them. */
+/* TWO PLACES COUNT THESE ALERTS: cpx.h's XAL_NALERT, which is what a
+ * module compiles against, and the resource's N_XALERT, which is how
+ * many strings are really in the file.  A module asking for the fourth
+ * when the resource has three would index past the end and draw
+ * whatever a stale free string held.  So the build fails instead --
+ * the same shape as the slot-layout check in cpx.h, and for the same
+ * reason: anything restated in a second place drifts. */
+typedef char cp_xalert_count_holds[(N_XALERT == XAL_NALERT) ? 1 : -1];
+
+static SAVEDS void cp_gen_alert(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    char *str;
+
+    pb->ok = 0;
+    if (pb->alert < 0 || pb->alert >= N_XALERT)
+        return;
+    str = 0;
+    rsrc_gaddr(R_STRING, CPXAL0 + pb->alert, (void **)&str);
+    if (!str)
+        return;
+    pb->ok = (WORD)(form_alert(1, str) == 1);
+}
+
 /* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
  * a module is handed its address and reads it there (src/app/cpx.h says
  * why every entry takes one uint32_t rather than arguments). */
@@ -221,11 +265,9 @@ static void cp_xcpb_init(void)
     cp_xcpb.booting = 0;
     cp_xcpb.country = 0;
     cp_xcpb.CPX_Save = cp_cpx_save;
-    /* XGen_Alert stays 0, which cpx.h allows and a module must cope
-     * with.  Its text would have to come from CPANEL.RSC -- no string a
-     * person reads belongs in this C -- and the panel has no alerts of
-     * its own yet to put beside it. */
-    cp_xcpb.XGen_Alert = 0;
+    cp_xcpb.XGen_Alert = cp_gen_alert;
+    cp_xcpb.alert = 0;
+    cp_xcpb.ok = 0;
 }
 
 static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)

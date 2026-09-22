@@ -177,19 +177,42 @@ typedef struct {
      * and a module that will not save cannot corrupt itself trying. */
     void (*CPX_Save)(uint32_t xcpb);
 
-    /* One of the canned alerts, so every panel says the same thing.
-     * `alert` is XAL_*; ok is the button. */
+    /* One of the canned alerts, so every module says the same thing in
+     * the same words -- a person who has read "that file was not found"
+     * once should not have to read a second module's version of it.
+     * Set `alert` to an XAL_ below, call, then read `ok`.
+     *
+     * THE TEXT IS THE PANEL'S, in CPANEL.RSC, which is also the only
+     * place a translator could reach it: a sentence compiled into a
+     * module could not be translated at all. */
     void (*XGen_Alert)(uint32_t xcpb);
     WORD  alert;
     WORD  ok;                   /* what the last callback answered */
 } XCPB;
 
-/* XGen_Alert's numbers are Atari's. */
+/* XGen_Alert's numbers are Atari's, from the Compendium's table for
+ * (*xcpb->XGen_Alert)().  That table has these four and no others.
+ *
+ * ONLY ALERT 0 ASKS A QUESTION.  The Compendium: "returns TRUE if 'OK'
+ * was selected or FALSE if 'Cancel' was selected.  Alerts 1-3 always
+ * returns TRUE" -- so a module that tests `ok` after one of the other
+ * three gets the 1 an ST would have given it.
+ *
+ * AN ID THAT IS NOT ONE OF THESE DRAWS NOTHING and answers 0.  There is
+ * no sentence to put on the screen for a number nobody has defined, and
+ * answering 1 would be reporting a decision the person never made.
+ *
+ * A NOTE ON WHAT IS NOT HERE: an earlier draft of this header carried
+ * XAL_SHUTDOWN as 11 and said the numbers were Atari's.  They are, for
+ * these four; 11 is in neither the Compendium's table nor the GEM source
+ * corpus, and nothing in this tree ever used it.  A constant that claims
+ * an authority it does not have gets believed later, so it is gone
+ * rather than guessed at. */
 #define XAL_SAVE_DEFAULTS   0
 #define XAL_MEM_ERR         1
 #define XAL_FILE_ERR        2
 #define XAL_FILE_NOT_FOUND  3
-#define XAL_SHUTDOWN       11
+#define XAL_NALERT          4
 
 /* ---- what the module hands back --------------------------------------
  *
