@@ -1488,10 +1488,10 @@ test-host: $(if $(wildcard $(CC65816)),build/m11_app.g4a build/gem.xex)
 # linker's rules, the packer, and one whole example.  Its gate is in the
 # host tests (tests/host/test_sdk.py), which builds it out of a copy of
 # itself in a directory of its own.
-SDK_FILES = tools/mksdk.py tools/sdk/README.md tools/sdk/Makefile \
-            tools/sdk/hello.c src/app/gem.h src/portab.h src/app/gemlib.c \
-            src/app/gemabi.s src/app/crt_gemapp.s src/app/gemapp.scm \
-            src/sys/clib.c tools/mkg4a.py tools/mkxex.py COPYING
+# NOT A SECOND LIST.  tools/mksdk.py's MANIFEST says what the kit
+# contains, and this asks it -- a hand-kept copy beside it had already
+# drifted by six files, so editing one of them did not rebuild the kit.
+SDK_FILES := $(shell python3 tools/mksdk.py --sources)
 
 sdk: build/gem4xe-sdk.tar.gz
 build/gem4xe-sdk.tar.gz: $(SDK_FILES)

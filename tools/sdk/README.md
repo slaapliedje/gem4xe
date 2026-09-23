@@ -11,9 +11,36 @@ gates and is loaded, relocated and called at run time.
     make APP=mine.c ASM="fast.s io.s"            ->  mine.g4a, your assembly linked in
 
 You need **Calypsi for the 65816** (`cc65816`, `as65816`, `ln65816`),
-free for hobby use from <https://www.calypsi.cc/>.  Point `CALYPSI` at
-it if it is not in `~/dev/toolchains/calypsi-65816`, and Python 3 for
-the packer.
+**5.18.2 or later**, from <https://www.calypsi.cc/>.  Its licence covers
+personal, non-commercial use and names "producing application software
+for vintage and retro computing systems" expressly; read it before you
+sell anything.  Point `CALYPSI` at the toolchain if it is not in
+`~/dev/toolchains/calypsi-65816`, and you need Python 3 for the packer.
+
+**Read `doc/ccbug.md` before you debug anything.**  That compiler has
+defects this project has catalogued, and several of them -- a narrowed
+operand losing its sign extension, a conditional assignment dropped, a
+signed `>>` that is not arithmetic -- produce a **silently wrong answer**
+in ordinary C with nothing to say the compiler is at fault.  Every one
+was first seen here as a wrong pixel or a wrong return value and blamed
+on the program for a while first.
+
+## What kind of thing are you building
+
+Three, and `KIND` says which:
+
+    make KIND=prg APP=example/hello.c     a program          install as .PRG
+    make KIND=acc APP=example/acc.c       a desk accessory   install as .ACC
+    make KIND=cpx APP=example/cpx.c       a panel extension  install as .CPX
+
+All three come out as a `.g4a`.  **That is the container and it is the
+same for all of them; the extension you install it under is the role**,
+and the role is what the system reads.  The desktop launches a `.PRG`
+(and `.APP`, `.TOS`, `.TTP`, `.G4A`); the AES loads `*.ACC` and `*.CPX`
+out of its own directory at start-up and never out of `\APPS\`.
+
+There is a fourth thing you can build with `KIND=prg`: a program that
+ends with `Ptermres` and stays -- see "Starting at boot" below.
 
 ## What is here
 
@@ -33,8 +60,29 @@ the packer.
     lib/crt_gemapp.s    the start-up: a stack, a direct page, the data
                         sections, main
     lib/gemapp.scm      the linker's rules and your memory budget
+    include/cpx.h       the control panel extension contract
+    lib/cpxmain.c       a module's main(), which you do not write
+    lib/gemtime.c       time(), gmtime(), strftime(), clock()
+    lib/gemcompat.c     stricmp(), opendir() and the rest an ST source
+                        reaches for
+    include/osbind.h    ...and the headers an ST source includes by
+    include/tos.h       reflex.  Most are one door pointing at gem.h;
+    include/mintbind.h  support.h and dirent.h carry real code in
+    include/gemx.h      lib/gemcompat.c.  They are here because the qed
+    include/macros.h    port wrote every one of them in its own shim
+    include/strings.h   before they were
+    include/support.h
+    include/dirent.h
+    include/time.h      a 32-bit time_t (doc/ccbug.md, B20)
+    include/sys/stat.h  no <sys/> in Calypsi's own libc
     tools/mkg4a.py      ELF x3 -> .g4a, deriving the loader's fixups
+    tools/install.py    put what you built on a gem4xe disk image
+    tools/atr.py        the disk file systems install.py uses
+    doc/ccbug.md        the compiler's defects, and the rules the
+                        sources follow to avoid them.  READ THIS
     example/hello.c     a whole program, commented
+    example/acc.c       a whole desk accessory, commented
+    example/cpx.c       a whole control panel extension, commented
 
 The library is source, not an object, so that it is built by *your*
 compiler with *your* flags -- and so that you can read what a call
@@ -173,7 +221,124 @@ time:
 - **Files with bytes above 127** -- Atari sources often are -- defeat a
   `grep` without `-a`, including a grep for exactly those bytes.
 
+## Writing a desk accessory
+
+`example/acc.c` is a whole one.  It is built exactly like a program --
+same crt, same gates, same budget -- and four rules make it an accessory.
+Each is a rule rather than a style, and three of them fail silently:
+
+**It never returns.**  A program's `main()` ends and the AES frees it;
+an accessory parks in `evnt_mesag()` forever.  Returning hands your
+memory back while the Desk menu still carries your name.
+
+**It registers a name, and keeps the string.**  `menu_register(id, title)`
+answers your slot, which `AC_OPEN` arrives in as `msg[4]`.  The AES
+stores the **address** of your title, not a copy, so it must be `static`
+or global.  A title in a local works until the stack is reused, and then
+the Desk menu draws rubbish.
+
+**It takes what it needs at start-up and never gives it back.**  An
+accessory loads before the first program, and both of gem4xe's
+allocators are bump allocators that wind back to a mark when a program
+exits.  Anything you allocate *after* a program has loaded is freed
+underneath you the first time that program ends.  So `rsrc_load` in
+`main`, before the loop -- **not** on first `AC_OPEN`, which is the
+obvious thing and is wrong -- and never `rsrc_free`.  Same for a
+workstation: one `v_opnvwk` kept for the life of the machine.
+
+**`AC_CLOSE` is about somebody else.**  It means the program you were
+open over is going away, so anything of *its* that you were holding is
+gone.  Do not close your own window on it -- the AES has.
+
+Six slots, TOS's number, and the loader stops sooner if the pool runs
+out.  It goes in `\GEM\`, never `\APPS\`: the AES scans its own
+directory for `*.ACC` and nowhere else.
+
+## Writing a control panel extension
+
+`example/cpx.c` is a whole one, and `include/cpx.h` is the contract.
+This is XCONTROL's shape: the **host** owns the window and the event
+loop, the **module** owns the dialog, and they meet at a vtable the
+module publishes when it loads.
+
+**You do not write `main()`.**  `lib/cpxmain.c` is linked in for you: it
+reads the slot address the AES left in the command tail, calls your
+`cpx_init()`, publishes what you return, and ends with `Ptermres` so the
+module stays.  You write `cpx_init()` and the entries it hands back.
+
+**Every entry takes one `uint32_t`, and the compiler decided that.**  A
+cross-module entry must be `SAVEDS` so it establishes its own direct page
+and data bank; this compiler emits that switch *before* the body reads an
+argument the caller left in the **caller's** direct page.  Measured
+across five signatures: one `short` is safe, one `unsigned long` is safe,
+and a second argument of any kind -- or a first one that is a pointer --
+arrives as garbage, with nothing refused and nothing warned.  So: one
+`uint32_t`, cast inside.  That is GEM's own ABI shape anyway.
+
+**Two kinds**, and `cpx_call` says which by what it leaves in `pb->ret`:
+`0` is a form CPX (you ran your own `form_do` and are finished), `1` is
+an event CPX (you drew yourself, and the panel now feeds you events until
+you set `pb->quit`).
+
+**Your sixty-four bytes.**  The AES keeps a buffer per module at
+`xcpb->buffer`.  Write it and call `CPX_Save`, and it goes to
+`<YOURNAME>.CFG` beside the module -- you never learn your own name,
+which is what stops two modules arguing over one file.  Set
+`CPX_BOOTINIT` in your flags and the panel opens you once at start-up
+with `xcpb->booting` true, so you can put settings back before anybody
+sees the desk; draw nothing on that pass.
+
+**Canned alerts.**  `XGen_Alert` puts up one of the panel's own -- by
+number, so every module says "that file was not found" in the same words
+and a translator translates it once.  Check the callback for 0 before
+calling it: `cpx.h` says every callback may be 0, and a host that hands
+out fewer than this one does is allowed.
+
+A port from an ST changes one thing in its source besides the above:
+COPS's by-value struct arguments become ordinary argument lists.
+
+## Starting at boot
+
+A program in `\GEM\AUTO\` is run once at start-up, in name order,
+before the extensions and the accessories and before the AES fixes the
+permanent floor.  End with `Ptermres` and you stay; return normally and
+you are freed like anything else.
+
+**`Ptermres` here is all or nothing.**  The ST's takes a byte count and
+frees the rest; both of gem4xe's allocators are bump allocators, so
+giving back the tail of a region would leave a hole neither can ever
+hand out again.  The `keep` argument is accepted and the region is kept
+whole, so size your program rather than the argument.
+
+An AUTO program gets **no process record and no turn in the event
+loop**.  It runs, installs whatever it installs -- a vector, a service
+another program will look for -- and the machine goes on without it.
+`.PRG`, `.G4A`, `.APP` and `.TOS` run from there; `.TTP` deliberately
+does not, because there is nobody to type its command line.
+
 ## Your resource
+
+**Making one.**  The file format is the **ST's**, unchanged -- gem4xe's
+loader is the donor's -- so anything that writes a GEM `.RSC` writes one
+this reads.  In practice that means a Resource Construction Set: Atari's
+own RCS or ORCS under an ST emulator, or `Interface` on a modern host.
+There is no gem4xe-specific step and no conversion; copy the `.RSC` onto
+the disk beside your program.
+
+gem4xe builds its own resources a third way, from Python descriptions
+(`tools/rsc.py` in the source tree), which is convenient when the layout
+wants to be generated rather than drawn.  That is not in this kit: it
+depends on the project's host model of the AES, which is larger than the
+kit itself.  If you want it, it is in the source tarball on the release
+page.
+
+**One authoring rule that is not obvious**, because it decides what your
+resource costs at run time: put the image block **last**, after the
+tables, which is how RCS lays one out.  `rsrc_load` moves icon bitmaps
+to far memory and hands the pool back what they took -- but only when
+`rsh_imdata` is the last thing in the file.  A file with tables above it
+keeps its bits in bank `$00` and costs its whole `rsh_rssize`.
+
 
 `rsrc_load` reads the whole `.RSC` into the application pool in one
 piece -- `rsh_rssize` bytes -- fixes it up in place, then moves any icon
@@ -206,8 +371,14 @@ link enforces every one:
 | `STACK` (256) | how much of `BSS` is stack |
 | code | a far bank of its own -- 64 KB, and not part of the above |
 
-The near part comes out of gem4xe's **2 KB application pool** in bank
-`$00`, so it is the scarce one.  Keep large data in far memory:
+The near part comes out of **the application pool**, which is
+**14,336 bytes** in bank `$00` (`$4800-$7FFF`) for the whole machine --
+your program, the desktop, every desk accessory and every control panel
+extension, together.  With the desktop and the three accessories gem4xe
+ships resident, about **8 KB of it is free**, and that is what your
+program's near region is taken from.  So the 2048 above is your budget
+inside a shared 14 KB, and bank `$00` is the scarce thing on a machine
+with 14.9 MB.  Keep large data in far memory:
 `Malloc` answers with a far address, and `__far` pointers reach all
 15 MB.  A `char buf[1024]` on the stack is how a first program runs
 out.
@@ -252,16 +423,52 @@ not the one your own code makes.
 
 ## Getting it onto a disk
 
-A `.g4a` is a file like any other.  Put it beside `GEM.COM` and
-`DESKTOP.RSC` on a gem4xe disk, or in `\APPS\`, and the desktop will
-run it when you double-click it -- but install it under a name the
-desktop reads as a program: `.PRG` is the one to use, and `.APP`,
-`.TOS`, `.TTP` and `.G4A` are also taken.  The extension is the role;
-the loader checks the file's magic and refuses anything that is not
-gem4xe's, so a 68000 `.PRG` off a real Atari is turned away rather
-than run.  In the gem4xe source tree,
-`tools/mkspdisk.py <source.atr> <boot.xex> <out.atr> --add mine.g4a
-MINE.PRG` builds an image with it on.
+A `.g4a` is a file like any other, and `tools/install.py` puts it on
+one of the disk images the release ships -- the one you were going to
+boot anyway:
+
+    python3 tools/install.py gem4xe-0.6.1-apps.atr mine.g4a "APPS>MINE.PRG"
+    python3 tools/install.py gem4xe-0.6.1.atr acc.g4a "GEM>MINE.ACC" mine.rsc "GEM>MINE.RSC"
+    python3 tools/install.py gem4xe-0.6.1-apps.atr --ls
+
+It edits the image in place unless you give `--out`, and replaces a name
+that is already there, so keep the original.  `>` is SpartaDOS's path
+separator, which is what these images use.
+
+**Where a thing goes is not filing** -- it decides whether the system
+looks at it at all:
+
+| | |
+|---|---|
+| `GEM>NAME.PRG`, `APPS>NAME.PRG` | a program, launched from its icon |
+| `GEM>NAME.ACC` | a desk accessory. `\GEM\` **only** |
+| `GEM>NAME.CPX` | a panel extension. `\GEM\` **only** |
+| `GEM>AUTO>NAME.PRG` | run once at start-up |
+| `GEM>NAME.RSC` | a resource: `rsrc_load` takes a bare name and resolves it against the system's directory |
+
+The extension is the role; the loader checks the file's **magic** and
+refuses anything that is not gem4xe's, so a 68000 `.PRG` off a real
+Atari is turned away with a message rather than run.
+
+## Trying it
+
+    AltirraSDL --pal --hardware 800xl --kernel xl --nobasic \
+        --memsize 1088K --cleardevices \
+        --adddevice "vbxe,version=126,alt_page=false,shared_mem=false" \
+        --adddevice rapidus \
+        --diskemu generic --nofastboot \
+        --disk gem4xe-0.6.1.atr
+
+Two of those switches are load-bearing and were each found the hard way.
+**`--diskemu generic`**: with `fastest`, the SpartaDOS disk does not boot
+at all.  **`--nofastboot`** for the same class of reason.  The release
+page has the rest -- the two Altirra 65C816 native-mode bugs and which
+build fixes them, and why the machine cold-boots as a 6502 and restarts
+itself.
+
+A second drive is the easy way to carry your own work: put the apps
+floppy in `--disk` twice over, or build your program onto a copy of it
+and boot the system disk beside it.
 
 If your program has a resource, `rsrc_load("MINE.RSC")` reads it from
 the same disk, and it must be a real GEM `.RSC`: gem4xe's resource

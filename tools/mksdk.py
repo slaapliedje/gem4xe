@@ -56,9 +56,27 @@ MANIFEST = [
     ("lib/gemabi.s",        "src/app/gemabi.s"),
     ("lib/crt_gemapp.s",    "src/app/crt_gemapp.s"),
     ("lib/gemapp.scm",      "src/app/gemapp.scm"),
+    # A control panel extension: the contract, and the main() you do not
+    # write.  Both already lived in src/app/ -- the kit's own directory --
+    # and were simply never handed out, so 0.6 shipped a feature nobody
+    # outside this tree could build against.
+    ("include/cpx.h",       "src/app/cpx.h"),
+    ("lib/cpxmain.c",       "src/app/cpxmain.c"),
     ("tools/mkg4a.py",      "tools/mkg4a.py"),
     ("tools/mkxex.py",      "tools/mkxex.py"),   # mkg4a reads ELFs with it
+    # ...and getting what you built onto a disk.  The kit used to name
+    # tools/mkspdisk.py, which it did not contain and which needs a
+    # SpartaDOS fixture nobody outside this tree has; install.py works on
+    # the .atr the release already ships.
+    ("tools/install.py",    "tools/sdk/install.py"),
+    ("tools/atr.py",        "tools/atr.py"),     # install.py's file systems
+    # The compiler's own defects, which are ordinary C shapes and will
+    # bite a third party exactly as they bit this tree.  Four of them
+    # produce a silently wrong answer.
+    ("doc/ccbug.md",        "tools/ccbug/README.md"),
     ("example/hello.c",     "tools/sdk/hello.c"),
+    ("example/acc.c",       "tools/sdk/acc.c"),       # a desk accessory
+    ("example/cpx.c",       "tools/sdk/cpx.c"),       # a panel module
 ]
 
 
@@ -79,9 +97,22 @@ def build(out, tar=None):
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("out")
+    ap.add_argument("out", nargs="?")
     ap.add_argument("--tar")
+    ap.add_argument("--sources", action="store_true",
+                    help="print the tree paths MANIFEST reads, for make")
     a = ap.parse_args(argv[1:])
+    # The Makefile's prerequisite list IS this table, rather than a second
+    # copy of it beside it.  It was a second copy until 0.6.1 and had
+    # drifted: six files were in the kit and not in the list, so editing
+    # one of them did not rebuild the kit.  This tree has a memory about
+    # what happens when two lists say what ships.
+    if a.sources:
+        print(" ".join(sorted({src for _dst, src in MANIFEST}
+                              | {"tools/mksdk.py"})))
+        return 0
+    if not a.out:
+        ap.error("an output directory, or --sources")
     n = build(a.out, a.tar)
     print(f"{a.out}: {len(MANIFEST)} files, {n} bytes"
           + (f"; {a.tar}" if a.tar else ""))

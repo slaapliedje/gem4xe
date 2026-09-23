@@ -275,6 +275,72 @@ class TestBuildsFromACopy(unittest.TestCase):
         self.assertEqual(h["far_banks"], 1, "one bank, as the loader takes")
         self.assertTrue(0 < h["far_size"] < 0x10000, h["far_size"])
 
+    def test_it_builds_a_desk_accessory(self):
+        """An accessory is built exactly like a program -- what makes it
+        one is the shape of its main() -- so this proves the example
+        compiles and links, not that the AES will load it.  m28 and m22
+        are what prove the latter, on real accessories."""
+        self.make("KIND=acc", "APP=example/acc.c")
+        out = os.path.join(self.kit, "acc.g4a")
+        self.assertTrue(os.path.isfile(out), "example/acc.c made no .g4a")
+        self.assertEqual(g4a_header(out)["near_base"], 0x1000)
+
+    def test_it_builds_a_control_panel_extension(self):
+        """A CPX needs THREE things the kit did not hand out until 0.6.1:
+        include/cpx.h, lib/cpxmain.c -- whose main() it links instead of
+        writing its own -- and a --data-model=large build with Calypsi's
+        clib-lc-ld.a beside it.  0.6 shipped the feature and shipped no
+        way to write one."""
+        self.make("KIND=cpx", "APP=example/cpx.c")
+        out = os.path.join(self.kit, "cpx.g4a")
+        self.assertTrue(os.path.isfile(out), "example/cpx.c made no .g4a")
+        self.assertEqual(g4a_header(out)["near_base"], 0x1000)
+
+    def test_the_library_the_readme_promises_actually_links(self):
+        """gemtime.c and gemcompat.c SHIPPED IN THE KIT AND WERE NEVER
+        COMPILED: they were not in the Makefile's object list, so a
+        program that called clock() -- which README.md promises by name,
+        saying a program written against mintlib's runs unchanged -- did
+        not link.  A promise in a README is not a mechanism, so this
+        calls every one of them.
+
+        gemtime.o is built at -O0 on purpose (the Makefile says why);
+        tests/host/test_gemtime.py holds the tree's copy of that rule and
+        this holds the kit's, because the naive fix for the missing
+        object is to add it to the pattern rule at -O2 and get silently
+        wrong dates."""
+        src = os.path.join(self.kit, "promised.c")
+        with open(src, "w") as f:
+            f.write(
+                '#include "gem.h"\n'
+                "#include <time.h>\n"
+                "#include <support.h>\n"
+                "#include <dirent.h>\n"
+                "int main(void) {\n"
+                "    time_t t; struct tm *g; char b[40]; clock_t c; DIR *d;\n"
+                "    appl_init();\n"
+                "    c = clock(); t = time(0); g = gmtime(&t);\n"
+                '    strftime(b, sizeof b, "%Y-%m-%d", g);\n'
+                '    if (stricmp(b, "x") == 0) b[0] = 0;\n'
+                '    d = opendir("A:\\\\"); if (d) closedir(d);\n'
+                "    appl_exit(); return (int)(c & 1);\n"
+                "}\n")
+        self.make("APP=promised.c")
+        self.assertTrue(os.path.isfile(os.path.join(self.kit, "promised.g4a")))
+
+    def test_the_kits_calendar_is_built_at_O0(self):
+        """The reason is a miscompile, so the flag is checked rather than
+        trusted: at -O1 and above this compiler mangles civil_from_days
+        and a date comes back wrong with nothing to say so."""
+        mk = open(os.path.join(self.kit, "Makefile"), errors="replace").read()
+        line = [l for l in mk.splitlines()
+                if "gemtime.c" in l and "$(CC)" in l or
+                ("-O0" in l and "gemtime" in l)]
+        self.assertTrue(
+            any("-O0" in l for l in mk.splitlines()
+                if "gemtime" in l or "-O0" in l),
+            "the kit's Makefile no longer builds gemtime.o at -O0")
+
     def test_the_kit_rebuilds_the_gate_application_byte_for_byte(self):
         if not os.path.isfile(M11_G4A):
             self.skipTest("build/m11_app.g4a is not built "

@@ -7,7 +7,14 @@ fixtures.toml
 *.lst
 *.map
 
-# Stray compiler listings: `-o vdi.s` once put one at the root, and a
-# zero-byte `none` came from a redirect.  Both were committed by accident.
+# Stray compiler listings: `-o vdi.s` once put one at the root, a
+# zero-byte `none` came from a redirect, and `t.s` came from a one-off
+# `cc65816 -S` while checking codegen.  All three were committed by
+# accident, which is three times, so the rule is now the shape of the
+# mistake rather than a list of its instances: a single-letter or
+# obviously scratch .s at the ROOT is never a source file -- every real
+# one lives in src/.
 /vdi.s
 /none
+/t.s
+/?.s
