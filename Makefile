@@ -1128,8 +1128,26 @@ build/cart.elf: build/cart.o src/cart.scm
 # the COMMAND LINE: adding --test-banks changed the recipe and nothing
 # else, so make had nothing to notice and the gate staged 16 KB of
 # erased flash and called it a pass.
+build/cartd.o: src/cartd.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+
+build/cartd.elf: build/cartd.o src/cartd.scm
+	$(LD) src/cartd.scm $< -o $@ --list-file build/cartd.map \
+	    --memories-expression "(cartd-layout)"
+
+# The step-two image: a pattern in the payload banks, which is what the
+# staging half of test-m37 checks.
 build/gem4xe.car: build/cart.elf tools/mkcar.py tools/mkxex.py Makefile
 	python3 tools/mkcar.py $< $@ --test-banks 2
+
+# ...and the step-three one: a read-only D1: with files on it, which the
+# CIO half of test-m37 opens and reads back.
+build/gem4xe-d1.car: build/cart.elf build/cartd.elf tools/mkcar.py \
+                     tests/fixtures/test.txt tools/mkxex.py Makefile
+	python3 tools/mkcar.py build/cart.elf $@ --dev build/cartd.elf \
+	    --file HELLO.TXT tests/fixtures/test.txt \
+	    --file OUT.TXT tests/fixtures/out.txt
 
 build/816.com: tools/mk816.py
 	@mkdir -p build
@@ -1693,7 +1711,7 @@ test-m16: build/m14-boot.atr
 # ends with Ptermres and must be kept.
 # The cartridge (docs/cartridge.md), step one: the format and the boot
 # path, before the CPU switch or any staging goes on top of them.
-test-m37: build/gem4xe.car
+test-m37: build/gem4xe.car build/gem4xe-d1.car
 	python3 tests/emu/m37_cart.py
 
 test-m34: build/m34-boot.atr

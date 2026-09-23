@@ -30,7 +30,7 @@
 (define (cart-layout)
   (list
     (list 'memory 'CartCode
-          '(address (#xa000 . #xbff9))
+          '(address (#xa000 . #xafff))
           '(section cartcode cartdata cdata))
     (list 'memory 'CartHdr
           '(address (#xbffa . #xbfff))

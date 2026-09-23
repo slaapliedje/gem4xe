@@ -39,6 +39,16 @@
 CARTSIG:      .equ    0x0600          ; 'G','4' when the cartridge ran
 CARTSTEP:     .equ    0x0602          ; how far it got, so a failure says where
 CARTCPU:      .equ    0x0603          ; what it decided the machine is
+CARTFLEN:     .equ    0x0604          ; 16-bit: bytes read back through D1:
+CARTFSUM:     .equ    0x0606          ; 16-bit: and their sum
+CARTDLEN:     .equ    0x0608          ; 16-bit: bytes of the DIRECTORY
+CARTDSUM:     .equ    0x060a          ; 16-bit: and their sum
+;;; ...and the listing itself, up to 64 bytes, so the gate can look at the
+;;; RECORDS rather than at a checksum of them.  A sum that matches proves
+;;; the bytes; it does not prove they are in DOS 2's shape, and the shape
+;;; is what src/sys/dos.c parses.
+CARTDTXT:     .equ    0x0680
+CARTDMAX:     .equ    64
 
 SIG0:         .equ    'G'
 SIG1:         .equ    '4'
@@ -78,6 +88,36 @@ PAGES:        .equ    32              ; 8 KB a bank
 ;;; and it puts the bootstrap's bank back before it returns, so that the
 ;;; `rts` lands in a window that exists again.
 STUB:         .equ    0x0610          ; page 6, above the flags
+
+;;; The read-only D1: (src/cartd.s).  It rides in the boot bank at a FIXED
+;;; offset -- the page after the bootstrap, which src/cart.scm stops at
+;;; $AFFF so the two cannot collide -- and runs at $0700, where a DOS
+;;; would have been.  It cannot run from the cartridge for the same reason
+;;; the copier cannot: reading a file switches the window it would be in.
+DEV_AT:       .equ    0xb000          ; where it rides
+DEV_ORG:      .equ    0x0700          ; where it runs
+DEV_ROOM:     .equ    0x0800          ; how much there is room for
+;;; A four-byte header in front of it: 'C', 'D', and the length.  Erased
+;;; flash reads as $FF, and without this the bootstrap copied 2 KB of $FF
+;;; to $0700 and CALLED it on an image that carries no handler -- which
+;;; survived by luck and would not have on the next machine.
+DEV_HDR:      .equ    4
+;;; ...and the blob itself, as its own constant rather than DEV_AT+DEV_HDR
+;;; written at the point of use.  `.byte1 DEV_AT+DEV_HDR` binds as
+;;; `(.byte1 DEV_AT) + DEV_HDR` -- $B0 + 4 -- so the copy read from $B404,
+;;; found erased flash, and called it.  The arithmetic is done here, once,
+;;; where it is a number and not an expression.
+DEV_BLOB:     .equ    0xb004
+
+CIOV:         .equ    0xe456
+IOCB1:        .equ    0x10
+ICCOM:        .equ    0x0342
+ICBAL:        .equ    0x0344
+ICBAH:        .equ    0x0345
+ICBLL:        .equ    0x0348
+ICBLH:        .equ    0x0349
+ICAX1:        .equ    0x034a
+ICAX2:        .equ    0x034b
 
 ;;; The unpacker's pointers, in the floating-point package's FR0/FRE/FR1.
 ;;; NOT a direct page of our own: this runs with the OS's interrupts
@@ -185,7 +225,156 @@ cart_run:     lda     #2
               sta     CARTSTEP
               jsr     cart_say816
               jsr     cart_stage
+              jsr     cart_dev
 10$:          jmp     10$             ; ours, and nothing to return to
+
+;;; ---------------------------------------------------------------------------
+;;; cart_dev -- the read-only D1: down into RAM, installed, and read.
+;;;
+;;; The read is the proof.  Installing a handler proves nothing: CIO will
+;;; happily dispatch into a table of rubbish.  So the bootstrap opens a
+;;; file through the ordinary OS path -- the same CIOV every program uses
+;;; -- reads it a byte at a time and records how many and their sum, and
+;;; the gate compares both against the file on the host.
+;;; ---------------------------------------------------------------------------
+cart_dev:     lda     DEV_AT
+              cmp     #'C'
+              beq     1$
+              rts                     ; no handler on this image
+1$:           lda     DEV_AT+1
+              cmp     #'D'
+              beq     2$
+              rts
+2$:           lda     #10
+              sta     CARTSTEP        ; 10 = installing D1:
+;;; The handler down to $0700, a page at a time.  The length in the header
+;;; is rounded up to a page, which is why only its high byte is read.
+              lda     #.byte0 DEV_BLOB
+              sta     dp:DP_SRC
+              lda     #.byte1 DEV_BLOB
+              sta     dp:DP_SRC+1
+              lda     #.byte0 DEV_ORG
+              sta     dp:DP_DST
+              lda     #.byte1 DEV_ORG
+              sta     dp:DP_DST+1
+              ldx     #DEV_ROOM/256
+10$:          ldy     #0
+20$:          lda     (dp:DP_SRC),y
+              sta     (dp:DP_DST),y
+              iny
+              bne     20$
+              inc     dp:DP_SRC+1
+              inc     dp:DP_DST+1
+              dex
+              bne     10$
+              jsr     DEV_ORG         ; cd_install is its first byte
+
+              lda     #11
+              sta     CARTSTEP        ; 11 = installed
+
+;;; OPEN #1, 4, 0, "D1:HELLO.TXT"
+              ldx     #IOCB1
+              lda     #3
+              sta     ICCOM,x
+              lda     #.byte0 dev_name
+              sta     ICBAL,x
+              lda     #.byte1 dev_name
+              sta     ICBAH,x
+              lda     #4
+              sta     ICAX1,x
+              lda     #0
+              sta     ICAX2,x
+              jsr     CIOV
+              bpl     25$             ; ...and out of a branch's reach again
+              jmp     90$             ; no such file, and CARTFLEN stays 0
+25$:
+              lda     #12
+              sta     CARTSTEP        ; 12 = opened
+;;; ...and read it.  ICCOM 7 with a length of zero is CIO's "one
+;;; character, in A", which is the shape every Atari handler is written
+;;; to and so the honest way to exercise one.
+30$:          ldx     #IOCB1
+              lda     #7
+              sta     ICCOM,x
+              lda     #0
+              sta     ICBLL,x
+              sta     ICBLH,x
+              jsr     CIOV
+              cpy     #1
+              bne     80$
+              clc
+              adc     CARTFSUM
+              sta     CARTFSUM
+              bcc     40$
+              inc     CARTFSUM+1
+40$:          inc     CARTFLEN
+              bne     30$
+              inc     CARTFLEN+1
+              jmp     30$
+80$:          ldx     #IOCB1
+              lda     #12             ; CLOSE
+              sta     ICCOM,x
+              jsr     CIOV
+              lda     #13
+              sta     CARTSTEP        ; 13 = read to the end and closed
+
+;;; ...and the DIRECTORY, which is the other half of what a D1: is for:
+;;; a file the desktop can open is no use if it cannot see that the file
+;;; is there.  Opened with AUX1 6 -- "the directory, as lines" -- and read
+;;; the same way, so what is exercised is the same path the desktop takes.
+              ldx     #IOCB1
+              lda     #3
+              sta     ICCOM,x
+              lda     #.byte0 dev_dir
+              sta     ICBAL,x
+              lda     #.byte1 dev_dir
+              sta     ICBAH,x
+              lda     #6              ; CIO_A_DIR (src/sys/cio.h)
+              sta     ICAX1,x
+              lda     #0
+              sta     ICAX2,x
+              jsr     CIOV
+              bmi     85$
+              lda     #14
+              sta     CARTSTEP        ; 14 = the directory opened
+82$:          ldx     #IOCB1
+              lda     #7
+              sta     ICCOM,x
+              lda     #0
+              sta     ICBLL,x
+              sta     ICBLH,x
+              jsr     CIOV
+              cpy     #1
+              bne     84$
+              pha
+              clc
+              adc     CARTDSUM
+              sta     CARTDSUM
+              bcc     83$
+              inc     CARTDSUM+1
+83$:          pla
+              ldx     CARTDLEN
+              cpx     #CARTDMAX
+              bcs     835$
+              sta     CARTDTXT,x      ; A still holds it: keep the first 64
+835$:         inc     CARTDLEN
+              bne     82$
+              inc     CARTDLEN+1
+              jmp     82$
+84$:          ldx     #IOCB1
+              lda     #12
+              sta     ICCOM,x
+              jsr     CIOV
+              lda     #15
+              sta     CARTSTEP        ; 15 = and the listing came back
+85$:          ldx     #.byte0 msg_d1
+              ldy     #.byte1 msg_d1
+              lda     #msg_d1_end-msg_d1
+              jmp     cart_print
+90$:          rts
+
+dev_name:     .byte   "D1:HELLO.TXT", 0x9b
+dev_dir:      .byte   "D1:*.*", 0x9b
 
 ;;; ---------------------------------------------------------------------------
 ;;; cart_stage -- the payload out of the cartridge and into far memory.
@@ -370,6 +559,8 @@ msg_staged:   .byte   "staged 2 banks to $010000", 0x9b
 msg_staged_end:
 msg_noram:    .byte   "no RAM at $010000; gem4xe needs linear memory", 0x9b
 msg_noram_end:
+msg_d1:       .byte   "D1: is up; read HELLO.TXT from the cartridge", 0x9b
+msg_d1_end:
 
 ;;; ---------------------------------------------------------------------------
 ;;; The six bytes the OS reads.  Exactly six: src/cart.scm gives them a

@@ -197,8 +197,36 @@ here depends on that, and nothing here has to serve it.
    `farload.s`'s two values: a 65816 with nothing where the payload is
    going is as fatal as a 6502 and much less obvious.
 
-3. **The read-only `D1:`**, with the directory a table the packer
-   writes.  gem4xe does not change.
+3. **The read-only `D1:`.**  DONE, 2026-09-23 -- `src/cartd.s`, 1,179
+   bytes linked at `$0700` where a DOS would have been, carried in the
+   cartridge and copied down.  OPEN by name, GET a byte at a time, CLOSE,
+   and the directory as DOS 2's 17-character records; PUT and SPECIAL
+   refuse, because a write that silently did nothing would leave a
+   program believing it had saved.
+
+   **The proof is a read, not an installation.**  CIO will dispatch into
+   a table of rubbish just as willingly, so the cartridge opens a file
+   through the ordinary `CIOV` and reads it, and the gate checks the
+   length and the sum against the file on the host.  Then the directory,
+   and the gate checks the RECORDS rather than a checksum of them --
+   a sum proves the bytes and not their shape, and the shape is what
+   `dos_dirline` parses:
+
+       '  HELLO   TXT 002\x9b'
+       '  OUT     TXT 003\x9b'
+
+   The expected listing is built in the gate from `src/sys/dos.c`'s
+   description of the format, not from the handler's output, which is
+   the only way the two agreeing means anything.
+
+   Three things it cost.  A **magic word** in front of the handler,
+   because without one the bootstrap copied 2 KB of erased flash to
+   `$0700` and CALLED it on an image that carries no handler -- which
+   survived by luck.  A **precedence bug**: `.byte1 DEV_AT+DEV_HDR` binds
+   as `(.byte1 DEV_AT) + DEV_HDR`, so the copy read from `$B404`, found
+   `$FF` and called that too.  And the per-IOCB state is **data rather
+   than bss**, since the handler travels as one run of bytes and a bss
+   section would have been a hole in the middle of it.
 4. **The whole system on it**, and a gate: Altirra takes `--cart`, so
    booting the `.car` and comparing the desk against the model is the
    same shape as `test-boot`.  This would otherwise be a feature only
