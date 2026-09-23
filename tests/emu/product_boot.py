@@ -105,6 +105,10 @@ DOS_NAME = {0: "DOS 2", 1: "SpartaDOS 3", 2: "SpartaDOS X"}   # src/sys/bootinfo
 FARMEM_FIRST, FARMEM_LAST, FARMEM_BANKS = 1, 2, 3   # FARMEM's bytes (src/sys/farmem.h)
 BOOT_HOLD = 150                 # frames the screen is held on PAL (HOLD_SECONDS)
 BOOT_WAIT = 3000                # frames from the CPU switch to give it to appear
+# Where the Rapidus's SRAM ends and its SDRAM begins (src/sys/farmem.h:
+# SRAM in banks $01-$07, SDRAM at $080000-$EFFFFF).  Only the SDRAM is
+# behind the 4 KB cache.
+SDRAM_BASE = 0x080000
 BOOT_INK, BOOT_PAPER = "$00", "$0e"     # src/sys/bootinfo.c INK, PAPER, as HWSTATE prints them
 REFUSAL = "gem4xe needs"        # src/farload.s msg_no816
 FARMEM_BRK = 8                  # the cursor's offset in FARMEM (src/sys/farmem.h)
@@ -514,8 +518,24 @@ def one(name, progname, how, batches, cart, keep, check):
         check(b.peek16(syms["far_refused"]) == 0,
               f"{name}: {b.peek16(syms['far_refused'])} far release(s) "
               f"refused")
+        # ...and how much of the Rapidus's SRAM is left before the far heap
+        # crosses into SDRAM at $080000.
+        #
+        # THE BOUNDARY IS NOT ABOUT SPEED.  The SDRAM sits behind a 4 KB
+        # cache (the SCR at $FF0082, D7) and the SRAM does not, and the
+        # loader WRITES a program's relocated code into the far heap and
+        # then jumps to it.  Write-then-execute in cached memory is a
+        # coherence question, and it is one NO GATE HERE CAN ANSWER:
+        # Altirra stores the cache bit and models no cache, so this runs
+        # green whatever the hardware does (docs/rapidus-cache.md).
+        #
+        # So the number is printed rather than asserted.  Crossing is not
+        # a failure; it is the point at which only the real board knows.
+        head = SDRAM_BASE - brk
+        where = (f"{head:,} bytes of SRAM left" if head > 0
+                 else f"{-head:,} bytes INTO SDRAM")
         print(f"  DOS kind {kind}, drive map {drvmap:#04x}, pool ${mark:04X}, "
-              f"far brk ${brk:06X}, pointer {pointer}")
+              f"far brk ${brk:06X} ({where}), pointer {pointer}")
         dirs = listing(disk) if sdfs else dos2_listing(fs)
         # File -> DOS command is greyed unless the DOS is a SpartaDOS X of
         # 4.4 or later whose jfsymbol is in place (src/sys/dos.c dos_command)
