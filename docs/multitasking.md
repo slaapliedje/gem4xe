@@ -92,6 +92,50 @@ region is a fast-RAM copy rather than a disk write to a ramdisk.
 others are frozen, not slow.  A download does not continue in the
 background because there is no background.
 
+### What the swap costs, measured 2026-09-22
+
+The whole tier turns on one number, so it was measured rather than
+argued (`docs/bench.md`, `make bench "block move"`):
+
+| moving 256 bytes | | |
+|---|---|---|
+| a C loop through a far pointer (`src/sys/farmem.c`) | 0.679 ms | 368 KB/s |
+| **MVN, the CPU's own block move** (`src/sys/blkmove.s`) | **0.105 ms** | **2,386 KB/s** |
+
+**6.3x**, and 7.4 cycles a byte at the 65816's clock against the
+datasheet's 7 -- which is how you tell you measured the instruction and
+not the harness.  Every bank pair is the same to three digits, `$00` to
+`$00` and bank `$04` to bank `$EF` alike, so the 14.9 MB is uniformly
+fast and parking something at the top of it costs nothing extra.
+
+What that buys:
+
+    a 6 KB near region parked                     2.5 ms
+    a switch -- park one, restore another         5.0 ms
+    ...as a share of a 50 ms slice                 10%
+    ...of a 100 ms slice                            5%
+
+    the same switch through the C loop            32 ms
+    ...as a share of a 50 ms slice                 63%
+
+So the swap tier is affordable, and it was not before.  **Nothing in the
+tree used MVN until this was written** -- `far_get`, `far_put` and
+`far_copy` are byte loops, which is what C offers.  Those are now worth
+revisiting on their own account, quite apart from multitasking.
+
+Two things the measurement turned up, both worth keeping:
+
+- **`MVN src,dst` assembles to `$54, DST, SRC`** -- the operand order is
+  backwards from the syntax, and a swapped pair moves real bytes to a
+  real place with nothing to say so.  The bench runs a correctness pass
+  (out to far memory and back, compared) before it will print a rate.
+- **The banks are in the instruction, not in a register**, so a routine
+  that moves between banks chosen at run time writes its own MVN into
+  four bytes of RAM and calls it.  That is what `blkmove.s` does; whether
+  the Rapidus's 4 KB cache has anything to say about code patched that
+  often is **not yet known** and should be asked before this is used at
+  a timer tick rather than in a benchmark.
+
 ## 4. FreeMiNT
 
 **What it is.**  A preemptive multitasking kernel for TOS with Unix-like

@@ -93,6 +93,26 @@ shows. That is the baseline:
 | copy, bank $00 ↔ bank $00 / far bank $02 | 0.658 | 380 KB/s | 1,066 |
 | copy, bank $00 to VRAM through the window | 0.858 | 292 KB/s | 1,390 |
 | vram_write, the driver's upload, 256 bytes | 1.404 | 178 KB/s | 2,276 |
+| **MVN**, any bank to any bank (`$00`↔`$00`, `$00`↔far, far↔far incl. `$EF`) | **0.105** | **2,386 KB/s** | **173** |
+**The block move is 6.3× the C loop, and the bank does not matter.**  The
+`copy` row above is what the language offers -- a loop through a far
+pointer, `src/sys/farmem.c` -- and the `MVN` row is the CPU's own block
+move (`src/sys/blkmove.s`), measured 2026-09-22.  173 base-clock cycles
+for 256 bytes is **7.4 cycles a byte at the 65816's clock**, against the
+datasheet's 7, which is the sign that the number is the instruction and
+not the harness.
+
+Every bank pair measures the same to three digits, `$00` to `$00` and
+bank `$04` to bank `$EF` alike, so **the 14.9 MB is uniformly fast and
+there is no penalty for parking something high in it**.
+
+The number exists because it decides something: whether a near region can
+be parked in far memory and fetched back often enough to hold more than
+one application (`docs/multitasking.md`).  A 6 KB region is 2.5 ms, so a
+switch -- park one, restore another -- is about **5 ms**, or a tenth of a
+50 ms slice.  Through the C loop the same switch is 32 ms, which is two
+thirds of the slice and not a design.
+
 | read, the OS ROM at $E000 | 0.377 | 664 KB/s | 611 |
 | vro_cpyfm 320×100 screen to screen, aligned | 2.28 | 439 /s | 3,690 |
 | vro_cpyfm 320×100 screen to screen, odd x (the pixel path) | 3,486 | 0.3 /s | 5,652,125 |

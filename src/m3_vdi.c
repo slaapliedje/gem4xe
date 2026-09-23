@@ -161,6 +161,13 @@ static uint8_t vcount_period(void)
 static TINY UWORD bench_j;
 static TINY UWORD bench_sum;
 
+/* MVN, the CPU's own block move (src/sys/blkmove.s).  Its parameters are
+ * globals rather than arguments because it is called from two data
+ * models and the measurement wanted one shape. */
+extern void blk_move(void);
+extern uint32_t blk_src, blk_dst;
+extern uint16_t blk_len;
+
 static uint8_t FAR *bench_place(WORD lo, WORD hi, WORD space, uint8_t *buf)
 {
     uint32_t a = ((uint32_t)(UWORD)hi << 16) | (UWORD)lo;
@@ -240,6 +247,42 @@ static UWORD bench_op(WORD which)
         for (k = 0; k < n; k++)
             vram_write(a, buf, BENCH_BYTES);
         sum = (UWORD)n;
+        break;
+    }
+    case 8: {                                   /* the same copy, by MVN */
+        uint32_t s = (uint32_t)bench_place(intin[1], intin[2], intin[3], buf);
+        uint32_t d = (uint32_t)bench_place(intin[4], intin[5], intin[6], buf);
+        for (k = 0; k < n; k++) {
+            blk_src = s;
+            blk_dst = d;
+            blk_len = BENCH_BYTES;
+            blk_move();
+        }
+        sum = (UWORD)n;
+        break;
+    }
+    case 9: {                                   /* ...and is it the RIGHT copy */
+        /* NOT TIMED.  `MVN src,dst` assembles to $54, DST, SRC -- the
+         * operand order is backwards from the syntax -- and getting it
+         * the wrong way round moves real bytes to a real place with
+         * nothing to say so.  So: a pattern into the first buffer, out
+         * to the far address, back into the second, and compare.  A
+         * swapped order fails this on the first move.  Answers the
+         * number of bytes that came back wrong, so 0 is the pass. */
+        uint32_t f = ((uint32_t)(UWORD)intin[2] << 16) | (UWORD)intin[1];
+        uint32_t a = (uint32_t)(uint8_t FAR *)buf;
+        uint32_t b = (uint32_t)(uint8_t FAR *)(buf + BENCH_BYTES);
+        WORD bad = 0;
+        for (k = 0; k < BENCH_BYTES; k++) {
+            buf[k] = (uint8_t)(k * 7 + 1);
+            buf[BENCH_BYTES + k] = 0;
+        }
+        blk_src = a; blk_dst = f; blk_len = BENCH_BYTES; blk_move();
+        blk_src = f; blk_dst = b; blk_len = BENCH_BYTES; blk_move();
+        for (k = 0; k < BENCH_BYTES; k++)
+            if (buf[BENCH_BYTES + k] != (uint8_t)(k * 7 + 1))
+                bad++;
+        sum = (UWORD)bad;
         break;
     }
     default:

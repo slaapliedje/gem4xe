@@ -65,6 +65,7 @@ ST_FAR_FIRST, ST_FAR_LAST, ST_FAR_BLOCK = 17, 18, 23
 
 BENCH = 2000
 B_DIV16, B_DIV32, B_FLOAT, B_READ, B_WRITE, B_COPY, B_UPLOAD = range(1, 8)
+B_MVN, B_MVNCHK = 8, 9          # src/sys/blkmove.s, and does it copy right
 SP_CPU, SP_VRAM, SP_STACK, SP_STACK2 = 0, 1, 2, 3
 BENCH_BYTES = 256                 # what the runner's memory ops move per unit
 
@@ -151,10 +152,10 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
         lo, hi = split(addr)
         return Row(label, [bench(op, n, lo, hi, space)], n, bytes_per_unit=BENCH_BYTES)
 
-    def copy(label, src, sspace, dst, dspace, n):
+    def copy(label, src, sspace, dst, dspace, n, op=B_COPY):
         slo, shi = split(src)
         dlo, dhi = split(dst)
-        return Row(label, [bench(B_COPY, n, slo, shi, sspace, dlo, dhi, dspace)], n,
+        return Row(label, [bench(op, n, slo, shi, sspace, dlo, dhi, dspace)], n,
                    bytes_per_unit=BENCH_BYTES)
 
     dialog_unit = [(FORM_DIAL, (), (FMD_START, 0, 0, 0, 0) + DIALOG_RECT),
@@ -213,6 +214,24 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
             copy("copy, bank $00 to VRAM through the window", 0, SP_STACK, vram, SP_VRAM, 100),
             Row("vram_write, the driver's upload, 256 bytes",
                 [bench(B_UPLOAD, 100, *split(vram))], 100, bytes_per_unit=BENCH_BYTES),
+        ]),
+        # THE SAME MOVES, BY MVN.  The rows above are C: a loop through a
+        # far pointer, which is what the language offers.  These are the
+        # CPU's own block move (src/sys/blkmove.s), and the pair is the
+        # point -- what a byte of memory costs is not a property of the
+        # machine until you have asked it both ways.  The number decides
+        # whether a near region can be parked and fetched back at a timer
+        # tick, which is what holding two applications rests on
+        # (docs/multitasking.md).
+        ("Block move (MVN)", [
+            copy("MVN, bank $00 to bank $00", 0, SP_STACK, 0, SP_STACK2, 400,
+                 op=B_MVN),
+            copy(f"MVN, bank $00 to far bank ${far_lo >> 16:02X}",
+                 0, SP_STACK, far_lo, SP_CPU, 400, op=B_MVN),
+            copy(f"MVN, far bank ${far_lo >> 16:02X} to bank $00",
+                 far_lo, SP_CPU, 0, SP_STACK, 400, op=B_MVN),
+            copy(f"MVN, far bank ${far_lo >> 16:02X} to far bank ${far_hi >> 16:02X}",
+                 far_lo, SP_CPU, far_hi, SP_CPU, 400, op=B_MVN),
         ]),
         ("ROM access", [
             mem(B_READ, f"read, the OS ROM at ${rom:04X}", rom, SP_CPU, 100),
@@ -391,6 +410,19 @@ def main(argv):
         total, runs = measure(b, clock, empty, sa, script_room, sc, mfdb, screen_mfdb)
         overhead = total / runs
         print(f"an empty script: {overhead:.0f} cycles ({clock.ms(overhead) * 1000:.0f} us)")
+
+        # DOES MVN COPY THE RIGHT BYTES, before any of its timings are
+        # believed.  `MVN src,dst` assembles to $54, DST, SRC -- backwards
+        # from the syntax -- and a swapped pair moves real bytes to a real
+        # place with nothing to say so.  A fast wrong copy is worth less
+        # than no copy, so the rate is only printed if this is 0.
+        chk = Row("mvn-check", [bench(B_MVNCHK, 1, *split(st[ST_FAR_BLOCK] << 16))], 1)
+        load_script(b, sa, script_room, encode(chk, sc, mfdb, screen_mfdb))
+        clock.run(b)
+        nbad = b.peek16(syms["intout"])
+        mvn_ok = (nbad == 0)
+        print(f"MVN out to far memory and back: "
+              f"{'all 256 bytes came back' if mvn_ok else f'{nbad} of 256 bytes wrong'}")
 
         for group, rows in build_rows(st, mapfile, sc, L2.base, mfdb):
             if names and not any(n in group.lower() for n in names):

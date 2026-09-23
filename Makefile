@@ -102,7 +102,7 @@ M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
              build/wind.o build/ctrl.o build/menu.o build/form.o \
              build/alert.o build/gemdata.o build/lang.o build/lang_rsc.o \
              build/rsrc.o build/apppool.o
-M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
+M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
 
 # GEM.COM, the product (src/gem.c): the runner's objects with the runner
 # itself and its compiled-in test application taken out, linked on the
@@ -316,6 +316,11 @@ build/ctx.o: src/sys/ctx.c src/sys/ctx.h src/sys/abi.h src/sys/farmem.h
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
 build/ctxs.o: src/sys/ctx.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+
+# MVN, the block move, for the measurement docs/multitasking.md turns on.
+build/blkmove.o: src/sys/blkmove.s
 	@mkdir -p build
 	$(AS) -o $@ $<
 
