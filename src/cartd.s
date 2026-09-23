@@ -36,7 +36,7 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
 
-              .public cd_install, cd_dir, cd_dirlen, cd_end
+              .public cd_install, cd_dir, cd_dirlen, cd_end, cd_drvbyt
 
 CCTL:         .equ    0xd500
 BOOT_BANK:    .equ    127
@@ -45,6 +45,7 @@ WINDOW_HI:    .equ    0xa0            ; the window's high byte
 HATABS:       .equ    0x031a
 ICBAL:        .equ    0x0344
 ICBAH:        .equ    0x0345
+MEMLO:        .equ    0x02e7          ; the OS: the first byte nobody owns
 
 ST_OK:        .equ    0x01
 ST_EOF:       .equ    0x88
@@ -78,10 +79,47 @@ ZP_IDX:       .equ    0xd8            ; 8-bit:  which entry
 ZP_SLOT:      .equ    0xd9            ; 8-bit:  the IOCB, 0..7
 ZP_NUM:       .equ    0xda            ; 16-bit: scratch for the sector count
 
+;;; ---------------------------------------------------------------------------
+;;; $0700, IN A DOS 2'S SHAPE -- sixteen bytes before a line of code.
+;;;
+;;; $070A is DRVBYT, the bitmap of drives a DOS 2 will talk to, and
+;;; src/sys/gemdos.c's Drvmap RETURNS IT.  On a machine with a DOS that
+;;; byte has an owner; on this one it would have been whatever instruction
+;;; happened to be linked there -- cd_install's third branch offset, as it
+;;; turned out -- and the desktop would have drawn an icon for every bit
+;;; that byte happened to have set.  So the handler owns it, and says ONE
+;;; DRIVE, which is the truth: the cartridge is D1: and there is nothing
+;;; else on this machine.
+;;;
+;;; Entry is a JMP rather than the first instruction, so that the head can
+;;; grow without src/cart.s having to know: the bootstrap calls $0700.
+;;; And $4C is not 'S', which is what src/sys/dos.c reads this byte for
+;;; (dos_ident: a SpartaDOS is the one thing it has to tell apart).
+;;;
+;;; The rest is zero and deliberately not modelled.  A DOS 2's other
+;;; variables here are its own file manager's -- buffer counts, sector
+;;; numbers, its error byte -- and nothing outside a DOS 2 reads them.
+;;; Inventing values would be inventing a DOS.
+;;;
+;;; IT IS AT THE TOP OF `devcode` AND NOT IN A SECTION OF ITS OWN.  A
+;;; section was the first try and the linker placed it LAST, at $0BA4:
+;;; the order sections are named in a memory is not the order fragments
+;;; are laid into it (src/cartd.scm says so now).  One section is one
+;;; fragment, so being first in the source of the section that starts at
+;;; $0700 is what actually puts it there -- and tools/mkcar.py checks the
+;;; address rather than trusting either story.
+;;; ---------------------------------------------------------------------------
+DEV_TOP:      .equ    0x0f00          ; $0700 + the 2 KB the bootstrap copies
+
               .section devcode, root
 
+cd_entry:     jmp     cd_install      ; $0700
+              .space  7               ; $0703-$0709: a DOS 2's, and not ours
+cd_drvbyt:    .byte   1               ; $070A  DRVBYT: D1:, and nothing else
+              .space  5               ; $070B-$070F
+
 ;;; ---------------------------------------------------------------------------
-;;; cd_install -- put D: in HATABS.
+;;; (cd_install proper -- put D: in HATABS.)
 ;;;
 ;;; The OS installs E:, S:, K:, P: and C:; D: is a DOS's to add and there
 ;;; is no DOS here.  The slot is still SEARCHED for rather than assumed:
@@ -112,6 +150,15 @@ cd_install:   ldx     #0
 30$:          sta     cd_mode,x
               dex
               bpl     30$
+;;; ...and MEMLO, which is what a DOS moves and the OS leaves at $0700.
+;;; DEV_TOP rather than the handler's own end: the bootstrap copies a
+;;; fixed 2 KB down, so that is the memory this device has taken whether
+;;; the handler fills it or not, and a handler that grows does not have
+;;; to remember to move a second number.
+              lda     #.byte0 DEV_TOP
+              sta     MEMLO
+              lda     #.byte1 DEV_TOP
+              sta     MEMLO+1
               rts
 
 ;;; ---------------------------------------------------------------------------

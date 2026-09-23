@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A .car cartridge image: gem4xe on a flash cartridge.
 
-    python3 tools/mkcar.py build/cart.elf build/gem4xe.car
+    python3 tools/mkcar.py build/cart.elf build/gem4xe-sys.car \
+        --dev build/cartd.elf --system
 
 WHY A CARTRIDGE.  The release's own disk answers BOOT ERROR on its own --
 it carries no DOS by design and wants SpartaDOS X in the machine -- so
@@ -31,6 +32,13 @@ which is why it is stated here rather than remembered.
 Unused banks are filled with $FF, which is what an erased flash part
 reads as -- so the image matches what the hardware would hold, and a
 bank that was never written is obvious in a dump.
+
+WHAT GOES ON IT.  `--system` is the product: every file the release's
+loose `system/` folder carries, taken from tools/mkdist.py's own table
+rather than listed again here -- see system(), and the four times this
+project has shipped a second list that drifted.  `--file` adds one by
+hand, which is what the gate's fixtures use, and `--test-banks` fills
+the payload with a pattern instead, for the staging check.
 """
 import argparse
 import os
@@ -39,6 +47,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mkxex                                            # noqa: E402
+import mkdist                                           # noqa: E402
+
+BUILD = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build"))
 
 CART_TYPE_MAXFLASH_1M = 42
 BANK = 8192
@@ -63,6 +75,12 @@ DEV_HDR = 4
 
 ENT_SIZE = 16                   # src/cartd.s says what the fields are
 MAX_FILES = 24
+# DOS 2's drive bitmap, which src/sys/gemdos.c's Drvmap returns verbatim.
+# The handler owns the byte (src/cartd.s, cd_drvbyt) because on a machine
+# with no DOS nothing else does, and the desktop would otherwise draw an
+# icon per bit of whatever instruction was linked there.  Checked here
+# rather than trusted: it is right only if the linker put `devhead` first.
+DRVBYT = 0x070A
 
 
 def bank_from_elf(path):
@@ -152,12 +170,18 @@ def device(elf, dirent):
     linker placed rather than knowing where it put it.
     """
     segs, syms = mkxex.read_elf(elf)
-    for k in ("cd_dir", "cd_dirlen", "cd_end"):
+    for k in ("cd_dir", "cd_dirlen", "cd_end", "cd_drvbyt"):
         if k not in syms:
             raise SystemExit(f"{elf}: no {k} -- is it still .public?")
     lo = min(a for a, _d in segs)
     if lo != DEV_ORG:
         raise SystemExit(f"{elf}: linked at ${lo:04X}, not ${DEV_ORG:04X}")
+    if syms["cd_drvbyt"] != DRVBYT:
+        raise SystemExit(
+            f"{elf}: cd_drvbyt is at ${syms['cd_drvbyt']:04X}, not DOS 2's "
+            f"DRVBYT at ${DRVBYT:04X} -- the desktop reads that address for "
+            f"its list of drives, so `devhead` has to be the first section "
+            f"in src/cartd.scm")
     blob = bytearray([0]) * (max(a + len(d) for a, d in segs) - lo)
     for a, d in segs:
         blob[a - lo:a - lo + len(d)] = d
@@ -192,10 +216,28 @@ def car(rom, cart_type=CART_TYPE_MAXFLASH_1M):
             + b"\0\0\0\0" + rom)
 
 
+def system():
+    """What the release's loose `system/` folder holds, as (NAME, path).
+
+    NOT A LIST OF ITS OWN, and that is the point.  This project has had
+    the same bug four times -- a second list of what ships, drifting out
+    of step with the first, and every gate booting a DISK so that a wrong
+    FOLDER was invisible to all of them.  The control panel was missing
+    from the release for two versions that way.  So the cartridge carries
+    mkdist.SYSTEM, which is the flat list a directory-less D1: wants
+    anyway, and a file added there is on the cartridge with nothing else
+    touched.
+    """
+    return [(name, os.path.join(BUILD, src)) for src, name in mkdist.SYSTEM]
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog="\n".join(__doc__.splitlines()[1:]))
+    if "--sources" in argv:             # what the Makefile depends on
+        print(" ".join(p for _n, p in system()))
+        return 0
     ap.add_argument("elf", help="the bootstrap, linked at $A000 (src/cart.scm)")
     ap.add_argument("out", help="where to write the .car")
     ap.add_argument("--test-banks", type=int, default=0, metavar="N",
@@ -206,19 +248,25 @@ def main(argv):
     ap.add_argument("--file", nargs=2, action="append", default=[],
                     metavar=("NAME", "PATH"),
                     help="a file to put on D1:, as NAME.EXT")
+    ap.add_argument("--system", action="store_true",
+                    help="put the whole of tools/mkdist.py's SYSTEM on D1: -- "
+                         "GEM.COM and everything the release's system/ folder "
+                         "holds, so the cartridge boots into the desktop")
+    ap.add_argument("--sources", action="store_true",
+                    help="print what --system would read, for a Makefile, and "
+                         "stop")
     a = ap.parse_args(argv[1:])
 
     boot = bank_from_elf(a.elf)
 
-    if a.test_banks and a.file:
+    if a.test_banks and (a.file or a.system):
         raise SystemExit("--test-banks fills the payload with a pattern and "
-                         "--file fills it with files; pick one")
-    dev = b""
+                         "--file/--system fill it with files; pick one")
+    dev, files = b"", []
     if a.test_banks:
         banks = [test_pattern(i) for i in range(a.test_banks)]
     else:
-        files = []
-        for name, path in a.file:
+        for name, path in (system() if a.system else []) + a.file:
             with open(path, "rb") as f:
                 files.append((name, f.read()))
         banks, dirent = lay_out(files)
@@ -234,7 +282,7 @@ def main(argv):
                if rom[i * BANK:(i + 1) * BANK] != bytes([ERASED]) * BANK)
     print(f"{a.out}: AtariMax 1 Mbit (type {CART_TYPE_MAXFLASH_1M}), "
           f"{BANKS} banks of {BANK}, {used} used, boot in bank {BOOT_BANK}"
-          + (f", D1: with {len(a.file)} file(s)" if dev else ""))
+          + (f", D1: with {len(files)} file(s)" if dev else ""))
     return 0
 
 

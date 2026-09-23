@@ -40,9 +40,17 @@ deliberately only the first:
   say so and stop rather than search forever.  Two machines, two
   answers, and they have to differ or the pair proves nothing.
 
-WHAT IT DOES NOT PROVE, said plainly: nothing about staging and nothing
-about the read-only D1:.  Those are steps two and three and they get
-their own checks.  This is the piece that makes their failures legible.
+  THE WHOLE SYSTEM BOOTS OFF IT, which is what the cartridge is for: the
+  release's own system files on the cartridge's D1:, GEM.COM loaded by a
+  .xex loader in the bootstrap, and the DESK at the end compared against
+  tools/deskref.py exactly as test-boot compares the product disks.  That
+  is the claim -- one file, nothing typed, nothing else to find -- and it
+  would otherwise be a thing only hardware could check.
+
+WHAT IT DOES NOT PROVE, said plainly: nothing about the boot screen's
+report, the far image's arrival or the pool, all of which test-boot
+already checks and none of which the cartridge changes.  What is new here
+is where the bytes came from.
 """
 import os
 import sys
@@ -51,10 +59,14 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
-import mkcar                                # noqa: E402
+import mkcar, symfile, vbxeref              # noqa: E402
+from m4_aes import SHOTDIR                  # noqa: E402
+from product_boot import desk_model         # noqa: E402
 
 CAR = os.path.abspath(os.path.join(ROOT, "build", "gem4xe.car"))
 CAR_D1 = os.path.abspath(os.path.join(ROOT, "build", "gem4xe-d1.car"))
+CAR_SYS = os.path.abspath(os.path.join(ROOT, "build", "gem4xe-sys.car"))
+SYMS = os.path.join(ROOT, "build", "gem.sym")
 FIXTURES = [("HELLO.TXT", os.path.join(ROOT, "tests", "fixtures", "test.txt")),
             ("OUT.TXT", os.path.join(ROOT, "tests", "fixtures", "out.txt"))]
 CARTFLEN, CARTFSUM = 0x0604, 0x0606
@@ -64,9 +76,18 @@ CARTSIG, CARTSTEP, CARTCPU = 0x0600, 0x0602, 0x0603      # src/cart.s
 WANT_SIG = b"G4"
 STEP_PRINTED, STEP_816, STEP_NO816 = 3, 6, 6
 STEP_STAGED, STEP_NORAM = 8, 9
+STEP_OPEN, STEP_SEG, STEP_RUN, STEP_BAD = 16, 17, 18, 19
 CPU_816, CPU_NO816 = 1, 2
 DEST = 0x010000                             # src/cart.s DEST_BANK
 PAY_BANKS = 2                               # ...and PAY_BANKS
+DRVBYT = 0x070A                             # src/cartd.s cd_drvbyt
+MEMLO = 0x02E7                              # ...and what cd_install sets it to
+DEV_TOP = 0x0F00
+DOS_2 = 0                                   # src/sys/dos.h
+FARMEM_BRK = 8                              # src/sys/farmem.h
+LOAD_WAIT = 6000                            # frames to give the load; it takes
+                                            # about 1,300, and the margin is for
+                                            # a slower machine, not a hung one
 
 problems = []
 
@@ -152,6 +173,117 @@ def d1():
                   f"first thing dos_dirline tests")
             check(r[17] == 0x9B, f"record {r!r} does not end in EOL")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37d1.png"))
+    finally:
+        emu.stop()
+
+
+def cart_listing():
+    """D1:, as GEMDOS will read it back -- which is the cartridge's own
+    directory and not a second list of one.  The size is what a DOS 2
+    line can say: whole 125-byte sectors, which is what the handler
+    prints and what src/sys/dos.c multiplies back up."""
+    out = []
+    for name, path in mkcar.system():
+        n = os.path.getsize(path)
+        out.append((name, 0, 0, 0, max(1, -(-n // 125)) * 125))
+    return {"A:\\": out}
+
+
+def whole_system():
+    """THE CARTRIDGE THE REQUEST ASKED FOR: one file, put in a slot, and
+    the desktop comes up with nothing typed and nothing else to find.
+
+    Everything in front of this is transport; this is the product.  The
+    bootstrap loads D1:GEM.COM with a .xex loader of its own -- the one
+    job of a DOS that read-only did not make go away -- and the desk at
+    the end is compared with tools/deskref.py, the desktop's own model,
+    exactly as test-boot compares the two product floppies.  A cartridge
+    that came up with the wrong desk would otherwise be something only
+    hardware could notice.
+
+    The load is TIMED and the time printed.  It is the one number a
+    person will feel, and a change in it -- the system growing, the
+    handler getting slower -- should be visible rather than discovered.
+    """
+    if not os.path.exists(CAR_SYS):
+        check(False, f"{CAR_SYS} is not built (make build/gem4xe-sys.car)")
+        return
+    syms = symfile.load(SYMS)
+    emu = launch(tag="m37sys", memsize="1088K", extra_args=["--cart", CAR_SYS])
+    b = emu.bridge
+    try:
+        step = 0
+        for t in range(0, LOAD_WAIT, 25):
+            b.frames(25)
+            step = b.peek(CARTSTEP)
+            if step >= STEP_RUN:
+                break
+        print(f"  the whole system: step {step} after {t + 25} frames "
+              f"({(t + 25) / 50:.0f}s of PAL time to read it off the ROM)")
+        check(step != STEP_BAD, "the bootstrap would not load D1:GEM.COM: it "
+                                "read the file and it is not an Atari binary")
+        check(step >= STEP_OPEN, f"D1:GEM.COM would not open (step {step}) -- "
+                                 f"is it on the image?")
+        if not check(step >= STEP_RUN,
+                     f"the load never reached the run vector (step {step})"):
+            return
+        # ...and the machine's own DOS-shaped variables, which on a
+        # cartridge nothing else owns (src/cartd.s).
+        drvbyt, memlo = b.peek(DRVBYT), b.peek16(MEMLO)
+        check(drvbyt == 1, f"DRVBYT is {drvbyt}, not 1 -- Drvmap returns that "
+                           f"byte and the desktop draws an icon per bit")
+        check(memlo == DEV_TOP, f"MEMLO is ${memlo:04X}, not ${DEV_TOP:04X}: "
+                                f"the handler's own memory is not protected")
+
+        calls = syms["app_calls"]
+        n, still = b.peek16(calls), 0
+        for t in range(0, 20000, 250):
+            b.frames(250)
+            now = b.peek16(calls)
+            still = still + 1 if now == n else 0
+            n = now
+            if still >= 2 and now:
+                break
+        else:
+            check(False, f"GEM never settled ({n} calls)")
+        fault = b.peek(syms["irq_fault"])
+        check(fault == 0, f"irq_fault {fault} (src/sys/irq.s)")
+        kind = b.peek(syms["dos"])
+        check(kind == DOS_2, f"the system calls this a kind-{kind} DOS, not "
+                             f"DOS 2 -- dos_ident read $0700 as something else")
+        mark = b.peek16(syms["app_near"])
+        brk = int.from_bytes(bytes(b.memdump(syms["farmem"] + FARMEM_BRK, 4)),
+                             "little")
+        pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
+        room = (b.peek16(syms["app_pool_hi"]) - b.peek16(syms["pool_brk"])) & 0xFFFF
+        # THE DESK PICTURE DOES NOT SHOW THE ACCESSORIES, so it must not
+        # be what says they loaded.  The AES finds them by opening the
+        # system's directory and reading it a line at a time (src/aes/shel.c)
+        # -- the one thing the real system does with this handler that
+        # the read-back above does not -- and a cartridge that served
+        # files but listed nothing would give a desk identical to this
+        # one.  sh_naccs is the witness: the model has no opinion about
+        # it, so the two agreeing here is not the two agreeing wrongly.
+        naccs, full = b.peek16(syms["sh_naccs"]), b.peek16(syms["sh_accfull"])
+        want = sum(1 for name, _p in mkcar.system() if name.endswith(".ACC"))
+        check(naccs + full == want,
+              f"the AES found {naccs + full} accessories on the cartridge, "
+              f"not the {want} that are on it -- the *.ACC scan reads the "
+              f"DIRECTORY, which the file read-back above never touches")
+        print(f"  GEM settled {n} calls in, DOS kind {kind}, drive map "
+              f"{drvbyt:#04x}, pool ${mark:04X} with {room} bytes left, "
+              f"{naccs} accessor{'y' if naccs == 1 else 'ies'} running"
+              + (f" and {full} with no room" if full else ""))
+        ref_v, ref_a, d = desk_model(mark, brk, pointer, drvbyt, cart_listing())
+        check(len(ref_a.shots) == 1, f"the model took {len(ref_a.shots)} shots")
+        os.makedirs(SHOTDIR, exist_ok=True)
+        shot = os.path.join(SHOTDIR, "m37-cart-desk.png")
+        b.screenshot(shot)
+        bad, shown = vbxeref.compare_to_shot(ref_a.shots[0], shot)
+        check(not bad, f"the desk off the cartridge, {bad} px differ from the "
+                       f"model; first {shown[:3]}")
+        print(f"  the desk {'ok' if not bad else 'FAIL'} against the model, "
+              f"booted from one file with nothing typed")
     finally:
         emu.stop()
 
@@ -248,6 +380,7 @@ def main():
                                 "same answer, so this gate is vacuous")
 
     d1()
+    whole_system()
 
     print(f"\ngem4xe-m37: {'PASS' if not problems else 'FAIL'} -- a "
           f"cartridge, {len(problems)} problem(s)")

@@ -21,6 +21,17 @@
 
 (define (cartd-layout)
   (list
+    ;; THE ORDER SECTIONS ARE NAMED HERE IS NOT THE ORDER THEY ARE LAID
+    ;; DOWN IN.  A fourth section, `devhead`, was added for the sixteen
+    ;; bytes at $0700 that a DOS 2 would have owned -- $070A in them is
+    ;; DRVBYT, which src/sys/gemdos.c's Drvmap returns -- and named first
+    ;; here; the linker placed it LAST, at $0BA4, and the desktop would
+    ;; have read an instruction as its list of drives.  What decides
+    ;; placement is the fragments, and one `.section` directive is one
+    ;; fragment: those bytes are at the top of `devcode` now (src/cartd.s)
+    ;; and tools/mkcar.py checks the address rather than trusting either
+    ;; story.
+    ;;
     ;; ONE MEMORY, and the per-IOCB state is DATA rather than bss.  The
     ;; handler travels in the cartridge as a run of bytes and is copied
     ;; to $0700 whole, so a bss section would have been a hole in the

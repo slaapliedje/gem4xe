@@ -227,12 +227,92 @@ here depends on that, and nothing here has to serve it.
    `$FF` and called that too.  And the per-IOCB state is **data rather
    than bss**, since the handler travels as one run of bytes and a bss
    section would have been a hole in the middle of it.
-4. **The whole system on it**, and a gate: Altirra takes `--cart`, so
-   booting the `.car` and comparing the desk against the model is the
-   same shape as `test-boot`.  This would otherwise be a feature only
-   hardware could check, and it is not.
+4. **The whole system on it.**  DONE, 2026-09-23 -- `build/gem4xe-sys.car`
+   boots into the desktop from one file, with nothing typed and nothing
+   else to find, and `test-m37` compares that desk pixel for pixel with
+   `tools/deskref.py` exactly as `test-boot` compares the product
+   floppies.
 
-The demo it produces is a machine that comes up in the desktop with
-drive icons, a folder to open, accessories in the Desk menu and a
-program to double-click -- from one file, with nothing typed and nothing
-else to find.
+   **The one job of a DOS that read-only did not make go away is loading
+   a program**, so the bootstrap grew a `.xex` loader: the `$FFFF`, then
+   `<first> <last> <bytes>` segments read straight to where they go, CIO
+   given the destination so the loader holds no pointer of its own.  What
+   it could not simplify is the vector rule -- **call `INITAD` after
+   EVERY segment and point it at an RTS once you have** -- because
+   gem4xe's far image travels as a hundred chunks each followed by a
+   two-byte segment that writes that vector, and a loader that fired it
+   once would unpack the first chunk and jump into an image nine tenths
+   absent.  `tools/mkxex.py` measured that rule in September and this is
+   the second reader of it.
+
+   **What the machine has no owner for is DOS 2's variables at `$0700`.**
+   `Drvmap` returns `DRVBYT` at `$070A` verbatim, and with the handler
+   linked from `$0700` that byte was one of its branch offsets -- so the
+   desktop would have drawn a drive icon per bit of an instruction.  The
+   handler owns the first sixteen bytes now: a `JMP` to its entry, and
+   `DRVBYT = 1`, which is the truth.  `MEMLO` goes up past it, and
+   `DOSVEC` is pointed at the OS's cold start, because on a cartridge
+   "quit" means the machine comes back up and finds the cartridge still
+   in the slot.  Those bytes are **at the top of `devcode`, not in a
+   section of their own**: a section was the first try and the linker
+   placed it last, at `$0BA4` -- the order sections are named in a memory
+   is not the order fragments are laid into it -- and `tools/mkcar.py`
+   checks the address rather than trusting either story.
+
+   **The desk picture cannot be what proves it.**  A cartridge that
+   served files but listed nothing would give a desk identical to this
+   one: the accessories are in the Desk menu, which is not open.  So the
+   gate reads `sh_naccs` -- the AES finds `*.ACC` by opening the
+   directory and reading it a line at a time, which is the one thing the
+   real system does with this handler that a file read-back does not.
+   Verified by building a cartridge with the three `.ACC` files left off:
+   **the same 49 calls and the same picture to the pixel, and `sh_naccs`
+   0 instead of 3.**  Nothing else here would have noticed.
+
+   **It also cost a confusing afternoon two calls from its cause.**  A
+   refused OPEN leaves this machine's CIO with the IOCB still claimed, so
+   the next OPEN answers 129, "already open".  The step-three image
+   stopped reading `HELLO.TXT` the moment a `GEM.COM` it does not carry
+   was looked for first.  The loader closes after a refusal now, which is
+   what a DOS does anyway.
+
+## 9. What it costs, which is twenty-six seconds
+
+Measured, and printed by the gate every run so that a change in it is
+seen rather than discovered:
+
+    165 KB of system, off the ROM        1,325 frames -- 26 seconds
+
+**That is not the cartridge being slow, it is the CPU being slow.**  A
+Rapidus comes up with `MCR = $FF` -- every 16 KB window on the 1.79 MHz
+motherboard bus -- and nothing raises that until gem4xe's own
+`rapidus_speedup()` runs, which is after the load.  So 165 KB goes
+through CIO's byte-at-a-time GET and the handler at 1.79 MHz: about 280
+cycles a byte, of which roughly a third is CIO's loop in ROM and the rest
+is `src/cartd.s`.
+
+It is not worse than what it replaces -- a floppy reading the same 165 KB
+through SIO is the same order -- and the bootstrap now prints a dot per
+segment, because twenty-six seconds of an unchanging screen is
+indistinguishable from a machine that has hung.
+
+Two things could be done about it, neither of them step four's:
+
+- **A tighter `cd_get`.**  About 180 of the 280 cycles are the handler's,
+  and a good deal of that is a `jsr`/`rts` pair per byte and a 24-bit
+  decrement.  Perhaps 2x, so twenty-six seconds becomes fifteen.
+- **Rapidus fast mode in the bootstrap**, which is the 11x.  Window 0
+  (`$0000-$3FFF`) is safe and is what `rapidus.c` already does; window 2
+  must stay slow because the cartridge is in it; **window 3 is where CIO
+  lives and must not be made fast** -- priming its SRAM copy means
+  reading and writing back every byte of `$C000-$FFFF`, and `$D000-$D7FF`
+  in the middle of that is hardware, so the sync would write every
+  register back with what it read.  Window 0 alone is about 2.3x.
+  It would also make the boot screen report the cartridge's `MCR` rather
+  than the firmware's, which `test-boot` reads, so it is a change with a
+  gate of its own.
+
+The demo it produces is a machine that comes up in the desktop with a
+drive icon, the trash, three accessories in the Desk menu and programs to
+double-click -- from one file, with nothing typed and nothing else to
+find.

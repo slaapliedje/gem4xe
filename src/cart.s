@@ -49,6 +49,12 @@ CARTDSUM:     .equ    0x060a          ; 16-bit: and their sum
 ;;; is what src/sys/dos.c parses.
 CARTDTXT:     .equ    0x0680
 CARTDMAX:     .equ    64
+;;; ...and how far the load got, for the same reason: a machine that comes
+;;; up black has to be able to say which of a dozen things did not happen.
+STEP_OPEN:    .equ    16              ; D1:GEM.COM opened
+STEP_SEG:     .equ    17              ; ...and segments are going in
+STEP_RUN:     .equ    18              ; loaded; the run vector is next
+STEP_BAD:     .equ    19              ; it is not a binary this can load
 
 SIG0:         .equ    'G'
 SIG1:         .equ    '4'
@@ -118,6 +124,32 @@ ICBLL:        .equ    0x0348
 ICBLH:        .equ    0x0349
 ICAX1:        .equ    0x034a
 ICAX2:        .equ    0x034b
+
+;;; The .xex loader (cart_boot).  These are the OS's own vectors, and the
+;;; whole of the Atari binary format that is not a segment header:
+;;;
+;;;     INITAD  called after EVERY segment, and pointed at an RTS once it
+;;;             has been -- so it fires only for the segment that set it
+;;;     RUNAD   jumped to when the file ends
+;;;
+;;; tools/mkxex.py measured that rule rather than assuming it (2026-09-18)
+;;; and gem4xe's far image depends on it: every staged chunk is a segment
+;;; followed by a two-byte segment writing INITAD, and a loader that fired
+;;; the vector only once would unpack the first chunk and silently skip
+;;; the other hundred.
+RUNAD:        .equ    0x02e0
+INITAD:       .equ    0x02e2
+DOSVEC:       .equ    0x000a          ; where a program goes when it ends
+COLDSV:       .equ    0xe477          ; the OS's cold start
+
+;;; The loader's own variables, in page 6 above the flags.  They must
+;;; outlive `jsr (INITAD)`, which runs gem4xe's chunk unpacker, and that
+;;; uses zero page $D4-$E5 (src/farload.s) -- so these are not in zero
+;;; page at all.  Nothing here needs indirect addressing: CIO is given
+;;; the destination and does the storing.
+LD_W:         .equ    0x0640          ; 16-bit: the header word just read
+LD_START:     .equ    0x0642          ; 16-bit: this segment's first address
+LD_LEN:       .equ    0x0644          ; 16-bit: and how many bytes it carries
 
 ;;; The unpacker's pointers, in the floating-point package's FR0/FRE/FR1.
 ;;; NOT a direct page of our own: this runs with the OS's interrupts
@@ -217,33 +249,45 @@ cart_run:     lda     #2
               jmp     cart_no816
 2$:
 
-;;; 3. A 65816, and we are running on it.  Everything after this step is
-;;;    the staging, which is step two of docs/cartridge.md.
+;;; 3. A 65816, and we are running on it.
+;;;
+;;; WHAT THIS CARTRIDGE IS IS DECIDED BY WHAT IS ON IT, not by a build
+;;; switch, because the three images this tree makes are the three steps
+;;; of docs/cartridge.md and each has to keep working:
+;;;
+;;;   no D1: at all      the staging demonstration (step two)
+;;;   a D1:, no GEM.COM  open a file and read it back (step three)
+;;;   a D1: with GEM.COM boot it (step four), and never come back
+;;;
+;;; So the question is asked of the image rather than answered in advance,
+;;; and an image that is missing what it needs falls back to the thing it
+;;; can still prove instead of hanging with a black screen.
               lda     #CPU_816
               sta     CARTCPU
               lda     #4
               sta     CARTSTEP
               jsr     cart_say816
-              jsr     cart_stage
-              jsr     cart_dev
+              jsr     cart_dev        ; a read-only D1:, if this image has one
+              bcc     20$
+              jsr     cart_boot       ; ...and the system off it, if it has one
+              jsr     cart_demo       ; no GEM.COM: read what IS there
+              jmp     10$
+20$:          jsr     cart_stage
 10$:          jmp     10$             ; ours, and nothing to return to
 
 ;;; ---------------------------------------------------------------------------
-;;; cart_dev -- the read-only D1: down into RAM, installed, and read.
-;;;
-;;; The read is the proof.  Installing a handler proves nothing: CIO will
-;;; happily dispatch into a table of rubbish.  So the bootstrap opens a
-;;; file through the ordinary OS path -- the same CIOV every program uses
-;;; -- reads it a byte at a time and records how many and their sum, and
-;;; the gate compares both against the file on the host.
+;;; cart_dev -- the read-only D1: down into RAM and installed.  Carry set
+;;; if this image carries one at all.
 ;;; ---------------------------------------------------------------------------
 cart_dev:     lda     DEV_AT
               cmp     #'C'
               beq     1$
+              clc
               rts                     ; no handler on this image
 1$:           lda     DEV_AT+1
               cmp     #'D'
               beq     2$
+              clc
               rts
 2$:           lda     #10
               sta     CARTSTEP        ; 10 = installing D1:
@@ -267,12 +311,36 @@ cart_dev:     lda     DEV_AT
               inc     dp:DP_DST+1
               dex
               bne     10$
-              jsr     DEV_ORG         ; cd_install is its first byte
+              jsr     DEV_ORG         ; a jmp to cd_install is its first byte
 
               lda     #11
               sta     CARTSTEP        ; 11 = installed
+;;; ...and where a program goes when it ENDS.  With no DOS the OS leaves
+;;; DOSVEC pointing at its memo pad, which is a strange place for the
+;;; desktop's Quit to arrive.  A cold start is the honest answer on a
+;;; cartridge: the machine comes back up, finds the cartridge still in the
+;;; slot, and boots the desktop again -- which is what "quit" means when
+;;; the system IS the machine.
+              lda     #.byte0 COLDSV
+              sta     DOSVEC
+              lda     #.byte1 COLDSV
+              sta     DOSVEC+1
+              sec
+              rts
 
+;;; ---------------------------------------------------------------------------
+;;; cart_demo -- a file read back off the D1:, which is step three's proof.
+;;;
+;;; The read is the proof.  Installing a handler proves nothing: CIO will
+;;; happily dispatch into a table of rubbish.  So the bootstrap opens a
+;;; file through the ordinary OS path -- the same CIOV every program uses
+;;; -- reads it a byte at a time and records how many and their sum, and
+;;; the gate compares both against the file on the host.
+;;;
+;;; This is what an image with no system on it does INSTEAD of booting.
+;;; ---------------------------------------------------------------------------
 ;;; OPEN #1, 4, 0, "D1:HELLO.TXT"
+cart_demo:
               ldx     #IOCB1
               lda     #3
               sta     ICCOM,x
@@ -375,6 +443,202 @@ cart_dev:     lda     DEV_AT
 
 dev_name:     .byte   "D1:HELLO.TXT", 0x9b
 dev_dir:      .byte   "D1:*.*", 0x9b
+
+;;; ---------------------------------------------------------------------------
+;;; cart_boot -- D1:GEM.COM, loaded and run.  This is the whole of step
+;;; four: the thing the cartridge is FOR.
+;;;
+;;; WHAT THIS IS.  It is the one job of a DOS that read-only did not make
+;;; go away: loading a program.  An Atari binary is a run of segments,
+;;;
+;;;     $FFFF                      once, at the start
+;;;     <first> <last> <bytes>     repeated, `last` INCLUSIVE
+;;;
+;;; and two of those segments are vectors rather than code: INITAD, which
+;;; the loader calls after the segment that wrote it, and RUNAD, which it
+;;; jumps to at the end.
+;;;
+;;; THE INITAD RULE IS NOT A DETAIL HERE.  gem4xe's far image -- the code
+;;; in banks $01 and up, which is most of the system -- travels as chunks
+;;; aimed at a staging buffer, each followed by a two-byte segment that
+;;; writes INITAD, and src/farload.s unpacks one chunk per call.  A loader
+;;; that fired the vector once would unpack the first chunk, skip the
+;;; other hundred, and jump into an image that is nine tenths absent.  So
+;;; this does what a DOS does and tools/mkxex.py measured in 2026-09-18:
+;;; call INITAD after EVERY segment, and point it at an RTS once it has.
+;;;
+;;; IT READS A SEGMENT WHERE THE SEGMENT GOES.  CIO is handed the
+;;; destination and the length and does the storing, so the loader holds
+;;; no pointer of its own and never becomes a second copy of the format.
+;;; It also keeps the cost down: the handler is a byte at a time either
+;;; way (CIO's own loop calls GET once per byte) but one CIOV entry per
+;;; SEGMENT instead of one per byte is the difference this can make.
+;;;
+;;; IT RUNS FROM THE CARTRIDGE, which is only safe because the handler
+;;; puts the boot bank back before every return (src/cartd.s).  Nothing
+;;; here may assume that of anything else.
+;;;
+;;; It returns only if there is no system to boot.
+;;; ---------------------------------------------------------------------------
+cart_boot:    ldx     #IOCB1
+              lda     #3
+              sta     ICCOM,x
+              lda     #.byte0 boot_name
+              sta     ICBAL,x
+              lda     #.byte1 boot_name
+              sta     ICBAH,x
+              lda     #4
+              sta     ICAX1,x
+              lda     #0
+              sta     ICAX2,x
+              jsr     CIOV
+              bpl     1$
+;;; No system on this cartridge -- and CLOSE IT ANYWAY.  A refused OPEN
+;;; leaves this machine's CIO with the IOCB still claimed, so the next
+;;; OPEN of it answers 129, "already open", rather than doing anything.
+;;; That cost an afternoon's worth of confusion: the step-three image
+;;; stopped reading HELLO.TXT the moment a GEM.COM it does not carry was
+;;; looked for first, and the failure was two calls away from its cause.
+              jsr     ld_close
+              rts
+1$:           lda     #STEP_OPEN
+              sta     CARTSTEP
+;;; SAY SO, AND KEEP SAYING SO.  The system is 165 KB and CIO reads it a
+;;; byte at a time through a handler on a 1.79 MHz bus, which is about
+;;; twenty-six seconds on this machine (docs/cartridge.md measures it and
+;;; says what could be done about it).  Twenty-six seconds of an unchanging
+;;; screen is indistinguishable from a machine that has hung, so there is
+;;; a dot per segment: it costs one CIO call against a hundred thousand
+;;; and it is the difference between waiting and wondering.
+              ldx     #.byte0 msg_load
+              ldy     #.byte1 msg_load
+              lda     #msg_load_end-msg_load
+              jsr     cart_print
+;;; The vectors, before a byte is read.  INITAD has to be safe to call
+;;; from the very first segment, which is one no file has written it in.
+              jsr     ld_arm
+              lda     #0
+              sta     RUNAD
+              sta     RUNAD+1
+;;; $FFFF.  A file that does not start with it is not an Atari binary,
+;;; and loading it would scatter its bytes over the machine at addresses
+;;; it never meant.
+              jsr     ld_word
+              bpl     5$
+2$:           jmp     ld_bad          ; ...out of a branch's reach from here
+5$:           lda     LD_W
+              and     LD_W+1
+              cmp     #0xff
+              bne     2$
+
+10$:          jsr     ld_word
+              bmi     ld_done         ; the end of the file, which is normal
+              lda     LD_W
+              and     LD_W+1
+              cmp     #0xff
+              beq     10$             ; another $FFFF: legal between segments
+              lda     LD_W
+              sta     LD_START
+              lda     LD_W+1
+              sta     LD_START+1
+              jsr     ld_word
+              bmi     ld_bad
+;;; last - first + 1, and a `last` below `first` is a corrupt header
+;;; rather than a segment of 65,536 bytes.
+              sec
+              lda     LD_W
+              sbc     LD_START
+              sta     LD_LEN
+              lda     LD_W+1
+              sbc     LD_START+1
+              sta     LD_LEN+1
+              bcc     ld_bad
+              inc     LD_LEN
+              bne     20$
+              inc     LD_LEN+1
+20$:          ldx     #IOCB1
+              lda     LD_START
+              sta     ICBAL,x
+              lda     LD_START+1
+              sta     ICBAH,x
+              lda     LD_LEN
+              sta     ICBLL,x
+              lda     LD_LEN+1
+              sta     ICBLH,x
+              lda     #7
+              sta     ICCOM,x
+              jsr     CIOV
+              bmi     ld_bad          ; short: the file stops mid-segment
+              lda     #STEP_SEG
+              sta     CARTSTEP
+              jsr     ld_dot
+;;; ...and the vector, in the order a DOS does it: call it, THEN disarm.
+;;; A segment that has just written INITAD is the one whose call means
+;;; anything, and every other segment gets the RTS this left behind.
+              jsr     ld_init
+              jsr     ld_arm
+              jmp     10$
+
+ld_done:      jsr     ld_close
+              lda     RUNAD
+              ora     RUNAD+1
+              beq     ld_bad          ; loaded, and nowhere to start
+              lda     #STEP_RUN
+              sta     CARTSTEP
+              jmp     (RUNAD)         ; ...and gem4xe has the machine
+
+ld_bad:       jsr     ld_close
+              lda     #STEP_BAD
+              sta     CARTSTEP
+              ldx     #.byte0 msg_bad
+              ldy     #.byte1 msg_bad
+              lda     #msg_bad_end-msg_bad
+              jmp     cart_print
+
+;;; ld_word -- the next two bytes of the file into LD_W.  Y is CIO's
+;;; status, so the caller's `bmi` is "the file ended here".
+ld_word:      ldx     #IOCB1
+              lda     #.byte0 LD_W
+              sta     ICBAL,x
+              lda     #.byte1 LD_W
+              sta     ICBAH,x
+              lda     #2
+              sta     ICBLL,x
+              lda     #0
+              sta     ICBLH,x
+              lda     #7
+              sta     ICCOM,x
+              jmp     CIOV
+
+ld_close:     ldx     #IOCB1
+              lda     #12
+              sta     ICCOM,x
+              jmp     CIOV
+
+;;; ld_dot -- one character on the screen, for one segment.  A length of
+;;; zero is CIO's "the byte is in A" for PUT, the mirror of the GET this
+;;; file already leans on, and it leaves IOCB #1's open file alone.
+ld_dot:       lda     #11
+              sta     ICCOM
+              lda     #0
+              sta     ICBLL
+              sta     ICBLH
+              lda     #'.'
+              ldx     #0              ; IOCB #0, which is E:
+              jmp     CIOV
+
+;;; ld_arm -- point INITAD at an RTS, which is what a DOS leaves behind
+;;; after it has called the vector.
+ld_arm:       lda     #.byte0 ld_rts
+              sta     INITAD
+              lda     #.byte1 ld_rts
+              sta     INITAD+1
+              rts
+
+ld_init:      jmp     (INITAD)
+ld_rts:       rts
+
+boot_name:    .byte   "D1:GEM.COM", 0x9b
 
 ;;; ---------------------------------------------------------------------------
 ;;; cart_stage -- the payload out of the cartridge and into far memory.
@@ -561,6 +825,10 @@ msg_noram:    .byte   "no RAM at $010000; gem4xe needs linear memory", 0x9b
 msg_noram_end:
 msg_d1:       .byte   "D1: is up; read HELLO.TXT from the cartridge", 0x9b
 msg_d1_end:
+msg_bad:      .byte   "D1:GEM.COM is not a program this can load", 0x9b
+msg_bad_end:
+msg_load:     .byte   "loading gem4xe off the cartridge", 0x9b
+msg_load_end:
 
 ;;; ---------------------------------------------------------------------------
 ;;; The six bytes the OS reads.  Exactly six: src/cart.scm gives them a

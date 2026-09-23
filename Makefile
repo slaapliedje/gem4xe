@@ -1149,6 +1149,17 @@ build/gem4xe-d1.car: build/cart.elf build/cartd.elf tools/mkcar.py \
 	    --file HELLO.TXT tests/fixtures/test.txt \
 	    --file OUT.TXT tests/fixtures/out.txt
 
+# ...and the step-four one, which is the product: the whole system on the
+# cartridge's D1:, so that one file boots into the desktop with nothing
+# typed and nothing else to find.  The file list is tools/mkdist.py's
+# SYSTEM -- the release's own loose system/ folder -- and not a list of
+# its own, because a second list of what ships is a bug this tree has
+# already had four times (tools/mkcar.py, system()).
+CART_FILES := $(shell python3 tools/mkcar.py --sources)
+build/gem4xe-sys.car: build/cart.elf build/cartd.elf $(CART_FILES) \
+                      tools/mkcar.py tools/mkdist.py tools/mkxex.py Makefile
+	python3 tools/mkcar.py build/cart.elf $@ --dev build/cartd.elf --system
+
 build/816.com: tools/mk816.py
 	@mkdir -p build
 	python3 tools/mk816.py $@
@@ -1711,7 +1722,8 @@ test-m16: build/m14-boot.atr
 # ends with Ptermres and must be kept.
 # The cartridge (docs/cartridge.md), step one: the format and the boot
 # path, before the CPU switch or any staging goes on top of them.
-test-m37: build/gem4xe.car build/gem4xe-d1.car
+test-m37: build/gem4xe.car build/gem4xe-d1.car build/gem4xe-sys.car \
+          build/desktop.g4a build/desktop.sym build/gem.sym
 	python3 tests/emu/m37_cart.py
 
 test-m34: build/m34-boot.atr
