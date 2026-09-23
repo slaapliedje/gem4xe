@@ -38,6 +38,13 @@ TOOL = os.path.join(ROOT, "tools", "opcodes.py")
 VDI_C = os.path.join(ROOT, "src", "vdi", "vdi.c")
 EMUTOS = os.path.expanduser("~/dev/emutos")
 
+# The rest of this file runs the tool as a subprocess, on purpose: what it
+# PRINTS is what a person reads.  ServedReference below needs its parsed
+# tables instead, so it imports it -- vdi_table() reads src/vdi/vdi.c and
+# wants neither EmuTOS nor a tool chain.
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import opcodes                                          # noqa: E402
+
 
 def run(cwd=None):
     return subprocess.run([sys.executable, TOOL], capture_output=True,
@@ -100,6 +107,58 @@ class Opcodes(unittest.TestCase):
                       "marker has become a blanket exemption:\n" + r.stdout)
         self.assertIn("1 VDI opcodes are not served", r.stdout, r.stdout)
 
+
+
+class ServedReference(unittest.TestCase):
+    """tools/sdk/served.md, which the kit ships so a porter can ask "will
+    menu_popup work" without reading 1,255 lines of header.
+
+    It is GENERATED and COMMITTED, because the AES half of it needs
+    EmuTOS's name table and this suite must run on a machine with no
+    tool chain and no donor tree.  A committed generated file drifts, so
+    the VDI half -- which needs neither -- is checked against the
+    dispatcher here.  That is the half that changes when somebody adds an
+    opcode.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        path = os.path.join(ROOT, "tools", "sdk", "served.md")
+        if not os.path.exists(path):
+            raise unittest.SkipTest("tools/sdk/served.md not generated "
+                                    "(make served)")
+        with open(path, errors="replace") as f:
+            cls.doc = f.read()
+        cls.vdi = cls.doc[cls.doc.index("## VDI"):]
+
+    def test_every_vdi_opcode_the_dispatcher_has_is_in_it(self):
+        rows = {int(m.group(1)) for m in
+                re.finditer(r"^\| (\d+) \| `", self.vdi, re.M)}
+        have = set()
+        for tbl in ("jmptb1", "jmptb2"):
+            have |= set(opcodes.vdi_table(tbl))
+        self.assertEqual(sorted(have - rows), [],
+                         "tools/sdk/served.md is missing VDI opcodes the "
+                         "dispatcher serves -- run `make served`")
+        self.assertEqual(sorted(rows - have), [],
+                         "tools/sdk/served.md lists VDI opcodes that are not "
+                         "in the dispatcher any more -- run `make served`")
+
+    def test_the_deliberate_nops_are_marked_as_deliberate(self):
+        """A reader must be able to tell "returns cleanly and draws
+        nothing, on purpose" from "not there"."""
+        for tbl in ("jmptb1", "jmptb2"):
+            for op, (handler, _note, settled) in opcodes.vdi_table(tbl).items():
+                if handler == "v_nop" and settled:
+                    row = re.search(rf"^\| {op} \| .*$", self.vdi, re.M)
+                    self.assertIsNotNone(row, f"VDI {op} is not in served.md")
+                    self.assertIn("on purpose", row.group(0),
+                                  f"VDI {op} is a deliberate v_nop and "
+                                  f"served.md does not say so")
+
+    def test_it_is_not_empty(self):
+        """Both checks above pass for a file that failed to parse."""
+        self.assertGreater(self.doc.count("\n| "), 100, self.doc[:200])
 
 if __name__ == "__main__":
     unittest.main()

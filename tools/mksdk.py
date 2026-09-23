@@ -74,6 +74,19 @@ MANIFEST = [
     # bite a third party exactly as they bit this tree.  Four of them
     # produce a silently wrong answer.
     ("doc/ccbug.md",        "tools/ccbug/README.md"),
+    # ...and what the system actually serves, opcode by opcode, generated
+    # from the dispatchers by `make served`.  include/gem.h is 1,255 lines
+    # of declarations and DECLARED IS NOT SERVED, which is the question a
+    # porter has.
+    ("doc/served.md",       "tools/sdk/served.md"),
+    # The harness gem4xe's own gates are built on: a machine with the
+    # right boards and a socket to drive it through.  Stdlib only.  A
+    # third party had no way to test but to watch a screen, and a person
+    # watching a screen is not a mechanism.
+    ("tools/a8test/__init__.py", "tools/a8test/__init__.py"),
+    ("tools/a8test/bridge.py",   "tools/a8test/bridge.py"),
+    ("tools/a8test/launcher.py", "tools/a8test/launcher.py"),
+    ("tools/screenshot.py",      "tools/sdk/screenshot.py"),
     ("example/hello.c",     "tools/sdk/hello.c"),
     ("example/acc.c",       "tools/sdk/acc.c"),       # a desk accessory
     ("example/cpx.c",       "tools/sdk/cpx.c"),       # a panel module
