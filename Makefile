@@ -1124,8 +1124,12 @@ build/cart.elf: build/cart.o src/cart.scm
 	$(LD) src/cart.scm $< -o $@ --list-file build/cart.map \
 	    --memories-expression "(cart-layout)"
 
-build/gem4xe.car: build/cart.elf tools/mkcar.py tools/mkxex.py
-	python3 tools/mkcar.py $< $@
+# The Makefile is a prerequisite here because the payload is named on
+# the COMMAND LINE: adding --test-banks changed the recipe and nothing
+# else, so make had nothing to notice and the gate staged 16 KB of
+# erased flash and called it a pass.
+build/gem4xe.car: build/cart.elf tools/mkcar.py tools/mkxex.py Makefile
+	python3 tools/mkcar.py $< $@ --test-banks 2
 
 build/816.com: tools/mk816.py
 	@mkdir -p build

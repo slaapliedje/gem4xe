@@ -56,8 +56,11 @@ import mkcar                                # noqa: E402
 CAR = os.path.abspath(os.path.join(ROOT, "build", "gem4xe.car"))
 CARTSIG, CARTSTEP, CARTCPU = 0x0600, 0x0602, 0x0603      # src/cart.s
 WANT_SIG = b"G4"
-STEP_PRINTED, STEP_816, STEP_NO816 = 3, 4, 6
+STEP_PRINTED, STEP_816, STEP_NO816 = 3, 6, 6
+STEP_STAGED, STEP_NORAM = 8, 9
 CPU_816, CPU_NO816 = 1, 2
+DEST = 0x010000                             # src/cart.s DEST_BANK
+PAY_BANKS = 2                               # ...and PAY_BANKS
 
 problems = []
 
@@ -103,7 +106,7 @@ def main():
           f"reset is valid and does nothing")
 
     for tag, rapidus, want_step, want_cpu, what in (
-            ("m37", True, STEP_816, CPU_816,
+            ("m37", True, STEP_STAGED, CPU_816,
              "a Rapidus, cold-booted as a 6502 as one always is"),
             ("m37no816", False, STEP_NO816, CPU_NO816,
              "a plain 6502 with no accelerator")):
@@ -126,6 +129,23 @@ def main():
             check(sig == WANT_SIG, f"{tag}: CARTSIG {sig!r}, not {WANT_SIG!r}")
             check(step == want_step, f"{tag}: CARTSTEP {step}, not {want_step}")
             check(cpu == want_cpu, f"{tag}: CARTCPU {cpu}, not {want_cpu}")
+            if want_cpu == CPU_816:
+                # ...and every byte of the payload, out of the cartridge
+                # and into far memory.  Compared HERE rather than by the
+                # cartridge: what the machine says about its own copy is
+                # worth less than what the copy says.
+                bad = 0
+                for k in range(PAY_BANKS):
+                    got = bytes(b.memdump(DEST + k * mkcar.BANK, mkcar.BANK))
+                    want = mkcar.test_pattern(k)
+                    n = sum(1 for x, y in zip(got, want) if x != y)
+                    print(f"    bank {k} -> ${DEST + k * mkcar.BANK:06X}: "
+                          f"{mkcar.BANK - n}/{mkcar.BANK} bytes")
+                    bad += n
+                check(bad == 0, f"{tag}: {bad} byte(s) of the payload did not "
+                                f"arrive -- the pattern depends on the offset "
+                                f"AND the bank, so a swap or a doubled bank "
+                                f"shows here too")
             b.screenshot(os.path.join(ROOT, "build", "shots", f"{tag}.png"))
         finally:
             emu.stop()

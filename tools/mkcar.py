@@ -76,6 +76,18 @@ def bank_from_elf(path):
     return bytes(img)
 
 
+def test_pattern(bank):
+    """One payload bank of something no accident produces.
+
+    Step two moves banks out of the cartridge and into far memory, and
+    the only question is whether every byte arrived where it was aimed.
+    A constant would not notice two banks staged in the wrong order, and
+    a counter would not notice a bank staged twice, so each byte depends
+    on BOTH its offset and its bank.
+    """
+    return bytes(((i * 7 + bank * 61 + 0x5A) & 0xFF) for i in range(BANK))
+
+
 def image(boot, payload=()):
     """The whole ROM: payload from bank 0 up, boot in bank 127."""
     if len(payload) > BOOT_BANK:
@@ -99,10 +111,13 @@ def main(argv):
                                  epilog="\n".join(__doc__.splitlines()[1:]))
     ap.add_argument("elf", help="the bootstrap, linked at $A000 (src/cart.scm)")
     ap.add_argument("out", help="where to write the .car")
+    ap.add_argument("--test-banks", type=int, default=0, metavar="N",
+                    help="fill N payload banks with test_pattern(), which is "
+                         "what test-m37 stages and checks")
     a = ap.parse_args(argv[1:])
 
     boot = bank_from_elf(a.elf)
-    rom = image(boot)
+    rom = image(boot, [test_pattern(i) for i in range(a.test_banks)])
     with open(a.out, "wb") as f:
         f.write(car(rom))
     used = sum(1 for i in range(BANKS)

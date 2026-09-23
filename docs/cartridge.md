@@ -176,9 +176,30 @@ here depends on that, and nothing here has to serve it.
    boots the same image on a machine with no Rapidus, where it must say
    so and stop -- two machines, two answers, and they have to differ or
    the pair proves nothing.
-2. **The read-only `D1:`**, with the directory a table the packer
+2. **The staging.**  DONE, 2026-09-23 -- payload banks out of the
+   cartridge and into far memory, 16,384 of 16,384 bytes, gated in
+   `test-m37`.  The pattern each byte carries depends on its offset AND
+   its bank, so two banks arriving swapped or one arriving twice fails
+   the check as loudly as a byte going missing; proven by making bank 1
+   a copy of bank 0 and watching it report `0/8192`.
+
+   **The copier cannot live in the cartridge**, and that is the whole
+   shape of this step: selecting a payload bank replaces `$A000-$BFFF`,
+   which is where the code doing the selecting would be.  A loop that
+   switched banks from the cartridge would delete itself between one
+   instruction and the next.  So it is copied down to page 6 and called
+   there, is written position-independently -- every reference a
+   zero-page one, a hardware address or a relative branch, and no `jsr`
+   or `jmp` of its own -- and puts the bootstrap's bank back **before**
+   it returns, so the `rts` lands in a window that exists again.
+
+   The destination is probed before a byte goes near it, with
+   `farload.s`'s two values: a 65816 with nothing where the payload is
+   going is as fatal as a 6502 and much less obvious.
+
+3. **The read-only `D1:`**, with the directory a table the packer
    writes.  gem4xe does not change.
-3. **The whole system on it**, and a gate: Altirra takes `--cart`, so
+4. **The whole system on it**, and a gate: Altirra takes `--cart`, so
    booting the `.car` and comparing the desk against the model is the
    same shape as `test-boot`.  This would otherwise be a feature only
    hardware could check, and it is not.

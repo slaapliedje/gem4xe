@@ -56,6 +56,39 @@ RAPCFG:       .equ    0xd191          ; FPGA config: bit 6 set = 6502
 RAPCFG_6502:  .equ    0x40
 COLDST:       .equ    0x0244          ; the OS: non-zero at RESET means cold
 
+;;; The mapper.  A WRITE to $D500+n selects bank n; the ADDRESS carries the
+;;; bank and the value written is ignored.  A write with A7 set switches
+;;; the cartridge off instead, so the payload banks (0..126) are reached
+;;; with the address alone and never stray into $D580.
+CCTL:         .equ    0xd500
+BOOT_BANK:    .equ    127             ; what RESET maps: the bootstrap's
+
+;;; Where the payload goes.  Bank $01 is where gem4xe's own far code lives
+;;; and test-m6 proves it is writable on this machine, so it is the honest
+;;; destination for a demonstration of the transport.
+DEST_BANK:    .equ    0x01
+PAY_BANKS:    .equ    2               ; tools/mkcar.py --test-banks
+PAGES:        .equ    32              ; 8 KB a bank
+
+;;; THE COPIER RUNS FROM RAM, and that is the whole shape of this step.
+;;; Selecting a payload bank replaces $A000-$BFFF -- which is where the
+;;; code doing the selecting would be.  A loop that switched banks from
+;;; the cartridge would delete itself between one instruction and the
+;;; next.  So the loop is copied down to page 6 first and called there,
+;;; and it puts the bootstrap's bank back before it returns, so that the
+;;; `rts` lands in a window that exists again.
+STUB:         .equ    0x0610          ; page 6, above the flags
+
+;;; The unpacker's pointers, in the floating-point package's FR0/FRE/FR1.
+;;; NOT a direct page of our own: this runs with the OS's interrupts
+;;; going and its VBI and IRQ handlers address zero page through D, so a
+;;; `tcd` here would send RTCLOK's increments into whatever we pointed D
+;;; at.  src/farload.s learned that the hard way and says so at length.
+DP_SRC:       .equ    0xd4            ; 16-bit: the cartridge window
+DP_DST:       .equ    0xd8            ; 24-bit: where the next byte goes
+DP_CNT:       .equ    0xe0            ; 8-bit:  how many banks
+DP_RUN:       .equ    0xe4            ; 8-bit:  which bank we are on
+
               .section cartcode, root
 
 ;;; ---------------------------------------------------------------------------
@@ -118,7 +151,9 @@ cart_run:     lda     #2
               clc
               adc     #0x01
               cld
-              bne     cart_no816
+              beq     1$
+              jmp     cart_no816      ; out of a branch's reach since staging
+1$:
 
 ;;; 2. CMOS -- a 65C02 or a 65816?  `clc xce` returns the old E flag in
 ;;;    carry on a 65816; on a 65C02 $FB is a one-byte NOP and carry stays
@@ -138,7 +173,9 @@ cart_run:     lda     #2
               plp
               pla
               sta     NMIEN
-              bcc     cart_no816
+              bcs     2$
+              jmp     cart_no816
+2$:
 
 ;;; 3. A 65816, and we are running on it.  Everything after this step is
 ;;;    the staging, which is step two of docs/cartridge.md.
@@ -147,7 +184,107 @@ cart_run:     lda     #2
               lda     #4
               sta     CARTSTEP
               jsr     cart_say816
+              jsr     cart_stage
 10$:          jmp     10$             ; ours, and nothing to return to
+
+;;; ---------------------------------------------------------------------------
+;;; cart_stage -- the payload out of the cartridge and into far memory.
+;;;
+;;; PROBE BEFORE WRITING.  A 65816 with nothing where the payload is going
+;;; is just as fatal as a 6502 and much less obvious, so the destination
+;;; is written and read back before a byte of payload goes near it --
+;;; src/farload.s's rule, and the two values are its two values.
+;;; ---------------------------------------------------------------------------
+cart_stage:   lda     #7
+              sta     CARTSTEP        ; 7 = staging
+
+              lda     #0
+              sta     dp:DP_DST
+              sta     dp:DP_DST+1
+              lda     #DEST_BANK
+              sta     dp:DP_DST+2
+              ldy     #0
+              lda     #0xa5
+              sta     [dp:DP_DST],y
+              cmp     [dp:DP_DST],y
+              bne     cart_noram
+              lda     #0x5a
+              sta     [dp:DP_DST],y
+              cmp     [dp:DP_DST],y
+              bne     cart_noram
+
+;;; The loop, down to page 6.  Copied backwards so one index does both
+;;; ends; the stub is well under 256 bytes and the link fails if it grows
+;;; past the page, because cart_stub_end-cart_stub would not fit X.
+              ldx     #cart_stub_end-cart_stub
+20$:          lda     cart_stub-1,x
+              sta     STUB-1,x
+              dex
+              bne     20$
+
+              lda     #PAY_BANKS
+              sta     dp:DP_CNT
+              lda     #0
+              sta     dp:DP_RUN
+              sta     dp:DP_DST
+              sta     dp:DP_DST+1
+              lda     #DEST_BANK
+              sta     dp:DP_DST+2
+              jsr     STUB            ; ...and the window is ours again
+
+              lda     #8
+              sta     CARTSTEP        ; 8 = staged
+              ldx     #.byte0 msg_staged
+              ldy     #.byte1 msg_staged
+              lda     #msg_staged_end-msg_staged
+              jmp     cart_print
+
+cart_noram:   lda     #9
+              sta     CARTSTEP        ; 9 = nowhere to put it
+              ldx     #.byte0 msg_noram
+              ldy     #.byte1 msg_noram
+              lda     #msg_noram_end-msg_noram
+              jmp     cart_print
+
+;;; ---------------------------------------------------------------------------
+;;; cart_stub -- POSITION INDEPENDENT, and it has to be: it is assembled
+;;; here and runs at $0610.  Every reference is a zero-page one, a
+;;; hardware address, or a relative branch; there is no `jsr` and no `jmp`
+;;; to a label of its own.  Adding one would assemble cleanly and jump
+;;; into the cartridge window from RAM.
+;;;
+;;; THE VALUE WRITTEN TO $D500,X IS IGNORED -- the address selects the
+;;; bank -- and this NEVER READS that page.  Real AtariMax hardware
+;;; switches bank on a read of $D5xx and this tree's Altirra deliberately
+;;; does not, so a read here would be correct on the machine it was
+;;; tested on and change bank under itself on a real cartridge.
+;;; ---------------------------------------------------------------------------
+cart_stub:    ldx     dp:DP_RUN
+30$:          sta     CCTL,x          ; select payload bank X
+              lda     #0
+              sta     dp:DP_SRC
+              lda     #0xa0
+              sta     dp:DP_SRC+1     ; the window, $A000
+              ldx     #PAGES
+40$:          ldy     #0
+50$:          lda     (dp:DP_SRC),y
+              sta     [dp:DP_DST],y
+              iny
+              bne     50$
+              inc     dp:DP_SRC+1
+              inc     dp:DP_DST+1
+              bne     60$
+              inc     dp:DP_DST+2
+60$:          dex
+              bne     40$
+              inc     dp:DP_RUN
+              ldx     dp:DP_RUN
+              cpx     dp:DP_CNT
+              bcc     30$
+              ldx     #BOOT_BANK
+              sta     CCTL,x          ; ...before the rts needs it back
+              rts
+cart_stub_end:
 
 ;;; ---------------------------------------------------------------------------
 ;;; cart_no816 -- not a 65816.  Before saying so, look for a Rapidus that
@@ -229,6 +366,10 @@ msg_816:      .byte   "65816 mode: ready to stage", 0x9b
 msg_816_end:
 msg_no816:    .byte   "this machine has no 65C816; gem4xe needs one", 0x9b
 msg_no816_end:
+msg_staged:   .byte   "staged 2 banks to $010000", 0x9b
+msg_staged_end:
+msg_noram:    .byte   "no RAM at $010000; gem4xe needs linear memory", 0x9b
+msg_noram_end:
 
 ;;; ---------------------------------------------------------------------------
 ;;; The six bytes the OS reads.  Exactly six: src/cart.scm gives them a
