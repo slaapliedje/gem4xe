@@ -147,9 +147,25 @@ here depends on that, and nothing here has to serve it.
 
 ## 8. The order to build it
 
-1. **The packer and the bootstrap**, proven on the smallest possible
-   cart: switch the CPU, stage one bank, run.  This is `farload.s` with
-   a different source and it is the half that already exists.
+1. **The packer and the bootstrap.**  DONE, 2026-09-23 --
+   `tools/mkcar.py`, `src/cart.s`, `src/cart.scm`, gated as `test-m37`.
+   A 1 MB AtariMax image whose bank 127 the machine comes up on, boots,
+   prints and can be read back.  The gate checks the header on the host
+   *and* the boot on the machine, because a wrong type or a wrong bank
+   gives a cartridge that is perfectly valid and does nothing -- silence,
+   not an error, which is indistinguishable from broken code.  Confirmed
+   by moving the bootstrap to bank 0 and watching it say so.
+
+   Two things it settled.  The Calypsi linker drops an object nothing
+   references, so every cartridge section is `root` -- without it the
+   link succeeds and produces an empty ROM.  And **never read `$D5xx`**:
+   real AtariMax hardware switches bank on a read of that page and this
+   tree's Altirra deliberately does not, so code that reads it works
+   here and changes bank under itself on a real cartridge.
+
+   Still to come in this step: the CPU switch, which is
+   `src/farload.s`'s `fl_no816` with the cart's own re-entry after the
+   reset instead of a DOS's.
 2. **The read-only `D1:`**, with the directory a table the packer
    writes.  gem4xe does not change.
 3. **The whole system on it**, and a gate: Altirra takes `--cart`, so

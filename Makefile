@@ -1112,6 +1112,21 @@ build/m3-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt b
 # is named AUTORUN.SYS because that is what the DOS runs at boot, and
 # --sweep takes everything but the DOS off the fixture, which was
 # somebody's magazine disk (docs/shipping.md, section 2).
+# THE CARTRIDGE (docs/cartridge.md): the bootstrap, linked at $A000 as a
+# raw 8 KB bank, and packed into an AtariMax 1 Mbit .car.  It is one bank
+# today -- the thing that proves the format and the boot path before the
+# CPU switch and the staging go on top of it.
+build/cart.o: src/cart.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+
+build/cart.elf: build/cart.o src/cart.scm
+	$(LD) src/cart.scm $< -o $@ --list-file build/cart.map \
+	    --memories-expression "(cart-layout)"
+
+build/gem4xe.car: build/cart.elf tools/mkcar.py tools/mkxex.py
+	python3 tools/mkcar.py $< $@
+
 build/816.com: tools/mk816.py
 	@mkdir -p build
 	python3 tools/mk816.py $@
@@ -1431,7 +1446,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-boot test-install
+test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-boot test-install
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1672,6 +1687,11 @@ test-m16: build/m14-boot.atr
 
 # The AUTO folder: two programs run before the accessories, one of which
 # ends with Ptermres and must be kept.
+# The cartridge (docs/cartridge.md), step one: the format and the boot
+# path, before the CPU switch or any staging goes on top of them.
+test-m37: build/gem4xe.car
+	python3 tests/emu/m37_cart.py
+
 test-m34: build/m34-boot.atr
 	python3 tests/emu/m34_auto.py
 
@@ -1905,4 +1925,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
