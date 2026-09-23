@@ -163,9 +163,19 @@ here depends on that, and nothing here has to serve it.
    tree's Altirra deliberately does not, so code that reads it works
    here and changes bank under itself on a real cartridge.
 
-   Still to come in this step: the CPU switch, which is
-   `src/farload.s`'s `fl_no816` with the cart's own re-entry after the
-   reset instead of a DOS's.
+   **The CPU switch too.**  A Rapidus always cold-boots as a 6502, and
+   the cartridge finds the card, switches it, and the reset brings the
+   machine straight back to the cartridge -- which is *easier* than the
+   disk path, where `farload.s` has to force a cold start so the DOS
+   runs its start-up file again.  Here the cartridge is still in the
+   slot and the OS calls it again by itself.
+
+   It cannot loop, and that is proven rather than reasoned about:
+   switching resets the CPU and nothing else, the card keeping its mode
+   across it, so the second pass finds a 65816 and stops.  `test-m37`
+   boots the same image on a machine with no Rapidus, where it must say
+   so and stop -- two machines, two answers, and they have to differ or
+   the pair proves nothing.
 2. **The read-only `D1:`**, with the directory a table the packer
    writes.  gem4xe does not change.
 3. **The whole system on it**, and a gate: Altirra takes `--cart`, so

@@ -25,9 +25,24 @@ deliberately only the first:
   WHICH of those did not happen, rather than leaving a blank screen to
   be guessed at.
 
-WHAT IT DOES NOT PROVE, said plainly: nothing about the CPU switch and
-nothing about staging.  Those are steps two and three and they get their
-own checks.  This is the piece that makes their failures legible.
+  THE CPU SWITCH, BOTH WAYS.  A Rapidus ALWAYS cold-boots as a 6502, so
+  a cartridge that ran only on a machine somebody had already switched
+  by hand would be a poor first screen.  This finds the card, switches
+  it, and the reset brings the machine straight back to the cartridge --
+  which is EASIER here than from a disk, where farload has to force a
+  cold start so the DOS runs its start-up file again.  The cartridge is
+  still in the slot; the OS calls it again by itself.
+
+  AND IT CANNOT LOOP, which is worth proving rather than reasoning
+  about.  Switching resets the CPU and nothing else -- the card keeps
+  its mode across it -- so the second pass finds a 65816 and stops.  The
+  same image is then booted on a machine with NO Rapidus, where it must
+  say so and stop rather than search forever.  Two machines, two
+  answers, and they have to differ or the pair proves nothing.
+
+WHAT IT DOES NOT PROVE, said plainly: nothing about staging and nothing
+about the read-only D1:.  Those are steps two and three and they get
+their own checks.  This is the piece that makes their failures legible.
 """
 import os
 import sys
@@ -39,9 +54,10 @@ from a8test.launcher import launch          # noqa: E402
 import mkcar                                # noqa: E402
 
 CAR = os.path.abspath(os.path.join(ROOT, "build", "gem4xe.car"))
-CARTSIG, CARTSTEP = 0x0600, 0x0602          # src/cart.s
+CARTSIG, CARTSTEP, CARTCPU = 0x0600, 0x0602, 0x0603      # src/cart.s
 WANT_SIG = b"G4"
-WANT_STEP = 3                               # init, run, printed
+STEP_PRINTED, STEP_816, STEP_NO816 = 3, 4, 6
+CPU_816, CPU_NO816 = 1, 2
 
 problems = []
 
@@ -86,22 +102,39 @@ def main():
           f"somewhere else, and a cartridge that maps an empty bank at "
           f"reset is valid and does nothing")
 
-    emu = launch(tag="m37", memsize="1088K", extra_args=["--cart", CAR])
-    b = emu.bridge
-    try:
-        b.frames(400)
-        sig = bytes(b.memdump(CARTSIG, 2))
-        step = b.peek(CARTSTEP)
-        print(f"  CARTSIG {sig!r}, CARTSTEP {step}")
-        check(step >= 1, "the OS never called CARTINI: it did not see a "
-                         "cartridge at all (the header, or the type)")
-        check(step >= 2, "CARTINI ran and the OS never jumped to CARTRUN: "
-                         "$BFFD bit 2")
-        check(step == WANT_STEP, f"CARTSTEP {step}, not {WANT_STEP}")
-        check(sig == WANT_SIG, f"CARTSIG {sig!r}, not {WANT_SIG!r}")
-        b.screenshot(os.path.join(ROOT, "build", "shots", "m37_cart.png"))
-    finally:
-        emu.stop()
+    for tag, rapidus, want_step, want_cpu, what in (
+            ("m37", True, STEP_816, CPU_816,
+             "a Rapidus, cold-booted as a 6502 as one always is"),
+            ("m37no816", False, STEP_NO816, CPU_NO816,
+             "a plain 6502 with no accelerator")):
+        emu = launch(tag=tag, memsize="1088K", rapidus=rapidus,
+                     extra_args=["--cart", CAR])
+        b = emu.bridge
+        try:
+            # Long enough for the switch, the CPU reset and the second pass.
+            b.frames(900)
+            sig = bytes(b.memdump(CARTSIG, 2))
+            step, cpu = b.peek(CARTSTEP), b.peek(CARTCPU)
+            print(f"  {what}: CARTSIG {sig!r}, CARTSTEP {step}, CARTCPU {cpu}")
+            check(step >= 1, f"{tag}: the OS never called CARTINI -- it did "
+                             f"not see a cartridge at all (the header, or "
+                             f"the type)")
+            check(step >= 2, f"{tag}: CARTINI ran and the OS never jumped to "
+                             f"CARTRUN: $BFFD bit 2")
+            check(step >= STEP_PRINTED,
+                  f"{tag}: CARTRUN ran and never finished printing")
+            check(sig == WANT_SIG, f"{tag}: CARTSIG {sig!r}, not {WANT_SIG!r}")
+            check(step == want_step, f"{tag}: CARTSTEP {step}, not {want_step}")
+            check(cpu == want_cpu, f"{tag}: CARTCPU {cpu}, not {want_cpu}")
+            b.screenshot(os.path.join(ROOT, "build", "shots", f"{tag}.png"))
+        finally:
+            emu.stop()
+
+    # ...and the two answers must differ, or the pair proves nothing: a
+    # cartridge that said CPU_816 on every machine would pass the first
+    # case and be wrong about the second.
+    check(CPU_816 != CPU_NO816, "the two machines are expected to give the "
+                                "same answer, so this gate is vacuous")
 
     print(f"\ngem4xe-m37: {'PASS' if not problems else 'FAIL'} -- a "
           f"cartridge, {len(problems)} problem(s)")
