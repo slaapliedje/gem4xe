@@ -4,8 +4,10 @@
     tools/mkdist.py build/gem4xe-<stamp> [--tar out.tar.gz] [--zip out.zip]
                     [--public]
 
-Three things, and a page that explains them:
+Four things, and a page that explains them:
 
+  * the cartridge, which is the one that needs nothing else -- no DOS,
+    no disk, nothing typed (docs/cartridge.md);
   * the bootable disks, when this tree has the DOS fixtures to build
     them (they are not always here, and the artefact says which are
     missing rather than pretending);
@@ -20,7 +22,9 @@ program itself -- what the desktop's File and View menus offer, and
 what they offer DISABLED -- so the honest half of "what works" cannot
 drift from the resource; and the disks' contents are read back out of
 the images with tools/atr.py, so what the page lists is what is on
-them.
+them.  The cartridge is no exception: its directory is read back out of
+the packed ROM (tools/mkcar.py, read_car), not restated from the recipe
+that made it.
 
 --public is the release (`make release`): the same, without the two
 floppies that boot a DOS which is not gem4xe's to give away, and with
@@ -43,6 +47,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import atr                                  # noqa: E402
 import deskrsc                              # noqa: E402
+import mkcar                                # noqa: E402
 import mkcf                                 # noqa: E402
 import mksdk                                # noqa: E402
 
@@ -63,6 +68,25 @@ THIRD_PARTY_DOS = {"gem-boot.atr"}
 
 # (file in build/, where it goes, how it is read, what it says about itself)
 DISKS = [
+    ("gem4xe-sys.car", "gem4xe.car", "car",
+     "**A cartridge, and the one file that needs nothing else.**  Put it "
+     "on an Ultimate Cart, a MaxFlash or anything else that takes an "
+     "AtariMax 1 Mbit image, turn the machine on, and the desktop comes "
+     "up: no DOS, no disk, nothing typed.  Everything below is on it.\n\n"
+     "It carries its own read-only `D1:` — a CIO handler over a "
+     "directory in the ROM, which is what a DOS reduces to once nothing "
+     "needs writing — so the system reaches its files the ordinary "
+     "way and never learns where they came from.  The bootstrap finds a "
+     "**Rapidus that has cold-booted as a 6502, switches it**, and loads "
+     "`GEM.COM` off that `D1:` itself.\n\n"
+     "Two things to know.  **Reading 165 KB out of the ROM through CIO "
+     "takes about twenty-six seconds** — a Rapidus comes up with "
+     "every window on the 1.79 MHz bus and nothing raises that until GEM "
+     "is running — so it prints a dot per segment while it works; it "
+     "has not hung.  And it is **read-only**, so *Options → Save "
+     "desktop* and copying a file will tell you they cannot.  Everything "
+     "else works, because nothing else writes.  It wants the same machine "
+     "the rest of this does: a 65C816 and VBXE."),
     ("gem-boot.atr", "disks/gem-boot.atr", "dos2",
      "A double-density DOS 2 floppy, 180 KB.  GEM is AUTORUN.SYS, which "
      "this DOS runs at boot, and the DOS's own DUP.SYS is beside it, "
@@ -236,6 +260,21 @@ def disk_section(src, dest, kind, prose):
         lines.append("")
         lines.append(f"{free} sectors free — about "
                      f"{free * (fs.secsize - 2) // 1024} KB.")
+    elif kind == "car":
+        ctype, ok, used, names = mkcar.read_car(
+            src, os.path.join(BUILD, "cartd.elf"))
+        if not ok:
+            raise SystemExit(f"mkdist: {src}'s checksum is not the sum of its "
+                             f"ROM, so an emulator will refuse the image")
+        if ctype != mkcar.CART_TYPE_MAXFLASH_1M:
+            raise SystemExit(f"mkdist: {src} is cartridge type {ctype}, not "
+                             f"{mkcar.CART_TYPE_MAXFLASH_1M} (AtariMax 1 Mbit)")
+        lines.append(f"Files, read out of the image's own directory: "
+                     + ", ".join(f"`{n}`" for n in names) + ".")
+        lines.append("")
+        lines.append(f"{used} of {mkcar.BANKS} banks of "
+                     f"{mkcar.BANK // 1024} KB used — room for about "
+                     f"{(mkcar.BANKS - used) * mkcar.BANK // 1024} KB more.")
     return "\n".join(lines) + "\n"
 
 
@@ -288,15 +327,17 @@ def public_text():
     boot = " and ".join(f"`{line}`" for line in mkcf.BOOT)
     fill = lambda t: textwrap.fill(t, 72)  # noqa: E731
     return {
-        "emu_disk": "--cart SDX.car --disk disks/gem-sdx.atr",
+        "emu_disk": "--cart gem4xe.car",
         "emu_note": fill(
-            "`disks/gem-sdx.atr` carries no DOS (*What is on the disks*, "
-            "below): it boots under SpartaDOS X, and `SDX.car` is a "
-            "SpartaDOS X cartridge image, which this download does not "
-            "include -- the SpartaDOS X Upgrade Project offers one for "
-            "emulators at <https://sdx.atari8.info/>, and Altirra reads "
-            "it as it is.  Without one, make a disk of your own: a "
-            "bootable SpartaDOS 3.2 or DOS 2 disk with the files in "
+            "That is the whole of it: `gem4xe.car` needs no disk and no "
+            "DOS.  For the floppies instead, `--cart SDX.car --disk "
+            "disks/gem-sdx.atr` -- `disks/gem-sdx.atr` carries no DOS "
+            "(*What is in the download*, below) and boots under SpartaDOS "
+            "X, and `SDX.car` is a SpartaDOS X cartridge image, which this "
+            "download does not include: the SpartaDOS X Upgrade Project "
+            "offers one for emulators at <https://sdx.atari8.info/>, and "
+            "Altirra reads it as it is.  Without one, make a disk of your "
+            "own: a bootable SpartaDOS 3.2 or DOS 2 disk with the files in "
             "`system/` on it, started at boot the way *Booting* describes "
             "or by hand from the DOS prompt, and `--disk` that "
             "instead.") + "\n",

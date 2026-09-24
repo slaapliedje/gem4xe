@@ -1552,7 +1552,8 @@ build/gem4xe-sdk.tar.gz: $(SDK_FILES)
 # that could go stale cannot).  DIST is the name it takes: the date and
 # the commit unless you say otherwise.
 DIST ?= build/gem4xe-$(shell date +%F)-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
-DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-cf.img
+DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-cf.img \
+             build/gem4xe-sys.car
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
              build/prefs.rsc \
@@ -1567,23 +1568,29 @@ dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
 # away (fixtures.toml.example), so it stays home and the page says so --
 # and the name, which is the version in VERSION rather than the date.  It
 # comes as a tarball and, for Windows, the same tree as a zip; the two
-# DOS-less floppies travel on their own as well, under the release's name,
-# for whoever wants the disks and nothing else.  One checksum file covers
-# the four, for the release page.  The first line asks the desktop's
-# resource what version its About box says, because 0.1.1 went out
-# saying 0.1 (phase38.md).
+# DOS-less floppies and THE CARTRIDGE travel on their own as well, under
+# the release's name, for whoever wants one thing and not the tree.  One
+# checksum file covers the five, for the release page.  The first line
+# asks the desktop's resource what version its About box says, because
+# 0.1.1 went out saying 0.1 (phase38.md).
+#
+# THE .CAR IS THE ONE THAT NEEDS NOTHING ELSE: no DOS, no disk, nothing
+# typed (docs/cartridge.md).  Everything else here wants something the
+# downloader has to find first.
 VERSION := $(shell cat VERSION)
 RELEASE  = build/gem4xe-$(VERSION)
 
-release: $(DIST_SYS) build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr build/gem4xe-sdk.tar.gz \
+release: $(DIST_SYS) build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr \
+         build/gem4xe-sys.car build/gem4xe-sdk.tar.gz \
          tools/mkdist.py tools/dist/README.md tools/mksdk.py
 	@python3 -c 'import sys; sys.exit(b"version $(VERSION)\0" not in open("build/desktop.rsc","rb").read())' \
 	    || { echo "build/desktop.rsc does not say version $(VERSION) (phase38.md)"; exit 1; }
 	python3 tools/mkdist.py $(RELEASE) --public --tar $(RELEASE).tar.gz --zip $(RELEASE).zip
 	cp build/gem-sdx.atr $(RELEASE).atr
 	cp build/gem-apps.atr $(RELEASE)-apps.atr
+	cp build/gem4xe-sys.car $(RELEASE).car
 	cd build && sha256sum gem4xe-$(VERSION).tar.gz gem4xe-$(VERSION).zip gem4xe-$(VERSION).atr \
-	    gem4xe-$(VERSION)-apps.atr > gem4xe-$(VERSION).sha256
+	    gem4xe-$(VERSION)-apps.atr gem4xe-$(VERSION).car > gem4xe-$(VERSION).sha256
 
 test-emu: 
 	python3 tests/emu/p0_probe.py

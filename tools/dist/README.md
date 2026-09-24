@@ -8,6 +8,22 @@ port of the Caldera-GPL Digital Research sources by way of EmuTOS, and
 it is early — this page says what works and what does not, and both
 halves are generated from the program itself.
 
+## The quickest way in
+
+**`gem4xe.car`.**  One file, on an Ultimate Cart, a MaxFlash or any
+other cartridge that takes an AtariMax 1 Mbit image — or handed to an
+emulator with `--cart`.  Turn the machine on and the desktop comes up:
+no DOS to find, no disk to write, nothing to type.
+
+It carries its own read-only `D1:`, so everything in `system/` below is
+on it and the system reads its files the ordinary way.  Two things to
+know: it takes about **twenty-six seconds** to read itself out of the
+ROM and prints a dot per segment while it does, so it has not hung; and
+it is **read-only**, so *Options → Save desktop* and copying a file will
+say they cannot.  Nothing else writes, so nothing else is affected.
+
+Everything below this line is the same gem4xe on media you can write to.
+
 ## The machine
 
 | | |
@@ -55,7 +71,8 @@ exists**.
 ## Booting
 
 **Put the disk in and wait.**  You should see the machine start, stop
-and start again, and then the desktop.
+and start again, and then the desktop.  (With the cartridge there is no
+disk, but the same restart happens and for the same reason.)
 
 The restart is not a fault.  A Rapidus **always cold-boots as a 6502** —
 Altirra's own device does it in `ColdReset()` ("reset FPGA, force boot
@@ -106,7 +123,7 @@ it a card of its own.
 
 {install}
 
-## What is on the disks
+## What is in the download
 
 {disks}
 

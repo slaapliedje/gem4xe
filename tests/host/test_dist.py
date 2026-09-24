@@ -31,6 +31,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import atr                                  # noqa: E402
 import deskrsc                              # noqa: E402
+import mkcar                                # noqa: E402
 import mkdist                               # noqa: E402
 
 BUILD = os.path.join(ROOT, "build")
@@ -197,12 +198,23 @@ class TestDistribution(unittest.TestCase):
         for src, dest, kind, _prose in mkdist.DISKS:
             if kind is None or not built(src):
                 continue
-            image = atr.ATRImage.load(os.path.join(self.out, dest))
-            if kind == "dos2":
-                names = [e.filename for e in atr.Dos2(image).entries()
+            path = os.path.join(self.out, dest)
+            if kind == "car":
+                # Not an ATR at all: a packed cartridge ROM, whose
+                # directory is read the way the machine reads it -- the
+                # handler at a fixed offset in the boot bank, and
+                # cd_dir's place inside it from the linker.
+                _t, ok, _used, names = mkcar.read_car(
+                    path, os.path.join(mkdist.BUILD, "cartd.elf"))
+                self.assertTrue(ok, f"{dest}: the checksum in the header is "
+                                    f"not the sum of the ROM")
+            elif kind == "dos2":
+                names = [e.filename
+                         for e in atr.Dos2(atr.ATRImage.load(path)).entries()
                          if e.in_use]
             else:
-                names = [e.filename for e in atr.Sdfs(image).entries("")]
+                names = [e.filename
+                         for e in atr.Sdfs(atr.ATRImage.load(path)).entries("")]
             # by its heading: another disk's prose may name this one first
             section = self.page.split(f"### `{dest}`")[1].split("###")[0]
             for n in names:

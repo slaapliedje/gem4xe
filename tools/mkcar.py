@@ -216,6 +216,37 @@ def car(rom, cart_type=CART_TYPE_MAXFLASH_1M):
             + b"\0\0\0\0" + rom)
 
 
+def read_car(path, dev_elf):
+    """A packed .car, read BACK: (type, ok checksum, used banks, [names]).
+
+    tools/mkdist.py's page says what is on each disk by opening the disk,
+    not by repeating the recipe that made it, and a cartridge is not an
+    exception -- what this returns came out of the file.  The directory
+    is found the way the machine finds it: the handler rides at a fixed
+    offset in the boot bank behind its "CD" header, and cd_dir's place
+    inside it is a linker symbol rather than a number written twice.
+    """
+    with open(path, "rb") as f:
+        car = f.read()
+    rom = car[16:]
+    ctype = int.from_bytes(car[4:8], "big")
+    ok = sum(rom) & 0xFFFFFFFF == int.from_bytes(car[8:12], "big")
+    used = sum(1 for i in range(BANKS)
+               if rom[i * BANK:(i + 1) * BANK] != bytes([ERASED]) * BANK)
+    at = BOOT_BANK * BANK + DEV_AT
+    names = []
+    if rom[at:at + len(DEV_MAGIC)] == DEV_MAGIC:
+        _segs, syms = mkxex.read_elf(dev_elf)
+        blob = at + DEV_HDR
+        n = rom[blob + syms["cd_dirlen"] - DEV_ORG]
+        base = blob + syms["cd_dir"] - DEV_ORG
+        for i in range(n):
+            e = rom[base + i * ENT_SIZE:base + (i + 1) * ENT_SIZE]
+            names.append(e[:8].decode("ascii").strip() + "."
+                         + e[8:11].decode("ascii").strip())
+    return ctype, ok, used, names
+
+
 def system():
     """What the release's loose `system/` folder holds, as (NAME, path).
 
