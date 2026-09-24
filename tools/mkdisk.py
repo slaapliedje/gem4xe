@@ -12,7 +12,8 @@ loads -- which means the program must arrive via the boot path, after the
 switch, not before it.
 
   python3 tools/mkdisk.py <source.atr> <program.xex> <out.atr> [NAME]
-                          [--enhanced] [--high] [--sweep] [--add FILE NAME]...
+                          [--enhanced] [--high] [--sweep] [--compact]
+                          [--add FILE NAME]...
                           [--remove NAME]...
 
 The default name is HELLO.COM: the fixture DOS is DOS II+/D 6.4, which boots to
@@ -31,6 +32,10 @@ DOS that boots.  That disk also passes `--remove DUP.SYS`, because the
 system outgrew it with the DOS's own shell on board -- seven sectors'
 worth -- and a floppy is now a test vehicle rather than how the thing is
 run (docs/shipping.md section 2).
+
+--compact, after the sweep, clears the deleted entries behind the last file
+so their slots can be used again: a fixture whose directory was full is
+otherwise full after the sweep too (atr.Dos2.compact says why).
 
 --enhanced makes the disk DOS 2.5 enhanced density (1040 sectors) before
 anything is written: the runner outgrew a single-density disk's 620 free
@@ -55,7 +60,7 @@ DOS_FILES = ("DOS.SYS", "DUP.SYS")
 
 
 def build(src_atr, xex, out_atr, name="HELLO.COM", extra=(), enhanced=False, high=False,
-          remove=(), sweep=False):
+          remove=(), sweep=False, compact=False):
     os.makedirs(os.path.dirname(os.path.abspath(out_atr)), exist_ok=True)
     img = ATRImage.load(src_atr)
     if enhanced:
@@ -67,6 +72,8 @@ def build(src_atr, xex, out_atr, name="HELLO.COM", extra=(), enhanced=False, hig
     for dname in remove:
         dos.delete(dname)
         print(f"{out_atr}: {dname} removed")
+    if compact:
+        print(f"{out_atr}: {dos.compact()} deleted entries cleared")
     for path, dname in ((xex, name),) + tuple(extra):
         if dos.find(dname):
             raise SystemExit(f"{out_atr}: {dname} already present in the image")
@@ -91,7 +98,7 @@ def main(argv):
         elif argv[i] == "--remove":
             remove.append(argv[i + 1])
             i += 2
-        elif argv[i] in ("--enhanced", "--high", "--sweep"):
+        elif argv[i] in ("--enhanced", "--high", "--sweep", "--compact"):
             flags.add(argv[i])
             i += 1
         else:
@@ -100,7 +107,7 @@ def main(argv):
     if len(args) < 3:
         raise SystemExit(__doc__.strip().splitlines()[-1])
     build(*args[:4], extra=extra, enhanced="--enhanced" in flags, high="--high" in flags,
-          remove=remove, sweep="--sweep" in flags)
+          remove=remove, sweep="--sweep" in flags, compact="--compact" in flags)
 
 
 if __name__ == "__main__":

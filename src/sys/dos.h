@@ -64,6 +64,12 @@
                                    it (SDX Programming Guide 4.50, 8.1.1;
                                    3.2g measured).  src/sys/gemdos.c */
 #define DOS_CAP_STAMPS 0x04     /* the entries carry a date and a time */
+#define DOS_CAP_DRVBYT 0x08     /* $070A is DOS 2's DRVBYT, a bitmap of the
+                                   drives it will talk to, and Drvmap may
+                                   return it.  Every DOS_2 but MyDOS: its
+                                   boot flag at $0700 is 'M' and its $070A
+                                   is $08 on a one-drive machine, which as a
+                                   bitmap is drive D (docs/phase50.md) */
 
 typedef struct {
     uint8_t  kind;              /* DOS_2 .. DOS_SDX */

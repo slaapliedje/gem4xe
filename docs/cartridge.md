@@ -131,10 +131,10 @@ everybody with a FujiNet, an SDrive, an SD cartridge or a real drive,
 and a `.car` serves only people with a cartridge that takes one.  So it
 is worth doing **after**, not before.  When it is:
 
-- **MyDOS is the obvious candidate and MyDOS mangles the staged far
-  image** (`docs/shipping.md` §2 -- twelve bytes lost at bank `$01`
-  +`$20`, deterministic, both versions, both load paths, cause unknown).
-  A bug hunt, and the answer is worth having whatever is decided here.
+- **MyDOS is the obvious candidate, and it works now** (`docs/phase50.md`):
+  it never mangled the load, it saved CIO's zero-page IOCB with a 6502
+  wrap that a 65816 carries into bank `$01`.  `make test-mydos` boots the
+  desktop from it.  What is left is whether it may be redistributed.
 - **BW-DOS** is the other candidate and has never been tried.
 
 ## 7. FujiNet

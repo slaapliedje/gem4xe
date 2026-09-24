@@ -1286,13 +1286,17 @@ static LONG gd_dfree(LONG buf, WORD drv)
 }
 
 /* Dsetdrv's return, Drvmap's: which drives are there.  DOS 2 keeps a
- * bit per drive it will talk to; a SpartaDOS keeps no such map (SDX
- * Programming Guide 4.50, chapter 5, has none), and asking each unit
- * costs a SIO timeout for every one that is absent, so A and B are
- * claimed and DESKTOP.INF is left to say which icons there are. */
+ * bit per drive it will talk to, and so does the cartridge's read-only
+ * D1: (src/cartd.s).  A SpartaDOS keeps no such map (SDX Programming
+ * Guide 4.50, chapter 5, has none), and MyDOS keeps something else at the
+ * same address -- $08 on a one-drive machine, which read as a map put the
+ * only icon on the desk at D:.  Asking each unit costs a SIO timeout for
+ * every one that is absent, so for those A and B are claimed and
+ * DESKTOP.INF is left to say which icons there are.  dos_ident decides
+ * which it is (DOS_CAP_DRVBYT). */
 static LONG gd_drvmap(void)
 {
-    if (dos.kind == DOS_2)
+    if (dos.caps & DOS_CAP_DRVBYT)
         return DRVBYT ? DRVBYT : 1;
     return 0x03;
 }

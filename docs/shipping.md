@@ -241,21 +241,16 @@ want of seven sectors, back since the image is packed) and ours.  The DOS is the
 German Atari **"DISK OPERATING SYSTEM II"** of 1990 (H. Barth and
 F. Bruchhäuser), which does double density and does run `AUTORUN.SYS`.
 
-**MyDOS does not work, and the reason is not known.**  It is the obvious
-choice -- double density, hard disks, subdirectories, `AUTORUN.SYS` --
-and GEM crashes under it every time, at the same place: twelve bytes of
-the far image are missing at bank `$01` offset `$20`, the first
-`gemdos_call` runs into the zeros and takes a BRK.  What is established:
-the file on the disk is byte-for-byte `build/gem.xex`; the near part of
-the program loads correctly; the staging buffer holds the right bytes
-when the load is over, so they *were* read; and it happens under MyDOS
-4.50T and 4.53/4 alike, from `AUTORUN.SYS` and from the DUP menu, while
-the same file under this DOS and under SpartaDOS arrives perfect.  So it
-is something about MyDOS's binary loader and our chunk staging
-(`tools/mkxex.py`, `src/farload.s`), and it wants an hour with a
-watchpoint that the bridge does not have yet.  It matters for the hard
-media of section 3 only if the hard-disk DOS is MyDOS; SpartaDOS X, which
-is what APT wants, is unaffected.
+**MyDOS works now, and the reason it did not is known** (`docs/phase50.md`).  It was never MyDOS's loader: MyDOS saves CIO's zero-page IOCB around the
+`INITAD` call with `lda/sta $FF2C,y`, which wraps to `$0020` on a 6502 and
+carries into `$010020` on a 65816 -- in emulation mode too, on the real
+chip as in Altirra -- so every call wrote a stale snapshot over the first
+chunk's bytes 32 to 43.  Bank `$01`'s first page is nobody's now
+(`src/gem4xe.scm`, `wrap-page-end`) and `make test-mydos` boots the
+desktop from it.  Its `$070A` is not DOS 2's drive map either, and
+`dos_ident` knows MyDOS by the `'M'` it signs its boot record with.  A
+MyDOS floppy is not a product disk yet: whether it may be redistributed
+has not been checked.
 
 **Ultimate 1MB flash / a cartridge**: the deployment story
 flashjazzcat's GUI uses, and the one that makes gem4xe feel like part

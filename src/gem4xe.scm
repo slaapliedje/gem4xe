@@ -130,8 +130,24 @@
             (list 'address (cons (+ base #xd600) (+ base #xffff)))
             '(section cfar farcode switch)))))
 
+;;; AND BANK $01'S FIRST PAGE IS NOBODY'S, which is the same kind of hole
+;;; for a reason that is not an emulator's.  A 6502 wraps at $FFFF: `lda
+;;; $FF2C,y` with Y = $F4 reads $0020.  A 65816 does NOT, even in emulation
+;;; mode -- absolute indexed and (zp),y carry into the next bank -- so the
+;;; same instruction reads $010020.  Every piece of 6502 code that leans on
+;;; the wrap therefore lands in $010000-$0100FE, and there is such code:
+;;; MyDOS 4.50 saves CIO's zero-page IOCB around the INITAD call that way
+;;; (`lda $FF2C,y` / `sta ICHID,x`, then back with `sta $FF2C,y`), so on a
+;;; 65816 it snapshots $010020-$01002B before our unpacker runs and writes
+;;; the snapshot back after -- and the twelve bytes of far code there were
+;;; zeros every time.  That was "MyDOS mangles the staged image", open
+;;; since the product floppies (docs/shipping.md); a self-logging copy of
+;;; GEM.COM found it in an afternoon (docs/phase50.md).  So bank $01 starts
+;;; a page up, whatever the caller asks, and the wrap has nowhere to land.
+(define wrap-page-end #x010100)
+
 (define (far-banks first)
-  (append (far-bank 1 first)
+  (append (far-bank 1 (max first wrap-page-end))
           (apply append (map (lambda (b) (far-bank b (* b #x10000)))
                              '(2 3 4 5 6 7 8 9 10 11 12 13 14 15)))))
 

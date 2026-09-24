@@ -16,9 +16,15 @@ sd_dos2 = "/path/to/some-dos2-disk.atr"
 # disk: the DOS has to run AUTORUN.SYS and keep its DUP.SYS, and only the
 # boot sectors, DOS.SYS and DUP.SYS are taken from it (tools/mkdisk.py
 # --sweep).  docs/shipping.md section 2 says which DOSes qualify --
-# notably DOS II+/D has no AUTORUN.SYS at all, and MyDOS mangles the far
-# image.
+# notably DOS II+/D has no AUTORUN.SYS at all.
 dd_dos2 = "/path/to/some-double-density-dos2-disk.atr"
+
+# A bootable MyDOS 4.50 disk, double density; test-mydos sweeps it down to
+# DOS.SYS and DUP.SYS and boots the system from it as AUTORUN.SYS.  MyDOS
+# used to lose twelve bytes of the far image -- it saves CIO's zero-page
+# IOCB with `sta $FF2C,y`, which a 65816 carries into bank $01 -- and this
+# is the gate that keeps that fixed (docs/phase50.md).
+mydos = "/path/to/mydos-450.atr"
 
 [spartados]
 # A bootable SpartaDOS 3.2 disk (SDFS, 720 x 128).  The harness copies its

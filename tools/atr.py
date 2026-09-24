@@ -208,6 +208,25 @@ class Dos2:
         raw[(e.index % 8) * 16:(e.index % 8) * 16 + 16] = e.pack()
         self.img.write_sector(sec, raw)
 
+    def compact(self):
+        """Turn every deleted entry after the last file into end-of-
+        directory, and say how many.  add_file will not reuse a deleted
+        entry that still has a count -- that is somebody's undeletable
+        file -- so a fixture with a full directory swept down to its DOS
+        has no room left for anything, which is what the MyDOS fixture is
+        (64 files on a 1440-sector disk).  Only TRAILING entries: a zero
+        flag ends the listing, so one in the middle would hide the files
+        after it.  The sectors were freed by delete() already."""
+        es = self.entries()
+        last = max((e.index for e in es if e.in_use), default=-1)
+        n = 0
+        for e in es[last + 1:]:
+            if e.flag:
+                e.flag, e.count, e.start = 0, 0, 0
+                self._write_entry(e)
+                n += 1
+        return n
+
     def find(self, filename):
         filename = filename.upper()
         for e in self.entries():

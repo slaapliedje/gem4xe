@@ -22,7 +22,10 @@ void dos_ident(void)
     const uint8_t *comtab = DOSVEC;
 
     dos.kind = DOS_2;
-    dos.caps = 0;
+    /* A DOS 2's boot flag is zero and MyDOS's is 'M' -- the same byte a
+     * SpartaDOS signs with 'S', below.  MyDOS is a DOS 2 in everything
+     * gem4xe asks of it except $070A, which is not its drive map. */
+    dos.caps = (uint8_t)(DOSBASE[0] == 'M' ? 0 : DOS_CAP_DRVBYT);
     dos.dirsep = 0;
     dos.memlo = MEMLO;
     dos.memtop = MEMTOP;

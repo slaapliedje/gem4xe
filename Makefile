@@ -58,6 +58,7 @@ SRC_DOS  ?= $(shell python3 -c "import tomllib;print(tomllib.load(open('fixtures
 # the DOS's own shell and applications besides -- and because that DOS runs
 # AUTORUN.SYS, which is how the disk comes up in the desktop.
 SRC_DD   ?= $(shell python3 -c "import tomllib;print(tomllib.load(open('fixtures.toml','rb'))['dos']['dd_dos2'])" 2>/dev/null)
+SRC_MYDOS ?= $(shell python3 -c "import tomllib;print(tomllib.load(open('fixtures.toml','rb'))['dos']['mydos'])" 2>/dev/null)
 # SpartaDOS 3.2 boot disk and the SpartaDOS X cartridge, [spartados] in
 # fixtures.toml -- the SpartaGEM gate (docs/phase13.md) boots the one and
 # then the other, with the same program.
@@ -1160,6 +1161,18 @@ build/gem4xe-sys.car: build/cart.elf build/cartd.elf $(CART_FILES) \
                       tools/mkcar.py tools/mkdist.py tools/mkxex.py Makefile
 	python3 tools/mkcar.py build/cart.elf $@ --dev build/cartd.elf --system
 
+# The system on MyDOS 4.50, as AUTORUN.SYS beside the DOS's own files --
+# not a product disk (MyDOS's licence has not been checked, so it stays
+# home like the DOS 2 one) but the gate that keeps MyDOS working: it lost
+# twelve bytes of the far image for as long as the product floppies have
+# existed, and the cause was bank $01's first page (src/gem4xe.scm).
+# --compact because the fixture's directory was full before the sweep.
+build/gem-mydos.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/lang.rsc build/816.com
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
+	    $(DOS2_FILES)
+
 build/816.com: tools/mk816.py
 	@mkdir -p build
 	python3 tools/mk816.py $@
@@ -1479,7 +1492,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-boot test-install
+test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1729,6 +1742,12 @@ test-m16: build/m14-boot.atr
 # ends with Ptermres and must be kept.
 # The cartridge (docs/cartridge.md), step one: the format and the boot
 # path, before the CPU switch or any staging goes on top of them.
+# MyDOS 4.50 boots the system into the desktop: the far image arrives
+# whole, the drive map is not read out of MyDOS's $070A, and the desk
+# matches the model (docs/phase49.md).
+test-mydos: build/gem-mydos.atr build/desktop.g4a build/desktop.sym build/gem.sym
+	python3 tests/emu/mydos_boot.py
+
 test-m37: build/gem4xe.car build/gem4xe-d1.car build/gem4xe-sys.car \
           build/desktop.g4a build/desktop.sym build/gem.sym
 	python3 tests/emu/m37_cart.py
@@ -1966,4 +1985,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
