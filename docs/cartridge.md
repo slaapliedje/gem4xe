@@ -312,6 +312,19 @@ Two things could be done about it, neither of them step four's:
   than the firmware's, which `test-boot` reads, so it is a change with a
   gate of its own.
 
+## 10. Saving, when there is a floppy
+
+BUILT, 2026-09-24 (`docs/phase51.md`).  With a DOS disk in drive 1 the
+OS boots it first (`$BFFD` bit 0) and the cartridge's D1: becomes an
+**overlay**: reads try the floppy and fall back to the ROM, writes go to
+the floppy, and the listing is the ROM's entries the floppy lacks
+followed by the floppy's own.  Other units are the DOS's.  So *Save
+desktop* and a control panel extension's settings land on the floppy
+and win over the ROM at the next boot -- with no change to gem4xe, whose
+every write is an `Fcreate`.  With no drive it is the read-only
+cartridge above, about two seconds slower to start.  Tape is out: a
+cassette has no names and no directory.
+
 The demo it produces is a machine that comes up in the desktop with a
 drive icon, the trash, three accessories in the Desk menu and programs to
 double-click -- from one file, with nothing typed and nothing else to

@@ -47,8 +47,17 @@ CARTDSUM:     .equ    0x060a          ; 16-bit: and their sum
 ;;; RECORDS rather than at a checksum of them.  A sum that matches proves
 ;;; the bytes; it does not prove they are in DOS 2's shape, and the shape
 ;;; is what src/sys/dos.c parses.
-CARTDTXT:     .equ    0x0680
-CARTDMAX:     .equ    64
+CARTDTXT:     .equ    0x3000          ; ...out of page 6, which src/cartd.s's
+CARTDMAX:     .equ    255             ; state now fills, and long enough for
+                                      ; the overlay's listing: the ROM's part
+                                      ; AND a floppy's after it.  Nothing is
+                                      ; loaded here on an image with no system
+;;; ...and the overlay's write, read back: 16-bit length and sum, and the
+;;; step it reached (src/cartd.s; only with a DOS underneath).
+CARTWLEN:     .equ    0x06b0
+CARTWSUM:     .equ    0x06b2
+;;; Set by the D: handler's install: 1 if a DOS had booted first (src/cartd.s).
+CD_HASDOS:    .equ    0x060c
 ;;; ...and how far the load got, for the same reason: a machine that comes
 ;;; up black has to be able to say which of a dozen things did not happen.
 STEP_OPEN:    .equ    16              ; D1:GEM.COM opened
@@ -100,9 +109,7 @@ STUB:         .equ    0x0610          ; page 6, above the flags
 ;;; $AFFF so the two cannot collide -- and runs at $0700, where a DOS
 ;;; would have been.  It cannot run from the cartridge for the same reason
 ;;; the copier cannot: reading a file switches the window it would be in.
-DEV_AT:       .equ    0xb000          ; where it rides
-DEV_ORG:      .equ    0x0700          ; where it runs
-DEV_ROOM:     .equ    0x0800          ; how much there is room for
+DEV_AT:       .equ    0xb000          ; where it rides, and runs (src/cartd.scm)
 ;;; A four-byte header in front of it: 'C', 'D', and the length.  Erased
 ;;; flash reads as $FF, and without this the bootstrap copied 2 KB of $FF
 ;;; to $0700 and CALLED it on an image that carries no handler -- which
@@ -147,9 +154,13 @@ COLDSV:       .equ    0xe477          ; the OS's cold start
 ;;; uses zero page $D4-$E5 (src/farload.s) -- so these are not in zero
 ;;; page at all.  Nothing here needs indirect addressing: CIO is given
 ;;; the destination and does the storing.
-LD_W:         .equ    0x0640          ; 16-bit: the header word just read
-LD_START:     .equ    0x0642          ; 16-bit: this segment's first address
-LD_LEN:       .equ    0x0644          ; 16-bit: and how many bytes it carries
+LD_W:         .equ    0x0620          ; 16-bit: the header word just read
+LD_START:     .equ    0x0622          ; 16-bit: this segment's first address
+LD_LEN:       .equ    0x0624          ; 16-bit: and how many bytes it carries
+;;; (Page 6 as a whole: $0600-$060C the flags above, $0610 the D: handler's
+;;; fetch stub -- or the staging copier, on the image with no handler --
+;;; $0620 these, $0626-$06AA the handler's state, $06C0 the demo's listing.
+;;; src/cartd.s names its half.)
 
 ;;; The unpacker's pointers, in the floating-point package's FR0/FRE/FR1.
 ;;; NOT a direct page of our own: this runs with the OS's interrupts
@@ -165,13 +176,22 @@ DP_RUN:       .equ    0xe4            ; 8-bit:  which bank we are on
 
 ;;; ---------------------------------------------------------------------------
 ;;; cart_init -- called by the OS during its own start-up, BEFORE the
-;;; screen exists and before most of the OS's variables are set.  The
-;;; rule for this entry is that almost nothing is safe to touch yet, so
-;;; it records that it ran and returns; the work is cart_run's.
+;;; screen exists, and BEFORE THE DISK BOOT that $BFFD bit 0 asks for.
+;;;
+;;; THAT ORDER IS WHY THE CPU SWITCH IS HERE.  A Rapidus cold-boots as a
+;;; 6502, and switching it resets the machine.  Switched from CARTRUN, the
+;;; floppy's DOS would have booted once on the 6502 and then again after
+;;; the reset; switched here, before the boot, it boots once, on the
+;;; 65816.  Nothing is printed -- there is no screen yet -- and a machine
+;;; with no card to switch simply comes back from this and is told so by
+;;; cart_run, which asks the same question again.
 ;;; ---------------------------------------------------------------------------
 cart_init:    lda     #1
               sta     CARTSTEP        ; 1 = the OS called our init
-              rts
+              jsr     cart_is816
+              bcs     90$
+              jsr     cart_rapswitch  ; ...and does not come back if it can
+90$:          rts
 
 ;;; ---------------------------------------------------------------------------
 ;;; cart_run -- the OS is up, the screen is up, and this is ours.
@@ -205,46 +225,7 @@ cart_run:     lda     #2
               lda     #3
               sta     CARTSTEP        ; 3 = and it printed
 
-;;; ---------------------------------------------------------------------------
-;;; Which CPU is this?  Every instruction from here to the point where a
-;;; 65816 is confirmed is a plain 6502 one, because that is what the
-;;; machine may be.  The sequence is src/farload.s's fl_check, for its
-;;; reasons -- it is the same question asked from a different place, and
-;;; asking it a second way would only give it a second way to be wrong.
-;;;
-;;; 1. NMOS or CMOS?  Decimal ADC sets N and Z from the BINARY result on
-;;;    an NMOS 6502 and from the decimal one on everything later, so
-;;;    $99 + $01 = $00 reads as non-zero on a 6502 alone.  This has to go
-;;;    first: $FB (XCE) is an unstable read-modify-write on NMOS, so it
-;;;    cannot be the instruction that leads.
-;;; ---------------------------------------------------------------------------
-              sed
-              lda     #0x99
-              clc
-              adc     #0x01
-              cld
-              beq     1$
-              jmp     cart_no816      ; out of a branch's reach since staging
-1$:
-
-;;; 2. CMOS -- a 65C02 or a 65816?  `clc xce` returns the old E flag in
-;;;    carry on a 65816; on a 65C02 $FB is a one-byte NOP and carry stays
-;;;    clear.  The machine is in NATIVE MODE for three instructions, where
-;;;    the interrupt vectors move to $FFEA/$FFEE and this OS has never
-;;;    filled them -- so ANTIC's NMI goes off across the window rather
-;;;    than being gambled on.
-              lda     NMIEN
-              pha
-              lda     #0
-              sta     NMIEN
-              clc
-              xce
-              php                     ; carry now says what the CPU is
-              sec
-              xce                     ; ...back to emulation mode at once
-              plp
-              pla
-              sta     NMIEN
+              jsr     cart_is816
               bcs     2$
               jmp     cart_no816
 2$:
@@ -291,27 +272,10 @@ cart_dev:     lda     DEV_AT
               rts
 2$:           lda     #10
               sta     CARTSTEP        ; 10 = installing D1:
-;;; The handler down to $0700, a page at a time.  The length in the header
-;;; is rounded up to a page, which is why only its high byte is read.
-              lda     #.byte0 DEV_BLOB
-              sta     dp:DP_SRC
-              lda     #.byte1 DEV_BLOB
-              sta     dp:DP_SRC+1
-              lda     #.byte0 DEV_ORG
-              sta     dp:DP_DST
-              lda     #.byte1 DEV_ORG
-              sta     dp:DP_DST+1
-              ldx     #DEV_ROOM/256
-10$:          ldy     #0
-20$:          lda     (dp:DP_SRC),y
-              sta     (dp:DP_DST),y
-              iny
-              bne     20$
-              inc     dp:DP_SRC+1
-              inc     dp:DP_DST+1
-              dex
-              bne     10$
-              jsr     DEV_ORG         ; a jmp to cd_install is its first byte
+;;; It runs where it rides -- a JMP to cd_install is its first byte -- and
+;;; not at $0700, where it used to be copied: that is a DOS's, and the
+;;; handler now shares D: with one if the machine booted one first.
+              jsr     DEV_BLOB
 
               lda     #11
               sta     CARTSTEP        ; 11 = installed
@@ -320,12 +284,15 @@ cart_dev:     lda     DEV_AT
 ;;; desktop's Quit to arrive.  A cold start is the honest answer on a
 ;;; cartridge: the machine comes back up, finds the cartridge still in the
 ;;; slot, and boots the desktop again -- which is what "quit" means when
-;;; the system IS the machine.
+;;; the system IS the machine.  With a DOS underneath, DOSVEC is the DOS's
+;;; and stays so: quitting goes to its menu, as it would from a disk.
+              lda     CD_HASDOS
+              bne     15$
               lda     #.byte0 COLDSV
               sta     DOSVEC
               lda     #.byte1 COLDSV
               sta     DOSVEC+1
-              sec
+15$:          sec
               rts
 
 ;;; ---------------------------------------------------------------------------
@@ -341,6 +308,17 @@ cart_dev:     lda     DEV_AT
 ;;; ---------------------------------------------------------------------------
 ;;; OPEN #1, 4, 0, "D1:HELLO.TXT"
 cart_demo:
+;;; The counters from zero: RAM is whatever it powered up as on a real
+;;; machine, and an emulator that clears it would hide that.
+              lda     #0
+              ldx     #CARTDSUM+1-CARTFLEN
+1$:           sta     CARTFLEN,x
+              dex
+              bpl     1$
+              sta     CARTWLEN
+              sta     CARTWLEN+1
+              sta     CARTWSUM
+              sta     CARTWSUM+1
               ldx     #IOCB1
               lda     #3
               sta     ICCOM,x
@@ -368,8 +346,8 @@ cart_demo:
               sta     ICBLL,x
               sta     ICBLH,x
               jsr     CIOV
-              cpy     #1
-              bne     80$
+              cpy     #0x80           ; 1, or 3 for "the last one" (MyDOS)
+              bcs     80$
               clc
               adc     CARTFSUM
               sta     CARTFSUM
@@ -412,8 +390,8 @@ cart_demo:
               sta     ICBLL,x
               sta     ICBLH,x
               jsr     CIOV
-              cpy     #1
-              bne     84$
+              cpy     #0x80
+              bcs     84$
               pha
               clc
               adc     CARTDSUM
@@ -424,7 +402,7 @@ cart_demo:
               ldx     CARTDLEN
               cpx     #CARTDMAX
               bcs     835$
-              sta     CARTDTXT,x      ; A still holds it: keep the first 64
+              sta     CARTDTXT,x      ; A still holds it: keep the first 255
 835$:         inc     CARTDLEN
               bne     82$
               inc     CARTDLEN+1
@@ -435,6 +413,9 @@ cart_demo:
               jsr     CIOV
               lda     #15
               sta     CARTSTEP        ; 15 = and the listing came back
+              lda     CD_HASDOS
+              beq     85$
+              jsr     cart_wtest      ; a DOS underneath: the write side too
 85$:          ldx     #.byte0 msg_d1
               ldy     #.byte1 msg_d1
               lda     #msg_d1_end-msg_d1
@@ -443,6 +424,89 @@ cart_demo:
 
 dev_name:     .byte   "D1:HELLO.TXT", 0x9b
 dev_dir:      .byte   "D1:*.*", 0x9b
+
+;;; ---------------------------------------------------------------------------
+;;; cart_wtest -- the overlay's write side, when a DOS booted first: a file
+;;; CREATED on D1: -- which the ROM cannot hold, so the floppy must -- then
+;;; opened again through the same D1: and read back.  The gate compares
+;;; the read with what was written and then reads the FLOPPY IMAGE itself,
+;;; so "it went to the floppy" is a fact about the disk and not about what
+;;; the cartridge says.  This is the shape of every write gem4xe makes: an
+;;; Fcreate is an OPEN with AUX1 8 (src/sys/gemdos.c), and nothing in the
+;;; system updates a file in place.
+;;; ---------------------------------------------------------------------------
+cart_wtest:   ldx     #IOCB1
+              lda     #3
+              sta     ICCOM,x
+              lda     #.byte0 dev_saved
+              sta     ICBAL,x
+              lda     #.byte1 dev_saved
+              sta     ICBAH,x
+              lda     #8
+              sta     ICAX1,x
+              lda     #0
+              sta     ICAX2,x
+              jsr     CIOV
+              bpl     10$
+              rts                     ; CARTSTEP stays 15: the create failed
+10$:          ldx     #IOCB1
+              lda     #11             ; PUT, the whole line
+              sta     ICCOM,x
+              lda     #.byte0 saved_txt
+              sta     ICBAL,x
+              lda     #.byte1 saved_txt
+              sta     ICBAH,x
+              lda     #saved_txt_end-saved_txt
+              sta     ICBLL,x
+              lda     #0
+              sta     ICBLH,x
+              jsr     CIOV
+              php
+              jsr     ld_close
+              plp
+              bpl     20$
+              rts
+20$:          lda     #20
+              sta     CARTSTEP        ; 20 = written and closed
+;;; ...and back, through the same overlay: the floppy's copy is the only one.
+              ldx     #IOCB1
+              lda     #3
+              sta     ICCOM,x
+              lda     #.byte0 dev_saved
+              sta     ICBAL,x
+              lda     #.byte1 dev_saved
+              sta     ICBAH,x
+              lda     #4
+              sta     ICAX1,x
+              lda     #0
+              sta     ICAX2,x
+              jsr     CIOV
+              bmi     90$
+30$:          ldx     #IOCB1
+              lda     #7
+              sta     ICCOM,x
+              lda     #0
+              sta     ICBLL,x
+              sta     ICBLH,x
+              jsr     CIOV
+              cpy     #0x80
+              bcs     80$
+              clc
+              adc     CARTWSUM
+              sta     CARTWSUM
+              bcc     40$
+              inc     CARTWSUM+1
+40$:          inc     CARTWLEN
+              bne     30$
+              inc     CARTWLEN+1
+              jmp     30$
+80$:          lda     #21
+              sta     CARTSTEP        ; 21 = and it read back
+90$:          jmp     ld_close
+
+dev_saved:    .byte   "D1:SAVED.TXT", 0x9b
+saved_txt:    .byte   "written through the cartridge's D1:", 0x9b
+saved_txt_end:
 
 ;;; ---------------------------------------------------------------------------
 ;;; cart_boot -- D1:GEM.COM, loaded and run.  This is the whole of step
@@ -740,6 +804,52 @@ cart_stub:    ldx     dp:DP_RUN
 cart_stub_end:
 
 ;;; ---------------------------------------------------------------------------
+;;; Which CPU is this?  Every instruction from here to the point where a
+;;; 65816 is confirmed is a plain 6502 one, because that is what the
+;;; machine may be.  The sequence is src/farload.s's fl_check, for its
+;;; reasons -- it is the same question asked from a different place, and
+;;; asking it a second way would only give it a second way to be wrong.
+;;;
+;;; cart_is816 -- carry set if this is a 65816, and every instruction
+;;; that finds out is one a 6502 runs as written.  Used by cart_init and
+;;; cart_run alike.
+;;;
+;;; 1. NMOS or CMOS?  Decimal ADC sets N and Z from the BINARY result on
+;;;    an NMOS 6502 and from the decimal one on everything later, so
+;;;    $99 + $01 = $00 reads as non-zero on a 6502 alone.  This has to go
+;;;    first: $FB (XCE) is an unstable read-modify-write on NMOS, so it
+;;;    cannot be the instruction that leads.
+;;; ---------------------------------------------------------------------------
+cart_is816:   sed
+              lda     #0x99
+              clc
+              adc     #0x01
+              cld
+              bne     cart_not816
+
+;;; 2. CMOS -- a 65C02 or a 65816?  `clc xce` returns the old E flag in
+;;;    carry on a 65816; on a 65C02 $FB is a one-byte NOP and carry stays
+;;;    clear.  The machine is in NATIVE MODE for three instructions, where
+;;;    the interrupt vectors move to $FFEA/$FFEE and this OS has never
+;;;    filled them -- so ANTIC's NMI goes off across the window rather
+;;;    than being gambled on.
+              lda     NMIEN
+              pha
+              lda     #0
+              sta     NMIEN
+              clc
+              xce
+              php                     ; carry now says what the CPU is
+              sec
+              xce                     ; ...back to emulation mode at once
+              plp
+              pla
+              sta     NMIEN
+              rts                     ; carry: set on a 65816, clear on a 65C02
+cart_not816:  clc
+              rts
+
+;;; ---------------------------------------------------------------------------
 ;;; cart_no816 -- not a 65816.  Before saying so, look for a Rapidus that
 ;;; has simply cold-booted as a 6502, which is how one ALWAYS comes up.
 ;;;
@@ -763,6 +873,10 @@ cart_stub_end:
 ;;; ---------------------------------------------------------------------------
 cart_no816:   lda     #5
               sta     CARTSTEP        ; 5 = looking for a Rapidus
+              jsr     cart_rapswitch  ; not back if it found one
+              jmp     cart_norap
+
+cart_rapswitch:
               lda     #1              ; PBI device 1, then 2, 4, ...
 20$:          sta     PDVS            ; select it; the registers appear
               pha
@@ -781,8 +895,9 @@ cart_no816:   lda     #5
               asl     a
               bcc     20$
               sta     PDVS            ; $00: nothing selected, as we found it
+              rts
 
-              lda     #CPU_NO816
+cart_norap:   lda     #CPU_NO816
               sta     CARTCPU
               lda     #6
               sta     CARTSTEP        ; 6 = and there was no Rapidus
@@ -837,5 +952,8 @@ msg_load_end:
               .section carthdr, root
               .word   cart_run        ; $BFFA
               .byte   0               ; $BFFC  0 = a cartridge is here
-              .byte   4               ; $BFFD  bit 2 = jump to CARTRUN
+              .byte   5               ; $BFFD  bit 2 = jump to CARTRUN, and
+                                      ;        bit 0 = boot a disk first: a
+                                      ;        DOS on it shares D: with the
+                                      ;        ROM, and saves go to the floppy
               .word   cart_init       ; $BFFE

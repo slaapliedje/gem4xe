@@ -133,9 +133,13 @@ uint8_t dos_dirline(const char *line, uint16_t got, char *fname,
     n = dir_field(line + 2, 8, fname);
     if (n <= 0 || !(fname[0] >= 'A' && fname[0] <= 'Z'))
         return DOS_ENT_NONE;
+    /* The size is every digit from column 14 to the end of the line, not
+     * three of them: MyDOS prints FOUR on a double-density disk ("DOS
+     * SYS 0018"), and reading three made every file there a tenth of its
+     * size (docs/phase50.md). */
     if (sectors) {
         uint16_t v = 0;
-        for (e = 14; e < DIRLINE; e++) {
+        for (e = 14; e < (int16_t)got && e < DIRLINE + 3; e++) {
             int c = (uint8_t)line[e];
             if (c >= '0' && c <= '9')
                 v = v * 10 + (c - '0');

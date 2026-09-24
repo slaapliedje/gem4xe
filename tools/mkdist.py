@@ -83,10 +83,12 @@ DISKS = [
      "takes about twenty-six seconds** — a Rapidus comes up with "
      "every window on the 1.79 MHz bus and nothing raises that until GEM "
      "is running — so it prints a dot per segment while it works; it "
-     "has not hung.  And it is **read-only**, so *Options → Save "
-     "desktop* and copying a file will tell you they cannot.  Everything "
-     "else works, because nothing else writes.  It wants the same machine "
-     "the rest of this does: a 65C816 and VBXE."),
+     "has not hung.  On its own it is **read-only**, so *Options \u2192 "
+     "Save desktop* and copying a file will tell you they cannot.  With a "
+     "DOS floppy in drive 1 as well -- MyDOS or DOS 2, or an ATR on a "
+     "FujiNet -- the DOS boots first and saves go to the floppy, whose "
+     "files win over the cartridge's.  It wants the same machine the "
+     "rest of this does: a 65C816 and VBXE."),
     ("gem-boot.atr", "disks/gem-boot.atr", "dos2",
      "A double-density DOS 2 floppy, 180 KB.  GEM is AUTORUN.SYS, which "
      "this DOS runs at boot, and the DOS's own DUP.SYS is beside it, "

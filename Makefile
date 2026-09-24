@@ -1173,6 +1173,14 @@ build/gem-mydos.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/lan
 	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
 	    $(DOS2_FILES)
 
+# A MyDOS floppy to put beside the cartridge: the DOS and nothing but a
+# HELLO.TXT whose contents are NOT the ROM's, so that which one a read
+# gets says which layer of the overlay won (tests/emu/m37_cart.py).
+build/cart-floppy.atr: tests/fixtures/out.txt
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ HELLO.TXT --sweep --compact
+
 build/816.com: tools/mk816.py
 	@mkdir -p build
 	python3 tools/mk816.py $@
@@ -1748,7 +1756,7 @@ test-m16: build/m14-boot.atr
 test-mydos: build/gem-mydos.atr build/desktop.g4a build/desktop.sym build/gem.sym
 	python3 tests/emu/mydos_boot.py
 
-test-m37: build/gem4xe.car build/gem4xe-d1.car build/gem4xe-sys.car \
+test-m37: build/gem4xe.car build/gem4xe-d1.car build/gem4xe-sys.car build/cart-floppy.atr \
           build/desktop.g4a build/desktop.sym build/gem.sym
 	python3 tests/emu/m37_cart.py
 

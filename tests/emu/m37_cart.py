@@ -58,19 +58,33 @@ import sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from a8test.launcher import launch          # noqa: E402
-import mkcar, symfile, vbxeref              # noqa: E402
+from a8test.launcher import launch, config_dir_for  # noqa: E402
+import atr, mkcar, symfile, vbxeref         # noqa: E402
 from m4_aes import SHOTDIR                  # noqa: E402
 from product_boot import desk_model         # noqa: E402
 
 CAR = os.path.abspath(os.path.join(ROOT, "build", "gem4xe.car"))
 CAR_D1 = os.path.abspath(os.path.join(ROOT, "build", "gem4xe-d1.car"))
 CAR_SYS = os.path.abspath(os.path.join(ROOT, "build", "gem4xe-sys.car"))
+# A MyDOS floppy for the overlay (Makefile, build/cart-floppy.atr): the DOS
+# and a HELLO.TXT whose contents are tests/fixtures/out.txt -- NOT the
+# ROM's -- so which one a read gets says which layer won.
+FLOPPY = os.path.abspath(os.path.join(ROOT, "build", "cart-floppy.atr"))
+FLOPPY_HELLO = os.path.join(ROOT, "tests", "fixtures", "out.txt")
+CD_HASDOS = 0x060C                          # src/cartd.s
+CARTWLEN, CARTWSUM = 0x06B0, 0x06B2         # src/cart.s cart_wtest
+STEP_WRITTEN, STEP_READBACK = 20, 21
+# What cart_wtest writes, written down here from what it is for rather than
+# read out of the ROM: a line, EOL and all.
+SAVED_NAME = "SAVED.TXT"
+SAVED_TXT = b"written through the cartridge's D1:\x9b"
+MYDOS_MAP = 0x03                            # src/sys/gemdos.c: MyDOS's $070A
+                                            # is not a drive map, so A and B
 SYMS = os.path.join(ROOT, "build", "gem.sym")
 FIXTURES = [("HELLO.TXT", os.path.join(ROOT, "tests", "fixtures", "test.txt")),
             ("OUT.TXT", os.path.join(ROOT, "tests", "fixtures", "out.txt"))]
 CARTFLEN, CARTFSUM = 0x0604, 0x0606
-CARTDLEN, CARTDSUM, CARTDTXT = 0x0608, 0x060A, 0x0680
+CARTDLEN, CARTDSUM, CARTDTXT = 0x0608, 0x060A, 0x3000   # src/cart.s
 STEP_DIR = 15
 CARTSIG, CARTSTEP, CARTCPU = 0x0600, 0x0602, 0x0603      # src/cart.s
 WANT_SIG = b"G4"
@@ -82,7 +96,8 @@ DEST = 0x010000                             # src/cart.s DEST_BANK
 PAY_BANKS = 2                               # ...and PAY_BANKS
 DRVBYT = 0x070A                             # src/cartd.s cd_drvbyt
 MEMLO = 0x02E7                              # ...and what cd_install sets it to
-DEV_TOP = 0x0F00
+                                            # with no DOS: past the
+DEV_TOP = 0x0710                             # $0700 + the DOS-2-shaped sixteen
 DOS_2 = 0                                   # src/sys/dos.h
 FARMEM_BRK = 8                              # src/sys/farmem.h
 LOAD_WAIT = 6000                            # frames to give the load; it takes
@@ -162,7 +177,7 @@ def d1():
         # ...and the RECORDS, not a checksum of them.  A sum proves the
         # bytes and not their shape, and the shape is what dos_dirline
         # parses -- a listing in the wrong one reads as an empty disk.
-        got = bytes(b.memdump(CARTDTXT, min(dlen, 64)))
+        got = bytes(b.memdump(CARTDTXT, min(dlen, 255)))
         check(got == wantdir[:len(got)],
               f"the directory records differ:\n    got  {got!r}\n"
               f"    want {wantdir[:len(got)]!r}")
@@ -189,7 +204,103 @@ def cart_listing():
     return {"A:\\": out}
 
 
-def whole_system():
+def floppy_copy(tag):
+    """A fresh copy of the floppy for one run, with the emulator's own
+    working copy of it dropped, and where that run's writes will land.
+    Mounted --bootrw, AltirraSDL writes to a working copy under its
+    configuration directory, keyed by the image's SHA-256, and reuses it
+    on the next mount of the same bytes (tests/emu/m19_files.py has the
+    account); so the pair is dropped first and read afterwards."""
+    import hashlib
+    import shutil
+    disk = os.path.abspath(os.path.join(ROOT, "build", f"{tag}-floppy.atr"))
+    shutil.copyfile(FLOPPY, disk)
+    with open(disk, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    state = os.path.join(config_dir_for(tag), "disk_state", sha)
+    if os.path.isdir(state):
+        shutil.rmtree(state)
+    return disk, os.path.join(state, "disk.atr")
+
+
+def overlay():
+    """THE CARTRIDGE OVER A DOS: the demonstration image with a MyDOS
+    floppy in D1:, so the OS boots the DOS first ($BFFD bit 0) and the
+    cartridge's D1: becomes an overlay -- the floppy on top, the ROM
+    underneath (src/cartd.s).  Three things, each through the ordinary
+    CIOV, each checked here against what it should be rather than what
+    the cartridge reports:
+
+      a READ of a name both layers have gets the FLOPPY's bytes -- which
+      is what makes a file you saved win over the one in ROM;
+      the DIRECTORY is the ROM's entries the floppy does not have, then
+      the floppy's own listing, its free-sector line last (Dfree reads
+      the last line);
+      a WRITE goes to the floppy -- checked in the floppy IMAGE afterwards,
+      not in what the machine says about it -- and reads back through the
+      same D1:.
+    """
+    for need in (CAR_D1, FLOPPY):
+        if not os.path.exists(need):
+            check(False, f"{need} is not built")
+            return
+    disk, written = floppy_copy("m37ovl")
+    emu = launch(tag="m37ovl", memsize="1088K",
+                 extra_args=["--bootrw", "--disk", disk, "--cart", CAR_D1])
+    b = emu.bridge
+    try:
+        b.frames(1500)
+        step = b.peek(CARTSTEP)
+        hasdos = b.peek(CD_HASDOS)
+        flen, fsum = word(b, CARTFLEN), word(b, CARTFSUM)
+        dlen = word(b, CARTDLEN)
+        wlen, wsum = word(b, CARTWLEN), word(b, CARTWSUM)
+        print(f"  over MyDOS: step {step}, a DOS underneath {bool(hasdos)}, "
+              f"HELLO.TXT {flen} bytes, directory {dlen} bytes, "
+              f"the write read back {wlen} bytes")
+        check(hasdos == 1, "the cartridge did not find the floppy's DOS in "
+                           "HATABS: it is not an overlay, it is the only D:")
+        check(step == STEP_READBACK,
+              f"step {step}, not {STEP_READBACK}: 15 is the listing, 20 the "
+              f"write and 21 its read-back")
+        with open(FLOPPY_HELLO, "rb") as f:
+            want = f.read()
+        check((flen, fsum) == (len(want), sum(want) & 0xFFFF),
+              f"HELLO.TXT read as {flen} bytes summing {fsum}; the floppy's is "
+              f"{len(want)} and {sum(want) & 0xFFFF} -- the ROM's won, or a "
+              f"byte went missing")
+        got = bytes(b.memdump(CARTDTXT, min(dlen, 255)))
+        lines = got.split(b"\x9b")[:-1]
+        rom_part = f"  {'OUT':<8}{'TXT':<3} {max(1, -(-os.path.getsize(FIXTURES[1][1]) // 125)):03d}".encode()
+        check(lines[:1] == [rom_part],
+              f"the listing starts {lines[:1]!r}, not the ROM's OUT.TXT alone "
+              f"-- its HELLO.TXT should be hidden by the floppy's")
+        names = [ln[2:13].decode("latin-1") for ln in lines[1:]]
+        for n in ("DOS     SYS", "DUP     SYS", "HELLO   TXT"):
+            check(n in names, f"the floppy's {n.split()[0]} is not in the listing")
+        check(bool(lines) and b"FREE" in lines[-1].upper(),
+              f"the last line is {lines[-1:]!r}, not the floppy's free-sector "
+              f"line, which Dfree reads the last line for")
+        check((wlen, wsum) == (len(SAVED_TXT), sum(SAVED_TXT) & 0xFFFF),
+              f"the write read back as {wlen} bytes summing {wsum}, not "
+              f"{len(SAVED_TXT)} and {sum(SAVED_TXT) & 0xFFFF}")
+    finally:
+        emu.stop()
+    if not check(os.path.exists(written),
+                 f"the emulator left no working copy of the floppy at {written}"):
+        return
+    fs = atr.Dos2(atr.ATRImage.load(written))
+    on = {e.filename.upper() for e in fs.entries() if e.in_use}
+    check(SAVED_NAME in on, f"{SAVED_NAME} is not on the FLOPPY: the write "
+                            f"went somewhere else")
+    if SAVED_NAME in on:
+        check(fs.read(SAVED_NAME) == SAVED_TXT,
+              f"{SAVED_NAME} on the floppy holds {fs.read(SAVED_NAME)!r}")
+    check(fs.read("HELLO.TXT") == want, "the floppy's HELLO.TXT changed")
+    print(f"  the floppy afterwards: {', '.join(sorted(on))}")
+
+
+def whole_system(floppy=False):
     """THE CARTRIDGE THE REQUEST ASKED FOR: one file, put in a slot, and
     the desktop comes up with nothing typed and nothing else to find.
 
@@ -209,7 +320,15 @@ def whole_system():
         check(False, f"{CAR_SYS} is not built (make build/gem4xe-sys.car)")
         return
     syms = symfile.load(SYMS)
-    emu = launch(tag="m37sys", memsize="1088K", extra_args=["--cart", CAR_SYS])
+    tag = "m37sysfl" if floppy else "m37sys"
+    extra = ["--cart", CAR_SYS]
+    if floppy:
+        # WITH A DOS UNDERNEATH: the system still loads from the ROM -- the
+        # floppy has no GEM.COM -- and the AES's *.ACC scan still finds the
+        # ROM's accessories through the overlay's listing.
+        disk, _ = floppy_copy(tag)
+        extra = ["--disk", disk] + extra
+    emu = launch(tag=tag, memsize="1088K", extra_args=extra)
     b = emu.bridge
     try:
         step = 0
@@ -218,7 +337,8 @@ def whole_system():
             step = b.peek(CARTSTEP)
             if step >= STEP_RUN:
                 break
-        print(f"  the whole system: step {step} after {t + 25} frames "
+        print(f"  the whole system{' over MyDOS' if floppy else ''}: "
+              f"step {step} after {t + 25} frames "
               f"({(t + 25) / 50:.0f}s of PAL time to read it off the ROM)")
         check(step != STEP_BAD, "the bootstrap would not load D1:GEM.COM: it "
                                 "read the file and it is not an Atari binary")
@@ -229,11 +349,17 @@ def whole_system():
             return
         # ...and the machine's own DOS-shaped variables, which on a
         # cartridge nothing else owns (src/cartd.s).
-        drvbyt, memlo = b.peek(DRVBYT), b.peek16(MEMLO)
-        check(drvbyt == 1, f"DRVBYT is {drvbyt}, not 1 -- Drvmap returns that "
-                           f"byte and the desktop draws an icon per bit")
-        check(memlo == DEV_TOP, f"MEMLO is ${memlo:04X}, not ${DEV_TOP:04X}: "
-                                f"the handler's own memory is not protected")
+        check(b.peek(CD_HASDOS) == int(floppy),
+              f"the cartridge says a DOS is {'absent' if floppy else 'present'}")
+        if floppy:
+            # MyDOS's, and not a drive map: A and B are claimed instead
+            drvbyt = MYDOS_MAP
+        else:
+            drvbyt, memlo = b.peek(DRVBYT), b.peek16(MEMLO)
+            check(drvbyt == 1, f"DRVBYT is {drvbyt}, not 1 -- Drvmap returns "
+                               f"that byte and the desktop draws an icon per bit")
+            check(memlo == DEV_TOP, f"MEMLO is ${memlo:04X}, not ${DEV_TOP:04X}: "
+                                    f"the sixteen bytes at $0700 are not protected")
 
         calls = syms["app_calls"]
         n, still = b.peek16(calls), 0
@@ -277,7 +403,7 @@ def whole_system():
         ref_v, ref_a, d = desk_model(mark, brk, pointer, drvbyt, cart_listing())
         check(len(ref_a.shots) == 1, f"the model took {len(ref_a.shots)} shots")
         os.makedirs(SHOTDIR, exist_ok=True)
-        shot = os.path.join(SHOTDIR, "m37-cart-desk.png")
+        shot = os.path.join(SHOTDIR, f"{tag}-desk.png")
         b.screenshot(shot)
         bad, shown = vbxeref.compare_to_shot(ref_a.shots[0], shot)
         check(not bad, f"the desk off the cartridge, {bad} px differ from the "
@@ -380,7 +506,9 @@ def main():
                                 "same answer, so this gate is vacuous")
 
     d1()
+    overlay()
     whole_system()
+    whole_system(floppy=True)
 
     print(f"\ngem4xe-m37: {'PASS' if not problems else 'FAIL'} -- a "
           f"cartridge, {len(problems)} problem(s)")

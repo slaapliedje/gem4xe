@@ -19,8 +19,14 @@ It carries its own read-only `D1:`, so everything in `system/` below is
 on it and the system reads its files the ordinary way.  Two things to
 know: it takes about **twenty-six seconds** to read itself out of the
 ROM and prints a dot per segment while it does, so it has not hung; and
-it is **read-only**, so *Options → Save desktop* and copying a file will
-say they cannot.  Nothing else writes, so nothing else is affected.
+on its own it is **read-only**, so *Options → Save desktop* and copying a
+file will say they cannot.
+
+**Put a DOS floppy in drive 1 as well** -- MyDOS or DOS 2, or an ATR on a
+FujiNet -- and the machine boots that DOS first and the cartridge lays its
+files *under* the floppy's: what you save goes to the floppy, and a file
+the floppy has wins over the one in the cartridge.  Everything else on
+drive 1, and every other drive, is the DOS's as usual.
 
 Everything below this line is the same gem4xe on media you can write to.
 

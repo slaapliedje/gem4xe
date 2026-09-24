@@ -59,13 +59,15 @@ WINDOW = 0xA000                 # where a bank appears
 BOOT_BANK = BANKS - 1           # 127: what RESET maps
 ERASED = 0xFF
 
-# Where the D: handler rides in the boot bank, and how much of it the
-# bootstrap copies down.  A FIXED offset rather than one the packer
-# chooses, so src/cart.s can name it as a constant: the bootstrap is
-# linked into $A000-$AFFF (src/cart.scm) and this is the page after it.
+# Where the D: handler rides in the boot bank -- and runs: it is linked
+# there (src/cartd.scm) and executes from the ROM, keeping its state in
+# page 6, so that the $0700 it used to be copied to is free for a DOS
+# (src/cartd.s).  A FIXED offset rather than one the packer chooses, so
+# src/cart.s can name it as a constant: the bootstrap is linked into
+# $A000-$AFFF (src/cart.scm) and this is the page after it.
 DEV_AT = 0x1000                 # within the bank, so $B000 in the window
-DEV_ROOM = 0x0800               # 2 KB, which the packer checks it into
-DEV_ORG = 0x0700                # where it is linked and copied to
+DEV_ROOM = 0x0FFA               # up to the six bytes of header at $BFFA
+DEV_ORG = WINDOW + DEV_AT + 4   # $B004: after 'C', 'D' and the length
 # ...behind a four-byte header, 'C' 'D' and the length, so the bootstrap
 # can tell a cartridge that HAS a handler from one that does not.  Erased
 # flash reads as $FF and the first image without one had the bootstrap
@@ -76,10 +78,8 @@ DEV_HDR = 4
 ENT_SIZE = 16                   # src/cartd.s says what the fields are
 MAX_FILES = 24
 # DOS 2's drive bitmap, which src/sys/gemdos.c's Drvmap returns verbatim.
-# The handler owns the byte (src/cartd.s, cd_drvbyt) because on a machine
-# with no DOS nothing else does, and the desktop would otherwise draw an
-# icon per bit of whatever instruction was linked there.  Checked here
-# rather than trusted: it is right only if the linker put `devhead` first.
+# With no DOS the handler writes it itself at install time -- one bit, D1:
+# -- because nothing else on the machine owns it (src/cartd.s).
 DRVBYT = 0x070A
 
 
@@ -170,18 +170,12 @@ def device(elf, dirent):
     linker placed rather than knowing where it put it.
     """
     segs, syms = mkxex.read_elf(elf)
-    for k in ("cd_dir", "cd_dirlen", "cd_end", "cd_drvbyt"):
+    for k in ("cd_dir", "cd_dirlen", "cd_end", "cd_install"):
         if k not in syms:
             raise SystemExit(f"{elf}: no {k} -- is it still .public?")
     lo = min(a for a, _d in segs)
     if lo != DEV_ORG:
         raise SystemExit(f"{elf}: linked at ${lo:04X}, not ${DEV_ORG:04X}")
-    if syms["cd_drvbyt"] != DRVBYT:
-        raise SystemExit(
-            f"{elf}: cd_drvbyt is at ${syms['cd_drvbyt']:04X}, not DOS 2's "
-            f"DRVBYT at ${DRVBYT:04X} -- the desktop reads that address for "
-            f"its list of drives, so `devhead` has to be the first section "
-            f"in src/cartd.scm")
     blob = bytearray([0]) * (max(a + len(d) for a, d in segs) - lo)
     for a, d in segs:
         blob[a - lo:a - lo + len(d)] = d
@@ -189,6 +183,9 @@ def device(elf, dirent):
     at = syms["cd_dir"] - lo
     for i, e in enumerate(dirent):
         blob[at + i * ENT_SIZE:at + (i + 1) * ENT_SIZE] = e
+    if blob[0] != 0x4C:
+        raise SystemExit(f"{elf}: its first byte is ${blob[0]:02X}, not the JMP to "
+                         f"cd_install that src/cart.s calls at ${DEV_ORG:04X}")
     if len(blob) + DEV_HDR > DEV_ROOM:
         raise SystemExit(f"{elf}: {len(blob)} bytes, and there is "
                          f"{DEV_ROOM - DEV_HDR} for it")

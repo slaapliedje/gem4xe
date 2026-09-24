@@ -12,6 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
 from a8test.launcher import launch  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from m14_sparta import screen  # noqa: E402
 
 SIG = 0x0600
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -32,7 +34,22 @@ def main():
         # Rapidus back to the 6502 ("reset FPGA, force boot on 6502").
         b.poke(0xD1FF, 0x01)
         b.poke(0xD191, 0x00)                       # clear bit 6 -> 65C816 + reset
-        b.frames(500)                              # DOS re-boots on the 65C816
+        # ...and the DOS re-boots on the 65C816.  WAIT FOR ITS PROMPT rather
+        # than a fixed time: the machine runs free until the bridge connects
+        # (50-100 frames on the phase of a 300 ms poll, more on a loaded
+        # host), so the switch lands at a different point of the first boot
+        # each run, and a fixed 500 frames was sometimes still mid-boot --
+        # the keys went nowhere and the gate said "program did not run"
+        # (2026-09-24: two runs in six under a full suite, none in twenty
+        # alone).
+        prompt = False
+        for _ in range(0, 3000, 25):
+            b.frames(25)
+            if any(ln.strip().startswith("D1:") for ln in screen(b)):
+                prompt = True
+                break
+        if not prompt:
+            fails.append("the DOS never showed its D1: prompt after the switch")
         mode = b.cmd("HWSTATE")["cpu"]["mode"]
         print(f"CPU mode at the DOS prompt: {mode}")
         if mode != "65C816":
@@ -45,7 +62,12 @@ def main():
         for k in ("H", "E", "L", "L", "O", "RETURN"):
             b.key(k)
             b.frames(6)
-        b.frames(200)
+        # ...and wait for the program's signature, not for a fixed time.
+        for _ in range(0, 2000, 25):
+            b.frames(25)
+            if bytes(b.memdump(SIG, 4)) == b"GEM4":
+                break
+        b.frames(25)
 
         got = bytes(b.memdump(SIG, 8))
         st = b.cmd("HWSTATE")["cpu"]
