@@ -4,8 +4,11 @@
 Proves end to end: cc65816 -> ln65816 -> mkxex.py -> Atari DOS loader ->
 65C816 native mode -> our code executes and 16-bit arithmetic is correct.
 
-The CPU must be switched to the 65C816 *before* booting, because Calypsi's
-cstartup begins with `clc; xce` and `xce` is not a 6502 opcode.
+The CPU must be switched to the 65C816 before the program is STARTED,
+because Calypsi's cstartup begins with `clc; xce` and `xce` is not a 6502
+opcode -- and it must be switched while the machine is idle at the DOS
+prompt, not during the boot, because a write made mid-SIO is lost and the
+DOS hangs.
 """
 import os
 import sys
@@ -13,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
 from a8test.launcher import launch  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from m14_sparta import screen  # noqa: E402
+from m14_sparta import wait_prompt  # noqa: E402
 
 SIG = 0x0600
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -26,29 +29,22 @@ def main():
     b = emu.bridge
     fails = []
     try:
-        b.frames(30)
-        # Mount first, then switch.  Switching the CPU resets it, and the
-        # machine then boots from D1: -- so the program arrives AFTER the
-        # switch and therefore runs on the 65C816.  Doing it the other way
-        # round cannot work: BOOT cold-resets, and ColdReset() forces the
-        # Rapidus back to the 6502 ("reset FPGA, force boot on 6502").
+        # SWITCH ONLY WHEN THE MACHINE IS IDLE.  A write made while the DOS
+        # is mid-SIO is lost and the DOS hangs (docs/shipping.md section 2,
+        # which is why test-boot waits too).  This gate used to switch at
+        # "frame 30" -- which is frame 30 after the bridge connected, and
+        # the bridge connects 50-100 frames into a boot that is already
+        # running, later on a loaded host.  So the switch sometimes landed
+        # in the boot's disk I/O and the machine never reached a prompt:
+        # four failures, all inside a full suite, 2026-09-24.  Now: the 6502
+        # boot runs to its prompt, then the switch, then the prompt again.
+        if wait_prompt(b) < 0:
+            fails.append("the DOS never reached its D1: prompt on the 6502")
         b.poke(0xD1FF, 0x01)
         b.poke(0xD191, 0x00)                       # clear bit 6 -> 65C816 + reset
-        # ...and the DOS re-boots on the 65C816.  WAIT FOR ITS PROMPT rather
-        # than a fixed time: the machine runs free until the bridge connects
-        # (50-100 frames on the phase of a 300 ms poll, more on a loaded
-        # host), so the switch lands at a different point of the first boot
-        # each run, and a fixed 500 frames was sometimes still mid-boot --
-        # the keys went nowhere and the gate said "program did not run"
-        # (2026-09-24: two runs in six under a full suite, none in twenty
-        # alone).
-        prompt = False
-        for _ in range(0, 3000, 25):
-            b.frames(25)
-            if any(ln.strip().startswith("D1:") for ln in screen(b)):
-                prompt = True
-                break
-        if not prompt:
+        b.frames(50)                               # past the reset, whose
+                                                   # screen is a fresh one
+        if wait_prompt(b) < 0:
             fails.append("the DOS never showed its D1: prompt after the switch")
         mode = b.cmd("HWSTATE")["cpu"]["mode"]
         print(f"CPU mode at the DOS prompt: {mode}")

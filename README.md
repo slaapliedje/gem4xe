@@ -7,12 +7,12 @@ in principle Antonia), and **Ultimate 1MB**.
 The target surface is **640 × 240, 16 colours** — VBXE's HR overlay, 4bpp chunky.
 That is a better GEM surface than the Atari ST's medium resolution.
 
-Current version **0.7** — `VERSION` at the top of the tree is where it
+Current version **0.8** — `VERSION` at the top of the tree is where it
 lives; `make dist` stamps a build with it and the commit, and `make
 release` is the same for the public, without the DOS 2 floppy (its DOS is
 not gem4xe's to give away) and named by the version alone.
 
-**The quickest way to try it is `gem4xe-0.7.car`** on the release page: one
+**The quickest way to try it is `gem4xe-0.8.car`** on the release page: one
 file for an Ultimate Cart, a MaxFlash or an emulator's `--cart`, carrying
 the whole system on a read-only `D1:` of its own. No DOS, no disk, nothing
 typed — which is what the other media all needed first (`docs/cartridge.md`).

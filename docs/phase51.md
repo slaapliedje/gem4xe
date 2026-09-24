@@ -120,13 +120,21 @@ Three of the new checks were seen red before they were green, each on a
 real fault: the read (265 of 266), the listing (the ROM's `HELLO.TXT`
 still in it) and a stale address in the gate itself.
 
-`m1` also changed.  It slept a fixed 500 frames after switching the CPU
-and then typed `HELLO` blind; under a loaded host the DOS was sometimes
-still booting and the keys went nowhere -- two failures in six runs
-during the suite, none in twenty alone.  It waits for the `D1:` prompt
-and for the program's signature now.  Nothing it boots was touched by
-this work; the gate was racing, which is the lesson this tree has had
-before (`docs/phase14.md`).
+`m1` also changed, and the first fix was wrong.  It failed two runs in six
+under the full suite and never alone.  The first reading was that it
+typed `HELLO` before the DOS was at its prompt, so the gate was made to
+wait for the prompt -- and it failed again under the next suite with the
+DOS **never** reaching one in 3,000 frames.  The real cause is in
+`docs/shipping.md` already: *a write made while the DOS is mid-SIO is
+lost and the DOS hangs.*  `m1` flipped the CPU switch at "frame 30",
+which is frame 30 after the bridge connects -- 50 to 100 frames into a
+boot already running, later on a loaded host -- so it sometimes landed
+in the boot's disk I/O.  Now it waits for the 6502 boot's prompt, THEN
+switches, then waits for the prompt again, as `test-boot` and `m14` do.
+The other gates that switch on a timer wait 300 frames, after a DOS 2
+floppy has finished booting, and a slow bridge only makes them later.
+Nothing `m1` boots was touched by this work; the gate was racing, which
+is the lesson this tree has had before (`docs/phase14.md`).
 
 ## What is not known
 
