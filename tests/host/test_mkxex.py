@@ -69,6 +69,14 @@ def farload_copy(mem, hdr=None):
     if not cnt:
         return
     dst = mem[hdr] | (mem[hdr + 1] << 8) | (mem[hdr + 2] << 16)
+    # The loader runs its unpacker in the bank above the image, which it is
+    # told before the first chunk (src/farload.s, fl_fastbank): it must be
+    # there, and above everything this chunk writes.
+    fast = mem.get(SYMS["fl_fastbank"])
+    assert fast is not None, "a chunk arrived before fl_fastbank was set"
+    assert fast > (dst + cnt - 1) >> 16, (
+        f"the unpacker's bank ${fast:02X} is not above a chunk ending at "
+        f"${dst + cnt - 1:06X}")
 
     def nxt():
         nonlocal src
@@ -111,7 +119,7 @@ def farload_copy(mem, hdr=None):
 
 
 SYMS = {"_fl_hdr": 0x8000, "_fl_buf": 0x8005, "_fl_end": 0x8005 + 0x1A00,
-        "_fl_copy": 0x9A05}
+        "_fl_copy": 0x9A05, "fl_fastbank": 0x3F4C}
 
 
 def rand(n, seed):
@@ -268,6 +276,19 @@ class Staging(unittest.TestCase):
         mem, _ = self.pack_and_load([(0x010000, b"\x5a" * 1024)])
         self.assertEqual(mem[SYMS["_fl_hdr"] + 3], 0)
         self.assertEqual(mem[SYMS["_fl_hdr"] + 4], 0)
+
+    def test_the_unpacker_goes_above_the_image(self):
+        # Two banks of image: the fast unpacker must go in the third.
+        mem, _ = self.pack_and_load([(0x010000, rand(0x9000, 7)),
+                                     (0x020000, rand(0x3000, 8))])
+        self.assertEqual(mem[SYMS["fl_fastbank"]], 0x03)
+
+    def test_refuses_segments_out_of_order(self):
+        # The loader takes the last chunk's end as the image's top.
+        with self.assertRaises(SystemExit) as e:
+            mkxex.stage_far([(0x020000, b"\x01" * 64), (0x010000, b"\x02" * 64)],
+                            SYMS)
+        self.assertIn("address order", str(e.exception))
 
     def test_refuses_a_straddling_segment(self):
         with self.assertRaises(SystemExit):

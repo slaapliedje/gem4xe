@@ -119,23 +119,17 @@ _fl_count:    .space  2               ; +3  bytes the chunk unpacks to, 0 = idle
 _fl_buf:      .space  FL_CHUNK        ; +5  the packed payload
 _fl_end:
 
-;;; The unpacker's pointers live in the OS's zero page, in the floating-point
-;;; package's FR0/FRE/FR1 ($D4-$E5), which nothing touches during a binary
-;;; load.  NOT in a direct page of its own: INITAD is called in emulation
-;;; mode with the OS's interrupts running, and the OS's VBI and IRQ
-;;; handlers address zero page through D -- a `tcd` here would send
-;;; RTCLOK's increments and the keyboard's bookkeeping into whatever the
-;;; loader pointed D at (found the hard way in Calypsi-65816-Atari, whose
-;;; copier this one grew out of: the VBI wrote RTCLOK over the copier's own
-;;; first instruction).  With D left at $0000, the OS sees the machine it
-;;; expects and nothing has to be masked.
-DP_SRC:       .equ    0xd4            ; 24-bit: the next packed byte; +2 is 0
-DP_DST:       .equ    0xd8            ; 24-bit: where the next output byte goes
-DP_MAT:       .equ    0xdc            ; 24-bit: where the current run is read
-DP_CNT:       .equ    0xe0            ; 16-bit: output bytes still to write
-DP_LEN:       .equ    0xe2            ; 16-bit: bytes still to copy in this run
-DP_RUN:       .equ    0xe4            ; 8-bit:  the page-run being copied
-DP_TOK:       .equ    0xe5            ; 8-bit:  the token
+;;; The loader's one pointer lives in the OS's zero page, in the
+;;; floating-point package's FR0 ($D4-$DD), which nothing touches during a
+;;; binary load: the address being probed for RAM, and the bank named when
+;;; there is none.  NOT in a direct page of its own: INITAD is called in
+;;; emulation mode with the OS's interrupts running, and the OS's VBI and
+;;; IRQ handlers address zero page through D -- a `tcd` here would send
+;;; RTCLOK's increments into whatever the loader pointed D at (found the
+;;; hard way in Calypsi-65816-Atari, whose copier this one grew out of).
+;;; The unpacker keeps its state beside its own code, in fast RAM
+;;; (ff_start below).
+DP_DST:       .equ    0xd8            ; 24-bit: the address being probed
 
               .section code, root
 
@@ -144,9 +138,17 @@ DP_TOK:       .equ    0xe5            ; 8-bit:  the token
 ;;; It is initialised data inside `code`, so DOS loads it before any INITAD.
 _fl_ok:       .byte   1
 fl_checked:   .byte   0
+fl_fastup:    .byte   0               ; the fast unpacker has been copied up
+
+;;; fl_fastbank -- the bank above the far image, where the unpacker runs.
+;;; Not known to this file: tools/mkxex.py writes it, in a segment of its
+;;; own ahead of the first chunk, from where the image really ends.  GEM's
+;;; far heap starts there later (farmem.c, from _fl_top) and takes it back.
+fl_fastbank:  .byte   0
 
 ;;; _fl_top -- one past the highest far address written so far, 24-bit
-;;; little-endian; the far heap starts in the bank above it.  Where the far
+;;; little-endian (the end of the last chunk: they come in address order);
+;;; the far heap starts in the bank above it.  Where the far
 ;;; image ends is decided by the linker, but it is spread over several
 ;;; memories and the linker has no operator for "the end of a section that is
 ;;; in several memories" -- so the loader records where it actually put
@@ -161,6 +163,25 @@ _fl_top:      .byte   0, 0, 0
 ;;; In `stagecode`, above the staging buffer: load-time only, like the buffer
 ;;; (see the top of the file).  The one thing here that runs before the CPU
 ;;; is known is the first three instructions, and they are 6502 ones.
+;;;
+;;; IT DOES NOT UNPACK HERE.  Until GEM's own rapidus_speedup() runs, every
+;;; window of bank $00 is on the 1.79 MHz bus, and this window always is --
+;;; so an unpacker running here fetches every instruction, and reaches every
+;;; zero-page pointer, at 1.79 MHz.  The byte-at-a-time one that did was
+;;; 57% of loading GEM.COM off a DOS 2 floppy, eight seconds of a
+;;; twenty-one second boot (docs/phase56.md).  So the first chunk copies
+;;; ff_start..ff_end up into the bank above the far image -- the Rapidus's
+;;; fast SRAM, free until the far heap takes it -- and every chunk is
+;;; unpacked there, in native mode, with MVN doing the copying.  The code
+;;; goes up to the SAME 16-bit address it was linked at, so its own jumps
+;;; and addresses need nothing done to them.
+;;;
+;;; Native mode needs both kinds of interrupt kept out: IRQ by SEI, and
+;;; ANTIC's NMI by NMIEN, because the native vectors at $FFEA/$FFEE are
+;;; ones the OS never filled (src/crt_atari.s).  An emulation-mode NMI
+;;; would do no better: it does not save the program bank, and would come
+;;; back to bank $00.  A chunk is a few milliseconds; the VBI misses at most
+;;; one frame of them, and NMIEN is put back to the OS's $40 after.
 ;;; ---------------------------------------------------------------------------
               .section stagecode, root
 _fl_copy:
@@ -175,29 +196,63 @@ fl_ready:
               bne     fl_go           ; something is staged
 fl_out:       rts                     ; nothing staged (the priming call)
 fl_go:
-              lda     #.byte0 _fl_buf
-              sta     dp:DP_SRC
-              lda     #.byte1 _fl_buf
-              sta     dp:DP_SRC+1
-              lda     #0
-              sta     dp:DP_SRC+2     ; the buffer is always in bank $00
+
+;;; Is there RAM where this chunk is going, and -- the first time -- where
+;;; the unpacker is?  Probe the addresses themselves rather than trusting a
+;;; documented memory map; the image may spill into a further bank, and the
+;;; first bank having RAM says nothing about the next.
+              lda     fl_fastup
+              bne     fl_probe_dst
+              lda     #.byte0 ff_start
+              sta     dp:DP_DST
+              lda     #.byte1 ff_start
+              sta     dp:DP_DST+1
+              lda     fl_fastbank
+              sta     dp:DP_DST+2
+              sta     fl_cpmvn+1      ; the copy's destination bank...
+              sta     fl_jsl+3        ; ...and the call's
+              jsr     fl_probe
+fl_probe_dst:
               lda     long:_fl_hdr
               sta     dp:DP_DST
               lda     long:_fl_hdr+1
               sta     dp:DP_DST+1
               lda     long:_fl_hdr+2
               sta     dp:DP_DST+2
-              lda     long:_fl_count
-              sta     dp:DP_CNT
-              lda     long:_fl_count+1
-              sta     dp:DP_CNT+1
+              jsr     fl_probe
 
-;;; Is there RAM where this chunk is going?  Probe the destination itself --
-;;; the unpacking is about to overwrite it, so the test costs nothing and
-;;; asks exactly the right question, rather than trusting a documented
-;;; memory map.  Every chunk is probed because the image may spill into a
-;;; further bank, and the first bank having RAM says nothing about the next.
-              ldy     #0
+              php
+              sei
+              lda     #0
+              sta     NMIEN
+              clc
+              xce                     ; native; M and X still 8 bits
+              lda     fl_fastup
+              bne     fl_unpack
+              rep     #0x30
+              ldx     ##ff_start
+              ldy     ##ff_start
+              lda     ##ff_end-ff_start-1
+fl_cpmvn:     .byte   0x54, 0, 0      ; mvn 0 -> fl_fastbank (patched above)
+              phk
+              plb                     ; MVN left the bank register on it
+              sep     #0x30
+              lda     #1
+              sta     fl_fastup
+fl_unpack:    rep     #0x30
+fl_jsl:       .byte   0x22            ; jsl fl_fastbank:ff_unpack
+              .word   ff_unpack
+              .byte   0               ; (patched above)
+              sep     #0x30
+              sec
+              xce                     ; emulation again
+              lda     #0x40
+              sta     NMIEN           ; the OS's: the VBI, no DLI
+              plp
+              rts
+
+;;; fl_probe -- is DP_DST RAM?  Two patterns, each read back.
+fl_probe:     ldy     #0
               lda     #0xa5
               sta     [dp:DP_DST],y
               cmp     [dp:DP_DST],y
@@ -205,196 +260,186 @@ fl_go:
               lda     #0x5a
               sta     [dp:DP_DST],y
               cmp     [dp:DP_DST],y
-              beq     fl_token
+              bne     fl_noram_far
+              rts
 fl_noram_far: jmp     fl_noram        ; in `code`: out of a branch's reach
 
-;;; One token per turn of this loop: its literals, then -- unless the chunk's
-;;; output count ran out with the literals, which is how a chunk ends -- a
-;;; copy from earlier output.  Both copies are made by fl_run, out of
-;;; DP_MAT: the literals by pointing DP_MAT at the packed bytes and taking
-;;; it back afterwards as the new DP_SRC, so that there is one copy loop.
-fl_token:
-              lda     dp:DP_CNT
-              ora     dp:DP_CNT+1
-              beq     fl_finish
-              jsr     fl_next
-              sta     dp:DP_TOK
-              lsr     a
-              lsr     a
-              lsr     a
-              lsr     a
-              jsr     fl_length       ; DP_LEN = the literal count
-              lda     dp:DP_SRC
-              sta     dp:DP_MAT
-              lda     dp:DP_SRC+1
-              sta     dp:DP_MAT+1
-              lda     #0
-              sta     dp:DP_MAT+2
-              jsr     fl_run
-              lda     dp:DP_MAT
-              sta     dp:DP_SRC
-              lda     dp:DP_MAT+1
-              sta     dp:DP_SRC+1
-              lda     dp:DP_CNT
-              ora     dp:DP_CNT+1
-              beq     fl_finish
-;;; The match: its offset is where it is read from, counted back from where
-;;; it is written to, and the two may overlap -- a run of one byte is a
-;;; match at offset 1 -- which fl_run's forward, byte-by-byte copy gets
-;;; right by construction.  An offset of zero is no match at all: the
-;;; token was only its literals, and the next token follows.
-              jsr     fl_next
-              sta     dp:DP_MAT
-              jsr     fl_next
-              sta     dp:DP_MAT+1
-              ora     dp:DP_MAT
-              beq     fl_token
-              sec
-              lda     dp:DP_DST
-              sbc     dp:DP_MAT
-              sta     dp:DP_MAT
-              lda     dp:DP_DST+1
-              sbc     dp:DP_MAT+1
-              sta     dp:DP_MAT+1
-              lda     dp:DP_DST+2
-              sbc     #0
-              sta     dp:DP_MAT+2
-              lda     dp:DP_TOK
-              and     #0x0f
-              jsr     fl_length
-              clc                     ; a match is four bytes at least
-              lda     dp:DP_LEN
-              adc     #4
-              sta     dp:DP_LEN
-              bcc     fl_match
-              inc     dp:DP_LEN+1
-fl_match:     jsr     fl_run
-              bra     fl_token
+;;; ---------------------------------------------------------------------------
+;;; ff_start..ff_end -- the unpacker, run in the bank above the far image.
+;;;
+;;; Entered by JSL in native mode, A, X and Y 16 bits wide, interrupts out.
+;;; The bank register is pointed at this bank, so its variables below are
+;;; plain absolute addresses; the packed bytes are read with long
+;;; addressing out of bank $00, X counting through them.  The format is
+;;; tools/mkxex.py's (unpack() there is this, in Python): a token, its
+;;; literals, then unless the chunk's count has run out an offset word --
+;;; zero for no match -- and a match of four bytes and more.
+;;;
+;;; Every copy is ONE MVN per piece: MVN moves a byte at a time upwards, so
+;;; a match that overlaps what it writes -- a run, offset one -- repeats the
+;;; way the format means.  A piece stops at the end of either bank, since
+;;; MVN's addresses wrap within one; ff_copy works that out and goes round.
+;;; ---------------------------------------------------------------------------
+ff_start:
+ff_dlo:       .word   0               ; where the next byte goes: offset...
+ff_dbk:       .word   0               ; ...and bank
+ff_slo:       .word   0               ; where a copy reads: offset...
+ff_sbk:       .word   0               ; ...and bank
+ff_cnt:       .word   0               ; bytes the chunk has still to write
+ff_len:       .word   0               ; bytes this copy has still to write
+ff_tok:       .word   0
+ff_off:       .word   0
+ff_n:         .word   0               ; this piece
 
-fl_finish:
-;;; DP_DST is now one past the chunk; raise _fl_top to it if it is higher.
-;;; Chunks arrive in address order today, but a maximum is what is meant,
-;;; and it costs nothing to be right about it.
+ff_unpack:    phb
+              phk
+              plb
+              lda     long:_fl_hdr
+              sta     ff_dlo
+              lda     long:_fl_hdr+2
+              and     ##0xff
+              sta     ff_dbk
+              lda     long:_fl_count
+              sta     ff_cnt
+              ldx     ##0
+ff_token:     lda     ff_cnt
+              beq     ff_done
+              lda     long:_fl_buf,x
+              inx
+              and     ##0xff
+              sta     ff_tok
+              lsr     a
+              lsr     a
+              lsr     a
+              lsr     a
+              jsr     ff_length       ; ff_len = the literal count
+              lda     ff_len
+              beq     ff_match
+              txa                     ; the literals are the packed bytes
+              clc
+              adc     ##_fl_buf
+              sta     ff_slo
+              stz     ff_sbk
+              jsr     ff_copy
+              lda     ff_slo
               sec
-              lda     dp:DP_DST
-              sbc     long:_fl_top
-              lda     dp:DP_DST+1
-              sbc     long:_fl_top+1
-              lda     dp:DP_DST+2
-              sbc     long:_fl_top+2
-              bcc     fl_nottop       ; DP_DST < _fl_top
-              lda     dp:DP_DST
+              sbc     ##_fl_buf
+              tax
+ff_match:     lda     ff_cnt
+              beq     ff_done         ; a chunk may end after its literals
+              lda     long:_fl_buf,x  ; the offset, or 0 for no match
+              inx
+              inx
+              and     ##0xffff
+              beq     ff_token
+              sta     ff_off
+              lda     ff_dlo
+              sec
+              sbc     ff_off
+              sta     ff_slo
+              lda     ff_dbk
+              sbc     ##0
+              sta     ff_sbk
+              lda     ff_tok
+              and     ##0x0f
+              jsr     ff_length
+              lda     ff_len
+              clc
+              adc     ##4             ; a match is four bytes at least
+              sta     ff_len
+              jsr     ff_copy
+              bra     ff_token
+;;; One past the chunk is the top of the far image so far: tools/mkxex.py
+;;; sends the chunks in address order, and refuses to do otherwise, so the
+;;; last is the highest.  Then the chunk is consumed: DOS may call INITAD
+;;; again after a segment that carries none -- the run vector, for one --
+;;; and a zero count is what makes that a no-op.
+ff_done:      lda     ff_dlo
               sta     long:_fl_top
-              lda     dp:DP_DST+1
-              sta     long:_fl_top+1
-              lda     dp:DP_DST+2
+              sep     #0x20
+              lda     ff_dbk
               sta     long:_fl_top+2
-fl_nottop:
-;;; Consume the chunk.  DOS may call INITAD again after a segment that carries
-;;; no chunk -- the run vector, for one -- and this is what makes that a no-op.
-              lda     #0
-              sta     _fl_count
-              sta     _fl_count+1
-              rts
+              rep     #0x20
+              lda     ##0
+              sta     long:_fl_count
+              plb
+              rtl
 
-;;; fl_next -- the next packed byte, in A.
-fl_next:      ldy     #0
-              lda     [dp:DP_SRC],y
-              inc     dp:DP_SRC
-              bne     fl_next_done
-              inc     dp:DP_SRC+1     ; the buffer never crosses a bank
-fl_next_done: rts
-
-;;; fl_length -- DP_LEN from a token's nibble in A: the nibble itself, or if
-;;; it is 15, that plus every byte that follows up to and including the first
-;;; that is not 255 (tools/mkxex.py).
-fl_length:    sta     dp:DP_LEN
-              lda     #0
-              sta     dp:DP_LEN+1
-              lda     dp:DP_LEN
-              cmp     #15
-              bne     fl_length_done
-fl_length_more:
-              jsr     fl_next
+;;; ff_length -- ff_len from a token's nibble in A: the nibble itself, or if
+;;; it is 15, that plus every byte that follows up to and including the
+;;; first that is not 255.
+ff_length:    sta     ff_len
+              cmp     ##15
+              bne     ff_len_done
+ff_len_more:  lda     long:_fl_buf,x
+              inx
+              and     ##0xff
               pha
               clc
-              adc     dp:DP_LEN
-              sta     dp:DP_LEN
-              bcc     fl_length_same
-              inc     dp:DP_LEN+1
-fl_length_same:
+              adc     ff_len
+              sta     ff_len
               pla
-              cmp     #255
-              beq     fl_length_more
-fl_length_done:
-              rts
+              cmp     ##255
+              beq     ff_len_more
+ff_len_done:  rts
 
-;;; fl_run -- copy DP_LEN bytes from DP_MAT to DP_DST, both moving on, and
-;;; take them off DP_CNT.  A page-run at a time: as many bytes as are left in
-;;; DP_LEN, or before the end of the page either pointer is in, whichever is
-;;; least -- so that the inner loop is `[dp],y` with Y climbing from zero
-;;; and never crossing a page, and the 24-bit adds are done once per run.
-;;; A pointer at the start of its page could run 256 bytes, which an 8-bit
-;;; count cannot say; it runs 255 and comes round again.
-fl_run:       lda     dp:DP_LEN
-              ora     dp:DP_LEN+1
-              beq     fl_run_done
-              sec
-              lda     #0
-              sbc     dp:DP_MAT       ; 256 - low byte...
-              bne     fl_run_src
-              lda     #255            ; ...or 255 at a page start
-fl_run_src:   sta     dp:DP_RUN
-              sec
-              lda     #0
-              sbc     dp:DP_DST
-              bne     fl_run_dst
-              lda     #255
-fl_run_dst:   cmp     dp:DP_RUN
-              bcs     fl_run_len
-              sta     dp:DP_RUN
-fl_run_len:   lda     dp:DP_LEN+1
-              bne     fl_run_go       ; 256 or more left: the run stands
-              lda     dp:DP_LEN
-              cmp     dp:DP_RUN
-              bcs     fl_run_go
-              sta     dp:DP_RUN
-fl_run_go:    ldy     #0
-fl_run_byte:  lda     [dp:DP_MAT],y
-              sta     [dp:DP_DST],y
-              iny
-              cpy     dp:DP_RUN
-              bne     fl_run_byte
+;;; ff_copy -- ff_len bytes from ff_sbk:ff_slo to ff_dbk:ff_dlo, both moved
+;;; on, and taken off ff_cnt.  X is kept.
+ff_copy:      phx
+ff_cp_more:   lda     ff_len
+              beq     ff_cp_done
+              sta     ff_n
+              lda     ff_slo          ; no further than the source bank's end
+              beq     ff_cp_s
+              eor     ##0xffff
+              inc     a
+              cmp     ff_n
+              bcs     ff_cp_s
+              sta     ff_n
+ff_cp_s:      lda     ff_dlo          ; ...or the destination's
+              beq     ff_cp_d
+              eor     ##0xffff
+              inc     a
+              cmp     ff_n
+              bcs     ff_cp_d
+              sta     ff_n
+ff_cp_d:      sep     #0x20
+              lda     ff_dbk
+              sta     ff_mvn+1        ; MVN's operands: destination bank,
+              lda     ff_sbk
+              sta     ff_mvn+2        ; then source bank
+              rep     #0x20
+              ldx     ff_slo
+              ldy     ff_dlo
+              lda     ff_n
+              dec     a
+ff_mvn:       .byte   0x54, 0, 0
+              phk
+              plb                     ; MVN left the bank register on it
+              lda     ff_slo
               clc
-              lda     dp:DP_MAT
-              adc     dp:DP_RUN
-              sta     dp:DP_MAT
-              bcc     fl_run_dst2
-              inc     dp:DP_MAT+1
-              bne     fl_run_dst2
-              inc     dp:DP_MAT+2
-fl_run_dst2:  clc
-              lda     dp:DP_DST
-              adc     dp:DP_RUN
-              sta     dp:DP_DST
-              bcc     fl_run_len2
-              inc     dp:DP_DST+1
-              bne     fl_run_len2
-              inc     dp:DP_DST+2
-fl_run_len2:  sec
-              lda     dp:DP_LEN
-              sbc     dp:DP_RUN
-              sta     dp:DP_LEN
-              bcs     fl_run_cnt
-              dec     dp:DP_LEN+1
-fl_run_cnt:   sec
-              lda     dp:DP_CNT
-              sbc     dp:DP_RUN
-              sta     dp:DP_CNT
-              bcs     fl_run
-              dec     dp:DP_CNT+1
-              bra     fl_run
-fl_run_done:  rts
+              adc     ff_n
+              sta     ff_slo
+              bcc     ff_cp_s2
+              inc     ff_sbk
+ff_cp_s2:     lda     ff_dlo
+              clc
+              adc     ff_n
+              sta     ff_dlo
+              bcc     ff_cp_d2
+              inc     ff_dbk
+ff_cp_d2:     lda     ff_len
+              sec
+              sbc     ff_n
+              sta     ff_len
+              lda     ff_cnt
+              sec
+              sbc     ff_n
+              sta     ff_cnt
+              bra     ff_cp_more
+ff_cp_done:   plx
+              rts
+ff_end:
 
               .section code, root
 ;;; ---------------------------------------------------------------------------

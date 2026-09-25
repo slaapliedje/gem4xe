@@ -144,32 +144,48 @@ MAX_OFFSET = 0xFFFF    # the offset is a word
 MAX_LITERALS = 1024    # per token, so that no token outgrows a chunk
 MAX_MATCH = 1024       # ...and no chunk's output outgrows its 16-bit count
 HASH = 4               # bytes a candidate match is found by
+CHAIN = 64             # earlier places of those bytes tried, most recent first
+
+
+def _ext(n):
+    """Bytes a nibble-coded count of n (after its bias) takes past the nibble."""
+    return 0 if n < 15 else 1 + (n - 15) // 255
 
 
 @functools.lru_cache(maxsize=16)
 def pack(data):
     """LZ77 the bytes into a list of tokens, each the bytes of one token.
 
-    A hash of the next four bytes finds earlier places they occurred; the
-    longest match among them wins, unless starting one byte later would find
-    a longer one (the usual lazy step).  Simple and deterministic, which
-    matters more than the last few percent: the gates recompute the chunking
-    from the ELF and expect the same seams.
+    AN OPTIMAL PARSE, not a greedy one.  The longest earlier match at every
+    position is found first (a hash of the next four bytes, the most recent
+    CHAIN places it occurred); then, working back from the end, each
+    position's cheapest way on is chosen -- a literal, or a match of any
+    length it could take -- by what it costs in the file.  A greedy parse
+    with one byte of lookahead took the longest match wherever it stood,
+    and that is not the same thing: 0.9 KB of the far image, and on the
+    DOS 2 floppy that was the difference between fitting and not
+    (docs/phase56.md).  Deterministic, which matters: the gates recompute
+    the chunking from the ELF and expect the same seams.
+
+    Costs are counted a literal at a byte, and a match at a token byte, an
+    offset word and its length's extension bytes -- the literal run's own
+    extension bytes, one per 255, are left out of the choice.
     """
     n = len(data)
-    tokens = []
     heads = {}
-
-    def note(i):
-        if i + HASH <= n:
-            heads.setdefault(data[i:i + HASH], []).append(i)
-
-    def longest(i):
-        if i + MIN_MATCH > n:
-            return 0, 0
-        best, off = 0, 0
+    blen = [0] * n
+    boff = [0] * n
+    for i in range(n):
+        if i + HASH > n:
+            continue
+        key = data[i:i + HASH]
+        chain = heads.get(key)
+        if chain is None:
+            heads[key] = [i]
+            continue
         lim = min(n - i, MAX_MATCH)
-        for p in reversed(heads.get(data[i:i + HASH], ())):
+        best, off = 0, 0
+        for p in reversed(chain[-CHAIN:]):
             if i - p > MAX_OFFSET:
                 break
             k = HASH
@@ -179,7 +195,26 @@ def pack(data):
                 best, off = k, i - p
                 if k >= lim:
                     break
-        return best, off
+        blen[i], boff[i] = best, off
+        chain.append(i)
+
+    cost = [0] * (n + 1)
+    take = [0] * (n + 1)                       # 0: a literal; else a match length
+    for i in range(n - 1, -1, -1):
+        c, t = cost[i + 1] + 1, 0
+        m_max = blen[i]
+        if m_max >= MIN_MATCH:
+            # every length up to 40, and the longest: the extension bytes
+            # make nothing between worth more than one of those
+            lens = range(MIN_MATCH, m_max + 1) if m_max <= 40 else \
+                list(range(MIN_MATCH, 40)) + [m_max]
+            for m in lens:
+                cm = cost[i + m] + 3 + _ext(m - MIN_MATCH)
+                if cm < c:
+                    c, t = cm, m
+        cost[i], take[i] = c, t
+
+    tokens = []
 
     def token(lits, mlen, off):
         L, M = len(lits), mlen - MIN_MATCH if mlen else 0
@@ -204,23 +239,16 @@ def pack(data):
     i = 0
     lits = bytearray()
     while i < n:
-        mlen, off = longest(i)
-        if mlen >= MIN_MATCH and i + 1 < n:
-            later, _ = longest(i + 1)
-            if later > mlen + 1:
-                mlen = 0                       # take this byte; match next time
         if len(lits) >= MAX_LITERALS:
             token(lits, 0, 0)
             lits = bytearray()
-        if mlen >= MIN_MATCH:
-            token(lits, mlen, off)
+        m = take[i]
+        if m:
+            token(lits, m, boff[i])
             lits = bytearray()
-            for k in range(i, i + mlen):
-                note(k)
-            i += mlen
+            i += m
         else:
             lits.append(data[i])
-            note(i)
             i += 1
     if lits:
         token(lits, 0, 0)
@@ -400,8 +428,22 @@ def stage_far(far, syms):
     # Zero the count while INITAD is still unset, so that the first trigger
     # cannot act on whatever the staging buffer happened to contain.
     out += seg(hdr, b"\x00" * HDR)
+    # Where the loader runs its unpacker: the bank above the far image, in
+    # the accelerator's fast RAM, because bank $00 is all on the slow bus
+    # until the program switches it (src/farload.s, fl_fastbank).
+    if "fl_fastbank" not in syms:
+        raise SystemExit("far segments need src/farload.s's fl_fastbank")
+    top = max(vaddr + len(data) - 1 for vaddr, data in far) >> 16
+    out += seg(syms["fl_fastbank"], bytes([top + 1]))
     stats = []
+    last = 0
     for vaddr, data in far:
+        # IN ADDRESS ORDER: the loader takes the end of the last chunk as
+        # the top of the image (src/farload.s, ff_done), not a maximum.
+        if vaddr < last:
+            raise SystemExit(f"far segment ${vaddr:06X} is below one already "
+                             f"staged; the loader needs them in address order")
+        last = vaddr + len(data)
         n = 0
         for dst, plain, packed in far_chunks(vaddr, data, chunk):
             out += seg(hdr, struct.pack("<HBH", dst & 0xFFFF, dst >> 16, len(plain))
@@ -453,7 +495,7 @@ def main(argv):
     if far:
         chunk = syms["_fl_end"] - syms["_fl_buf"]
         staged, chunks = stage_far(far, syms)
-        packed = len(staged) - sum(chunks) * (4 + HDR + 6) - (4 + HDR)
+        packed = len(staged) - sum(chunks) * (4 + HDR + 6) - (4 + HDR) - 5
         print(f"    {nearb} bytes in bank $00, {farb} far packed to {packed} "
               f"({100 * packed // farb}%) in {sum(chunks)} chunk(s) of up to {chunk}")
     return 0
