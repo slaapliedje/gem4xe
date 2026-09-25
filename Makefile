@@ -195,6 +195,10 @@ build/dev_antic.o: src/vdi/dev_antic.c src/vdi/vdidev.h src/vdi/vdi.h src/antic/
 # build/vdi.o, build/pointer.o and build/font.o serve both screens: that
 # is what the vtable bought, and it is checkable rather than claimed --
 # test-m3 and test-m25 link the same vdi.o.
+build/bench_antic.o: src/bench_antic.c src/vdi/vdi.h src/vdi/vdidev.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src -I src/vdi -o $@ $<
+
 build/m25_antic_vdi.o: src/m25_antic_vdi.c src/vdi/vdi.h src/vdi/vdidev.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I src/vdi -o $@ $<
@@ -792,6 +796,24 @@ build/m25.elf: $(M25_OBJS) src/gem4xe.scm
 
 build/m25.xex: build/m25.elf
 	python3 tools/mkxex.py $< $@ --entry _atari_entry
+
+# The ANTIC device's own bench (tests/emu/bench_antic.py): m25's objects,
+# the product's vdi.o on vdev_antic, with a runner that draws what the
+# host asks and lets it count the frames.  Not a gate.
+BENCHA_OBJS = $(subst build/m25_antic_vdi.o,build/bench_antic.o,$(M25_OBJS))
+build/bench_antic.elf: $(BENCHA_OBJS) src/gem4xe.scm
+	$(LD) src/gem4xe.scm $(BENCHA_OBJS) -o $@ $(LIB) $(LDFLAGS) --list-file build/bench_antic.map
+
+build/bench_antic.xex: build/bench_antic.elf
+	python3 tools/mkxex.py $< $@ --entry _atari_entry --syms build/bench_antic.sym
+
+build/bench-antic.atr: build/bench_antic.xex
+	@test -n "$(SRC_DOS)" || { echo "no DOS fixture: set [dos].sd_dos2 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ BENCHA.COM $(DISK_DENSITY)
+
+bench-antic: build/bench-antic.atr
+	python3 tests/emu/bench_antic.py $(ARGS)
 
 build/m25-boot.atr: build/m25.xex
 	@test -n "$(SRC_DOS)" || { echo "no DOS fixture: set [dos].sd_dos2 in fixtures.toml"; exit 1; }
@@ -1777,7 +1799,10 @@ test-m35: build/m35-boot.atr
 	python3 tests/emu/m35_cpx.py
 
 # A module's settings, saved and put back at the NEXT boot.
-test-m36: build/m36-boot.atr
+# gem-shots.atr is the CONTROL boot, read through build/gem.sym: without
+# it here a stale control disk was read at the current build's addresses,
+# and "the rate is 46080" was a different program's byte.
+test-m36: build/m36-boot.atr build/gem-shots.atr
 	python3 tests/emu/m36_cpxsave.py
 
 # The desktop: DESKTOP.PRG under the shell, driven at the mouse and checked
@@ -2008,4 +2033,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean

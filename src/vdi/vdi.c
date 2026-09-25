@@ -407,20 +407,25 @@ static void vdi_v_gtext(void)
     WORD n = contrl[3], i;
     WORD x = align_x(ptsin[0], (WORD)(n * FONT_W));
     WORD cy = align_y(ptsin[1]);
-    WORD pre = 0, lo = 0, hi = -1;
+    WORD pre = 0, run = 0, lo = 0, hi = -1;
 
     if (n > INTIN_SIZE)
         n = INTIN_SIZE;
-    /* A REPLACE-MODE STRING'S BACKGROUND, ONCE (TEXT_PREFILL, vdidev.h).
-     * The cells the device will blit are the ones wholly inside the screen
-     * and the clip, and those are one contiguous run -- both are boxes --
-     * so their background is one rectangle, painted first; each of those
-     * cells is then drawn as an overlay, glyph only.  A cell outside the
-     * run goes the way it always did and paints its own. */
-    /* NOT when thickened: the second pass spills a column into the next
-     * cell, and it is the next cell's own background that erases it. */
-    if (TEXT_PREFILL && vwk.wrt_mode + 1 == MD_REPLACE && n > 0
-        && !(vwk.text_effects & TXT_THICKEN)
+    /* THE RUN OF WHOLLY VISIBLE CELLS.  A device draws a cell only when
+     * all of it is inside the screen and the clip, and those cells are one
+     * contiguous run -- both are boxes -- lo to hi.  Two devices want it:
+     *
+     * - TEXT_PREFILL (vdidev.h): a replace-mode string's background ONCE,
+     *   one rectangle under the run, and each of its cells drawn as an
+     *   overlay, glyph only;
+     * - TEXT_RUN: the run to the device in one call, which draws it a row
+     *   at a time rather than a cell at a time (docs/phase54.md).
+     *
+     * A cell outside the run goes the way it always did.  NEITHER when
+     * thickened: the second pass spills a column into the next cell, and
+     * it is the next cell's own background that erases it. */
+    if ((TEXT_RUN || (TEXT_PREFILL && vwk.wrt_mode + 1 == MD_REPLACE))
+        && n > 0 && !(vwk.text_effects & TXT_THICKEN)
         && cy >= 0 && cy + FONT_H <= SCR_H
         && (!vwk.clip || (cy >= vwk.ymn_clip && cy + FONT_H - 1 <= vwk.ymx_clip))) {
         WORD left = 0, right = (WORD)(SCR_W - 1);
@@ -435,18 +440,31 @@ static void vdi_v_gtext(void)
              hi >= lo && x + hi * FONT_W + FONT_W - 1 > right; hi--)
             ;
         if (hi >= lo) {
-            dev_fill_rect((WORD)(x + lo * FONT_W), cy,
-                          (WORD)(x + hi * FONT_W + FONT_W - 1),
-                          (WORD)(cy + FONT_H - 1), 0);
-            pre = 1;
+            if (TEXT_RUN) {
+                dev_text_run(&intin[lo], (WORD)(hi - lo + 1),
+                             (WORD)(x + lo * FONT_W), cy);
+                run = 1;
+            } else {
+                dev_fill_rect((WORD)(x + lo * FONT_W), cy,
+                              (WORD)(x + hi * FONT_W + FONT_W - 1),
+                              (WORD)(cy + FONT_H - 1), 0);
+                pre = 1;
+            }
         }
     }
-    for (i = 0; i < n; i++) {
-        WORD cx = (WORD)(x + i * FONT_W);
+    {
+        WORD fw = FONT_W, cx = x;           /* a far read, once; and no
+                                             * multiply per cell */
 
-        if (pre && i >= lo && i <= hi) {
-            dev_glyph(intin[i], cx, cy, 1);         /* the glyph alone */
-        } else {
+        for (i = 0; i < n; i++, cx = (WORD)(cx + fw)) {
+            if (i >= lo && i <= hi) {
+                if (run)
+                    continue;                       /* drawn with the run */
+                if (pre) {
+                    dev_glyph(intin[i], cx, cy, 1); /* the glyph alone */
+                    continue;
+                }
+            }
             draw_char(intin[i], cx, cy);
         }
     }

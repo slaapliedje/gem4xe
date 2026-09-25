@@ -69,7 +69,7 @@ full-screen repaints.
 
 | Gate | | |
 |---|---|---|
-| `make test-host` | 289/289 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
+| `make test-host` | 291/291 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
 | `make test-emu` | 5/5 | VBXE FX 1.26 / Rapidus / MEMAC A / CPU switch |
 | `make test-m1` | 5/5 | Calypsi C on the 65C816 |
 | `make test-m2` | PASS | 640×240×4bpp HR overlay, 153,600/153,600 pixels |
@@ -550,7 +550,7 @@ each gate proves is the third column of that table and no tool can generate it,
 so a gate nothing has said anything about is an error for a person rather than
 a row invented to go green.
 
-Calypsi cc65816 5.18.2 has **24 defects** this tree has met — mostly in code
+Calypsi cc65816 5.18.2 has **25 defects** this tree has met — mostly in code
 generation, plus two crashes in the compiler itself, a compile that never
 finishes, a refusal and a bad link — each reproduced in the vendor's own
 simulator and worked around at the source (or, for the divide flags, with a

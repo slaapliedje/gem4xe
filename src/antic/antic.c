@@ -463,6 +463,123 @@ void antic_glyph(uint32_t face, uint16_t ch, int16_t x, int16_t y,
     }
 }
 
+/* One row of a run packed into buf, w bits a cell, the first cell `lead`
+ * bits in: bit 7 of buf[0] is the screen byte's leftmost pixel, as the
+ * screen has it.  The system face is 6 wide, and a shift by the constant
+ * 6 is a few instructions where a shift by `w` is a loop on this CPU --
+ * so that width has a packer of its own. */
+static void an_pack6(uint8_t *buf, const uint8_t FAR *sr,
+                     const int16_t *chars, uint16_t n, uint16_t lead)
+{
+    uint16_t i, k = 0, acc = 0, bits = lead;
+    uint8_t g;
+
+    for (i = 0; i < n; i++) {
+        g = sr[chars[i] & 0xFF];        /* & and not a (uint8_t) cast,
+                                         * which with a far table in a
+                                         * loop is an internal compiler
+                                         * error (tools/ccbug B22); into a
+                                         * local first (B18) */
+        acc = (uint16_t)((acc << 6) | (uint16_t)(g >> 2));
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            g = (uint8_t)(acc >> bits);
+            buf[k] = g;
+            k++;
+        }
+    }
+    if (bits) {
+        g = (uint8_t)(acc << (8 - bits));
+        buf[k] = g;
+    }
+}
+
+static void an_packw(uint8_t *buf, const uint8_t FAR *sr,
+                     const int16_t *chars, uint16_t n, uint16_t lead,
+                     int16_t w)
+{
+    uint16_t i, k = 0, acc = 0, bits = lead;
+    uint8_t g, drop = (uint8_t)(8 - w); /* the columns past the face's */
+
+    for (i = 0; i < n; i++) {
+        g = sr[chars[i] & 0xFF];        /* B22, as above */
+        acc = (uint16_t)((acc << w) | (uint16_t)(g >> drop));
+        bits += (uint16_t)w;
+        if (bits >= 8) {
+            bits -= 8;
+            g = (uint8_t)(acc >> bits);
+            buf[k] = g;
+            k++;
+        }
+    }
+    if (bits) {
+        g = (uint8_t)(acc << (8 - bits));
+        buf[k] = g;
+    }
+}
+
+/* A string, a row at a time.  Per glyph, antic_glyph sets up a cell --
+ * an op, two edge masks, a font address worked out again for every row
+ * -- and a string of 53 paid that 53 times over: 370 microseconds a
+ * character, with the screen bytes themselves a few percent of it
+ * (docs/phase54.md).  Here the op and the masks are worked out once a
+ * string, and each row of the run is packed into a buffer in fast RAM
+ * ALREADY SHIFTED to the screen's alignment -- the first byte carries
+ * x & 7 pixels of nothing, which the left mask keeps off the screen -- so
+ * buffer byte k is screen byte k and each goes down once, through the
+ * same AN_PUT as everything else here: whole bytes of a replace written
+ * without being read.  The background is antic_glyph's (an_op_pen), so the
+ * pixels are the same as n glyphs, which tests/host/text_sim.c holds it
+ * to. */
+void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
+                int16_t x, int16_t y, int16_t mode, uint8_t pen,
+                int16_t w, int16_t h)
+{
+    uint8_t buf[AN_STRIDE + 1];         /* on the stack, as antic_copy's:
+                                         * bank $00 has no 41 bytes to
+                                         * keep (tests/host/test_memory) */
+    const uint8_t FAR *sr = (const uint8_t FAR *)face;
+    volatile uint8_t *p;
+    AN_OP o;
+    uint16_t row, k, lead, last;
+    int16_t x2;
+    uint8_t t;                          /* AN_PUT's scratch */
+    uint8_t lm, rm, g;
+
+    if (n == 0 || w < 1 || w > 8)
+        return;
+    x2 = (int16_t)(x + (int16_t)n * w - 1);
+    if (x < 0 || y < 0 || x2 >= AN_W || y + h > AN_H)
+        return;
+    an_op_pen(&o, mode, pen);
+    lead = (uint16_t)x & 7;
+    lm = an_left[lead];
+    rm = an_right[x2 & 7];
+    last = (uint16_t)(((uint16_t)x2 >> 3) - ((uint16_t)x >> 3));
+    p = SCREEN + (uint16_t)y * AN_STRIDE + ((uint16_t)x >> 3);
+
+    for (row = 0; row < (uint16_t)h; row++) {
+        if (w == 6)
+            an_pack6(buf, sr, chars, n, lead);
+        else
+            an_packw(buf, sr, chars, n, lead, w);
+        if (last == 0) {
+            AN_PUT(p, o, buf[0], (uint8_t)(lm & rm), t);
+        } else {
+            AN_PUT(p, o, buf[0], lm, t);
+            for (k = 1; k < last; k++) {
+                g = buf[k];
+                AN_PUT(p + k, o, g, 0xFF, t);
+            }
+            g = buf[last];
+            AN_PUT(p + last, o, g, rm, t);
+        }
+        p += AN_STRIDE;
+        sr += AN_FONT_STRIDE;
+    }
+}
+
 /* ---- rasters ---------------------------------------------------------- */
 
 /* Eight source bits starting at bit `b` of `row`, bit 7 leftmost, the way

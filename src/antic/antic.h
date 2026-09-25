@@ -120,6 +120,17 @@ void antic_glyph(uint32_t face, uint16_t ch,
                  int16_t x, int16_t y, int16_t mode, uint8_t pen,
                  int16_t w, int16_t h);
 
+/* A RUN of n glyphs, side by side from (x, y), each w wide: what a string
+ * is once the VDI has worked out which of its cells are wholly visible.
+ * The same pixels as n calls of antic_glyph, but a row at a time: each
+ * row of the whole run is built in fast RAM and put down through
+ * antic_raster_row, so each screen byte is touched once and the per-cell
+ * set-up is paid once a string (docs/phase54.md).  The run must be inside
+ * the screen; a run that is not is dropped whole, as a cell is. */
+void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
+                int16_t x, int16_t y, int16_t mode, uint8_t pen,
+                int16_t w, int16_t h);
+
 /* A PATTERNED run.  `patrow` is one row of a GEM fill pattern: sixteen
  * bits, bit 15 the leftmost pixel of a 16-ALIGNED screen word, which is
  * how src/vdi/fillpat.c stores them and how the VBXE driver consumes

@@ -1,8 +1,8 @@
 # tools/ccbug — the cc65816 bugs gem4xe works around
 
-Twenty-one defects in Calypsi cc65816, twenty found against **5.18**
+Twenty-two defects in Calypsi cc65816, twenty-one found against **5.18**
 here and one (B17) reported from another project — fourteen in
-code generation, two crashes, one compile that never finishes (B18), one
+code generation, three crashes, one compile that never finishes (B18), one
 in the front end's arithmetic, one in the run-time library's division and
 one (B20) in what the LINKER placed — each reproduced from a shape
 lifted out of gem4xe or out of the vendor's own C library, each with the
@@ -17,7 +17,7 @@ fixed for a day because the reproducer hid it; see its entry.  `check-cc` report
 README promises "Calypsi 5.18+" and anyone still on 5.18 must get right
 answers.  The workarounds stay in the sources for the same reason. `make check-cc` builds `bugs.c` with the
 vendor's minimal linker script and C library, runs it under `db65816`, and
-reads the results back; `b6.c` and `b11.c`, which the compiler cannot get
+reads the results back; `b6.c`, `b11.c` and `b22.c`, which the compiler cannot get
 through, are compiled on their own and the outcome read from the compiler,
 and `b16.c`, whose output cannot be run, is compiled on its own and its
 listing read:
@@ -30,7 +30,7 @@ listing read:
       B11 near <-> far struct copy over 8 bytes          compiles   still present
       B16 byte spin loop, rep before its back edge         compiles   still present
       B19 pointer difference against a far array           compiles   still present
-    check-cc: PASSED -- every workaround shape is right; 17 of 22 bug shapes still present
+    check-cc: PASSED -- every workaround shape is right; 20 of 25 bug shapes still present
 
 The run **fails only if a workaround shape stops compiling right**, because
 that is what would break gem4xe. A bug that has gone away is reported as
@@ -69,6 +69,7 @@ an optimiser fault, and saying which saves a vendor a bisect.
 | B9 | yes | yes | yes | not an inliner fault: -O0 has a real `jsl` |
 | B10 | no | yes | yes | a defect OF inlining |
 | B11 | yes | yes | yes | internal error |
+| B22 | yes | yes | yes | internal error; `--data-model=large` compiles |
 | B12 | yes | yes | yes | |
 | B16 | no | no | yes | |
 | B18 | no | yes | yes | the compiler never finishes; `--data-model=large` is clean at every level |
@@ -1182,3 +1183,30 @@ function of its own that returns the byte (`an_byte_at`), and never leave
 two stores of the same byte on two ways out of a branchy test — do the
 store once, first, and compare bytes as words (rule 16) in a helper that
 returns a word (`sdx_usable`).
+
+## B22 — a far array indexed by a byte cast, in a loop
+
+    for (i = 0; i < n; i++) {
+        j = (uint8_t)chars[i];          /* chars: a near int16_t array */
+        sum += face[j];                 /* face:  a __far uint8_t *    */
+    }
+
+    internal error: anyIndOffset (1,s),y
+
+Every `-O` level, small data model; `--data-model=large` compiles it.
+It is a crash, not a miscompile, so it cannot ship -- `b22.c` is compiled
+on its own and `check-cc` reads the outcome from the compiler, as it does
+for B6 and B11.
+
+What does NOT crash, which is the vendor's bisect: `& 0xFF` in place of
+the cast; an index that is already a `uint8_t` element; a `(uint16_t)`
+cast; the same loop over a near table; the same expression outside a
+loop; a pointer walked with `++`.  The sources write `& 0xFF`.
+
+FOUND BY: phase 54's string-at-once text on the ANTIC screen
+(`an_pack6`, `src/antic/antic.c`), which indexes the font's far strip
+by each character.  It first looked like register pressure -- the
+function crashed with both of its packing loops in it and compiled with
+either one -- and was not: split into its own function, one loop crashed
+alone.  Reduced by taking things away one at a time until the cast was
+the only thing left that mattered.

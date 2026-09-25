@@ -337,6 +337,17 @@ typedef struct {
      * an initialiser that stops short zero-fills it, so only the device
      * that wants it has to say so. */
     WORD text_prefill;
+
+    /* A STRING'S VISIBLE RUN AT ONCE, or NULL.  `n` cells from `chars`,
+     * the first at (x, cy), every one wholly inside the screen and the
+     * clip -- v_gtext has worked that out -- in the workstation's writing
+     * mode and text colour, drawn as n dev_glyph calls would draw them.
+     * Worth having where the per-glyph set-up costs more than the pixels:
+     * on ANTIC a string of 53 was 53 cells' set-up (docs/phase54.md).
+     * Never asked for thickened text, whose second pass is per glyph.
+     * After text_prefill, and NULL for any device whose initialiser stops
+     * short of it, so those devices did not have to change. */
+    void (*text_run)(const WORD *chars, WORD n, WORD x, WORD cy);
 } VDIDEV;
 
 /* THE DEVICE IN USE.
@@ -422,11 +433,14 @@ void    pr_page_close(void);
 #  define dev_palette_one    DEV_(palette_one)
 #  define dev_invalidate     DEV_(invalidate)
 #  define dev_flush          DEV_(flush)
+#  define dev_text_run       DEV_(text_run)
 #else
 #  define SCR_W         (vdev->w)
 #  define SCR_H         (vdev->h)
 #  define SCR_STRIDE    (vdev->stride)
 #  define TEXT_PREFILL  (vdev->text_prefill)
+#  define TEXT_RUN      (vdev->text_run != 0)
+#  define dev_text_run  (vdev->text_run)
 /* The widest row either device can hand back, for the one buffer that
  * has to be an array rather than a pointer (vdi.c, the paint bucket). */
 /* 336 is the widest overlay's stride -- VB_W_WIDE / 2 in

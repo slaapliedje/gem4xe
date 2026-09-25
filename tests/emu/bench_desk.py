@@ -30,7 +30,7 @@ import shots
 from shots import Tour, boot, poke16, PTR_NONE, SYMS, DISK
 from a8test.launcher import launch
 import symfile, bench_vdi
-from deskrsc import DESKMENU, FILEMENU
+from deskrsc import DESKMENU, FILEMENU, VIEWMENU, TEXTITEM, ICONITEM
 from aesref import W_FULLER, W_NAME
 
 vbxe = sys.argv[1] == "vbxe"
@@ -114,6 +114,11 @@ try:
     timed("open DISK A", lambda: t.run(shots.DCLICK(t.desk_icon("DISK A"))))
     g = t.gadget(W_FULLER); t.go(g)
     timed("full the window", lambda: t.run(shots.CLICK()))
+    # the window's directory as LINES of text: the text-heavy redraw
+    t.drop(VIEWMENU)
+    t.run(shots.path(t.here(), t.menu(VIEWMENU, TEXTITEM), speed=4) + [shots.F(6)])
+    timed("view as text", lambda: t.run(shots.CLICK()))
+    t.choose(VIEWMENU, ICONITEM)
     m = t.menu(DESKMENU); t.go(m)
     timed("drop the Desk menu", lambda: t.run([shots.F(2)]))
     t.cancel_menu(); t.settle()

@@ -153,6 +153,16 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
                 (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
 }
 
+/* A string's visible run, a row of the whole run at a time (text_run in
+ * vdidev.h).  The mode is dev_glyph's for a first pass: never an overlay,
+ * because v_gtext does not ask for thickened text here. */
+void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
+{
+    antic_text(vdi_font, (const int16_t *)chars, (uint16_t)n,
+               (int16_t)x, (int16_t)cy, (int16_t)(vwk.wrt_mode + 1),
+               (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
+}
+
 /* vrt_cpyfm: a one-plane source into the screen -- which is how every
  * icon on the desk is drawn.  The rules per mode are the VDI's:
  *
@@ -480,4 +490,6 @@ const VDIDEV FAR vdev_antic = {
     dev_palette_one,
     dev_invalidate,
     dev_flush,
+    0,                  /* text_prefill: each byte is touched once anyway */
+    dev_text_run,
 };
