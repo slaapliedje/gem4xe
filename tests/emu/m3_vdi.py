@@ -572,6 +572,19 @@ CASES = [
         (V_GTEXT, (16, 20), tuple(b"OPAQUE")),
         (VSWR_MODE, (), (2,))]),
 
+    # A replace-mode string's background is painted ONCE for the run of
+    # cells the blitter will draw, then each glyph over it (vdi.c,
+    # TEXT_PREFILL).  So: an odd x, where each cell's own background was
+    # five blits, and a clip that cuts cells off both ends of the run.
+    ("text, replace mode at odd x, one background for the run", [
+        (VSF_COLOR, (), (2,)), (VR_RECFL, (0, 0, 400, 60), ()),
+        (VSWR_MODE, (), (1,)), (VST_COLOR, (), (4,)),
+        (V_GTEXT, (17, 20), tuple(b"ODD OPAQUE")),
+        (VS_CLIP, (45, 30, 130, 45), (1,)),
+        (V_GTEXT, (9, 40), tuple(b"clipped replace run")),
+        (VS_CLIP, (0, 0, 639, 239), (0,)),
+        (VSWR_MODE, (), (2,))]),
+
     ("text at odd x (CPU fallback) must match", [
         (VSWR_MODE, (), (2,)), (VST_COLOR, (), (1,)),
         (V_GTEXT, (16, 20), tuple(b"even x")),

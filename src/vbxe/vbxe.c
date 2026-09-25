@@ -69,8 +69,20 @@ static uint8_t memac_bank = 0xFF;           /* shadow: BANK_SEL is write-only
                                                in spirit and re-poking it on
                                                every byte would be wasteful */
 
+static uint8_t bcb_count;                   /* below, with the list */
+void blit_run(void);
+
+/* THE CPU NEVER TOUCHES VRAM WITH BLITS QUEUED.  Every CPU access to VRAM
+ * comes through here, so this is where the queue is drained first -- which
+ * is what lets a primitive LEAVE its blits queued for the next one, instead
+ * of starting the blitter and waiting on it after every glyph and every
+ * rectangle (docs/phase53.md).  Program order is kept exactly: blits a
+ * caller queued run before any CPU write that follows them, as if each had
+ * run at once. */
 void vram_map_page(uint8_t page)
 {
+    if (bcb_count)
+        blit_run();
     if (page != memac_bank) {
         memac_bank = page;
         REG(FX_MEMAC_CONTROL)  = MEMAC_CTL_4K_8000;
@@ -282,15 +294,27 @@ void vbxe_wait_vbl(void)
  * to the physically adjacent BCB. */
 #define MAX_BCB 12
 ZWIN static uint8_t  bcb[MAX_BCB * BCB_SIZE];
-static uint8_t  bcb_count = 0;
 
+
+
+/* A FULL QUEUE IS RUN, not refused.  It used to return 0 here and every
+ * caller then silently dropped its blit -- safe only because every
+ * primitive flushed at its end and none queued more than twelve.  Now that
+ * blits are left queued across primitives, running the full list and
+ * starting a fresh one is the only right answer, and it keeps order. */
+/* The queue discarded. */
 void blit_reset(void) { bcb_count = 0; }
 
+/* A FULL QUEUE IS RUN, not refused.  It used to return 0 here and every
+ * caller then silently dropped its blit -- safe only because every
+ * primitive flushed at its end and none queued more than twelve.  Now that
+ * blits are left queued across primitives, running the full list and
+ * starting a fresh one is the only right answer, and it keeps order. */
 static uint8_t *bcb_new(void)
 {
     uint8_t *p;
     if (bcb_count >= MAX_BCB)
-        return 0;
+        blit_run();
     p = &bcb[bcb_count * BCB_SIZE];
     bcb_count++;
     return p;
@@ -430,15 +454,26 @@ void blit_move(uint32_t src, uint16_t sstride, uint32_t dst,
 /* Upload the queued list and start it, without waiting. */
 void blit_start(void)
 {
-    uint8_t i;
-    if (!bcb_count)
+    uint8_t i, n = bcb_count;
+    if (!n)
         return;
+    /* The queue is EMPTIED BEFORE the upload, not after: the upload is a
+     * CPU write to VRAM, and vram_map_page() drains a non-empty queue
+     * before any of those -- which would be this function, again. */
+    bcb_count = 0;
     /* Chain every block but the last. */
-    for (i = 0; i + 1 < bcb_count; i++)
+    for (i = 0; i + 1 < n; i++)
         bcb[i * BCB_SIZE + 20] |= BLT_NEXT;
-    bcb[(bcb_count - 1) * BCB_SIZE + 20] &= (uint8_t)~BLT_NEXT;
+    bcb[(n - 1) * BCB_SIZE + 20] &= (uint8_t)~BLT_NEXT;
 
-    vram_write(VR_BCB, bcb, (uint16_t)(bcb_count * BCB_SIZE));
+    /* ALL of it, every time.  Uploading only the bytes that changed since
+     * the last list was tried (2026-09-24) and made a redraw nearly twice
+     * as slow: a byte on the slow bus costs about sixteen fast cycles, and
+     * the bookkeeping to skip one -- a compare, a dirty bit, a variable
+     * shift that is a loop on this CPU -- costs more than the byte.
+     * vram_write's word loop, pointers in the direct page, is as close to
+     * the bus's own speed as this gets (docs/phase53.md). */
+    vram_write(VR_BCB, bcb, (uint16_t)(n * BCB_SIZE));
 
     REG(FX_BL_ADR0) = (uint8_t)(VR_BCB);
     REG(FX_BL_ADR1) = (uint8_t)(VR_BCB >> 8);
@@ -449,7 +484,6 @@ void blit_start(void)
     REG(FX_BLITTER_START) = 1;
     memac_invalidate();                           /* the blitter owns VRAM
                                                      while it runs          */
-    bcb_count = 0;
 }
 
 uint8_t blit_busy(void) { return REG(FX_BLITTER_BUSY); }

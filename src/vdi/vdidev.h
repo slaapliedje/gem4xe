@@ -67,6 +67,7 @@
 #  define SCR_W       PR_W
 #  define SCR_H       PR_H
 #  define SCR_STRIDE  PR_STRIDE
+#  define TEXT_PREFILL  0
 #  define FONT_W        8
 #  define FONT_H        8
 #  define FONT_TOP      6
@@ -80,6 +81,7 @@
 #  define SCR_W       AN_W
 #  define SCR_H       AN_H
 #  define SCR_STRIDE  AN_STRIDE
+#  define TEXT_PREFILL  0
    /* Atari's condensed face (bios/fnt_st_6x6.c), which is what the ST
     * uses for icon labels in low resolution -- GEM's own answer to a
     * screen short of pixels.  6 wide is 53 columns here where 8 would be
@@ -111,6 +113,7 @@
 #  define SCR_W       (vdev->w)
 #  define SCR_H       VB_H
 #  define SCR_STRIDE  (vdev->stride)
+#  define TEXT_PREFILL  1
 #  define FONT_W        8
 #  define FONT_H        8
 #  define FONT_TOP      6     /* Fonthead.top: baseline to top of cell */
@@ -324,6 +327,16 @@ typedef struct {
      * write WAS the drawing. */
     void (*flush)(void);
 
+    /* Does v_gtext paint a replace-mode string's background ONCE, for the
+     * whole run, and then draw the glyphs over it -- rather than each glyph
+     * painting its own cell?  The pixels are the same either way.  It is
+     * worth it where each piece of work is a blit: on VBXE a cell at an
+     * odd x is five blits of background before its glyph, and a string is
+     * one fill (docs/phase53.md).  ANTIC touches each byte once anyway and
+     * would only do more, so it is 0 there.  LAST, and that is on purpose:
+     * an initialiser that stops short zero-fills it, so only the device
+     * that wants it has to say so. */
+    WORD text_prefill;
 } VDIDEV;
 
 /* THE DEVICE IN USE.
@@ -413,6 +426,7 @@ void    pr_page_close(void);
 #  define SCR_W         (vdev->w)
 #  define SCR_H         (vdev->h)
 #  define SCR_STRIDE    (vdev->stride)
+#  define TEXT_PREFILL  (vdev->text_prefill)
 /* The widest row either device can hand back, for the one buffer that
  * has to be an array rather than a pointer (vdi.c, the paint bucket). */
 /* 336 is the widest overlay's stride -- VB_W_WIDE / 2 in

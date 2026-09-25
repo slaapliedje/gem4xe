@@ -34,7 +34,8 @@ from deskrsc import DESKMENU, FILEMENU
 from aesref import W_FULLER, W_NAME
 
 vbxe = sys.argv[1] == "vbxe"
-prof = "--profile" in sys.argv
+prof = "--profile" in sys.argv or "--calls" in sys.argv
+calls_mode = "--calls" in sys.argv            # count calls per function instead
 syms = symfile.load(SYMS)
 mapfile = os.path.splitext(SYMS)[0] + ".map"
 ranges = bench_vdi.far_ranges(mapfile)
@@ -55,7 +56,7 @@ IDLE = {}
 
 def timed(label, act):
     if prof:
-        b.ok("PROFILE_START mode=insns")
+        b.ok(f"PROFILE_START mode={'functions' if calls_mode else 'insns'}")
     f0 = FR[0]
     n0 = b.peek16(calls)
     act()
@@ -72,9 +73,26 @@ def timed(label, act):
     b.ok("PROFILE_STOP")
     r = b.ok("PROFILE_DUMP top=4096")
     cyc = collections.Counter()
+    ncall = collections.Counter()
     for h in r["hot"]:
         a = int(str(h["addr"]).lstrip("$"), 16)
-        cyc[bench_vdi.where(place, syms, ranges, a)] += h["cycles"]
+        fn = bench_vdi.where(place, syms, ranges, a)
+        # THE PROFILER DROPS THE BANK, and bench_vdi.where() names only far
+        # code -- so bank $00's own code, the OS ROM above all, was being
+        # pinned on whichever far function shares the offset.  Reading a
+        # directory off the floppy showed up as "draw_arrow|sh_ldauto",
+        # neither of which runs then: $E5A4-$E5BF is the OS's SIO.  Name
+        # the bank-$00 candidate too, so the ambiguity is visible.
+        if 0xC000 <= a < 0xD000 or a >= 0xD800:
+            fn = "OS ROM|" + fn
+        elif 0x2000 <= a < 0x4000:
+            fn = "near|" + fn
+        cyc[fn] += h["cycles"]
+        ncall[fn] += h.get("calls", 0)
+    if calls_mode:
+        for fn, c in ncall.most_common(25):
+            print(f"      {fn:44s} calls {c:6d}  cycles {cyc[fn]:8d}")
+        return
     if not IDLE:
         for fn, c in cyc.items():
             IDLE[fn] = c / frames
@@ -94,11 +112,6 @@ try:
     timed("idle, nothing to do", lambda: b.frames(30))
     t.go(t.desk_icon("DISK A"))
     timed("open DISK A", lambda: t.run(shots.DCLICK(t.desk_icon("DISK A"))))
-    nm = t.gadget(W_NAME); t.go(nm)
-    def drag():
-        t.run([shots.B(1), shots.F(4)] + shots.path(nm, (nm[0] + 36, nm[1] + 24))
-              + [shots.F(4), shots.B(0), shots.F(2)])
-    timed("move the window", drag)
     g = t.gadget(W_FULLER); t.go(g)
     timed("full the window", lambda: t.run(shots.CLICK()))
     m = t.menu(DESKMENU); t.go(m)
@@ -106,6 +119,12 @@ try:
     t.cancel_menu(); t.settle()
     g = t.gadget(W_FULLER); t.go(g)
     timed("unfull (desk redraw)", lambda: t.run(shots.CLICK()))
+    # LAST: a moved window puts every later click somewhere else
+    nm = t.gadget(W_NAME); t.go(nm)
+    def drag():
+        t.run([shots.B(1), shots.F(4)] + shots.path(nm, (nm[0] + 36, nm[1] + 24))
+              + [shots.F(4), shots.B(0), shots.F(2)])
+    timed("move the window", drag)
     b.screenshot(os.path.join(out, f"end-{sys.argv[1]}.png"))
 finally:
     emu.stop()

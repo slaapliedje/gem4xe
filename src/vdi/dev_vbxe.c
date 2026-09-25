@@ -24,10 +24,39 @@
 #define HW(pen) ((WORD)map_col[(pen) & 0x0F])
 extern const uint8_t map_col[16];
 
+/* The VRAM offset of screen row y: y * SCR_STRIDE, without a multiply.
+ *
+ * It was `scr_row(y)` at every primitive's first line, and
+ * that is a 32-bit multiply -- the stride is the device's, read at run
+ * time, so the compiler cannot turn it into shifts -- which the compiler
+ * then folded into shared fragments calling _Mul32.  The VBXE bench put
+ * _Mul32 at a tenth of a window redraw (docs/phase53.md).  Every stride
+ * this device has -- 256, 320 and 336 bytes, the three overlay widths --
+ * is a multiple of 16, so y * (stride / 16) is at most 240 * 21 and fits
+ * a word; it is a handful of shifts and adds over the five bits of that
+ * small factor, and then the one shift back up. */
+typedef char vb_strides_are_multiples_of_16[
+    ((VB_W_NARROW / 2) % 16 == 0 && (VB_W_NORMAL / 2) % 16 == 0 &&
+     (VB_W_WIDE / 2) % 16 == 0) ? 1 : -1];
+
+static uint32_t scr_row(WORD y)
+{
+    uint16_t f = (uint16_t)((uint16_t)SCR_STRIDE >> 4);
+    uint16_t a = (uint16_t)y, r = 0;
+
+    while (f) {
+        if (f & 1)
+            r = (uint16_t)(r + a);
+        a = (uint16_t)(a << 1);
+        f = (uint16_t)(f >> 1);
+    }
+    return (uint32_t)r << 4;
+}
+
 void dev_fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
 {
     WORD hwpen = HW(pen);
-    uint32_t base = VR_SCREEN0 + (uint32_t)y1 * SCR_STRIDE;
+    uint32_t base = VR_SCREEN0 + scr_row(y1);
     uint16_t rows = (uint16_t)(y2 - y1 + 1);
     uint8_t  c    = (uint8_t)(((hwpen & 0x0F) << 4) | (hwpen & 0x0F));
     WORD bl = (WORD)(x1 >> 1), br = (WORD)(x2 >> 1);
@@ -63,7 +92,7 @@ void dev_fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
  * fill, with the blitter's XOR mode doing the read-modify-write. */
 void dev_xor_rect(WORD x1, WORD y1, WORD x2, WORD y2)
 {
-    uint32_t base = VR_SCREEN0 + (uint32_t)y1 * SCR_STRIDE;
+    uint32_t base = VR_SCREEN0 + scr_row(y1);
     uint16_t rows = (uint16_t)(y2 - y1 + 1);
     WORD bl = (WORD)(x1 >> 1), br = (WORD)(x2 >> 1);
 
@@ -237,7 +266,7 @@ void dev_patt_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
         WORD     pr   = (WORD)(y & (VR_PATT_ROWS - 1));
         uint16_t rows = (uint16_t)(VR_PATT_ROWS - pr);
         uint32_t src  = VR_PATT + (uint32_t)pr * VR_PATT_STRIDE;
-        uint32_t dst  = VR_SCREEN0 + (uint32_t)y * SCR_STRIDE;
+        uint32_t dst  = VR_SCREEN0 + scr_row(y);
         WORD l = bl, r = br;
 
         if (rows > (uint16_t)(y2 - y + 1))
@@ -253,7 +282,6 @@ void dev_patt_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
         if (r >= l)
             patt_span(how, src + (l & 7), VR_PATT_STRIDE, dst + l,
                       (uint16_t)(r - l + 1), rows, 0xFF);
-        blit_run();
         y += (WORD)rows;
     }
 }
@@ -287,8 +315,10 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
     UWORD bits;
     uint32_t dst;
 
-    if (blit_pending())         /* nothing may still be reading the strips */
-        blit_run();
+    /* No flush up front: a strip is only ever rewritten through vram_win(),
+     * which drains the queue first (src/vbxe/vbxe.c), so the blits still
+     * reading the old strip run before it changes -- and a run of lines in
+     * the same style, which is most of them, never waits at all. */
     if (y1 == y2) {
         WORD l, r;
 
@@ -300,7 +330,7 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
             patt_row(vram_win(VR_LINE_H), bits, set, clr);
             lh_bits = bits;  lh_set = set;  lh_clr = clr;  lh_valid = 1;
         }
-        dst = VR_SCREEN0 + (uint32_t)y1 * SCR_STRIDE;
+        dst = VR_SCREEN0 + scr_row(y1);
         l = (WORD)(a >> 1);  r = (WORD)(b >> 1);
         if (a & 1) {                                    /* partial left */
             patt_span(how, VR_LINE_H + (l & 7), 0, dst + l, 1, 1, 0x0F);
@@ -330,14 +360,13 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
              * a source Y step of 0 re-reads the same 16 bytes each row */
             blit_copy(VR_LINE_V, 0, VR_LINE_V + 16, 16, 16,
                       (uint16_t)(VR_LINE_V_ROWS / 16 - 1));
-            blit_run();
+            /* queued ahead of the span that reads it: order is enough */
             lv_bits = bits;  lv_set = set;  lv_clr = clr;  lv_valid = 1;
         }
-        dst = VR_SCREEN0 + (uint32_t)a * SCR_STRIDE + (uint32_t)(x1 >> 1);
+        dst = VR_SCREEN0 + scr_row(a) + (uint32_t)(x1 >> 1);
         patt_span(how, VR_LINE_V + (a & 15), 1, dst, 1, (uint16_t)(b - a + 1),
                   (x1 & 1) ? 0x0F : 0xF0);
     }
-    blit_run();
 }
 
 
@@ -446,7 +475,7 @@ static void cursor_save(WORD cx, WORD cy)
     sv_y  = y0;
     sv_nb = (WORD)(bx1 - bx0 + 1);
     sv_nr = (WORD)(y1 - y0 + 1);
-    blit_copy(VR_SCREEN0 + (uint32_t)sv_y * SCR_STRIDE + (uint32_t)sv_bx,
+    blit_copy(VR_SCREEN0 + scr_row(sv_y) + (uint32_t)sv_bx,
               SCR_STRIDE, VR_CURSAVE, VR_CURSAVE_STRIDE,
               (uint16_t)sv_nb, (uint16_t)sv_nr);
 }
@@ -456,7 +485,7 @@ static void cursor_restore(void)
     if (!sv_nb)
         return;
     blit_copy(VR_CURSAVE, VR_CURSAVE_STRIDE,
-              VR_SCREEN0 + (uint32_t)sv_y * SCR_STRIDE + (uint32_t)sv_bx,
+              VR_SCREEN0 + scr_row(sv_y) + (uint32_t)sv_bx,
               SCR_STRIDE, (uint16_t)sv_nb, (uint16_t)sv_nr);
     blit_run();
     sv_nb = 0;
@@ -472,7 +501,7 @@ static void cursor_paint(WORD cx, WORD cy)
         return;
     off = (uint32_t)(sv_y - cy) * CUR_STRIDE
         + (uint32_t)(sv_bx - (WORD)(cx >> 1));
-    dst = VR_SCREEN0 + (uint32_t)sv_y * SCR_STRIDE + (uint32_t)sv_bx;
+    dst = VR_SCREEN0 + scr_row(sv_y) + (uint32_t)sv_bx;
     blit_mask(VR_CUR_AND(par) + off, CUR_STRIDE, dst, SCR_STRIDE,
               (uint16_t)sv_nb, (uint16_t)sv_nr, 0xFF, 0x00, BLT_MODE_AND);
     blit_mask(VR_CUR_OR(par) + off, CUR_STRIDE, dst, SCR_STRIDE,
@@ -618,7 +647,7 @@ static void draw_glyph(WORD ch, WORD cx, WORD cy, WORD hwink, WORD cleared)
         sstride = FONT_VSTRIDE;
         bytes   = FONT_BYTES;
     }
-    dst = VR_SCREEN0 + (uint32_t)cy * SCR_STRIDE + (uint32_t)(cx >> 1);
+    dst = VR_SCREEN0 + scr_row(cy) + (uint32_t)(cx >> 1);
 
     if (!cleared)
         blit_mask(src, sstride, dst, SCR_STRIDE, bytes, FONT_H,
@@ -909,7 +938,7 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
                 pv++;
             }
         }
-        dst = VR_SCREEN0 + (uint32_t)y * SCR_STRIDE + (uint32_t)bx0;
+        dst = VR_SCREEN0 + scr_row(y) + (uint32_t)bx0;
         if (r1_kind == R1_TWO) {
             blit_mask(VR_STRIP + R1_ROW, 0, dst, SCR_STRIDE,
                       (uint16_t)nb, (uint16_t)rows, 0xFF, 0x00,
@@ -921,8 +950,7 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
             blit_mask(VR_STRIP, (uint16_t)nb, dst, SCR_STRIDE,
                       (uint16_t)nb, (uint16_t)rows, 0xFF, 0x00, r1_kind);
         }
-        if (blit_pending())
-            blit_run();
+        /* the next band's vram_win() drains these before the strip moves */
     }
 }
 
@@ -973,7 +1001,7 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
                           (WORD)(cy + FONT_H - 1), 0);
         draw_glyph(ch, cx, cy, HW(vwk.text_color),
                    (WORD)(!overlay && mode == MD_REPLACE));
-        blit_run();
+        /* no run per glyph: a string is one list (vdi(), src/vdi/vdi.c) */
     } else {
         draw_glyph_cpu(ch, cx, cy);
     }
@@ -1131,10 +1159,29 @@ void dev_line_diag(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
 }
 
 
+/* Row y of a form: y * stride for a form whose stride is anything -- an
+ * off-screen MFDB's, not the screen's -- as shifts and adds over the bits
+ * of y, which is a row count and never large, instead of the 32-bit
+ * multiply the compiler made of it (see scr_row).  y is inside the form,
+ * so it is not negative. */
+static uint32_t form_row(WORD y, WORD stride)
+{
+    uint32_t s = (uint32_t)(uint16_t)stride, r = 0;
+    uint16_t a = (uint16_t)y;
+
+    while (a) {
+        if (a & 1)
+            r += s;
+        s <<= 1;
+        a = (uint16_t)(a >> 1);
+    }
+    return r;
+}
+
 /* One pixel into a form, already known to be inside it. */
 static void rform_plot(const RFORM *f, WORD x, WORD y, WORD hwpen)
 {
-    uint32_t a = f->base + (uint32_t)y * f->stride + (uint32_t)(x >> 1);
+    uint32_t a = f->base + form_row(y, f->stride) + (uint32_t)(x >> 1);
     uint8_t  b = vram_read8(a);
     if (x & 1)
         b = (uint8_t)((b & 0xF0) | (hwpen & 0x0F));
@@ -1173,12 +1220,11 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
     WORD y;
 
     if (((sx1 ^ dx1) & 1) == 0 && (sx1 & 1) == 0 && (w & 1) == 0) {
-        blit_move(src->base + (uint32_t)sy1 * src->stride + (uint32_t)(sx1 >> 1),
+        blit_move(src->base + form_row(sy1, src->stride) + (uint32_t)(sx1 >> 1),
                   src->stride,
-                  dst->base + (uint32_t)dy1 * dst->stride + (uint32_t)(dx1 >> 1),
+                  dst->base + form_row(dy1, dst->stride) + (uint32_t)(dx1 >> 1),
                   dst->stride,
                   (uint16_t)(w >> 1), (uint16_t)h);
-        blit_run();
         return;
     }
     for (y = 0; y < h; y++) {
@@ -1188,7 +1234,7 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
         for (i = 0; i < w; i++) {
             WORD sx = (dx1 > sx1) ? (WORD)(sx1 + w - 1 - i) : (WORD)(sx1 + i);
             WORD dx = (dx1 > sx1) ? (WORD)(dx1 + w - 1 - i) : (WORD)(dx1 + i);
-            uint32_t a = src->base + (uint32_t)sy * src->stride + (uint32_t)(sx >> 1);
+            uint32_t a = src->base + form_row(sy, src->stride) + (uint32_t)(sx >> 1);
             uint8_t  v = vram_read8(a);
             rform_plot(dst, dx, dy, (WORD)((sx & 1) ? (v & 0x0F) : (v >> 4)));
         }
@@ -1224,7 +1270,7 @@ static WORD rev_col(WORD hw)
 
 void dev_read_row(WORD y, uint8_t *px)
 {
-    uint32_t base = VR_SCREEN0 + (uint32_t)y * SCR_STRIDE;
+    uint32_t base = VR_SCREEN0 + scr_row(y);
     WORD i = 0;
 
     while (i < SCR_STRIDE) {
@@ -1254,7 +1300,7 @@ WORD dev_pen_value(WORD pen)
 
 void dev_get_pixel(WORD x, WORD y, WORD *value, WORD *pen)
 {
-    uint8_t b = vram_read8(VR_SCREEN0 + (uint32_t)y * SCR_STRIDE
+    uint8_t b = vram_read8(VR_SCREEN0 + scr_row(y)
                            + (uint32_t)((UWORD)x >> 1));
     WORD hw = (WORD)((x & 1) ? (b & 0x0F) : (b >> 4));
 
@@ -1352,6 +1398,7 @@ extern const uint8_t FAR font8x8[];
     dev_palette_one,                                                      \
     dev_invalidate,                                                       \
     dev_flush,                                                            \
+    1,                  /* text_prefill: a string's background is one fill */ \
 }
 
 /* Every width the overlay has by every height a tube might want, which

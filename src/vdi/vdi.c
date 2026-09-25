@@ -118,7 +118,7 @@ static void paint_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
     case MD_ERASE:  return;                 /* nothing is clear: no-op */
     default:        dev_fill_rect(x1, y1, x2, y2, pen);        break;
     }
-    dev_flush();
+    /* no flush: vdi() flushes once, after the call (see there) */
 }
 
 /* ---------------------------------------------------------------------- */
@@ -182,17 +182,40 @@ UWORD pat_bits(WORD r)
     }
 }
 
+/* A line style anchored to the screen's 16-pixel grid: pixel j of the
+ * result is pixel (j - from) of the mask going right, (from - j) going
+ * left -- counting pixels from bit 15.
+ *
+ * That is a ROTATION, and it used to be computed as sixteen trips round a
+ * loop with two variable shifts in each -- and a variable shift is itself
+ * a loop on this CPU.  It ran for every line the VDI drew, and nearly
+ * every line the AES draws is SOLID, where the answer is the input: the
+ * VBXE bench put it near a tenth of opening a window (docs/phase53.md).
+ * Going right it is the mask rotated right by `from`; going left it is the
+ * mask reversed and then rotated right by `from + 1`.  Same answers, bit
+ * for bit: tests/host/test_style.py holds the rotation to the old loop,
+ * and test-m3's styled lines hold this C to the model. */
+static UWORD rotr16(UWORD v, UWORD n)
+{
+    n &= 15;
+    return n ? (UWORD)((v >> n) | (v << (16 - n))) : v;
+}
+
 UWORD style_anchor(UWORD mask, WORD from, WORD dir)
 {
-    UWORD p = 0;
-    WORD j;
+    UWORD r;
+    WORD b;
 
-    for (j = 0; j < 16; j++) {
-        UWORD i = (UWORD)((dir > 0) ? (j - from) : (from - j)) & 15;
-        if (mask & (UWORD)(1u << (15 - i)))
-            p |= (UWORD)(1u << (15 - j));
+    if (mask == 0xFFFF || mask == 0x0000)
+        return mask;                    /* solid or empty: no phase to set */
+    if (dir > 0)
+        return rotr16(mask, (UWORD)from);
+    r = 0;                              /* the mask read backwards */
+    for (b = 0; b < 16; b++) {
+        r = (UWORD)((r << 1) | (mask & 1));
+        mask >>= 1;
     }
-    return p;
+    return rotr16(r, (UWORD)(from + 1));
 }
 
 /* vr_recfl's rectangle: the current pattern in the current mode.  The two
@@ -212,7 +235,6 @@ static void fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
         case MD_ERASE:   dev_fill_rect(x1, y1, x2, y2, pen);  break;
         default:         return;
         }
-        dev_flush();
         return;
     }
     dev_patt_rect(x1, y1, x2, y2, pen);
@@ -385,9 +407,49 @@ static void vdi_v_gtext(void)
     WORD n = contrl[3], i;
     WORD x = align_x(ptsin[0], (WORD)(n * FONT_W));
     WORD cy = align_y(ptsin[1]);
+    WORD pre = 0, lo = 0, hi = -1;
 
-    for (i = 0; i < n && i < INTIN_SIZE; i++)
-        draw_char(intin[i], (WORD)(x + i * FONT_W), cy);
+    if (n > INTIN_SIZE)
+        n = INTIN_SIZE;
+    /* A REPLACE-MODE STRING'S BACKGROUND, ONCE (TEXT_PREFILL, vdidev.h).
+     * The cells the device will blit are the ones wholly inside the screen
+     * and the clip, and those are one contiguous run -- both are boxes --
+     * so their background is one rectangle, painted first; each of those
+     * cells is then drawn as an overlay, glyph only.  A cell outside the
+     * run goes the way it always did and paints its own. */
+    /* NOT when thickened: the second pass spills a column into the next
+     * cell, and it is the next cell's own background that erases it. */
+    if (TEXT_PREFILL && vwk.wrt_mode + 1 == MD_REPLACE && n > 0
+        && !(vwk.text_effects & TXT_THICKEN)
+        && cy >= 0 && cy + FONT_H <= SCR_H
+        && (!vwk.clip || (cy >= vwk.ymn_clip && cy + FONT_H - 1 <= vwk.ymx_clip))) {
+        WORD left = 0, right = (WORD)(SCR_W - 1);
+
+        if (vwk.clip) {
+            if (vwk.xmn_clip > left)  left = vwk.xmn_clip;
+            if (vwk.xmx_clip < right) right = vwk.xmx_clip;
+        }
+        for (lo = 0; lo < n && x + lo * FONT_W < left; lo++)
+            ;
+        for (hi = (WORD)(n - 1);
+             hi >= lo && x + hi * FONT_W + FONT_W - 1 > right; hi--)
+            ;
+        if (hi >= lo) {
+            dev_fill_rect((WORD)(x + lo * FONT_W), cy,
+                          (WORD)(x + hi * FONT_W + FONT_W - 1),
+                          (WORD)(cy + FONT_H - 1), 0);
+            pre = 1;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        WORD cx = (WORD)(x + i * FONT_W);
+
+        if (pre && i >= lo && i <= hi) {
+            dev_glyph(intin[i], cx, cy, 1);         /* the glyph alone */
+        } else {
+            draw_char(intin[i], cx, cy);
+        }
+    }
     if ((vwk.text_effects & TXT_UNDERLINE) && n > 0) {
         WORD w = (WORD)(n * FONT_W + ((vwk.text_effects & TXT_THICKEN) ? 1 : 0));
         underline(x, (WORD)(x + w - 1), cy);
@@ -2683,6 +2745,14 @@ void vdi(void)
         jmptb1[op - 1]();
     else if (op >= 100 && op < 100 + N2)
         jmptb2[op - 100]();
+    /* ONE FLUSH A CALL, and not one a primitive.  The VBXE device queues
+     * its blits and used to start the blitter and wait on it after every
+     * rectangle and every glyph -- a line of text was a run per character.
+     * Now a call's blits go as one list: the queue drains itself before any
+     * CPU access to VRAM and when it is full (src/vbxe/vbxe.c), so the
+     * order is the program's, and this is what makes the screen complete
+     * when the call returns.  A no-op on the other two devices. */
+    dev_flush();
 }
 
 void vdi_init(void)

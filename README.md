@@ -69,11 +69,11 @@ full-screen repaints.
 
 | Gate | | |
 |---|---|---|
-| `make test-host` | 287/287 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
+| `make test-host` | 289/289 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
 | `make test-emu` | 5/5 | VBXE FX 1.26 / Rapidus / MEMAC A / CPU switch |
 | `make test-m1` | 5/5 | Calypsi C on the 65C816 |
 | `make test-m2` | PASS | 640×240×4bpp HR overlay, 153,600/153,600 pixels |
-| `make test-m3` | 86/86 | VDI conformance — pixels *and* return values |
+| `make test-m3` | 87/87 | VDI conformance — pixels *and* return values, at each of the three overlay widths |
 | `make test-m4` | 15/15 | AES object library: draw, find, change, edit, centre, icons — mono, and colour icons drawing their mono form — and the tree surgery an application does at run time — `objc_add` and `objc_delete` through every defined branch of the child chain (a middle child, the head, the tail, the last one left, a first child again, and the root refusing to go), checked in the tree's own memory as well as on the screen |
 | `make test-m5` | PASS | linear RAM probed on a **Rapidus**: banks `$04-$EF`, 14.8 MB |
 | `make test-m5p` | PASS | the same probe on a **plain 65C816** with high banks and no accelerator — the shape of an Antonia, and the proof that nothing here depends on one board. Needs this tree's AltirraSDL fork (`tools/altirra/altirra-sdl-cpu-highbanks.patch`) |
