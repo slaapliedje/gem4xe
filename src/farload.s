@@ -16,15 +16,11 @@
 ;;; the buffer to its real home and returns.  By the time DOS reaches the run
 ;;; vector the far image is assembled.
 ;;;
-;;; THE CHUNKS ARE PACKED -- an LZ77, tools/mkxex.py has the format -- because
-;;; the far image is two thirds of a double-density floppy and most of a
-;;; minute of a 1050's reading, and packing makes it a third smaller.  What
-;;; this costs is the unpacking, and that is cheap: a token is a few literal
-;;; bytes and then a copy from output already written, which is in the banks
-;;; above and is read back with the same long pointers that write it.  Both
-;;; copies go a page-run at a time -- as far as the nearer of the two
-;;; pointers is from the end of its page -- so the inner loop is Y-indexed
-;;; and the 24-bit arithmetic happens per run, not per byte.
+;;; THE CHUNKS ARE PACKED -- G4Z, an LZ77 with its numbers in bits;
+;;; tools/mkxex.py has the format -- because the far image is two thirds of
+;;; a double-density floppy and most of a minute of a 1050's reading, and
+;;; packing takes it to 56% (docs/phase57.md).  The unpacking is done in the
+;;; accelerator's fast RAM, not here: see _fl_copy.
 ;;;
 ;;; The loader does not know or care which banks the linker chose: every
 ;;; chunk carries its own 24-bit destination and how many bytes it unpacks
@@ -270,10 +266,19 @@ fl_noram_far: jmp     fl_noram        ; in `code`: out of a branch's reach
 ;;; Entered by JSL in native mode, A, X and Y 16 bits wide, interrupts out.
 ;;; The bank register is pointed at this bank, so its variables below are
 ;;; plain absolute addresses; the packed bytes are read with long
-;;; addressing out of bank $00, X counting through them.  The format is
-;;; tools/mkxex.py's (unpack() there is this, in Python): a token, its
-;;; literals, then unless the chunk's count has run out an offset word --
-;;; zero for no match -- and a match of four bytes and more.
+;;; addressing out of bank $00, X their address there.  The format is
+;;; G4Z, which tools/mkxex.py describes and packs, and whose decode() there
+;;; is this, in Python: bits interleaved with bytes, numbers in interlaced
+;;; Elias gamma, and three elements --
+;;;
+;;;     literals        gamma(n), n bytes
+;;;     new offset      gamma(hi), a byte lo, gamma(len - 1)
+;;;     repeat          gamma(len), at the last offset
+;;;
+;;; chosen by a bit: after a match or at a chunk's start, 0 is literals and
+;;; 1 a new offset; after literals, 0 is a repeat and 1 a new offset.  The
+;;; last offset is kept from chunk to chunk -- it lives here, in the bank
+;;; that stays put -- and nothing else is.
 ;;;
 ;;; Every copy is ONE MVN per piece: MVN moves a byte at a time upwards, so
 ;;; a match that overlaps what it writes -- a run, offset one -- repeats the
@@ -287,9 +292,11 @@ ff_slo:       .word   0               ; where a copy reads: offset...
 ff_sbk:       .word   0               ; ...and bank
 ff_cnt:       .word   0               ; bytes the chunk has still to write
 ff_len:       .word   0               ; bytes this copy has still to write
-ff_tok:       .word   0
-ff_off:       .word   0
 ff_n:         .word   0               ; this piece
+ff_last:      .word   0               ; the last offset: kept across chunks
+ff_bits:      .word   0               ; the bit byte, a 1 below its last bit
+ff_after:     .word   0               ; 0 after a match, else after literals
+ff_v:         .word   0               ; a number being read
 
 ff_unpack:    phb
               phk
@@ -301,54 +308,50 @@ ff_unpack:    phb
               sta     ff_dbk
               lda     long:_fl_count
               sta     ff_cnt
-              ldx     ##0
-ff_token:     lda     ff_cnt
+              ldx     ##_fl_buf       ; X: the next packed byte's address
+              lda     ##0x80          ; no bits: the next one takes a byte
+              sta     ff_bits
+              stz     ff_after        ; a chunk begins as if after a match
+ff_elem:      lda     ff_cnt
               beq     ff_done
-              lda     long:_fl_buf,x
-              inx
-              and     ##0xff
-              sta     ff_tok
-              lsr     a
-              lsr     a
-              lsr     a
-              lsr     a
-              jsr     ff_length       ; ff_len = the literal count
-              lda     ff_len
-              beq     ff_match
-              txa                     ; the literals are the packed bytes
-              clc
-              adc     ##_fl_buf
-              sta     ff_slo
+              jsr     ff_bit
+              lda     ff_after
+              bne     ff_afterlit
+              bcs     ff_new
+              jsr     ff_gamma        ; literals: n, then n bytes
+              sta     ff_len
+              stx     ff_slo          ; ...which are the packed bytes
               stz     ff_sbk
               jsr     ff_copy
-              lda     ff_slo
-              sec
-              sbc     ##_fl_buf
-              tax
-ff_match:     lda     ff_cnt
-              beq     ff_done         ; a chunk may end after its literals
-              lda     long:_fl_buf,x  ; the offset, or 0 for no match
+              ldx     ff_slo
+              stx     ff_after        ; after literals: X is never 0
+              bra     ff_elem
+ff_afterlit:  bcs     ff_new
+              jsr     ff_gamma        ; a repeat of the last offset
+              sta     ff_len
+              bra     ff_match
+ff_new:       jsr     ff_gamma        ; hi, then lo, then the length - 1
+              dec     a
+              xba                     ; hi - 1 in the high byte...
+              sep     #0x20
+              lda     long:0,x        ; ...and lo, 8 bits, in the low one
+              rep     #0x20
               inx
-              inx
-              and     ##0xffff
-              beq     ff_token
-              sta     ff_off
-              lda     ff_dlo
+              inc     a
+              sta     ff_last
+              jsr     ff_gamma
+              inc     a
+              sta     ff_len
+ff_match:     lda     ff_dlo
               sec
-              sbc     ff_off
+              sbc     ff_last
               sta     ff_slo
               lda     ff_dbk
               sbc     ##0
               sta     ff_sbk
-              lda     ff_tok
-              and     ##0x0f
-              jsr     ff_length
-              lda     ff_len
-              clc
-              adc     ##4             ; a match is four bytes at least
-              sta     ff_len
               jsr     ff_copy
-              bra     ff_token
+              stz     ff_after
+              bra     ff_elem
 ;;; One past the chunk is the top of the far image so far: tools/mkxex.py
 ;;; sends the chunks in address order, and refuses to do otherwise, so the
 ;;; last is the highest.  Then the chunk is consumed: DOS may call INITAD
@@ -365,23 +368,32 @@ ff_done:      lda     ff_dlo
               plb
               rtl
 
-;;; ff_length -- ff_len from a token's nibble in A: the nibble itself, or if
-;;; it is 15, that plus every byte that follows up to and including the
-;;; first that is not 255.
-ff_length:    sta     ff_len
-              cmp     ##15
-              bne     ff_len_done
-ff_len_more:  lda     long:_fl_buf,x
+;;; ff_bit -- the next bit, in carry.  The bit byte keeps a 1 below its
+;;; last bit: when shifting it out leaves nothing, the byte is used up and
+;;; the next is taken, with the 1 shifted in below it.
+ff_bit:       sep     #0x20
+              asl     ff_bits
+              bne     ff_bit_done
+              lda     long:0,x
               inx
-              and     ##0xff
-              pha
-              clc
-              adc     ff_len
-              sta     ff_len
-              pla
-              cmp     ##255
-              beq     ff_len_more
-ff_len_done:  rts
+              sec
+              rol     a
+              sta     ff_bits
+ff_bit_done:  rep     #0x20           ; carry kept
+              rts
+
+;;; ff_gamma -- a number, in A: 1, and for as long as a 0 comes, one more
+;;; bit below it; a 1 ends it.
+ff_gamma:     lda     ##1
+              sta     ff_v
+ff_gamma_bit: jsr     ff_bit
+              bcs     ff_gamma_done
+              jsr     ff_bit
+              rol     ff_v
+              bra     ff_gamma_bit
+ff_gamma_done:
+              lda     ff_v
+              rts
 
 ;;; ff_copy -- ff_len bytes from ff_sbk:ff_slo to ff_dbk:ff_dlo, both moved
 ;;; on, and taken off ff_cnt.  X is kept.

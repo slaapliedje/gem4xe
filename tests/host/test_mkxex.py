@@ -38,6 +38,7 @@ def load_xex(blob):
     """
     assert blob[:2] == b"\xff\xff", "missing $FFFF magic"
     mem, initad, runad = {}, None, None
+    LOADER["last"] = 0
     i = 2
     while i < len(blob):
         start, end = struct.unpack_from("<HH", blob, i)
@@ -61,8 +62,14 @@ def load_xex(blob):
     return mem, runad
 
 
+LOADER = {"last": 0}        # what src/farload.s keeps between chunks
+
+
 def farload_copy(mem, hdr=None):
-    """src/farload.s, in Python: unpack one staged chunk, then consume it."""
+    """src/farload.s, in Python, written from the G4Z description at the top
+    of tools/mkxex.py and not from its decode(): unpack one staged chunk,
+    then consume it.  The last offset is kept between chunks, as the loader
+    keeps it, in the bank that stays put."""
     hdr = SYMS["_fl_hdr"] if hdr is None else hdr
     src = SYMS["_fl_buf"]
     cnt = mem.get(hdr + 3, 0) | (mem.get(hdr + 4, 0) << 8)
@@ -78,43 +85,55 @@ def farload_copy(mem, hdr=None):
         f"the unpacker's bank ${fast:02X} is not above a chunk ending at "
         f"${dst + cnt - 1:06X}")
 
-    def nxt():
+    held = []                  # bits of the current bit byte, top first
+
+    def byte():
         nonlocal src
         b = mem[src]
         src += 1
         return b
 
-    def length(nib):
-        n = nib
-        if nib == 15:
-            while True:
-                b = nxt()
-                n += b
-                if b != 255:
-                    break
+    def bit():
+        if not held:
+            b = byte()
+            held.extend((b >> (7 - k)) & 1 for k in range(8))
+        return held.pop(0)
+
+    def number():
+        n = 1
+        while bit() == 0:
+            n = n * 2 + bit()
         return n
 
-    def run(mat, n):
+    def copy(frm, n):
         nonlocal dst, cnt
         for _ in range(n):
-            mem[dst] = mem[mat]
+            mem[dst] = mem[frm]
             dst += 1
-            mat += 1
+            frm += 1
             cnt -= 1
-        return mat
+        assert cnt >= 0, "a chunk wrote past its count"
 
+    after_match = True         # how a chunk begins
     while cnt:
-        tok = nxt()
-        n = length(tok >> 4)
-        src = run(src, n)                      # the literals, from the buffer
-        if not cnt:
-            break
-        off = nxt() | (nxt() << 8)
-        if off == 0:
-            continue                           # no match: only literals
-        n = length(tok & 15) + 4
-        run(dst - off, n)
-        assert src <= SYMS["_fl_end"], "read past the staging buffer"
+        choice = bit()
+        if after_match and choice == 0:            # literals
+            n = number()
+            copy(src, n)
+            src += n
+            after_match = False
+            continue
+        if choice == 1:                            # a new offset
+            hi = number()
+            lo = byte()
+            LOADER["last"] = (hi - 1) * 256 + lo + 1
+            n = number() + 1
+        else:                                      # a repeat
+            assert LOADER["last"], "a repeat before any offset"
+            n = number()
+        copy(dst - LOADER["last"], n)
+        after_match = True
+    assert src <= SYMS["_fl_end"], "read past the staging buffer"
     mem[hdr + 3] = mem[hdr + 4] = 0
 
 
@@ -127,118 +146,126 @@ def rand(n, seed):
     return bytes(r.getrandbits(8) for _ in range(n))
 
 
-class Tokens(unittest.TestCase):
-    """pack() and unpack() are inverses, over every shape of the format."""
+def tile(test, base, data, chunk):
+    """far_chunks() over data: every chunk within its limits and decoded
+    again here, and together exactly the segment."""
+    out, got, last = {}, bytearray(), 0
+    for dst, plain, packed in mkxex.far_chunks(base, data, chunk):
+        test.assertLessEqual(len(packed), chunk)
+        test.assertLessEqual(len(plain), 0xFFFF)
+        test.assertEqual(dst, base + len(got), "chunks in address order, no gaps")
+        last = mkxex.decode(packed, len(plain), got, last)
+        for k, b in enumerate(plain):
+            out[dst + k] = b
+    test.assertEqual(bytes(got), data)
+    test.assertEqual(len(out), len(data), "no byte written outside the segment")
+    return out
 
-    def round_trip(self, data):
-        packed = mkxex.join(mkxex.pack(data))
-        self.assertEqual(mkxex.unpack(packed, len(data)), data)
-        return packed
+
+class G4Z(unittest.TestCase):
+    """The format: every shape of it through the packer and decode()."""
+
+    def round_trip(self, data, chunk=0x1A00):
+        tile(self, 0x010000, data, chunk)
+        return sum(len(p) for _, p in mkxex.chunks(data, chunk))
 
     def test_nothing(self):
-        self.assertEqual(mkxex.pack(b""), [])
+        self.assertEqual(mkxex.chunks(b"", 0x1A00), [])
 
-    def test_too_short_to_match(self):
-        self.round_trip(b"abc")
-        self.round_trip(b"abcabc")            # a 3-byte repeat is not a match
+    def test_short(self):
+        for data in (b"a", b"ab", b"abc", b"abab", b"abcabc"):
+            with self.subTest(data=data):
+                self.round_trip(data)
 
     def test_a_run_is_a_match_at_offset_one(self):
-        packed = self.round_trip(b"\x00" * 1000)
-        self.assertLess(len(packed), 12)
+        self.assertLess(self.round_trip(b"\x00" * 1000), 12)
 
-    def test_literal_extension_bytes(self):
-        for n in (14, 15, 16, 269, 270, 271, 600):
+    def test_a_repeat_after_literals(self):
+        # a block, a changed byte, the block again: the shape repeats serve
+        block = rand(40, 1)
+        data = block + b"\x55" + block[:20] + b"\xAA" + block[21:] * 3
+        self.round_trip(data)
+
+    def test_long_literal_runs_and_numbers_of_every_width(self):
+        for n in (1, 2, 3, 127, 128, 255, 256, 257, 4095, 4096, 9000):
             with self.subTest(n=n):
                 self.round_trip(rand(n, n))
 
-    def test_match_extension_bytes(self):
-        for n in (18, 19, 20, 273, 274, 275, 1023, 1024, 1025, 5000):
+    def test_long_matches(self):
+        for n in (2, 3, 255, 256, 4095, 4096, 4097, 20000):
             with self.subTest(n=n):
                 data = rand(64, 7)
-                data += data[:4] * (n // 4 + 1)  # a long run of one period
+                data += data[:5] * (n // 5 + 1)
                 self.round_trip(data[:64 + n])
 
-    def test_incompressible_data_is_flushed_with_the_no_match_word(self):
-        data = rand(3000, 3)
-        tokens = mkxex.pack(data)
-        self.assertGreater(len(tokens), 1, "MAX_LITERALS should have split it")
-        for tok in tokens:
-            self.assertTrue(mkxex.literal_only(tok))
-            self.assertLessEqual(mkxex.token_out(tok), mkxex.MAX_LITERALS)
-        self.round_trip(data)
+    def test_offsets_of_every_width(self):
+        for gap in (1, 255, 256, 257, 65534, 65535):
+            with self.subTest(gap=gap):
+                block = rand(16, gap)
+                self.round_trip(block + rand(max(gap - 16, 0), gap + 1) + block)
 
-    def test_offset_is_bounded_by_a_word(self):
-        chunk = rand(200, 9)
-        data = chunk + rand(0x10000, 10) + chunk   # the repeat is too far back
-        packed = self.round_trip(data)
-        for tok in mkxex.pack(data):
-            L, i = mkxex.literals(tok)
-            if i + 2 <= len(tok):
-                self.assertLessEqual(tok[i] | (tok[i + 1] << 8), 0xFFFF)
-        self.assertGreater(len(packed), 0x10000 + 200)
+    def test_an_offset_past_a_word_is_not_used(self):
+        block = rand(200, 9)
+        data = block + rand(0x10000, 10) + block
+        self.assertGreater(self.round_trip(data), 0x10000 + 200)
 
-    def test_unpack_refuses_a_reach_before_the_start(self):
+    def test_decode_refuses_a_reach_before_the_start(self):
+        w = mkxex._Bits()
+        w.bit(1)
+        w.gamma(1)
+        w.out.append(4)            # offset 5, with nothing written
+        w.gamma(1)
         with self.assertRaises(ValueError):
-            mkxex.unpack(b"\x00\x05\x00", 4)  # offset 5 with nothing written
+            mkxex.decode(bytes(w.out), 2, bytearray(), 0)
 
-    def test_unpack_refuses_a_count_that_does_not_end_on_a_token(self):
-        packed = mkxex.join(mkxex.pack(b"abcdefgh"))
+    def test_decode_refuses_a_count_that_does_not_end_the_chunk(self):
+        (count, packed), = mkxex.chunks(b"abcdefgh" * 3, 0x1A00)
         with self.assertRaises(ValueError):
-            mkxex.unpack(packed, 5)
+            mkxex.decode(packed, count - 3, bytearray(), 0)
 
+    def test_small_chunks_everywhere(self):
+        # every cut: chunks a few bytes long, a literal run split across
+        # them, a repeat that falls at a chunk's start
+        r = random.Random(5)
+        for trial in range(60):
+            n = r.randint(1, 1500)
+            alpha = r.choice((1, 2, 3, 12, 256))
+            data = bytes(r.randrange(alpha) for _ in range(n))
+            for chunk in (16, 40, 300):
+                with self.subTest(trial=trial, chunk=chunk):
+                    tile(self, 0x010000, data, chunk)
 
-class FarChunks(unittest.TestCase):
-    """far_chunks must cut at token boundaries and cover the segment."""
+    def test_the_output_count_is_kept_under_a_word(self):
+        data = b"\x00" * 200000
+        chunks = list(mkxex.far_chunks(0x010000, data, 0x1A00))
+        self.assertGreaterEqual(len(chunks), 4)
+        tile(self, 0x010000, data, 0x1A00)
+        # ...and it is still a run: skipping the search inside long matches
+        # once made this 97,752 bytes of mostly literals
+        self.assertLess(sum(len(p) for _, _, p in chunks), 400)
 
-    def tile(self, base, data, chunk):
-        out = {}
-        for dst, plain, packed in mkxex.far_chunks(base, data, chunk):
-            self.assertLessEqual(len(packed), chunk)
-            self.assertLessEqual(len(plain), 0xFFFF)
-            self.assertEqual(mkxex.unpack(packed, len(plain),
-                                          data[:dst - base]), plain)
-            for k, b in enumerate(plain):
-                self.assertNotIn(dst + k, out, "chunks must not overlap")
-                out[dst + k] = b
-        self.assertEqual(bytes(out[base + i] for i in range(len(data))), data)
-        self.assertEqual(len(out), len(data), "no byte written outside the segment")
-        return out
-
-    def test_code_like_data(self):
-        data = bytes((i * 7 + 3) & 0xFF for i in range(0x1F00 * 2))
-        self.tile(0x010000, data, 0x1A00)
-
-    def test_incompressible_data_fills_chunks_with_literals(self):
+    def test_incompressible_data_fills_its_chunks(self):
         data = rand(20000, 20)
         chunks = list(mkxex.far_chunks(0x010000, data, 0x1A00))
         self.assertGreaterEqual(len(chunks), 3)
         for dst, plain, packed in chunks[:-1]:
-            self.assertGreater(len(packed), 0x1A00 - mkxex.MAX_LITERALS - 8,
+            self.assertGreater(len(packed), 0x1A00 - 16,
                                "an incompressible chunk should be nearly full")
-        self.tile(0x010000, data, 0x1A00)
 
-    def test_the_output_count_is_kept_under_a_word(self):
-        # A megabyte of zeros packs to next to nothing, but no chunk may
-        # claim to unpack to more than 65535 bytes.
-        data = b"\x00" * 200000
-        chunks = list(mkxex.far_chunks(0x010000, data, 0x1A00))
-        self.assertGreaterEqual(len(chunks), 4)
-        self.tile(0x010000, data, 0x1A00)
-
-    def test_a_chunk_never_ends_with_a_dangling_no_match_word(self):
-        data = rand(3000, 30) + b"\x00" * 3000 + rand(3000, 31)
-        for dst, plain, packed in mkxex.far_chunks(0x010000, data, 1100):
-            # unpack() requires every byte to be consumed, which a trailing
-            # no-match word after the last literal would not be.
-            mkxex.unpack(packed, len(plain), data[:dst - 0x010000])
-
-    def test_small_segment_is_one_chunk(self):
-        chunks = list(mkxex.far_chunks(0x030000, b"gem4xe" * 10, 0x1A00))
-        self.assertEqual(len(chunks), 1)
-
-    def test_a_token_too_big_for_the_buffer_is_refused(self):
+    def test_a_chunk_too_small_for_anything_is_refused(self):
         with self.assertRaises(SystemExit):
-            list(mkxex.far_chunks(0x010000, rand(2000, 40), 500))
+            list(mkxex.far_chunks(0x010000, rand(200, 40), 4))
+
+    def test_the_real_far_image_packs_to_well_under_two_thirds(self):
+        elf = os.path.join(ROOT, "build", "gem.elf")
+        if not os.path.exists(elf):
+            self.skipTest("build/gem.elf not built")
+        segs, _ = mkxex.read_elf(elf)
+        far = [d for a, d in segs if a > 0xFFFF]
+        plain = sum(map(len, far))
+        packed = sum(len(p) for d in far for _, p in mkxex.chunks(d, 0x1A00))
+        self.assertLess(packed / plain, 0.60,
+                        f"{packed} of {plain}: the byte-token format did 0.67")
 
 
 class Staging(unittest.TestCase):

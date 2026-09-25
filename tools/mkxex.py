@@ -41,34 +41,50 @@ both.  The loader still zeroes its own count field, which is now belt and
 braces rather than the reason.
 
 THE CHUNKS ARE PACKED.  The far image is two thirds of a double-density
-floppy and most of a minute of a 1050's reading, and it is code and tables,
-which an LZ77 makes a third smaller.  Each far segment is packed on its own
-as one stream of TOKENS, and the stream is cut into chunks at token
-boundaries, so a chunk unpacks on its own given only where it goes -- what
-a match reaches back into is output the loader already wrote, in the banks
-above, and the segment before this one is never referenced.  A token is:
+floppy and most of a minute of a 1050's reading, and it is code and tables.
+Each far segment is packed on its own, and the packed stream is cut into
+chunks, so a chunk unpacks on its own given only where it goes -- what a
+match reaches back into is output the loader already wrote, in the banks
+above -- and what the decoder carries from one chunk to the next is one
+number, the last offset.
 
-    byte       LLLL MMMM   L literal bytes follow; a match of M+4 bytes after
-    bytes      if L == 15: added to L, one after another, until one is not 255
-    L bytes    the literals
-    word       the match's offset, little-endian, 1..65535: it copies from
-               (the output so far) minus this, which may overlap what it
-               writes -- that is how a run is encoded.  Or 0: NO match, the
-               token was only its literals (M is 0 and nothing follows) --
-               how a long stretch of incompressible bytes is carried, a
-               thousand literals at a time, so that no token outgrows the
-               staging buffer
-    bytes      if M == 15: added to M as above
+THE FORMAT (G4Z, phase 57): a stream of BITS interleaved with raw BYTES.
+Bits are read from the top of a bit byte, and a new bit byte is taken
+from the stream at the moment a bit is wanted and none is left, so the
+packer writes each one where the reader will look for it.  A NUMBER n >= 1
+is interlaced Elias gamma: for each bit of n below its top one, a 0 and
+then that bit, and then a 1.  The elements:
 
-The last token of a chunk may stop after its literals, without even the
-offset word.  Nothing marks that: the chunk's header carries how many bytes
-come OUT of it, the loader stops when it has written that many, and the
-packer cuts only at token boundaries, so the count runs out exactly where a
-token ends.  The header is five bytes, a 24-bit destination and that 16-bit
-count, and it sits immediately before the payload so that a chunk is ONE
-.xex segment.
+    literals        gamma(n), then n raw bytes
+    new-offset      gamma(hi), a raw byte lo, gamma(len - 1):
+      match         offset = ((hi - 1) << 8 | lo) + 1, 1..65535, and len
+                    bytes copied from (the output so far) minus it -- which
+                    may overlap what it writes: that is how a run is said
+    repeat match    gamma(len): len bytes at the LAST offset used
 
-unpack() below is the loader written in Python, and the packer checks its
+and which one comes next is a bit, by what came before:
+
+    after a match, or at a chunk's start:   0 literals,  1 new offset
+    after literals:                         0 repeat,    1 new offset
+
+So literals never follow literals, and a repeat only follows literals --
+the shape that pays, a match, a changed byte or two, the match again.
+Every chunk begins with an empty bit byte and in the after-a-match state,
+so the packer ends a chunk at an element and never inside one (a run of
+literals too long for what is left of a chunk is split, and the rest opens
+the next).  The last offset is NOT reset between chunks, or between
+segments: the packer never repeats an offset a segment has not set.
+
+Nothing marks a chunk's end: its header carries how many bytes come OUT
+of it, and the loader stops when it has written that many.  The header is
+five bytes, a 24-bit destination and that 16-bit count, and it sits
+immediately before the payload so that a chunk is ONE .xex segment.
+
+Compared with the byte-token format before it (a nibble pair, literals, a
+two-byte offset a match), it packs gem.elf's far image to 56% where that
+did 67%: 18 KB off a floppy, where the disk is most of a load.
+
+decode() below is the loader written in Python, and the packer checks its
 own output through it before writing a byte of the .xex: a format mistake
 fails the build here, not a boot there.  tests/host/test_mkxex.py loads the
 .xex the way a DOS does and requires the image back byte for byte.
@@ -139,249 +155,277 @@ def seg(addr, data):
     return struct.pack("<HH", addr, addr + len(data) - 1) + data
 
 
-MIN_MATCH = 4          # a match shorter than this costs more than its literals
-MAX_OFFSET = 0xFFFF    # the offset is a word
-MAX_LITERALS = 1024    # per token, so that no token outgrows a chunk
-MAX_MATCH = 1024       # ...and no chunk's output outgrows its 16-bit count
-HASH = 4               # bytes a candidate match is found by
-CHAIN = 64             # earlier places of those bytes tried, most recent first
+MIN_NEW = 2            # a new-offset match is two bytes at least
+MAX_LEN = 4096         # a match's length, so a chunk's count stays a word
+MAX_OFFSET = 0xFFFF
+CHAIN = 128            # earlier places a pair of bytes occurred, tried
+                       # most recent first: 32 is 0.6% bigger, 512 0.1% smaller
+LONG = 48              # lengths above this are tried only at their longest
 
 
-def _ext(n):
-    """Bytes a nibble-coded count of n (after its bias) takes past the nibble."""
-    return 0 if n < 15 else 1 + (n - 15) // 255
+SKIP = 256             # a match this long: the positions inside it are
+                       # not searched again (a run of zeros was quadratic)
+
+
+def _same(data, a, b, lim):
+    """How many bytes from a and from b are the same, up to lim: 32 at a
+    time by slices first, which is what makes a long run cheap."""
+    k = 0
+    while k + 32 <= lim and data[a + k:a + k + 32] == data[b + k:b + k + 32]:
+        k += 32
+    while k < lim and data[a + k] == data[b + k]:
+        k += 1
+    return k
+
+
+def _gbits(v):
+    """Bits in the interlaced Elias gamma of v >= 1."""
+    return 2 * v.bit_length() - 1
 
 
 @functools.lru_cache(maxsize=16)
-def pack(data):
-    """LZ77 the bytes into a list of tokens, each the bytes of one token.
+def parse(data):
+    """The elements for data: ('L', n) literals or ('M', offset, length).
 
-    AN OPTIMAL PARSE, not a greedy one.  The longest earlier match at every
-    position is found first (a hash of the next four bytes, the most recent
-    CHAIN places it occurred); then, working back from the end, each
-    position's cheapest way on is chosen -- a literal, or a match of any
-    length it could take -- by what it costs in the file.  A greedy parse
-    with one byte of lookahead took the longest match wherever it stood,
-    and that is not the same thing: 0.9 KB of the far image, and on the
-    DOS 2 floppy that was the difference between fitting and not
-    (docs/phase56.md).  Deterministic, which matters: the gates recompute
-    the chunking from the ELF and expect the same seams.
-
-    Costs are counted a literal at a byte, and a match at a token byte, an
-    offset word and its length's extension bytes -- the literal run's own
-    extension bytes, one per 255, are left out of the choice.
+    AN OPTIMAL PARSE, forward, with one arrival a position: the cheapest
+    way found to have written data[:i], what the last offset was on that
+    way, and whether it ended in literals -- which is what says whether a
+    repeat can come next.  From each position: one more literal; a repeat
+    of the last offset, if literals came last; and new offsets, the most
+    recent place first, each for the lengths no nearer one reached.
+    Costs are the format's own, in bits, a run of literals counted as two
+    bits to begin and eight a byte.  Deterministic, which matters: the
+    gates recompute the chunking from the ELF and expect the same seams.
     """
     n = len(data)
+    INF = 1 << 60
+    cost = [INF] * (n + 1)
+    last = [0] * (n + 1)           # 0: none yet -- never repeated
+    lits = [0] * (n + 1)           # 1: literals came last
+    back = [None] * (n + 1)
+    cost[0] = 0
     heads = {}
-    blen = [0] * n
-    boff = [0] * n
+    quiet = 0                      # inside a long match: not searched
     for i in range(n):
-        if i + HASH > n:
+        c = cost[i]
+        cl = c + 8 + (0 if lits[i] else 2)
+        if cl < cost[i + 1]:
+            cost[i + 1], last[i + 1], lits[i + 1], back[i + 1] = cl, last[i], 1, (i, 0, 0)
+        if i < quiet:
+            if i + 2 <= n:
+                heads.setdefault(data[i:i + 2], []).append(i)
             continue
-        key = data[i:i + HASH]
-        chain = heads.get(key)
-        if chain is None:
-            heads[key] = [i]
-            continue
-        lim = min(n - i, MAX_MATCH)
-        best, off = 0, 0
-        for p in reversed(chain[-CHAIN:]):
-            if i - p > MAX_OFFSET:
-                break
-            k = HASH
-            while k < lim and data[p + k] == data[i + k]:
-                k += 1
-            if k > best:
-                best, off = k, i - p
+        lim = min(n - i, MAX_LEN)
+        o = last[i]
+        if lits[i] and o and o <= i:
+            k = _same(data, i, i - o, lim)
+            if k >= SKIP:
+                quiet = max(quiet, i + k)
+            for m in (range(1, k + 1) if k <= LONG else list(range(1, LONG)) + [k]):
+                cm = c + 1 + _gbits(m)
+                if cm < cost[i + m]:
+                    cost[i + m], last[i + m], lits[i + m], back[i + m] = cm, o, 0, (i, o, m)
+        if i + 2 <= n:
+            key = data[i:i + 2]
+            best = 1
+            for p in reversed(heads.get(key, ())[-CHAIN:]):
+                o = i - p
+                if o > MAX_OFFSET:
+                    break
+                k = _same(data, p, i, lim)
+                if k <= best:
+                    continue
+                if k >= SKIP:
+                    quiet = max(quiet, i + k)
+                base = c + 1 + _gbits(((o - 1) >> 8) + 1) + 8
+                lo = max(best + 1, MIN_NEW)
+                ms = range(lo, k + 1) if k - lo <= LONG else \
+                    list(range(lo, lo + LONG)) + [k]
+                for m in ms:
+                    cm = base + _gbits(m - 1)
+                    if cm < cost[i + m]:
+                        cost[i + m], last[i + m], lits[i + m], back[i + m] = cm, o, 0, (i, o, m)
+                best = k
                 if k >= lim:
                     break
-        blen[i], boff[i] = best, off
-        chain.append(i)
-
-    cost = [0] * (n + 1)
-    take = [0] * (n + 1)                       # 0: a literal; else a match length
-    for i in range(n - 1, -1, -1):
-        c, t = cost[i + 1] + 1, 0
-        m_max = blen[i]
-        if m_max >= MIN_MATCH:
-            # every length up to 40, and the longest: the extension bytes
-            # make nothing between worth more than one of those
-            lens = range(MIN_MATCH, m_max + 1) if m_max <= 40 else \
-                list(range(MIN_MATCH, 40)) + [m_max]
-            for m in lens:
-                cm = cost[i + m] + 3 + _ext(m - MIN_MATCH)
-                if cm < c:
-                    c, t = cm, m
-        cost[i], take[i] = c, t
-
-    tokens = []
-
-    def token(lits, mlen, off):
-        L, M = len(lits), mlen - MIN_MATCH if mlen else 0
-        out = bytearray([(min(L, 15) << 4) | min(M, 15)])
-        if L >= 15:
-            r = L - 15
-            while r >= 255:
-                out.append(255)
-                r -= 255
-            out.append(r)
-        out += lits
-        out += struct.pack("<H", off)          # 0: no match follows
-        if mlen:
-            if M >= 15:
-                r = M - 15
-                while r >= 255:
-                    out.append(255)
-                    r -= 255
-                out.append(r)
-        tokens.append(bytes(out))
-
-    i = 0
-    lits = bytearray()
-    while i < n:
-        if len(lits) >= MAX_LITERALS:
-            token(lits, 0, 0)
-            lits = bytearray()
-        m = take[i]
+            heads.setdefault(key, []).append(i)
+    els = []
+    j = n
+    while j:
+        i, o, m = back[j]
         if m:
-            token(lits, m, boff[i])
-            lits = bytearray()
-            i += m
+            els.append(("M", o, m))
+        elif els and els[-1][0] == "L":
+            els[-1] = ("L", els[-1][1] + 1)
         else:
-            lits.append(data[i])
-            i += 1
-    if lits:
-        token(lits, 0, 0)
-    return tokens
+            els.append(("L", 1))
+        j = i
+    els.reverse()
+    return tuple(els)
 
 
-def literals(tok):
-    """A token's literal count, and where in it the offset word starts."""
-    i = 1
-    L = tok[0] >> 4
-    if L == 15:
-        while True:
-            L += tok[i]
-            i += 1
-            if tok[i - 1] != 255:
-                break
-    return L, i + L
+class _Bits:
+    """A packed stream being written: bytes, with bit bytes placed where
+    the reader will take them."""
+
+    def __init__(self):
+        self.out = bytearray()
+        self.at = 0
+        self.used = 8                  # bits used of the current bit byte
+
+    def bit(self, b):
+        if self.used == 8:
+            self.at = len(self.out)
+            self.out.append(0)
+            self.used = 0
+        if b:
+            self.out[self.at] |= 0x80 >> self.used
+        self.used += 1
+
+    def gamma(self, v):
+        for k in range(v.bit_length() - 2, -1, -1):
+            self.bit(0)
+            self.bit((v >> k) & 1)
+        self.bit(1)
 
 
-def literal_only(tok):
-    """True if the token carries no match: it ends in the no-match word."""
-    L, i = literals(tok)
-    return i + 2 == len(tok) and tok[i] | tok[i + 1] == 0
+def _out(e):
+    return e[1] if e[0] == "L" else e[2]
 
 
-def join(tokens):
-    """The tokens as one chunk's payload.
+def chunks(data, chunk, max_out=0xFFFF):
+    """The segment packed and cut: [(bytes out, packed bytes)], each packed
+    part at most `chunk` bytes and each count at most max_out."""
+    q = list(parse(data))
+    res = []
+    w, after, lastoff, out, pos = _Bits(), 1, 0, 0, 0
 
-    A chunk's last token stops after its literals if it has no match, so the
-    no-match word that marks that mid-chunk is left off the end.
-    """
-    if tokens and literal_only(tokens[-1]):
-        tokens = tokens[:-1] + [tokens[-1][:-2]]
-    return b"".join(tokens)
+    def need(e):
+        if e[0] == "L":
+            b, r = 1 + _gbits(e[1]), e[1]
+        elif not after and e[1] == lastoff:
+            b, r = 1 + _gbits(e[2]), 0
+        else:
+            b, r = 1 + _gbits(((e[1] - 1) >> 8) + 1) + _gbits(e[2] - 1), 1
+        free = 8 - w.used
+        return r + max(0, (b - free + 7) // 8)
+
+    k = 0
+    while k < len(q):
+        e = q[k]
+        if after and e[0] == "M" and e[2] < MIN_NEW:
+            # a one-byte repeat where a chunk has just begun, and a repeat
+            # cannot be said: the byte as a literal, with any that follow
+            if k + 1 < len(q) and q[k + 1][0] == "L":
+                q[k:k + 2] = [("L", 1 + q[k + 1][1])]
+            else:
+                q[k] = ("L", 1)
+            continue
+        if len(w.out) + need(e) > chunk or out + _out(e) > max_out:
+            if e[0] == "L" and e[1] > 1:
+                # the literals that fit now; the rest open the next chunk,
+                # which begins where literals may come
+                take = min(e[1] - 1, max_out - out, chunk - len(w.out) - 6)
+                if take >= 1:
+                    q[k:k + 1] = [("L", take), ("L", e[1] - take)]
+                    continue
+            if not w.out:
+                raise SystemExit(f"a {e} too big for a {chunk}-byte chunk")
+            res.append((out, bytes(w.out)))
+            w, after, out = _Bits(), 1, 0
+            continue
+        if e[0] == "L":
+            if not after:
+                raise SystemExit("packer bug: literals after literals")
+            w.bit(0)
+            w.gamma(e[1])
+            w.out += data[pos:pos + e[1]]
+            after = 0
+        else:
+            _, o, m = e
+            if not after and o == lastoff:
+                w.bit(0)
+                w.gamma(m)
+            else:
+                w.bit(1)
+                w.gamma(((o - 1) >> 8) + 1)
+                w.out.append((o - 1) & 0xFF)
+                w.gamma(m - 1)
+            after, lastoff = 1, o
+        out += _out(e)
+        pos += _out(e)
+        k += 1
+    if w.out:
+        res.append((out, bytes(w.out)))
+    return res
 
 
-def token_out(tok):
-    """How many bytes a token writes: its literals plus its match."""
-    L, i = literals(tok)
-    if i >= len(tok) or tok[i] | tok[i + 1] == 0:
-        return L
-    i += 2
-    M = (tok[0] & 15) + MIN_MATCH
-    if (tok[0] & 15) == 15:
-        while True:
-            M += tok[i]
-            i += 1
-            if tok[i - 1] != 255:
-                break
-    return L + M
-
-
-def unpack(packed, count, before=b""):
-    """src/farload.s in Python: `count` bytes out of `packed`.
-
-    `before` is the output the loader has already written ahead of this
-    chunk's destination, which is what a match may reach back into.
-    """
-    out = bytearray(before)
+def decode(packed, count, out, last):
+    """src/farload.s in Python: one chunk, `count` bytes appended to `out`
+    (the output so far, which matches reach back into).  `last` is the
+    offset carried in from the chunk before; the one to carry on is
+    returned."""
     end = len(out) + count
     i = 0
+    bits = 0x80
+    after = 1
+
+    def bit():
+        nonlocal i, bits
+        v = bits << 1
+        if not v & 0xFF:
+            v = (packed[i] << 1) | 1
+            i += 1
+        bits = v & 0xFF
+        return v >> 8
+
+    def gamma():
+        v = 1
+        while not bit():
+            v = v << 1 | bit()
+        return v
+
     while len(out) < end:
-        tok = packed[i]
-        i += 1
-        L = tok >> 4
-        if L == 15:
-            while True:
-                L += packed[i]
-                i += 1
-                if packed[i - 1] != 255:
-                    break
-        out += packed[i:i + L]
-        i += L
-        if len(out) >= end:
-            break
-        off = packed[i] | (packed[i + 1] << 8)
-        i += 2
-        if off == 0:
-            if tok & 15:
-                raise ValueError(f"no-match token with a match length at {i - 2}")
+        new = bit()
+        if after and not new:
+            n = gamma()
+            out += packed[i:i + n]
+            i += n
+            after = 0
             continue
-        M = (tok & 15) + MIN_MATCH
-        if (tok & 15) == 15:
-            while True:
-                M += packed[i]
-                i += 1
-                if packed[i - 1] != 255:
-                    break
-        if not 1 <= off <= len(out):
-            raise ValueError(f"match reaches {off} bytes back at output {len(out)}")
-        for _ in range(M):
-            out.append(out[-off])
+        if new:
+            hi = gamma()
+            last = ((hi - 1) << 8 | packed[i]) + 1
+            i += 1
+            m = gamma() + 1
+        else:
+            m = gamma()
+        if not 1 <= last <= len(out):
+            raise ValueError(f"a match reaches {last} back at output {len(out)}")
+        for _ in range(m):
+            out.append(out[-last])
+        after = 1
     if len(out) != end or i != len(packed):
-        raise ValueError(f"chunk unpacked to {len(out) - len(before)} bytes of "
-                         f"{count}, using {i} of {len(packed)}")
-    return bytes(out[len(before):])
+        raise ValueError(f"chunk decoded to {len(out) - end + count} of {count} "
+                         f"bytes, using {i} of {len(packed)}")
+    return last
 
 
 def far_chunks(vaddr, data, chunk):
     """Pack a far segment and cut it into chunks that fit the staging buffer.
 
     Yields (destination, the bytes the chunk unpacks to, the packed bytes).
-    Cuts are at token boundaries only, and a chunk's output is kept under
-    what its 16-bit count can say.  Every chunk is unpacked again here, on
-    top of what came before it, and must give back the segment's own bytes.
+    Every chunk is decoded again here, on top of what came before it, and
+    must give back the segment's own bytes.
     """
-    tokens = pack(data)
-    done = 0
-    piece, out = [], 0
-
-    def cut():
-        packed = join(piece)
-        got = unpack(packed, out, data[:done])
-        if got != data[done:done + out]:
+    done, got, last = 0, bytearray(), 0
+    for count, packed in chunks(data, chunk):
+        last = decode(packed, count, got, last)
+        if got[done:] != data[done:done + count]:
             raise SystemExit(f"packer bug: chunk at ${vaddr + done:06X} "
                              f"does not unpack to what went in")
-        return vaddr + done, got, packed
-
-    for tok in tokens:
-        t_out = token_out(tok)
-        if piece and (sum(map(len, piece)) + len(tok) > chunk
-                      or out + t_out > 0xFFFF):
-            yield cut()
-            done += out
-            piece, out = [], 0
-        if len(tok) > chunk:
-            raise SystemExit(f"a {len(tok)}-byte token cannot fit a "
-                             f"{chunk}-byte staging buffer")
-        piece.append(tok)
-        out += t_out
-    if piece:
-        yield cut()
-        done += out
+        yield vaddr + done, bytes(got[done:]), packed
+        done += count
     if done != len(data):
         raise SystemExit(f"packer bug: {done} of {len(data)} bytes chunked")
 
