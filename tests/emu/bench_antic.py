@@ -26,11 +26,14 @@ SYMS = os.path.abspath(os.path.join(ROOT, "build", "bench_antic.sym"))
 MAP = os.path.abspath(os.path.join(ROOT, "build", "bench_antic.map"))
 PROF = "--profile" in sys.argv
 STATUS = 0x0600
-REPS = 4                                      # src/bench_antic.c
+REPS = 16                                     # src/bench_antic.c
 CASES = [(0, "text, replace, x=0   (26 lines x 53 chars)"),
          (1, "text, transparent, x=0"),
          (2, "text, replace, x=3 (unaligned)"),
-         (3, "vr_recfl 300x150 solid")]
+         (3, "vr_recfl 300x150 solid"),
+         (4, "the desk's pattern, whole screen"),
+         (5, "200 small rectangles, 24x8"),
+         (6, "vr_recfl 300x150, XOR")]
 
 
 def profile(b, frames):

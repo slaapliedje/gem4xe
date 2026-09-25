@@ -47,11 +47,15 @@ void dev_flush(void)
 void dev_patt_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
 {
     WORD mode = (WORD)(vwk.wrt_mode + 1);
-    WORD y;
+    uint16_t rows[16];
+    WORD r;
 
-    for (y = y1; y <= y2; y++)
-        antic_patt_span((int16_t)x1, (int16_t)x2, (int16_t)y,
-                        pat_bits(y), (int16_t)mode, (uint8_t)(pen ? 1 : 0));
+    /* The pattern's rows once, not once a scanline: every one repeats
+     * within sixteen, and pat_bits takes a screen row. */
+    for (r = 0; r < 16; r++)
+        rows[r] = pat_bits(r);
+    antic_fill_rect((int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2,
+                    rows, (int16_t)mode, (uint8_t)(pen ? 1 : 0));
 }
 
 /* A styled horizontal or vertical line.  The mask arrives anchored to
@@ -69,8 +73,17 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
         a = x1;  b = x2;  order(&a, &b);
         if (!clip_rect(&a, &y1, &b, &y2))
             return;
-        antic_patt_span((int16_t)a, (int16_t)b, (int16_t)y1, bits,
-                        (int16_t)mode, pen);
+        {
+            /* ONE ROW OF A RECTANGLE: antic_fill_rect reads only
+             * rows[y & 15], and a solid line is a solid rectangle.  So
+             * antic_patt_span is not linked into the product at all --
+             * 782 bytes the DOS 2 floppy did not have (docs/phase55.md). */
+            uint16_t rows[16];
+
+            rows[y1 & 15] = bits;
+            antic_fill_rect((int16_t)a, (int16_t)y1, (int16_t)b, (int16_t)y1,
+                            bits == 0xFFFF ? 0 : rows, (int16_t)mode, pen);
+        }
         return;
     }
     bits = style_anchor(mask, y1, (y2 >= y1) ? 1 : -1);
@@ -148,9 +161,15 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
         (cx < vwk.xmn_clip || cy < vwk.ymn_clip ||
          cx + FONT_W - 1 > vwk.xmx_clip || cy + FONT_H - 1 > vwk.ymx_clip))
         return;                             /* the cell, or none of it */
-    antic_glyph(vdi_font, (uint16_t)ch,
-                (int16_t)cx, (int16_t)cy, (int16_t)mode,
-                (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
+    {
+        /* A run of one: the same pixels as antic_glyph, which the product
+         * no longer links -- the DOS 2 floppy had no room for both
+         * (docs/phase55.md). */
+        int16_t c = (int16_t)ch;
+
+        antic_text(vdi_font, &c, 1, (int16_t)cx, (int16_t)cy, (int16_t)mode,
+                   (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
+    }
 }
 
 /* A string's visible run, a row of the whole run at a time (text_run in

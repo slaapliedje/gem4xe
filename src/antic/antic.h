@@ -113,6 +113,13 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen);
 void antic_rect_mode(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
                      int16_t mode, uint8_t pen);
 
+/* A rectangle in one call: `rows` is a fill pattern's sixteen rows,
+ * indexed by y & 15 and anchored as antic_patt_span's row is, or NULL for
+ * solid.  The same pixels as a span a row, with the set-up done once and
+ * the covered middle of each row a store where the op allows. */
+void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
+                     const uint16_t *rows, int16_t mode, uint8_t pen);
+
 /* One 8x8 glyph of the system font at (x, y), which is the cell's top
  * left.  1bpp into 1bpp with a shift, where the VBXE driver has to keep
  * the same glyph expanded to 4bpp masks in VRAM at both parities. */
@@ -126,7 +133,11 @@ void antic_glyph(uint32_t face, uint16_t ch,
  * row of the whole run is built in fast RAM and put down through
  * antic_raster_row, so each screen byte is touched once and the per-cell
  * set-up is paid once a string (docs/phase54.md).  The run must be inside
- * the screen; a run that is not is dropped whole, as a cell is. */
+ * the screen; a run that is not is dropped whole, as a cell is.  Only a
+ * face 6 wide is drawn -- the device's; any other is nothing at all
+ * (docs/phase55.md).  A single cell is a run of one: dev_glyph draws
+ * that way, and antic_glyph stays as what tests/host/text_sim.c holds
+ * this to. */
 void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
                 int16_t x, int16_t y, int16_t mode, uint8_t pen,
                 int16_t w, int16_t h);

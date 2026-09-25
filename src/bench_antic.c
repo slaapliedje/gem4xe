@@ -21,7 +21,7 @@
 #include "sys/rapidus.h"
 
 #define STATUS ((volatile unsigned char *) 0x0600)
-#define REPS   4                        /* each case, this many times over */
+#define REPS   16                       /* each case, this many times over */
 
 static void call(WORD op, WORD npts, WORD nint)
 {
@@ -60,12 +60,43 @@ static void text_screen(WORD mode, WORD x)
     }
 }
 
-static void big_rect(void)
+static void rect(WORD x1, WORD y1, WORD x2, WORD y2)
 {
+    ptsin[0] = x1;  ptsin[1] = y1;  ptsin[2] = x2;  ptsin[3] = y2;
+    call(VR_RECFL, 2, 0);
+}
+
+/* A rectangle, solid or in a pattern, in a mode. */
+static void big_rect(WORD interior, WORD index, WORD mode)
+{
+    set1(VSF_INTERIOR, interior);
+    set1(VSF_STYLE, index);
+    set1(VSWR_MODE, mode);
+    rect(9, 9, 308, 158);
+}
+
+/* The desk's own: its patterned background, the whole screen. */
+static void desk_pattern(void)
+{
+    set1(VSF_INTERIOR, FIS_PATTERN);
+    set1(VSF_STYLE, 4);
+    set1(VSWR_MODE, MD_REPLACE);
+    rect(0, 0, 319, 167);
+}
+
+/* Many small ones -- buttons, gadgets, the backgrounds of menu items --
+ * where what a call costs to set up is most of it. */
+static void small_rects(void)
+{
+    WORD i;
+
     set1(VSF_INTERIOR, FIS_SOLID);
     set1(VSWR_MODE, MD_REPLACE);
-    ptsin[0] = 9;  ptsin[1] = 9;  ptsin[2] = 308;  ptsin[3] = 158;
-    call(VR_RECFL, 2, 0);
+    for (i = 0; i < 200; i++) {
+        WORD x = (WORD)(3 + (i % 12) * 26), y = (WORD)(2 + (i / 12) * 9);
+
+        rect(x, y, (WORD)(x + 23), (WORD)(y + 7));
+    }
 }
 
 TASK void main(void)
@@ -96,7 +127,10 @@ TASK void main(void)
             case 0: text_screen(MD_REPLACE, 0); break;
             case 1: text_screen(MD_TRANS, 0);   break;
             case 2: text_screen(MD_REPLACE, 3); break;
-            default: big_rect();                break;
+            case 3: big_rect(FIS_SOLID, 1, MD_REPLACE); break;
+            case 4: desk_pattern();             break;
+            case 5: small_rects();              break;
+            default: big_rect(FIS_SOLID, 1, MD_XOR); break;
             }
         }
         STATUS[5] = 0xA5;

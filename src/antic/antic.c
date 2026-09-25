@@ -405,20 +405,145 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
     AN_PUT(p, o, 0xFF, rm, t);
 }
 
-void antic_rect_mode(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
-                     int16_t mode, uint8_t pen)
+/* A RECTANGLE, solid or patterned, in one call.  It used to be one
+ * antic_span or antic_patt_span a row, and each of those clipped again,
+ * worked the op out again, looked the edge masks up again and put every
+ * byte through the whole of AN_PUT (docs/phase55.md).  Here all of that is
+ * done once, and the middle of each row -- the bytes the rectangle covers
+ * whole -- takes the cheapest path its op allows:
+ *
+ * - an op that does not read the destination, or any op but XOR over a
+ *   SOLID source, makes each middle byte a constant: two of them, for the
+ *   even and odd bytes of a pattern, worked out once a row and stored;
+ * - XOR reads each byte and inverts the source's bits in it;
+ * - anything else goes through AN_PUT, as before.
+ *
+ * `rows` is the pattern, sixteen rows indexed by y & 15 -- every GEM fill
+ * pattern repeats within sixteen (vdi.c, pat_bits) -- each row anchored to
+ * the screen's 16-pixel grid as antic_patt_span takes it; NULL is solid. */
+void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
+                     const uint16_t *rows, int16_t mode, uint8_t pen)
 {
-    int16_t y;
+    uint8_t t;                          /* AN_PUT's scratch */
+    volatile uint8_t *p;
+    AN_OP o;
+    uint8_t lm, rm, ev, od, ve, vo;
+    uint16_t b1, last, k, y, pr;
+    uint16_t how;                       /* 0 constants, 1 XOR, 2 AN_PUT */
 
-    if (y1 > y2) {
-        y = y1; y1 = y2; y2 = y;
+    if (x1 > x2) {
+        int16_t s = x1; x1 = x2; x2 = s;
     }
+    if (y1 > y2) {
+        int16_t s = y1; y1 = y2; y2 = s;
+    }
+    if (x2 < 0 || x1 >= AN_W || y2 < 0 || y1 >= AN_H)
+        return;
+    if (x1 < 0)
+        x1 = 0;
+    if (x2 >= AN_W)
+        x2 = AN_W - 1;
     if (y1 < 0)
         y1 = 0;
     if (y2 >= AN_H)
         y2 = AN_H - 1;
-    for (y = y1; y <= y2; y++)
-        antic_span(x1, x2, y, mode, pen);
+    if (!rows && mode == AN_MD_ERASE)
+        return;                         /* a solid source erases nothing */
+
+    an_op_pen(&o, mode, pen);
+    b1 = (uint16_t)x1 >> 3;
+    last = (uint16_t)(((uint16_t)x2 >> 3) - b1);
+    lm = an_left[x1 & 7];
+    rm = an_right[x2 & 7];
+    if (last == 0) {
+        lm = (uint8_t)(lm & rm);
+    }
+    if (!AN_READS(o) || (!rows && mode != AN_MD_XOR))
+        how = 0;
+    else if (mode == AN_MD_XOR)
+        how = 1;
+    else
+        how = 2;
+    p = SCREEN + (uint16_t)y1 * AN_STRIDE + b1;
+    ev = 0xFF;
+    od = 0xFF;
+
+    for (y = (uint16_t)y1; y <= (uint16_t)y2; y++) {
+        if (rows) {
+            pr = rows[y & 15];
+            ev = (uint8_t)(pr >> 8);    /* the even bytes' half */
+            od = (uint8_t)pr;           /* ...and the odd ones' */
+        }
+        if (how == 0) {
+            /* A CONSTANT OP: every byte's new value is ve or vo by its
+             * parity, whatever was under it, so an edge is one read and
+             * `(d & ~m) | (v & m)` rather than the whole of AN_PUT. */
+            ve = AN_MIX(o, 0, ev, 0xFF);
+            vo = AN_MIX(o, 0, od, 0xFF);
+            t = p[0];
+            t = (uint8_t)((t & (uint8_t)~lm) | (((b1 & 1) ? vo : ve) & lm));
+            p[0] = t;
+        } else {
+            /* the first byte's source is by its parity, which b1 says */
+            t = (b1 & 1) ? od : ev;
+            AN_PUT(p, o, t, lm, ve);
+        }
+        if (last != 0) {
+            if (how == 0) {
+                /* TWO BYTES A STORE: an odd byte first if there is one,
+                 * so the rest start on an even byte -- whose value is ve,
+                 * and the 65816 is little-endian -- then the pair as a
+                 * word, and an even byte last if one is left over. */
+                k = 1;
+                if (last > 1 && ((b1 + 1) & 1)) {   /* byte 1 is the right
+                                                     * EDGE when last is 1 */
+                    p[1] = vo;
+                    k = 2;
+                }
+                if (k < last) {
+                    volatile uint16_t *w = (volatile uint16_t *)(p + k);
+                    uint16_t pair = (uint16_t)(ve | ((uint16_t)vo << 8));
+                    uint16_t nw = (uint16_t)((last - k) >> 1);
+
+                    k = (uint16_t)(k + nw + nw);
+                    while (nw) {
+                        *w = pair;
+                        w++;
+                        nw--;
+                    }
+                    if (k < last)
+                        p[k] = ve;
+                }
+            } else if (how == 1) {
+                for (k = 1; k < last; k++) {
+                    t = p[k];
+                    t = (uint8_t)(t ^ (((b1 + k) & 1) ? od : ev));
+                    p[k] = t;
+                }
+            } else {
+                for (k = 1; k < last; k++) {
+                    vo = ((b1 + k) & 1) ? od : ev;
+                    AN_PUT(p + k, o, vo, 0xFF, t);
+                }
+            }
+            if (how == 0) {
+                t = p[last];
+                t = (uint8_t)((t & (uint8_t)~rm)
+                              | ((((b1 + last) & 1) ? vo : ve) & rm));
+                p[last] = t;
+            } else {
+                t = ((b1 + last) & 1) ? od : ev;
+                AN_PUT(p + last, o, t, rm, ve);
+            }
+        }
+        p += AN_STRIDE;
+    }
+}
+
+void antic_rect_mode(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
+                     int16_t mode, uint8_t pen)
+{
+    antic_fill_rect(x1, y1, x2, y2, 0, mode, pen);
 }
 
 /* ---- text -------------------------------------------------------------
@@ -463,11 +588,13 @@ void antic_glyph(uint32_t face, uint16_t ch, int16_t x, int16_t y,
     }
 }
 
-/* One row of a run packed into buf, w bits a cell, the first cell `lead`
+/* One row of a run packed into buf, 6 bits a cell, the first cell `lead`
  * bits in: bit 7 of buf[0] is the screen byte's leftmost pixel, as the
- * screen has it.  The system face is 6 wide, and a shift by the constant
- * 6 is a few instructions where a shift by `w` is a loop on this CPU --
- * so that width has a packer of its own. */
+ * screen has it.  6 is the only width the device draws with (its face is
+ * the 6x6), and a shift by the constant 6 is a few instructions where a
+ * shift by `w` would be a loop on this CPU.  No other width is drawn:
+ * a generic packer, and antic_glyph behind it, were bytes the DOS 2
+ * floppy did not have (docs/phase55.md). */
 static void an_pack6(uint8_t *buf, const uint8_t FAR *sr,
                      const int16_t *chars, uint16_t n, uint16_t lead)
 {
@@ -482,30 +609,6 @@ static void an_pack6(uint8_t *buf, const uint8_t FAR *sr,
                                          * local first (B18) */
         acc = (uint16_t)((acc << 6) | (uint16_t)(g >> 2));
         bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            g = (uint8_t)(acc >> bits);
-            buf[k] = g;
-            k++;
-        }
-    }
-    if (bits) {
-        g = (uint8_t)(acc << (8 - bits));
-        buf[k] = g;
-    }
-}
-
-static void an_packw(uint8_t *buf, const uint8_t FAR *sr,
-                     const int16_t *chars, uint16_t n, uint16_t lead,
-                     int16_t w)
-{
-    uint16_t i, k = 0, acc = 0, bits = lead;
-    uint8_t g, drop = (uint8_t)(8 - w); /* the columns past the face's */
-
-    for (i = 0; i < n; i++) {
-        g = sr[chars[i] & 0xFF];        /* B22, as above */
-        acc = (uint16_t)((acc << w) | (uint16_t)(g >> drop));
-        bits += (uint16_t)w;
         if (bits >= 8) {
             bits -= 8;
             g = (uint8_t)(acc >> bits);
@@ -549,6 +652,8 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
 
     if (n == 0 || w < 1 || w > 8)
         return;
+    if (w != 6)
+        return;                         /* the device's face is the 6x6 */
     x2 = (int16_t)(x + (int16_t)n * w - 1);
     if (x < 0 || y < 0 || x2 >= AN_W || y + h > AN_H)
         return;
@@ -560,10 +665,7 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
     p = SCREEN + (uint16_t)y * AN_STRIDE + ((uint16_t)x >> 3);
 
     for (row = 0; row < (uint16_t)h; row++) {
-        if (w == 6)
-            an_pack6(buf, sr, chars, n, lead);
-        else
-            an_packw(buf, sr, chars, n, lead, w);
+        an_pack6(buf, sr, chars, n, lead);
         if (last == 0) {
             AN_PUT(p, o, buf[0], (uint8_t)(lm & rm), t);
         } else {

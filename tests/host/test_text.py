@@ -6,8 +6,8 @@ v_gtext on the ANTIC screen hands the device the run of a string's cells
 that are wholly visible, and the device draws the whole run a row at a
 time instead of a glyph at a time (docs/phase54.md).  The pixels must be
 exactly the ones antic_glyph drew cell by cell -- in every writing mode,
-with both pens, at every alignment, at three cell widths, for runs of one
-cell to a whole row, over random screen bytes and a font whose unused
+with both pens, at every alignment, for runs of one cell (a lone glyph),
+a few, and a whole row, over random screen bytes and a font whose unused
 columns are random too.  tests/host/text_sim.c does both and compares, in
 the compiler's own simulator at the product's flags.
 """

@@ -5,8 +5,8 @@
  * docs/phase54.md).  It must come out exactly as antic_glyph drew the
  * same cells one by one -- which the desktop's gates hold it to for the
  * strings the desktop happens to draw.  Here: every writing mode, both
- * pens, every alignment of the run's first pixel, three cell widths and
- * runs of one cell to a whole row, over random screen bytes, against a
+ * pens, every alignment of the run's first pixel, and runs of one cell
+ * (which is how dev_glyph draws a lone glyph now), a few, and a whole row, over random screen bytes, against a
  * font whose unused columns are random too, so a cell that leaks past
  * its width shows.  The rows either side and the bytes either side of
  * the run must not change.  In the compiler's own simulator at -O2,
@@ -17,7 +17,7 @@
 
 #define H      6                        /* rows a glyph has */
 #define FSTR   256                      /* antic.c: AN_FONT_STRIDE */
-#define CASES  (4 * 2 * 8 * 3)          /* mode x pen x alignment x width */
+#define CASES  (4 * 2 * 8 * 3)          /* mode x pen x alignment x length */
 
 uint16_t ts_cases;                      /* run */
 uint16_t ts_bad;                        /* whose pixels differ */
@@ -41,7 +41,6 @@ int main(void)
     volatile uint8_t *screen = (volatile uint8_t *)AN_SCREEN;
     uint32_t face = (uint32_t)(const uint8_t FAR *)font;
     uint16_t c, i, j;
-    static const int16_t widths[3] = { 6, 8, 5 };
 
     for (i = 0; i < H * FSTR; i++)
         font[i] = (uint8_t)rnd();
@@ -49,9 +48,10 @@ int main(void)
     for (c = 0; c < CASES; c++) {
         int16_t mode = (int16_t)(1 + (c & 3));
         uint8_t pen = (uint8_t)((c >> 2) & 1);
-        int16_t w = widths[(c >> 6) % 3];
+        int16_t w = 6;                  /* the only face antic_text draws */
         uint16_t most = (uint16_t)((AN_W - 16) / w);
-        uint16_t n = (uint16_t)(c % 11 == 0 ? most : 1 + rnd() % 20);
+        uint16_t len = (uint16_t)((c >> 6) % 3);
+        uint16_t n = (uint16_t)(len == 0 ? 1 : len == 1 ? 1 + rnd() % 20 : most);
         int16_t x = (int16_t)(8 * (rnd() % 2) + ((c >> 3) & 7));
         /* a row above and below the glyphs, which must not move */
         int16_t y0 = (int16_t)(rnd() % (AN_H - H - 2));
