@@ -75,18 +75,7 @@ def timed(label, act):
     cyc = collections.Counter()
     ncall = collections.Counter()
     for h in r["hot"]:
-        a = int(str(h["addr"]).lstrip("$"), 16)
-        fn = bench_vdi.where(place, syms, ranges, a)
-        # THE PROFILER DROPS THE BANK, and bench_vdi.where() names only far
-        # code -- so bank $00's own code, the OS ROM above all, was being
-        # pinned on whichever far function shares the offset.  Reading a
-        # directory off the floppy showed up as "draw_arrow|sh_ldauto",
-        # neither of which runs then: $E5A4-$E5BF is the OS's SIO.  Name
-        # the bank-$00 candidate too, so the ambiguity is visible.
-        if 0xC000 <= a < 0xD000 or a >= 0xD800:
-            fn = "OS ROM|" + fn
-        elif 0x2000 <= a < 0x4000:
-            fn = "near|" + fn
+        fn = bench_vdi.hot_name(place, syms, ranges, h)
         cyc[fn] += h["cycles"]
         ncall[fn] += h.get("calls", 0)
     if calls_mode:

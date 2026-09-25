@@ -46,10 +46,7 @@ def profile(b, frames):
     place = bench_vdi.placements(MAP)
     cyc = collections.Counter()
     for h in r["hot"]:
-        a = int(str(h["addr"]).lstrip("$"), 16)
-        fn = bench_vdi.where(place, syms, ranges, a)
-        if 0xC000 <= a < 0xD000 or a >= 0xD800:
-            fn = "OS ROM|" + fn
+        fn = bench_vdi.hot_name(place, syms, ranges, h)
         cyc[fn] += h["cycles"]
     total = sum(cyc.values())
     print(f"      {total / frames:.0f} cycles a frame profiled")

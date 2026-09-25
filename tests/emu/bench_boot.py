@@ -15,7 +15,8 @@ Each product floppy is cold-booted with nothing typed, as test-boot does
      purpose (src/sys/bootinfo.c), then DESKTOP.PRG is read and drawn
 
 With --profile, B is profiled and split into the loader's unpacker
-(src/farload.s, bank $00 $9A05-$9B88 by the map), the OS ROM (SIO), and
+(src/farload.s: its bank-$00 part, and everything above bank $00, which is
+the fast copy -- given the bank, from the patched emulator), the OS ROM, and
 everything else -- which says whether a smaller file or a faster unpacker
 is the lever.  Not a gate.
 """
@@ -47,7 +48,11 @@ def phase_b_profile(b, frames):
     cyc = collections.Counter()
     for h in r["hot"]:
         a = int(str(h["addr"]).lstrip("$"), 16)
-        if lo <= a <= hi:
+        # With the bank (the patched emulator's addr24), the unpacker is
+        # simply anything running above bank $00 while the image loads: it
+        # runs in the fast bank above the image (src/farload.s).
+        bank = int(str(h.get("addr24", "$0")).lstrip("$"), 16) >> 16
+        if bank or lo <= a <= hi:
             k = "unpacker (farload.s)"
         elif a >= 0xD800 or 0xC000 <= a < 0xD000:
             k = "OS ROM (SIO, CIO)"

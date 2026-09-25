@@ -181,10 +181,26 @@ overridden while a Rapidus is fitted
 wins.  Offered as
 [#93](https://github.com/ilmenit/AltirraSDL/pull/93) on 2026-09-17.
 
+## altirra-sdl-bridge-profile-bank.patch -- the profiler's bank
+
+The instruction profiler records each address as `PC + (K << 16)` plus
+the global base of the space the code came from, and the bridge's
+`PROFILE_DUMP` and `PROFILE_DUMP_TREE` masked it to sixteen bits on the
+way out.  On a 65C816 that makes code at one offset in several banks a
+single row, and for gem4xe it did worse than that: bank `$00`'s OS ROM --
+the floppy's SIO -- was named after whichever far function sat at the
+same offset, and a tenth of opening a window was reported as a
+`draw_arrow` that never ran (docs/phase53.md).  `addr` is left as the
+16-bit PC for existing clients; each row gains `addr24`, the bank and PC,
+and `gaddr`, the record's full value.  `tests/emu/bench_vdi.py`'s
+`hot_name()` uses it, and falls back to the old guessing on an emulator
+without it.  Branch `gem4xe/profile-bank` (c284c36), on the integration
+build since 2026-09-25; **not offered upstream yet**.
+
 ## Building
 
-Each of the three outstanding patches is a single commit on its own
-branch off upstream `main` (#91, #92, #93), and each was built and gated
+Each of the outstanding patches is a single commit on its own
+branch off upstream `main` (#91, #92, #93, and gem4xe/profile-bank), and each was built and gated
 ALONE before it was offered -- a branch that only works in combination
 with the other two is not a reviewable change.  #92 was checked with
 `make test-m6` (code copied into banks `$01-$04` and read back through

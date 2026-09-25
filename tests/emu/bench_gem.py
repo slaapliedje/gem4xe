@@ -313,8 +313,7 @@ def profile(b, clock, row, syms, ranges, place, top):
           f"{ti / row.units:.0f} insns/unit")
     insns, cycles = collections.Counter(), collections.Counter()
     for h in r["hot"]:
-        a = int(str(h["addr"]).lstrip("$"), 16)
-        fn = bench_vdi.where(place, syms, ranges, a)
+        fn = bench_vdi.hot_name(place, syms, ranges, h)
         insns[fn] += h["insns"]
         cycles[fn] += h["cycles"]
     for fn, n in insns.most_common(top):

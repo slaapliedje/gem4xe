@@ -11,8 +11,9 @@ the code is long.  `docs/phase8b.md` has the readings this replaced.
   python3 tests/emu/bench_vdi.py [--profile] [--mode insns|functions|basicblock]
                                  [--by-function] [--top N] [NAME ...]
 
-Addresses come back without their bank; ones inside a bank-$01 section of
-the map are resolved against bank-$01 symbols, the rest against bank $00.
+Addresses come back with their bank from the patched emulator (hot_name,
+below); from one without it, ones inside a far section of the map are
+resolved against that bank's symbols, the rest against bank $00.
 --by-function sums the whole profile per function instead of listing
 addresses, which is the number to compare a rewrite by: a function's
 instructions per op, idle polling and the runner's own work shown beside
@@ -106,6 +107,37 @@ def where(place, syms, ranges, addr):
                     for bank in banks_of(ranges, addr))
 
 
+def hot_name(place, syms, ranges, h):
+    """What a PROFILE_DUMP row belongs to.
+
+    The patched emulator reports each row's bank (`addr24`,
+    ~/dev/altirra-patched BUILT-FROM.txt, branch gem4xe/profile-bank), so
+    the row is named in ITS bank: the OS ROM as the OS ROM, bank $00
+    outside the program as the DOS or the OS's RAM, and far code by the
+    map.  An emulator without the field gets the old answer -- every bank
+    the offset could be in, `a|b`, with the bank-$00 candidates beside
+    them, because the profiler's 16-bit address named bank $00's OS ROM
+    after far functions at the same offset (docs/phase53.md)."""
+    if "addr24" in h:
+        a = int(str(h["addr24"]).lstrip("$"), 16)
+        bank, off = a >> 16, a & 0xFFFF
+        if bank == 0 and (off >= 0xD800 or 0xC000 <= off < 0xD000):
+            return "OS ROM"
+        i = bisect.bisect_right(place, (a, 0xFFFFFF, "", "")) - 1
+        if i >= 0 and place[i][0] <= a <= place[i][1]:
+            return where_in(place, syms, bank, off)
+        if bank == 0:
+            return "bank $00, not the program (DOS, OS RAM)"
+        return f"${bank:02X}:{off & 0xFF00:04X} page, not the program"
+    a = int(str(h["addr"]).lstrip("$"), 16)
+    fn = where(place, syms, ranges, a)
+    if 0xC000 <= a < 0xD000 or a >= 0xD800:
+        fn = "OS ROM|" + fn
+    elif 0x2000 <= a < 0x4000:
+        fn = "near|" + fn
+    return fn
+
+
 def where_in(place, syms, bank, addr):
     a = (bank << 16) | addr
     i = bisect.bisect_right(place, (a, 0xFFFFFF, "", "")) - 1
@@ -171,8 +203,7 @@ def run(b, syms, ranges, place, label, script, ops, profile, top, by_function):
         if by_function:
             insns, cycles = collections.Counter(), collections.Counter()
             for h in r["hot"]:
-                a = int(str(h["addr"]).lstrip("$"), 16)
-                fn = where(place, syms, ranges, a)
+                fn = hot_name(place, syms, ranges, h)
                 insns[fn] += h["insns"]
                 cycles[fn] += h["cycles"]
             for fn, n in insns.most_common(top):
