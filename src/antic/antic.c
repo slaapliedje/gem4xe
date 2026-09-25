@@ -2,10 +2,17 @@
  * why the framebuffer is where it is.
  *
  * Everything here is CPU work.  There is no blitter on this side of the
- * seam, which is the whole difference between the two drivers: the VBXE
- * one compiles blit lists because its VRAM is on a 1.79 MHz bus however
- * fast the CPU runs, and this one writes bytes because its framebuffer
- * is plain motherboard RAM the accelerator reaches at full speed.
+ * seam, which is the whole difference between the two drivers.
+ *
+ * AND THE SCREEN IS NOT FAST.  This file used to say the framebuffer is
+ * "plain motherboard RAM the accelerator reaches at full speed".  It is
+ * motherboard RAM, at $8100-$9B3F, in the Rapidus's window 2 -- which
+ * rapidus_speedup() keeps on the 1.79 MHz bus always, because the VBXE's
+ * MEMAC window is in it on the other device.  So every read and write of
+ * a screen byte here is a slow-bus cycle however fast the CPU is, and the
+ * rule for everything below is: touch each screen byte ONCE, work out what
+ * goes in it in fast memory first, and do not read what a write is about
+ * to cover (docs/phase52.md, which measured it).
  */
 #include "portab.h"
 #include "antic.h"
@@ -275,35 +282,91 @@ void antic_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint8_t set)
 #define AN_MD_XOR     3
 #define AN_MD_ERASE   4
 
-static uint8_t an_apply(uint8_t dst, uint8_t src, uint8_t m,
-                        int16_t mode, uint8_t pen)
+/* A WRITING MODE AS FOUR BYTES, worked out once per call rather than
+ * switched on per byte.  Each mode says what a SET source bit does to the
+ * pixel under it and what a CLEAR one does, and each of those is one of
+ * four things -- paint 0, paint 1, leave it, invert it -- which are all
+ * `(d & X) ^ Y` for some X and Y:
+ *
+ *              set bit        clear bit
+ *   replace    the "on" pen   the "off" pen
+ *   trans      the "on" pen   leave
+ *   XOR        invert         leave
+ *   erase      leave          the "off" pen
+ *
+ * So a byte is  (s & ((d & x1) ^ y1)) | (~s & ((d & x0) ^ y0)),  masked,
+ * with no branch and no call.  And when both X are zero the destination
+ * does not come into it: a byte the mask covers whole is only WRITTEN,
+ * which on this screen means one access on the 1.79 MHz bus instead of
+ * two (docs/phase52.md).  The "off" pen is the background in a raster and
+ * in replace, and the ink in erase -- the VDI's rules, as an_apply had
+ * them. */
+typedef struct {
+    uint8_t x1, y1, x0, y0;
+} AN_OP;
+
+static void an_op(AN_OP *o, int16_t mode, uint8_t on, uint8_t off)
 {
-    uint8_t ink = pen ? 0xFF : 0x00;
-    uint8_t out;
+    uint8_t onb = on ? 0xFF : 0x00;
+    uint8_t offb = off ? 0xFF : 0x00;
 
     switch (mode) {
     case AN_MD_TRANS:
-        out = (uint8_t)((dst & (uint8_t)~src) | (ink & src));
+        o->x1 = 0x00; o->y1 = onb;  o->x0 = 0xFF; o->y0 = 0x00;
         break;
     case AN_MD_XOR:
-        out = (uint8_t)(dst ^ src);
+        o->x1 = 0xFF; o->y1 = 0xFF; o->x0 = 0xFF; o->y0 = 0x00;
         break;
     case AN_MD_ERASE:
-        out = (uint8_t)((dst & src) | (ink & (uint8_t)~src));
+        o->x1 = 0xFF; o->y1 = 0x00; o->x0 = 0x00; o->y0 = offb;
         break;
     default:                                /* AN_MD_REPLACE */
-        out = pen ? src : (uint8_t)~src;
+        o->x1 = 0x00; o->y1 = onb;  o->x0 = 0x00; o->y0 = offb;
         break;
     }
-    return (uint8_t)((dst & (uint8_t)~m) | (out & m));
 }
+
+/* One byte through the op: d the destination, s the source, m the pixels
+ * that are this call's.  A macro and not a function, because it is the
+ * inner loop of every primitive below. */
+#define AN_MIX(o, d, s, m) \
+    ((uint8_t)(((d) & (uint8_t)~(m)) | ((m) & \
+      (uint8_t)(((s) & (uint8_t)(((d) & (o).x1) ^ (o).y1)) | \
+                ((uint8_t)~(s) & (uint8_t)(((d) & (o).x0) ^ (o).y0))))))
+
+/* Does this op need the destination at all? */
+#define AN_READS(o) ((o).x1 | (o).x0)
+
+/* an_apply's pens: the "off" colour is the other pen in replace and the
+ * ink in erase, which is how the solid and patterned primitives, the
+ * glyphs and the lines have always drawn. */
+static void an_op_pen(AN_OP *o, int16_t mode, uint8_t pen)
+{
+    an_op(o, mode, pen, (uint8_t)(mode == AN_MD_REPLACE ? !pen : pen));
+}
+
+/* One screen byte through the op, reading it only if it must.  A MACRO:
+ * as a function it was a third of all the work a window redraw did on
+ * this device, most of it the call (docs/phase52.md).  `d_` is the
+ * caller's scratch byte; the store is of a value computed first, never of
+ * an expression through the pointer (tools/ccbug rule 3). */
+#define AN_PUT(p, o, s, m, d_)                                  \
+    do {                                                        \
+        (d_) = 0;                                               \
+        if ((uint8_t)(m) != 0xFF || AN_READS(o))                \
+            (d_) = *(p);                                        \
+        (d_) = AN_MIX(o, (d_), (uint8_t)(s), (uint8_t)(m));     \
+        *(p) = (d_);                                            \
+    } while (0)
 
 /* A solid run: the source is all ones, so REPLACE and TRANS write the
  * pen, XOR inverts and ERASE does nothing. */
 void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
 {
+    uint8_t t;                          /* AN_PUT's scratch */
     volatile uint8_t *p;
-    uint8_t lm, rm, mid, v;
+    AN_OP o;
+    uint8_t lm, rm;
     int16_t b1, b2, b;
 
     if (y < 0 || y >= AN_H)
@@ -318,36 +381,28 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
     if (x2 >= AN_W)
         x2 = AN_W - 1;
 
+    an_op_pen(&o, mode, pen);
     b1 = (int16_t)((uint16_t)x1 >> 3);
     b2 = (int16_t)((uint16_t)x2 >> 3);
     lm = an_left[x1 & 7];
     rm = an_right[x2 & 7];
-    mid = an_apply(0, 0xFF, 0xFF, mode, pen);   /* a whole byte of it */
     p = SCREEN + (uint16_t)y * AN_STRIDE + (uint16_t)b1;
 
     if (b1 == b2) {
-        v = *p;
-        v = an_apply(v, 0xFF, (uint8_t)(lm & rm), mode, pen);
-        *p = v;
+        AN_PUT(p, o, 0xFF, (uint8_t)(lm & rm), t);
         return;
     }
-    v = *p;
-    v = an_apply(v, 0xFF, lm, mode, pen);
-    *p = v;
-    for (b = (int16_t)(b1 + 1); b < b2; b++) {
-        p++;
-        if (mode == AN_MD_XOR) {            /* XOR still reads the byte */
-            v = *p;
-            v = (uint8_t)(v ^ 0xFF);
-            *p = v;
-        } else if (mode != AN_MD_ERASE) {
-            *p = mid;
+    AN_PUT(p, o, 0xFF, lm, t);
+    if (mode != AN_MD_ERASE) {          /* erase with a solid source: no-op */
+        for (b = (int16_t)(b1 + 1); b < b2; b++) {
+            p++;
+            AN_PUT(p, o, 0xFF, 0xFF, t);
         }
+    } else {
+        p += b2 - b1 - 1;
     }
     p++;
-    v = *p;
-    v = an_apply(v, 0xFF, rm, mode, pen);
-    *p = v;
+    AN_PUT(p, o, 0xFF, rm, t);
 }
 
 void antic_rect_mode(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
@@ -379,37 +434,86 @@ void antic_rect_mode(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
 void antic_glyph(uint32_t face, uint16_t ch, int16_t x, int16_t y,
                  int16_t mode, uint8_t pen, int16_t w, int16_t h)
 {
+    uint8_t t;                          /* AN_PUT's scratch */
     volatile uint8_t *p;
+    AN_OP o;
     uint16_t row;
-    uint8_t shift, g, v, cell;
+    uint8_t shift, g, cell, mh, ml;
 
     if (w < 1 || w > 8)
         return;
     cell = (uint8_t)(0xFF << (8 - w));  /* the columns the face uses */
     if (x < 0 || y < 0 || x + w > AN_W || y + h > AN_H)
         return;
+    an_op_pen(&o, mode, pen);
     shift = (uint8_t)(x & 7);
+    mh = (uint8_t)(cell >> shift);
+    ml = (uint8_t)(cell << (8 - shift));
     p = SCREEN + (uint16_t)y * AN_STRIDE + ((uint16_t)x >> 3);
 
     for (row = 0; row < (uint16_t)h; row++) {
         g = (uint8_t)(an_font_row(face, ch, row) & cell);
         if (shift == 0) {
-            v = *p;
-            v = an_apply(v, g, cell, mode, pen);
-            *p = v;
+            AN_PUT(p, o, g, cell, t);
         } else {
-            uint8_t hi = (uint8_t)(g >> shift);
-            uint8_t lo = (uint8_t)(g << (8 - shift));
-            uint8_t mh = (uint8_t)(cell >> shift);
-            uint8_t ml = (uint8_t)(cell << (8 - shift));
-            v = *p;
-            v = an_apply(v, hi, mh, mode, pen);
-            *p = v;
-            v = p[1];
-            v = an_apply(v, lo, ml, mode, pen);
-            p[1] = v;
+            AN_PUT(p, o, (uint8_t)(g >> shift), mh, t);
+            AN_PUT(p + 1, o, (uint8_t)(g << (8 - shift)), ml, t);
         }
         p += AN_STRIDE;
+    }
+}
+
+/* ---- rasters ---------------------------------------------------------- */
+
+/* Eight source bits starting at bit `b` of `row`, bit 7 leftmost, the way
+ * a screen byte holds them.  It may read one byte past the bits it uses,
+ * which is a read and nothing else. */
+static uint8_t an_src8(const uint8_t FAR *row, uint16_t b)
+{
+    uint16_t i = (uint16_t)(b >> 3);
+    uint8_t sh = (uint8_t)(b & 7);
+    uint8_t hi = row[i];
+    uint8_t lo;
+
+    if (sh == 0)
+        return hi;
+    lo = row[(uint16_t)(i + 1)];
+    return (uint8_t)((uint8_t)(hi << sh) | (uint8_t)(lo >> (8 - sh)));
+}
+
+void antic_raster_row(const uint8_t FAR *row, uint16_t sbit,
+                      int16_t x1, int16_t x2, int16_t y,
+                      int16_t mode, uint8_t pen, uint8_t pap)
+{
+    uint8_t t;                          /* AN_PUT's scratch */
+    volatile uint8_t *p;
+    AN_OP o;
+    uint16_t b1, b2, b, lead;
+
+    if (x1 > x2)
+        return;
+    an_op(&o, mode, pen, pap);
+    b1 = (uint16_t)x1 >> 3;
+    b2 = (uint16_t)x2 >> 3;
+    /* The source bit that lands on the FIRST pixel of byte b1, which is
+     * `lead` pixels left of x1.  Those pixels are outside the mask, so
+     * what the source holds for them does not matter -- but it cannot be
+     * read from before the row starts, so it is shifted in as zeros. */
+    lead = (uint16_t)x1 & 7;
+    p = SCREEN + (uint16_t)y * AN_STRIDE + b1;
+    for (b = b1; b <= b2; b++) {
+        uint8_t m = 0xFF, src;
+
+        if (b == b1)
+            m = an_left[lead];
+        if (b == b2)
+            m = (uint8_t)(m & an_right[(uint16_t)x2 & 7]);
+        if (b == b1 && lead)
+            src = (uint8_t)(an_src8(row, sbit) >> lead);
+        else
+            src = an_src8(row, (uint16_t)(sbit + ((b - b1) << 3) - lead));
+        AN_PUT(p, o, src, m, t);
+        p++;
     }
 }
 
@@ -436,8 +540,10 @@ static uint8_t an_patt_byte(uint16_t patrow, int16_t bx)
 void antic_patt_span(int16_t x1, int16_t x2, int16_t y, uint16_t patrow,
                      int16_t mode, uint8_t pen)
 {
+    uint8_t t;                          /* AN_PUT's scratch */
     volatile uint8_t *p;
-    uint8_t lm, rm, src, v;
+    AN_OP o;
+    uint8_t lm, rm, ev, od;
     int16_t b1, b2, b;
 
     if (y < 0 || y >= AN_H)
@@ -452,6 +558,9 @@ void antic_patt_span(int16_t x1, int16_t x2, int16_t y, uint16_t patrow,
     if (x2 >= AN_W)
         x2 = AN_W - 1;
 
+    an_op_pen(&o, mode, pen);
+    ev = an_patt_byte(patrow, 0);       /* the even bytes' half */
+    od = an_patt_byte(patrow, 1);       /* ...and the odd ones' */
     b1 = (int16_t)((uint16_t)x1 >> 3);
     b2 = (int16_t)((uint16_t)x2 >> 3);
     lm = an_left[x1 & 7];
@@ -459,35 +568,28 @@ void antic_patt_span(int16_t x1, int16_t x2, int16_t y, uint16_t patrow,
     p = SCREEN + (uint16_t)y * AN_STRIDE + (uint16_t)b1;
 
     if (b1 == b2) {
-        src = an_patt_byte(patrow, b1);
-        v = *p;
-        v = an_apply(v, src, (uint8_t)(lm & rm), mode, pen);
-        *p = v;
+        AN_PUT(p, o, (b1 & 1) ? od : ev, (uint8_t)(lm & rm), t);
         return;
     }
-    src = an_patt_byte(patrow, b1);
-    v = *p;
-    v = an_apply(v, src, lm, mode, pen);
-    *p = v;
+    AN_PUT(p, o, (b1 & 1) ? od : ev, lm, t);
     for (b = (int16_t)(b1 + 1); b < b2; b++) {
         p++;
-        src = an_patt_byte(patrow, b);
-        v = *p;
-        v = an_apply(v, src, 0xFF, mode, pen);
-        *p = v;
+        AN_PUT(p, o, (b & 1) ? od : ev, 0xFF, t);
     }
     p++;
-    src = an_patt_byte(patrow, b2);
-    v = *p;
-    v = an_apply(v, src, rm, mode, pen);
-    *p = v;
+    AN_PUT(p, o, (b2 & 1) ? od : ev, rm, t);
 }
 
+/* A vertical line, one screen byte a row.  It used to call the whole
+ * patterned span for every pixel. */
 void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
                  int16_t mode, uint8_t pen)
 {
+    uint8_t t;                          /* AN_PUT's scratch */
+    volatile uint8_t *p;
+    AN_OP o;
     int16_t y;
-    uint8_t bit;
+    uint8_t m;
 
     if (x < 0 || x >= AN_W)
         return;
@@ -498,15 +600,37 @@ void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
         y1 = 0;
     if (y2 >= AN_H)
         y2 = AN_H - 1;
+    an_op_pen(&o, mode, pen);
+    m = (uint8_t)(0x80 >> (x & 7));
+    p = SCREEN + (uint16_t)y1 * AN_STRIDE + ((uint16_t)x >> 3);
     for (y = y1; y <= y2; y++) {
         /* the style is anchored to the screen's grid, as a horizontal
          * one is: pixel y takes bit 15 - (y & 15) */
-        bit = (uint8_t)((mask >> (15 - (y & 15))) & 1);
-        antic_patt_span(x, x, y, bit ? 0xFFFF : 0x0000, mode, pen);
+        uint8_t bit = (uint8_t)((mask >> (15 - (y & 15))) & 1);
+        AN_PUT(p, o, bit ? 0xFF : 0x00, m, t);
+        p += AN_STRIDE;
     }
 }
 
 /* ---- vro_cpyfm, screen to screen -------------------------------------- */
+
+/* A screen byte by row and column, or 0 off the screen.  A FUNCTION, and
+ * that is not tidiness: written inline in antic_copy's row loop -- a
+ * conditional volatile read, then the store into the row buffer -- cc65816
+ * 5.18 at -O2 factored a `sep #32 / ldy ##0 / rtl` tail out of it and let
+ * the read's path fall into the join with the accumulator still 8 bits
+ * wide, where `adc ##33` (69 21 00) ran as `adc #$21` and then BRK.
+ * test-m24 caught it as a program that never started drawing; the compiler's
+ * simulator found the line (docs/phase52.md, tools/ccbug B21). */
+static uint8_t an_byte_at(int16_t y, int16_t bx)
+{
+    volatile uint8_t *sp;
+
+    if (y < 0 || y >= AN_H || bx < 0 || bx >= AN_STRIDE)
+        return 0;
+    sp = SCREEN + (uint16_t)y * AN_STRIDE + (uint16_t)bx;
+    return *sp;
+}
 
 void antic_copy(int16_t sx, int16_t sy, int16_t dx, int16_t dy,
                 int16_t w, int16_t h)
@@ -552,21 +676,51 @@ void antic_copy(int16_t sx, int16_t sy, int16_t dx, int16_t dy,
         }
         return;
     }
-    /* Unaligned, or a width that is not a whole number of bytes: pixel by
-     * pixel, in the direction that keeps an overlapping move safe.  The
-     * VBXE driver falls back the same way when the blitter's alignment
-     * rules are not met, so the two agree about what a move does. */
-    for (y = 0; y < h; y++) {
-        int16_t syy = back_y ? (int16_t)(sy + h - 1 - y) : (int16_t)(sy + y);
-        int16_t dyy = back_y ? (int16_t)(dy + h - 1 - y) : (int16_t)(dy + y);
+    /* Unaligned, or a width that is not a whole number of bytes -- which on
+     * this screen is most window moves, since a window snaps to EVEN x and
+     * a byte is eight.  It used to go pixel by pixel, a get and a plot
+     * each; a moved window was tens of thousands of them.  Now each source
+     * row is read ONCE into a buffer, whole bytes, and put down shifted
+     * with antic_raster_row, which is vrt_cpyfm's own path.  Reading the
+     * row before writing any of it is also what makes an overlapping move
+     * on the same row safe, whichever way it goes; the rows themselves are
+     * still taken in the order that keeps a vertical overlap safe.
+     * Pixels whose source is off the screen read as 0, as get_pixel's
+     * did. */
+    {
+        uint8_t buf[AN_STRIDE + 2];
+        int16_t xl = dx, xr = (int16_t)(dx + w - 1), k, sb;
 
-        for (i = 0; i < w; i++) {
-            int16_t sxx = back_x ? (int16_t)(sx + w - 1 - i) : (int16_t)(sx + i);
-            int16_t dxx = back_x ? (int16_t)(dx + w - 1 - i) : (int16_t)(dx + i);
-            uint8_t v = antic_get_pixel(sxx, syy);
-            antic_plot(dxx, dyy, v);
+        if (xl < 0)
+            xl = 0;
+        if (xr >= AN_W)
+            xr = AN_W - 1;
+        if (xl > xr)
+            return;
+        for (y = 0; y < h; y++) {
+            int16_t syy = back_y ? (int16_t)(sy + h - 1 - y) : (int16_t)(sy + y);
+            int16_t dyy = back_y ? (int16_t)(dy + h - 1 - y) : (int16_t)(dy + y);
+            int16_t s0 = (int16_t)(sx + (xl - dx));     /* source x of xl */
+
+            if (dyy < 0 || dyy >= AN_H)
+                continue;
+            /* the source row's bytes from the one holding s0 on, as many
+             * as the run needs and one more; off-screen ones are 0.  The
+             * byte column is floored, not truncated: s0 may be negative */
+            sb = (int16_t)(s0 >= 0 ? (int16_t)((uint16_t)s0 >> 3)
+                                   : (int16_t)(-1 - (int16_t)((uint16_t)(-1 - s0) >> 3)));
+            n = (int16_t)((int16_t)((uint16_t)(xr - xl) >> 3) + 2);
+            for (k = 0; k < n; k++) {
+                uint8_t v = an_byte_at(syy, (int16_t)(sb + k));
+                buf[k] = v;
+            }
+            antic_raster_row((const uint8_t FAR *)buf,
+                             (uint16_t)(s0 - (int16_t)(sb * 8)),
+                             xl, xr, dyy, AN_MD_REPLACE, 1, 0);
         }
     }
+    (void)i;
+    (void)back_x;
 }
 
 /* ---- the mouse cursor -------------------------------------------------- */
@@ -635,19 +789,50 @@ void antic_cursor_discard(void)
     an_cur_valid = 0;
 }
 
+/* The pointer, three bytes a row rather than a plot a pixel: the form is
+ * shifted into the screen's alignment as a 24-bit row, and each screen
+ * byte is read and written once.  A data bit paints fg, a mask bit that
+ * is not data paints bg -- antic_plot's rule, pixel for pixel -- and
+ * columns off either edge of the screen are left alone. */
 void antic_cursor_paint(int16_t x, int16_t y, const uint16_t *mask,
                         const uint16_t *data, uint8_t bg, uint8_t fg)
 {
-    int16_t r, c;
+    int16_t r, c, bx0;
+    uint8_t sh, fgb = fg ? 0xFF : 0x00, bgb = bg ? 0xFF : 0x00;
 
+    if (x >= AN_W || x + AN_CUR_W <= 0)
+        return;
+    /* the byte column of the form's first pixel, floored: x may be
+     * off the left edge */
+    bx0 = (int16_t)(x >= 0 ? (int16_t)((uint16_t)x >> 3)
+                           : (int16_t)(-1 - (int16_t)((uint16_t)(-1 - x) >> 3)));
+    sh = (uint8_t)(x - bx0 * 8);
     for (r = 0; r < AN_CUR_W; r++) {
-        uint16_t m = mask[r], d = data[r];
-        for (c = 0; c < AN_CUR_W; c++) {
-            uint16_t bit = (uint16_t)(0x8000u >> c);
-            if (d & bit)
-                antic_plot((int16_t)(x + c), (int16_t)(y + r), fg);
-            else if (m & bit)
-                antic_plot((int16_t)(x + c), (int16_t)(y + r), bg);
+        int16_t yy = (int16_t)(y + r);
+        uint32_t d24, m24;
+
+        if (yy < 0 || yy >= AN_H)
+            continue;
+        d24 = ((uint32_t)data[r] << 8) >> sh;
+        m24 = ((uint32_t)mask[r] << 8) >> sh;
+        for (c = 0; c < AN_CUR_NB; c++) {
+            int16_t bx = (int16_t)(bx0 + c);
+            uint8_t db, mb, fgm, bgm, dst, v;
+            volatile uint8_t *p;
+
+            if (bx < 0 || bx >= AN_STRIDE)
+                continue;
+            db = (uint8_t)(d24 >> (16 - 8 * c));
+            mb = (uint8_t)(m24 >> (16 - 8 * c));
+            fgm = db;
+            bgm = (uint8_t)(mb & (uint8_t)~db);
+            if (!(fgm | bgm))
+                continue;
+            p = SCREEN + (uint16_t)yy * AN_STRIDE + (uint16_t)bx;
+            dst = *p;
+            v = (uint8_t)((dst & (uint8_t)~(fgm | bgm))
+                          | (fgm & fgb) | (bgm & bgb));
+            *p = v;
         }
     }
 }

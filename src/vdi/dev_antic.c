@@ -1,8 +1,9 @@
 /* dev_antic.c -- the ANTIC side of the seam (vdidev.h).
  *
- * 320x168 at 1bpp in plain motherboard RAM, which the accelerator writes
- * at full speed.  So every primitive here writes BYTES, there is no list
- * to compile and nothing to flush -- the write WAS the drawing.  That is
+ * 320x168 at 1bpp in plain motherboard RAM -- on the 1.79 MHz bus, not at
+ * the accelerator's speed (src/antic/antic.c says why).  So every
+ * primitive here writes BYTES, each screen byte once, there is no list to
+ * compile and nothing to flush -- the write WAS the drawing.  That is
  * the whole difference from src/vdi/dev_vbxe.c, and the reason the seam
  * is drawn where it is: above this line the VDI decides WHAT to draw,
  * below it the device decides how, and neither has to know the other's
@@ -152,21 +153,45 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
                 (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
 }
 
-/* vrt_cpyfm: a one-plane source into the screen, pixel by pixel and
- * clipped to the pixel.  The rules per mode are the VDI's:
+/* vrt_cpyfm: a one-plane source into the screen -- which is how every
+ * icon on the desk is drawn.  The rules per mode are the VDI's:
  *
  *   replace      ink where set, bg where clear
  *   transparent  ink where set
  *   XOR          complement where set
  *   erase        bg where CLEAR
- */
+ *
+ * CLIPPED BY THE ROW, DRAWN BY THE BYTE.  It used to go pixel by pixel,
+ * each one an antic_plot -- a call, four bounds tests, a row multiply and
+ * a read and a write on the 1.79 MHz bus -- so a 32x32 icon cost 1,024 of
+ * them.  Now the row's x range is cut to the screen and the clip
+ * rectangle once, and antic_raster_row shifts the source into place and
+ * touches each screen byte once: about 160 for the same icon, and none
+ * of them a read where a replace covers the whole byte (docs/phase52.md).
+ * The pixels are the same ones; test-m26's desk says so. */
 void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
                      WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
 {
     uint8_t pen = (uint8_t)(ink ? 1 : 0);
     uint8_t pap = (uint8_t)(bg ? 1 : 0);
-    WORD r, c;
+    WORD r, xl, xr;
+
+    /* the columns, once: the screen, then the clip rectangle */
+    xl = dx;
+    xr = (WORD)(dx + w - 1);
+    if (xl < 0)
+        xl = 0;
+    if (xr >= AN_W)
+        xr = AN_W - 1;
+    if (vwk.clip) {
+        if (xl < vwk.xmn_clip)
+            xl = vwk.xmn_clip;
+        if (xr > vwk.xmx_clip)
+            xr = vwk.xmx_clip;
+    }
+    if (xl > xr || w <= 0)
+        return;
 
     for (r = 0; r < h; r++) {
         WORD y = (WORD)(dy + r);
@@ -176,35 +201,9 @@ void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
             continue;
         if (vwk.clip && (y < vwk.ymn_clip || y > vwk.ymx_clip))
             continue;
-        for (c = 0; c < w; c++) {
-            WORD x = (WORD)(dx + c);
-            WORD s = (WORD)(sx + c);
-            uint8_t set;
-
-            if (x < 0 || x >= AN_W)
-                continue;
-            if (vwk.clip && (x < vwk.xmn_clip || x > vwk.xmx_clip))
-                continue;
-            set = (uint8_t)((row[(uint16_t)s >> 3] >> (7 - (s & 7))) & 1);
-            switch (mode) {
-            case MD_TRANS:
-                if (set)
-                    antic_plot((int16_t)x, (int16_t)y, pen);
-                break;
-            case MD_XOR:
-                if (set)
-                    antic_plot((int16_t)x, (int16_t)y,
-                               (uint8_t)!antic_get_pixel((int16_t)x, (int16_t)y));
-                break;
-            case MD_ERASE:
-                if (!set)
-                    antic_plot((int16_t)x, (int16_t)y, pap);
-                break;
-            default:
-                antic_plot((int16_t)x, (int16_t)y, set ? pen : pap);
-                break;
-            }
-        }
+        antic_raster_row(row, (uint16_t)(sx + (xl - dx)),
+                         (int16_t)xl, (int16_t)xr, (int16_t)y,
+                         (int16_t)mode, pen, pap);
     }
 }
 

@@ -69,7 +69,7 @@ full-screen repaints.
 
 | Gate | | |
 |---|---|---|
-| `make test-host` | 285/285 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
+| `make test-host` | 287/287 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
 | `make test-emu` | 5/5 | VBXE FX 1.26 / Rapidus / MEMAC A / CPU switch |
 | `make test-m1` | 5/5 | Calypsi C on the 65C816 |
 | `make test-m2` | PASS | 640×240×4bpp HR overlay, 153,600/153,600 pixels |
@@ -119,7 +119,8 @@ full-screen repaints.
 | `make test-sdx816` | PASS | the desktop under **Rapidus OS with SpartaDOS X's `65816.SYS` loaded** — the driver that stopped both 0.1.2 and 0.2 at the desktop's first `rsrc_load`, saying `DESKTOP.RSC` was not on the boot disk. It was not the DOS: `proc_init()` cleared a process record field by field and not the two resource slots the record gained later, so the desktop started out holding resources it had never loaded and `rs_load` refused a third. Then **File -> DOS command...**: `VER` typed into the dialog runs through SpartaDOS X's own command processor (`XCOMLI`, GEMDOS `Psystem`) with GEM's screen left as it is, and its banner is read off the screen in the window the desktop opens on it (`docs/phase43.md`). Needs the Rapidus OS, SDX and `65816.SYS` fixtures |
 | `make test-sd` | PASS | the same card in the shape a **SubCart / AVGCART** wants — a FAT32 partition first, the APT after it — booted the same way as `test-cf`. Needs `[u1mb].flash` |
 | `make test-cf-firmware` | PASS | the same card booted on **every Ultimate 1MB firmware in `[u1mb.firmware]`** — 1.25, 2, 3.02, 3.10, 4.0 and 4.20 — because the BIOS setup screens differ between them, so the gate walks each one by what its screen actually says rather than by a fixed key sequence. Needs the firmware list, so not in `make test` |
-| `make check-cc` | PASS | the compiler bugs worked around, in the vendor's simulator: twenty-three shapes, eighteen of them still present |
+| `make check-cc` | PASS | the compiler bugs worked around, in the vendor's simulator: twenty-four shapes, nineteen of them still present |
+| `make mscan` | PASS | the compiler's accumulator-width miscompiles, looked for in **the build's own assembly** — every object rebuilt with `CC_ASM=1`, so each is scanned with the flags and defines it is really compiled with, the ANTIC and printer instances of the VDI included. Two checks: a named function CALLED with an 8-bit accumulator (B17), and an immediate REACHED in a width its encoding contradicts (B21). The second is new, and on its first run it found one in shipping code — `sdx_lookup`, which had been running the address of a variable as an instruction since phase 30 and surviving on the luck of where the linker put it (`tools/ccbug/README.md`) |
 | `make movie` | PASS | a session with the AES itself, filmed frame by frame and checked as a gate: `build/movie/gem4xe.mp4` |
 | `make bench` | — | GEMBench's tests on this machine, in milliseconds, not a gate (`docs/bench.md`) |
 
@@ -549,7 +550,7 @@ each gate proves is the third column of that table and no tool can generate it,
 so a gate nothing has said anything about is an error for a person rather than
 a row invented to go green.
 
-Calypsi cc65816 5.18.2 has **23 defects** this tree has met — mostly in code
+Calypsi cc65816 5.18.2 has **24 defects** this tree has met — mostly in code
 generation, plus two crashes in the compiler itself, a compile that never
 finishes, a refusal and a bad link — each reproduced in the vendor's own
 simulator and worked around at the source (or, for the divide flags, with a

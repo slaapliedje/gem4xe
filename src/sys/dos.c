@@ -270,19 +270,39 @@ static uint16_t sdx_find(const char FAR *name)
     return sdx_symbol(sdx_name);
 }
 
+/* Is this a SpartaDOS X with jfsymbol in place?  The three bytes are read
+ * into WORDS and compared there -- tools/ccbug rule 16 -- and the answer
+ * comes back as a word, in a function of its own.
+ *
+ * WHY, AND IT WAS NOT HYPOTHETICAL.  Written inline, with `sdx_asked = 1`
+ * on both ways out, cc65816 5.18 at -O2 merged the two stores into one
+ * tail assembled for an 8-bit accumulator -- `lda #1`, A9 01 -- and then
+ * reached that tail in 16-bit mode on the path where SpartaDOS X IS
+ * usable.  There A9 01 took the next byte as its operand and the CPU ran
+ * the store's address as instructions.  It survived because sdx_asked
+ * happened to be at $23D3, whose bytes decode as a harmless read; the
+ * store never happened, so every DOS command repeated both lookups, and
+ * a different layout would have run something worse.  Found by
+ * tools/ccbug/mscan.py's width check (B21) on 2026-09-24, not by a gate. */
+static uint16_t sdx_usable(void)
+{
+    uint16_t kind = dos.kind;
+    uint16_t ver = SDX_VERSION;
+    uint16_t jmp = *(volatile uint8_t *)SDX_JFSYMBOL;
+
+    return (uint16_t)(kind == DOS_SDX && ver >= 0x44 && jmp == 0x4C);
+}
+
 static void sdx_lookup(void)
 {
     static const char FAR xcomli[] = "XCOMLI  ";
     static const char FAR put_v[]  = "PUT_V   ";
 
-    if (dos.kind != DOS_SDX || SDX_VERSION < 0x44
-     || *(volatile uint8_t *)SDX_JFSYMBOL != 0x4C) {
-        sdx_asked = 1;
+    sdx_asked = 1;                      /* once, before anything branches */
+    if (!sdx_usable())
         return;
-    }
     sdx_xcomli = sdx_find(xcomli);
     sdx_putv = sdx_find(put_v);
-    sdx_asked = 1;
 }
 
 int32_t dos_command(uint32_t line, uint32_t out, uint32_t max)

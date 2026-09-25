@@ -133,6 +133,18 @@ void antic_glyph(uint32_t face, uint16_t ch,
 void antic_patt_span(int16_t x1, int16_t x2, int16_t y, uint16_t patrow,
                      int16_t mode, uint8_t pen);
 
+/* One row of a one-plane source onto the screen -- vrt_cpyfm, which is
+ * how every desktop icon is drawn.  x1..x2 is already clipped, to the
+ * screen and to the clip rectangle; `sbit` is the source bit x1 comes
+ * from, counting from `row`'s first bit.  A BYTE at a time: the source is
+ * shifted into the screen's alignment and each screen byte is read and
+ * written once -- or only written, where a replace covers all of it --
+ * because every screen access is on the 1.79 MHz bus however fast the
+ * CPU is (docs/phase52.md).  Modes are the VDI's, numbered from 1. */
+void antic_raster_row(const uint8_t FAR *row, uint16_t sbit,
+                      int16_t x1, int16_t x2, int16_t y,
+                      int16_t mode, uint8_t pen, uint8_t pap);
+
 /* A vertical line, styled: the mask is indexed by y the same way. */
 void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
                  int16_t mode, uint8_t pen);

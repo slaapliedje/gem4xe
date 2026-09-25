@@ -39,6 +39,17 @@ case "$out" in
     *) exec "$CC" "$@" ;;           # not an object: nothing to record
 esac
 
+# CC_ASM=1: the compiler's assembly for this object as well, beside it as
+# .s, from exactly these flags and defines -- which is what tools/ccbug/
+# mscan.py --build reads.  A separate pass, because --assembly-source
+# makes the compiler write ONLY assembly, and its assembly does not
+# re-assemble (as65816 rejects its `pea ##1`), so the object cannot be
+# made from it.  Off by default: it adds about half a minute to a full
+# build (make mscan turns it on).
+if [ -n "$CC_ASM" ]; then
+    "$CC" --assembly-source "${out%.o}.s" "$@" >/dev/null 2>&1 || true
+fi
+
 dep="${out%.o}.d"
 tmp="$dep.tmp"
 rm -f "$dep"

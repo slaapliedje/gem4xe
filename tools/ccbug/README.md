@@ -1,7 +1,7 @@
 # tools/ccbug — the cc65816 bugs gem4xe works around
 
-Twenty defects in Calypsi cc65816, nineteen found against **5.18**
-here and one (B17) reported from another project — thirteen in
+Twenty-one defects in Calypsi cc65816, twenty found against **5.18**
+here and one (B17) reported from another project — fourteen in
 code generation, two crashes, one compile that never finishes (B18), one
 in the front end's arithmetic, one in the run-time library's division and
 one (B20) in what the LINKER placed — each reproduced from a shape
@@ -1136,3 +1136,49 @@ No workaround is possible in C — the shape is `a / b` on a `long long`.
 What a program can do is not have one: keep 64-bit values out of
 division, or supply the library function itself.
 
+
+## B21 — a join reached in two accumulator widths
+
+    for (k = 0; k < n; k++) {
+        uint8_t v = 0;
+        if (in range)
+            v = *(volatile uint8_t *)screen_byte;   /* one path reads */
+        buf[k] = v;                                 /* the join       */
+    }
+
+At `-O2`, cc65816 5.18.2 outlines a tail it has seen twice, `sep #32 /
+ldy ##0 / rtl`, and calls it on the path that reads.  That path then
+falls into the join **with the accumulator still 8 bits wide**, and the
+join was assembled for 16: `adc ##33` is `69 21 00`, runs as `adc #$21`,
+and the `00` after it is a BRK.  `b21.c` is thirty lines and stops at
+exactly that line under `db65816`.
+
+It is B17's family — code reached in a width it was not assembled for —
+and it is **not** a call.  That is why `mscan.py` never saw it: the scan
+that existed asked only whether a named function is called narrow, it
+trusted a `?L` fragment to know "what mode it left", and it took `ldy ##0`
+as proof the accumulator was 16-bit, when `ldy`'s width is the X flag's.
+`mscan.joins()` is the second check: the SET of widths that can reach each
+instruction, fragments followed to see what they return in, and every
+accumulator immediate whose encoding one of those widths contradicts.
+
+FOUND BY: **`test-m24`, as a program that never started drawing**, after
+`antic_copy` (`src/antic/antic.c`) was rewritten to read a row into a
+buffer.  The compiler's simulator named the line.
+
+**AND IT WAS ALREADY IN THE PRODUCT.**  Pointed at the build's own
+assembly (`make mscan`, which rebuilds with `CC_ASM=1` so every object
+is scanned with its real flags and defines), the new check found a second
+one in `src/sys/dos.c`'s `sdx_lookup`, which had shipped since phase 30:
+two `sdx_asked = 1` stores merged into one tail assembled for 8 bits,
+reached in 16 on the path where SpartaDOS X IS usable.  `A9 01` took the
+store's opcode as its high byte and the CPU ran the variable's address,
+`D3 23`, as `cmp ($23,s),y` — harmless, by the luck of where the linker
+put it.  The store never happened, so every DOS command repeated both
+symbol lookups.  No gate could have seen it.
+
+The shape to write instead: take the read out of the loop into a
+function of its own that returns the byte (`an_byte_at`), and never leave
+two stores of the same byte on two ways out of a branchy test — do the
+store once, first, and compare bytes as words (rule 16) in a helper that
+returns a word (`sdx_usable`).

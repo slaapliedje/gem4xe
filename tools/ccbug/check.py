@@ -75,6 +75,7 @@ REFUSALS = {
 LISTINGS = {
     "b16": ("B16 byte spin loop, rep before its back edge", "small"),
     "b19_ptrdiff": ("B19 pointer difference against a far array", "large"),
+    "b21": ("B21 a join reached in two accumulator widths", "small"),
 }
 # file stem: note -- the shapes the compiler NEVER FINISHES compiling.  The
 # only report a bug of this kind can make is the timeout that kills it, so
@@ -301,6 +302,16 @@ def main():
     # B16 compiles, to code that derails on its second pass: compile the
     # file alone and read its listing for the shape
     for tag, (note, model) in LISTINGS.items():
+        if tag == "b21":
+            # B21's detector reads the compiler's ASSEMBLY, not a listing:
+            # the dataflow in mscan.joins, which found it in antic_copy
+            import mscan
+            asm = os.path.join(a.out, f"{tag}.s")
+            run([cc, "--code-model=large", f"--data-model={model}", f"-O{a.O}",
+                 "--assembly-source", asm,
+                 os.path.join(ROOT, "tools", "ccbug", f"{tag}.c")])
+            crashes[note] = bool(mscan.joins(asm))
+            continue
         lst = os.path.join(a.out, f"{tag}.lst")
         run([cc, "--code-model=large", f"--data-model={model}", f"-O{a.O}",
              "-o", os.path.join(a.out, f"{tag}.o"), "--list-file", lst,

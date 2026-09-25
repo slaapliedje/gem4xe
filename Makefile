@@ -1500,7 +1500,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1521,8 +1521,15 @@ check-cc:
 # because it compiles the whole tree a second time; run it after a
 # toolchain change, or when something dies inside a callee that is not
 # at fault.
+# Two checks for cc65816's accumulator-width miscompiles (tools/ccbug/
+# mscan.py): a named function CALLED with an 8-bit accumulator (B17), and
+# an immediate REACHED in a width its encoding contradicts (B21, which
+# broke antic_copy in 2026-09).  Over the build's OWN assembly, so every
+# object is scanned with the flags and defines it is really built with:
+# a rebuild with CC_ASM=1, which makes tools/ccdep.sh keep it.
 mscan:
-	python3 tools/ccbug/mscan.py --tree
+	$(MAKE) -B CC_ASM=1 all
+	python3 tools/ccbug/mscan.py --build
 
 # Calypsi #82's shape: a negative Y with LONG addressing, where the
 # 65816 adds Y to a 24-bit base as unsigned 16 bits and the access
@@ -1974,6 +1981,14 @@ readme:
 served:
 	python3 tools/opcodes.py --md tools/sdk/served.md
 
+# The desktop timed on each screen: open a window, move it, full it, put
+# it back -- ms from the input to the desktop's last call, and with
+# BENCH_PROFILE=1 where the time went, the idle loop taken off
+# (tests/emu/bench_desk.py, docs/phase52.md).  Not a gate.
+bench-desk: build/gem-shots.atr
+	python3 tests/emu/bench_desk.py vbxe $(if $(BENCH_PROFILE),--profile)
+	python3 tests/emu/bench_desk.py antic $(if $(BENCH_PROFILE),--profile)
+
 # GEMBench's tests, shaped for this machine: the dialog, text, graphics,
 # window, divide, float, RAM, ROM and blit rows timed to a VCOUNT tick
 # and reported in milliseconds.  Not a gate; the baseline is docs/bench.md.
@@ -1993,4 +2008,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
