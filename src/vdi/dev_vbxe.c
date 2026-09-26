@@ -3,7 +3,8 @@
  * 640x240 at 4bpp, in VRAM that sits on the 1.79 MHz chip bus however
  * fast the 65816 runs.  So every primitive here compiles a BLIT LIST and
  * the CPU touches a pixel only where the blitter genuinely cannot help;
- * dev_flush() is what starts the list and waits for it.  The other
+ * dev_flush() is what starts the list, and src/vbxe/vbxe.c waits for it
+ * where something needs it finished.  The other
  * device (src/vdi/dev_antic.c) writes bytes and has nothing to flush,
  * and that difference is the whole reason the seam exists.
  *
@@ -116,11 +117,14 @@ void dev_xor_rect(WORD x1, WORD y1, WORD x2, WORD y2)
 }
 
 
-/* The list started and waited for.  This is the only place the VDI's
+/* The list STARTED, and not waited for: the CPU goes on to whatever the
+ * caller does next while the blitter works, and src/vbxe/vbxe.c waits
+ * where it must -- before the next list is uploaded, and before any CPU
+ * access to VRAM (docs/phase58.md).  This is the only place the VDI's
  * device-independent code learns that a device might be asynchronous. */
 void dev_flush(void)
 {
-    blit_run();
+    blit_start();
 }
 
 /* The pattern the blitter reads lives in VRAM at VR_PATT: 16 rows, each one

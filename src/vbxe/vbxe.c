@@ -71,6 +71,31 @@ static uint8_t memac_bank = 0xFF;           /* shadow: BANK_SEL is write-only
 
 static uint8_t bcb_count;                   /* below, with the list */
 void blit_run(void);
+void blit_start(void);
+
+/* A LIST MAY BE RUNNING when nothing is queued: vdi() starts each call's
+ * list and returns without waiting for it (docs/phase58.md), so the CPU
+ * gets on with the next call while the blitter works.  This says a list
+ * was started and nobody has seen it finish; blit_idle() is where
+ * somebody does.  Tracked here rather than read from the hardware each
+ * time, because every read of BLITTER_BUSY is a trip over the slow bus. */
+static uint8_t blit_running;
+
+/* The busy bit, read as a WORD: a spin on a byte is compiler bug B16. */
+static uint16_t blit_busy_bit(void)
+{
+    return REG(FX_BLITTER_BUSY);
+}
+
+/* Wait for a started list to finish, if one may still be running. */
+static void blit_idle(void)
+{
+    if (blit_running) {
+        while (blit_busy_bit())                   /* D1 BUSY | D0 BCB_LOAD */
+            ;
+        blit_running = 0;
+    }
+}
 
 /* THE CPU NEVER TOUCHES VRAM WITH BLITS QUEUED.  Every CPU access to VRAM
  * comes through here, so this is where the queue is drained first -- which
@@ -81,8 +106,12 @@ void blit_run(void);
  * run at once. */
 void vram_map_page(uint8_t page)
 {
+    /* ...and never while a started list may still be reading or writing
+     * it: the pattern and cursor strips, the raster strip and the screen
+     * itself are all things a running list reads or writes. */
     if (bcb_count)
-        blit_run();
+        blit_start();
+    blit_idle();
     if (page != memac_bank) {
         memac_bank = page;
         REG(FX_MEMAC_CONTROL)  = MEMAC_CTL_4K_8000;
@@ -294,16 +323,18 @@ void vbxe_wait_vbl(void)
  * to the physically adjacent BCB. */
 #define MAX_BCB 12
 ZWIN static uint8_t  bcb[MAX_BCB * BCB_SIZE];
+/* Where the next block goes: bcb + bcb_count * BCB_SIZE, kept rather than
+ * computed, because 21 is not a shift -- `* BCB_SIZE` was a call to the
+ * run-time library's _Mul16 for every blit queued and for every block
+ * blit_start chained (docs/phase58.md). */
+static uint8_t *bcb_end = bcb;
 
-
-
-/* A FULL QUEUE IS RUN, not refused.  It used to return 0 here and every
- * caller then silently dropped its blit -- safe only because every
- * primitive flushed at its end and none queued more than twelve.  Now that
- * blits are left queued across primitives, running the full list and
- * starting a fresh one is the only right answer, and it keeps order. */
 /* The queue discarded. */
-void blit_reset(void) { bcb_count = 0; }
+void blit_reset(void)
+{
+    bcb_count = 0;
+    bcb_end = bcb;
+}
 
 /* A FULL QUEUE IS RUN, not refused.  It used to return 0 here and every
  * caller then silently dropped its blit -- safe only because every
@@ -315,7 +346,8 @@ static uint8_t *bcb_new(void)
     uint8_t *p;
     if (bcb_count >= MAX_BCB)
         blit_run();
-    p = &bcb[bcb_count * BCB_SIZE];
+    p = bcb_end;
+    bcb_end += BCB_SIZE;
     bcb_count++;
     return p;
 }
@@ -454,17 +486,24 @@ void blit_move(uint32_t src, uint16_t sstride, uint32_t dst,
 /* Upload the queued list and start it, without waiting. */
 void blit_start(void)
 {
-    uint8_t i, n = bcb_count;
-    if (!n)
+    uint8_t *q, *last;
+    uint16_t len;
+    if (!bcb_count)
         return;
+    /* The list about to be uploaded goes where the running one is read
+     * from: that one has to be finished first. */
+    blit_idle();
     /* The queue is EMPTIED BEFORE the upload, not after: the upload is a
      * CPU write to VRAM, and vram_map_page() drains a non-empty queue
      * before any of those -- which would be this function, again. */
+    last = bcb_end - BCB_SIZE;
+    len = (uint16_t)(bcb_end - bcb);
     bcb_count = 0;
-    /* Chain every block but the last. */
-    for (i = 0; i + 1 < n; i++)
-        bcb[i * BCB_SIZE + 20] |= BLT_NEXT;
-    bcb[(n - 1) * BCB_SIZE + 20] &= (uint8_t)~BLT_NEXT;
+    bcb_end = bcb;
+    /* Chain every block but the last: byte 20 is mode | next. */
+    for (q = bcb; q != last; q += BCB_SIZE)
+        q[20] |= BLT_NEXT;
+    last[20] &= (uint8_t)~BLT_NEXT;
 
     /* ALL of it, every time.  Uploading only the bytes that changed since
      * the last list was tried (2026-09-24) and made a redraw nearly twice
@@ -473,7 +512,7 @@ void blit_start(void)
      * shift that is a loop on this CPU -- costs more than the byte.
      * vram_write's word loop, pointers in the direct page, is as close to
      * the bus's own speed as this gets (docs/phase53.md). */
-    vram_write(VR_BCB, bcb, (uint16_t)(n * BCB_SIZE));
+    vram_write(VR_BCB, bcb, len);
 
     REG(FX_BL_ADR0) = (uint8_t)(VR_BCB);
     REG(FX_BL_ADR1) = (uint8_t)(VR_BCB >> 8);
@@ -482,6 +521,7 @@ void blit_start(void)
                                                      a previous list may be
                                                      running */
     REG(FX_BLITTER_START) = 1;
+    blit_running = 1;
     memac_invalidate();                           /* the blitter owns VRAM
                                                      while it runs          */
 }
@@ -519,11 +559,11 @@ void blit_pattern(uint32_t src, uint16_t sstride, uint32_t dst,
     p[20] = mode;
 }
 
+/* The queue run, and waited for. */
 void blit_run(void)
 {
     blit_start();
-    while (REG(FX_BLITTER_BUSY))                  /* D1 BUSY | D0 BCB_LOAD  */
-        ;
+    blit_idle();
 }
 
 /* Run the queued list and return how long it took, in VCOUNT ticks (ANTIC's
@@ -539,6 +579,7 @@ uint16_t blit_time(void)
     uint16_t ticks = 0;
     uint8_t last, v;
 
+    blit_idle();                                  /* not a list from before */
     while (*vc != 0)                              /* align to top of frame  */
         ;
     blit_start();
@@ -549,5 +590,6 @@ uint16_t blit_time(void)
             ticks = (uint16_t)(ticks + 156);      /* VCOUNT wrapped (PAL)   */
         last = v;
     }
+    blit_running = 0;
     return (uint16_t)(ticks + last);
 }

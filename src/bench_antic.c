@@ -88,14 +88,19 @@ static void desk_pattern(void)
  * where what a call costs to set up is most of it. */
 static void small_rects(void)
 {
-    WORD i;
+    WORD i, x = 3, y = 2, col = 0;
 
     set1(VSF_INTERIOR, FIS_SOLID);
     set1(VSWR_MODE, MD_REPLACE);
+    /* stepped, not divided: the bench's own % and / were a tenth of it */
     for (i = 0; i < 200; i++) {
-        WORD x = (WORD)(3 + (i % 12) * 26), y = (WORD)(2 + (i / 12) * 9);
-
         rect(x, y, (WORD)(x + 23), (WORD)(y + 7));
+        x = (WORD)(x + 26);
+        if (++col == 12) {
+            col = 0;
+            x = 3;
+            y = (WORD)(y + 9);
+        }
     }
 }
 

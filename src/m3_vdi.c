@@ -1257,6 +1257,10 @@ TASK void main(void)
             STATUS[ST_DONE] = 0;
             STATUS[ST_VC_GO] = VCOUNT;
             run_script();
+            /* The last list finished, not only started: vdi() no longer
+             * waits for the blitter (docs/phase58.md), and DONE means the
+             * screen is drawn -- for the timing and for the pixels. */
+            blit_run();
             STATUS[ST_VC_DONE] = VCOUNT;
             STATUS[ST_DONE] = 0xA5;
             if (exit_req) {
