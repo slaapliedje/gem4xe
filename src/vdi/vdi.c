@@ -2300,8 +2300,23 @@ static WORD kb_translate(uint8_t code)
     const uint8_t *tab = (const uint8_t *)KEYDEF;
     WORD idx = (WORD)(code & 0x3F);
     uint8_t a;
-    if (code & 0x40) idx += 64;                 /* shift row   */
-    if (code & 0x80) idx += 128;                /* control row */
+    /* The table has three rows, not four: with CONTROL and SHIFT both
+     * held the two offsets summed to 192 and read past its end.  Control
+     * wins, and SHIFT is still there to be seen in the modifier state
+     * (vq_key_s) -- which is how SHIFT and an arrow, itself a CONTROL key
+     * on this keyboard, can mean a page.
+     *
+     * THE ROW AS A NUMBER, not as two tests of the byte: `if (code &
+     * 0x80) ... else if (code & 0x40)` is compiler bug B23 at -O2 -- the
+     * second test reads a stray stack byte, and every key came out shifted
+     * (tools/ccbug). */
+    {
+        WORD row = (WORD)(code >> 6);   /* 0 plain, 1 shift, 2 control,
+                                         * 3 control and shift */
+        if (row == 3)
+            row = 2;
+        idx = (WORD)(idx + (row << 6));
+    }
     a = tab[idx];
     /* Caps lock is the OS's, and the OS is not running: keep our own, and
      * apply it the way it does -- unmodified letters only. */

@@ -52,6 +52,8 @@ RESULTS = {
     "r_b15_bug": (164, "bug", "B15 p->a = p->b + k, spilled pointer"),
     "r_b15_fix": (164, "fix", "B15 the member through a scalar"),
     "r_b16_fix": (119, "fix", "B16 the byte read into a word, compared"),
+    "r_b23_bug": (0x1F5F, "bug", "B23 else-if on a second bit of a byte"),
+    "r_b23_fix": (0x1F5F, "fix", "B23 the row taken as a number"),
 }
 B2 = ("r_b2_eq", "r_b2_lt", "r_b2_mod")
 # file stem: note -- the shapes the compiler cannot get through at all
@@ -263,6 +265,10 @@ def main():
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b17.s")
     fixtures["B17 mscan finds the join it exists to find"] = (
         len(_mscan.scan(_fix)), 1)
+    # ...and B23's: the reproducer's own -O2 listing, one read at 0,s.
+    _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b23.s")
+    fixtures["B23 mscan finds the read below the stack"] = (
+        len(list(_mscan.stack_zero(_fix))), 1)
 
     # The same discipline for the negative-Y scan.  Calypsi #82 is fixed in
     # the 5.18 this tree requires, so the scan guards a shape rather than a

@@ -309,19 +309,30 @@ NOT_YET = (FORMITEM, IICNITEM, IAPPITEM)
 
 # The menu, box by box: (title, box x, box width, items); an item is a
 # string, "-" for a separator, and (string, state) for a state.
+def keyed(label, key, width):
+    """A menu item with its keyboard shortcut at the right, TOS-style:
+    `key` is the letter held with CONTROL (src/desk/desktop.c menu_keys)."""
+    return "  " + label.ljust(width - 5) + "^" + key + " "
+
+
+FILE_W = 21                                 # wide enough for "DOS command... ^Z"
 MENU = [
     (" Desk ", 2, 20, ["  About gem4xe...", "-", "1", "2", "3", "4", "5", "6"]),
-    (" File ", 8, 19, ["  Open", "  Show info...", "-", "  New folder...",
-                       "  Close folder", "  Close window", "-",
-                       "  Delete...", "  Format...", "  DOS command...", "-",
-                       "  Quit"]),
+    (" File ", 8, FILE_W, [keyed("Open", "O", FILE_W),
+                           keyed("Show info...", "I", FILE_W), "-",
+                           keyed("New folder...", "N", FILE_W),
+                           keyed("Close folder", "H", FILE_W),
+                           keyed("Close window", "U", FILE_W), "-",
+                           keyed("Delete...", "D", FILE_W), "  Format...",
+                           keyed("DOS command...", "Z", FILE_W), "-",
+                           keyed("Quit", "Q", FILE_W)]),
     (" View ", 14, 17, [("  Show as icons", CHECKED), "  Show as text", "-",
                         ("  Sort by name", CHECKED), "  Sort by type",
                         "  Sort by size", "  Sort by date", "  No sort",
                         "-", ("  Size to fit", CHECKED)]),
     (" Options ", 20, 25, ["  Install icon...", "  Install application...",
                            "-", "  Set preferences...", "-",
-                           "  Read .INF file...", "  Save desktop..."]),
+                           "  Read .INF file...", keyed("Save desktop...", "S", 25)]),
 ]
 TITLE_X = [0, 6, 12, 18]                    # the titles, packed on the bar
 ACTIVE_W = 27                               # " Desk " to " Options " inclusive
@@ -434,8 +445,8 @@ def menu_tree(r):
         box = last + 1
     assert len(objs) == NOBS_MENU, (len(objs), NOBS_MENU)
     assert objs[ABOUITEM][6].s.startswith("  About")
-    assert objs[QUITITEM][6].s == "  Quit"
-    assert objs[SAVEITEM][6].s == "  Save desktop..."
+    assert objs[QUITITEM][6].s.startswith("  Quit ")
+    assert objs[SAVEITEM][6].s.startswith("  Save desktop...")
     assert objs[DESKBOX][2] - objs[DESKBOX][1] == 7    # eight children
     assert [i for i, o in enumerate(objs) if o[3] == G_BOX and i > THEDROPS] \
         == [DESKBOX, FILEBOX, VIEWBOX, OPTNBOX]

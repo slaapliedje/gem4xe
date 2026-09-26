@@ -424,6 +424,7 @@ volatile WORD r_b13_bug, r_b13_fix;                     /* want 48 */
 volatile WORD r_b14_bug, r_b14_fix;                     /* want 192 */
 volatile WORD r_b15_bug, r_b15_fix;                     /* want 164 */
 volatile WORD r_b16_fix;                                /* want 119 */
+volatile WORD r_b23_bug, r_b23_fix;                     /* want 0x1F5F */
 
 /* ---- B12: a signed 16-bit >> is not an arithmetic shift --------------- */
 
@@ -641,6 +642,43 @@ WORD b16_fix(WORD p)
     return (WORD)(b16_vc + 100);
 }
 
+/* ---- B23: a second bit test of a byte reads a stray stack byte ------- */
+
+/* kb_translate (src/vdi/vdi.c): the row of the OS's key table from the
+ * shift (bit 6) and control (bit 7) bits of POKEY's code.  At -O2 the
+ * byte is stored at 1,s and loaded as a WORD from 0,s -- the code in the
+ * HIGH byte, whatever lies below the stack in the low one -- so `bpl`
+ * tests bit 7 rightly and the `bit ##64` for the else-if tests the stray
+ * byte.  On the desktop every key came out as its shifted character.
+ * Two separate ifs happened to be right; the row taken as a number is. */
+WORD b23_bug(uint8_t code)
+{
+    WORD idx = (WORD)(code & 0x3F);
+
+    if (code & 0x80)
+        idx += 128;
+    else if (code & 0x40)
+        idx += 64;
+    return idx;
+}
+
+WORD b23_fix(uint8_t code)
+{
+    WORD idx = (WORD)(code & 0x3F), row = (WORD)(code >> 6);
+
+    if (row == 3)
+        row = 2;
+    return (WORD)(idx + (row << 6));
+}
+
+/* Both codes, packed: a plain $1F and a shifted $5F must come back as
+ * themselves, whatever the stray byte holds -- one of the two is wrong
+ * whichever way its bit 6 lies. */
+static WORD b23_pair(WORD (*f)(uint8_t))
+{
+    return (WORD)((f(0x1F) << 8) | f(0x5F));
+}
+
 __task int main(void)
 {
     WORD w = 200, h;
@@ -713,5 +751,8 @@ __task int main(void)
     /* the polls stop at line 19, so 119 */
     b16_vc = 0;
     r_b16_fix = b16_fix(0);
+
+    r_b23_bug = b23_pair(b23_bug);              /* $1F and $5F: 0x1F5F */
+    r_b23_fix = b23_pair(b23_fix);
     return 0;
 }

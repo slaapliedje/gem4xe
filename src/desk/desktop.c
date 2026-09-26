@@ -553,6 +553,107 @@ static WORD hndl_button(WORD clicks, WORD mx, WORD my, WORD kstate)
     return FALSE;
 }
 
+/* -- the keyboard ------------------------------------------------------- */
+
+/* The menu's shortcuts, the TOS desktop's own letters.  A Control+letter
+ * arrives as its control code in the low byte and no scan code -- ^O is
+ * 0x000F (src/vdi/vdi.c, kb_translate) -- where the TAB and RETURN keys
+ * carry scan codes, so ^I is not TAB and ^M is not RETURN.  The item
+ * text says the shortcut (tools/deskrsc.py MENU). */
+static const struct {
+    WORD code, title, item;
+} menu_keys[] = {
+    { 'O' - '@', FILEMENU, OPENITEM },
+    { 'I' - '@', FILEMENU, SHOWITEM },
+    { 'N' - '@', FILEMENU, NFOLITEM },
+    { 'H' - '@', FILEMENU, CLOSITEM },
+    { 'U' - '@', FILEMENU, CLSWITEM },
+    { 'D' - '@', FILEMENU, DELTITEM },
+    { 'Z' - '@', FILEMENU, CMDITEM },
+    { 'Q' - '@', FILEMENU, QUITITEM },
+    { 'S' - '@', OPTNMENU, SAVEITEM },
+};
+#define N_MENU_KEYS (WORD)(sizeof menu_keys / sizeof menu_keys[0])
+
+#define KEY_UP     0x4800
+#define KEY_DOWN   0x5000
+#define KEY_LEFT   0x4B00
+#define KEY_RIGHT  0x4D00
+#define KEY_ESC    0x011B
+#define KEY_DELETE 0x537F
+
+/* One item of the menu, as if it had been chosen: the title shown
+ * selected while it runs, as a mouse choice leaves it, and nothing at
+ * all for an item that is greyed out. */
+static WORD key_menu(WORD title, WORD item)
+{
+    if (G.a_menu[item].ob_state & DISABLED)
+        return FALSE;
+    menu_tnormal(G.a_menu, title, 0);
+    return hndl_menu(title, item);
+}
+
+/* A scroll of the top window, as its arrows would send it. */
+static void key_arrow(WORD action)
+{
+    WNODE *pw = win_ontop();
+    WORD msg[8];
+
+    if (!pw)
+        return;
+    msg[0] = WM_ARROWED;
+    msg[1] = 0;
+    msg[2] = 0;
+    msg[3] = pw->w_id;
+    msg[4] = action;
+    hndl_wmsg(msg);
+}
+
+/* TRUE when the key ended the desktop (Quit).
+ *
+ * THE DRIVES ARE THE DIGITS.  TOS opens a drive with Alt and its letter;
+ * this keyboard has no Alt, and the icons are labelled D1:, D2: -- so
+ * 1 to 9 open them, and the letters are left alone.  THE ARROWS are
+ * CONTROL and - = + * on this keyboard, so SHIFT with them is SHIFT and
+ * CONTROL at once; with SHIFT a page, without it a line.  ESC reads the
+ * top window's directory again; DELETE is File -> Delete. */
+static WORD hndl_kbd(WORD key, WORD kstate)
+{
+    WORD low = (WORD)(key & 0xFF), scan = (WORD)((key >> 8) & 0xFF), i, obj;
+    WORD page = (WORD)((kstate & 3) != 0);
+    WNODE *pw;
+
+    if (scan == 0 && low >= 1 && low <= 26) {
+        for (i = 0; i < N_MENU_KEYS; i++)
+            if (menu_keys[i].code == low)
+                return key_menu(menu_keys[i].title, menu_keys[i].item);
+        return FALSE;
+    }
+    if (scan == 0 && low >= '1' && low <= '9') {
+        obj = obj_get_obid((WORD)('A' + low - '1'));
+        if (obj) {
+            act_select(DESKWH, DROOT, obj);
+            return do_open(DESKWH, obj);
+        }
+        return FALSE;
+    }
+    switch ((UWORD)key) {
+    case KEY_UP:    key_arrow(page ? WA_UPPAGE : WA_UPLINE); break;
+    case KEY_DOWN:  key_arrow(page ? WA_DNPAGE : WA_DNLINE); break;
+    case KEY_LEFT:  key_arrow(page ? WA_LFPAGE : WA_LFLINE); break;
+    case KEY_RIGHT: key_arrow(page ? WA_RTPAGE : WA_RTLINE); break;
+    case KEY_DELETE:
+        return key_menu(FILEMENU, DELTITEM);
+    case KEY_ESC:
+        if ((pw = win_ontop()) != 0)
+            win_rebld(pw);
+        break;
+    default:
+        break;
+    }
+    return FALSE;
+}
+
 static WORD hndl_msg(void)
 {
     WORD *msg = G.g_rmsg;
@@ -654,6 +755,9 @@ int main(void)
         wind_update(BEG_UPDATE);
         if (ev_which & MU_BUTTON)
             if (hndl_button(bret, mx, my, kstate))
+                done = TRUE;
+        if ((ev_which & MU_KEYBD) && !done)
+            if (hndl_kbd(kret, kstate))
                 done = TRUE;
         while ((ev_which & MU_MESAG) && !done) {
             if (hndl_msg())

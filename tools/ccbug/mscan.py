@@ -322,6 +322,26 @@ def joins(path):
     return hits
 
 
+STACK_ZERO = re.compile(r"^\s*([a-z]{3})\s+0,s\b")
+
+
+def stack_zero(path):
+    """B23: an operand at 0,s.  S points at the next FREE byte, so nothing
+    the function owns is ever there: the compiler reached for it when it
+    loaded a byte stored at 1,s as a WORD from 0,s, to test its top bit
+    with `bpl`, and then tested another bit of the low byte -- the stray
+    one below the stack (tools/ccbug/README.md, B23).  Yields (function,
+    line, text)."""
+    func = "?"
+    for n, raw in enumerate(open(path, encoding="latin-1"), 1):
+        line = raw.split(";", 1)[0].rstrip()
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):", line)
+        if m:
+            func = m.group(1)
+        if STACK_ZERO.match(line):
+            yield func, n, line.strip()
+
+
 def tree_sources():
     """The C the tree compiles, with the flags it compiles them with."""
     out = []
@@ -349,7 +369,7 @@ def build_scan():
     if not files:
         sys.exit("mscan --build: no assembly beside the objects -- run "
                  "`make mscan`, which rebuilds with CC_ASM=1")
-    calls = widths = 0
+    calls = widths = zeros = 0
     for f in files:
         rel = os.path.relpath(f, ROOT)
         for func, n, tgt in scan(f):
@@ -359,10 +379,13 @@ def build_scan():
             print(f"{rel}:{n}: {func}: `{text}` is reached with the "
                   f"accumulator {' and '.join(w + '-bit' for w in ws)} wide")
             widths += 1
+        for func, n, text in stack_zero(f):
+            print(f"{rel}:{n}: {func}: `{text}` reads below the stack (B23)")
+            zeros += 1
     print(f"mscan: {len(files)} object(s) of the build scanned; {calls} "
           f"call(s) reached narrow, {widths} immediate(s) reached in the "
-          f"wrong width")
-    return 1 if calls or widths else 0
+          f"wrong width, {zeros} read(s) below the stack")
+    return 1 if calls or widths or zeros else 0
 
 
 def main(argv):

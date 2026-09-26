@@ -19,7 +19,7 @@ features, and applications to use it with.
 | | | status |
 |---|---|---|
 | 1 | **G4BENCH** -- a GEM application that times drawing, text, blits, the AES and a Mandelbrot, on screen and in `G4BENCH.TXT`; a gate holds each result to a reference, so every later change has a number to beat | **done** (phase 59) |
-| 2 | **The desktop's keyboard** -- the menu shortcuts (^O ^I ^N ^D ^S ^A ...), Alt-letter to open a drive, the arrows to scroll | |
+| 2 | **The desktop's keyboard** -- the menu shortcuts (^O ^I ^N ^D ^S ^A ...), Alt-letter to open a drive, the arrows to scroll | **done** (phase 60) |
 | 3 | **Install application**, and a file dropped on a program's icon -- so a document opens the program that edits it | |
 | 4 | **The small desktop items** -- Select all, Close folder (up a level), Cycle windows, Show info on a drive, Set file mask, the name-conflict dialog on copy and the confirm-delete/copy/overwrite preferences | |
 | 5 | **QED shipped**, if its licence allows it -- ported and gated, not yet in the tree's distribution | |

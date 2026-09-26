@@ -1,7 +1,7 @@
 # tools/ccbug — the cc65816 bugs gem4xe works around
 
-Twenty-two defects in Calypsi cc65816, twenty-one found against **5.18**
-here and one (B17) reported from another project — fourteen in
+Twenty-three defects in Calypsi cc65816, twenty-two found against **5.18**
+here and one (B17) reported from another project — fifteen in
 code generation, three crashes, one compile that never finishes (B18), one
 in the front end's arithmetic, one in the run-time library's division and
 one (B20) in what the LINKER placed — each reproduced from a shape
@@ -70,6 +70,7 @@ an optimiser fault, and saying which saves a vendor a bisect.
 | B10 | no | yes | yes | a defect OF inlining |
 | B11 | yes | yes | yes | internal error |
 | B22 | yes | yes | yes | internal error; `--data-model=large` compiles |
+| B23 | no | no | yes | |
 | B12 | yes | yes | yes | |
 | B16 | no | no | yes | |
 | B18 | no | yes | yes | the compiler never finishes; `--data-model=large` is clean at every level |
@@ -1210,3 +1211,31 @@ function crashed with both of its packing loops in it and compiled with
 either one -- and was not: split into its own function, one loop crashed
 alone.  Reduced by taking things away one at a time until the cast was
 the only thing left that mattered.
+
+## B23 — an else-if on a second bit of a byte tests a stray byte
+
+    WORD idx = code & 0x3F;             /* code: a uint8_t parameter */
+    if (code & 0x80)
+        idx += 128;
+    else if (code & 0x40)
+        idx += 64;
+
+At `-O2` the byte is stored at `1,s` and loaded as a WORD from `0,s`, so
+the code is in the HIGH byte and whatever lies below the stack in the low
+one.  `bpl` then tests bit 7 rightly -- and the `bit ##64` for the
+else-if tests bit 6 of the stray byte.  `0,s` is below the stack pointer,
+which points at the next FREE byte, so nothing the function owns is ever
+there.  `-O0` and `-O1` are right.
+
+FOUND BY: the desktop's keyboard (phase 60).  `src/vdi/vdi.c`'s
+`kb_translate` was rewritten this way to stop Control and Shift together
+reading past the OS's key table, and on the desktop **every key came out
+as its shifted character** -- `1` as `!`, `a` as `A`.  The two separate
+`if`s it replaced happened to be compiled right.  `bugs.c` holds the
+shape against a plain `$1F` and a shifted `$5F`, one of which is wrong
+whichever way the stray byte's bit 6 lies.
+
+The shape to write instead: the row as a number -- `row = code >> 6`,
+three rows, `idx + (row << 6)`.  And `mscan --build` now reports any
+operand at `0,s` in the build's own assembly, which nothing right can
+produce; `mscan_b23.s` is the reproducer's listing, kept to prove it can.
