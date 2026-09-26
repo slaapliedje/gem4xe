@@ -194,7 +194,7 @@ same offset, and a tenth of opening a window was reported as a
 16-bit PC for existing clients; each row gains `addr24`, the bank and PC,
 and `gaddr`, the record's full value.  `tests/emu/bench_vdi.py`'s
 `hot_name()` uses it, and falls back to the old guessing on an emulator
-without it.  Branch `gem4xe/profile-bank` (c284c36), on the integration
+without it.  Branch `gem4xe/profile-bank` (1fca240), on the integration
 build since 2026-09-25; **not offered upstream yet**.
 
 ## Building

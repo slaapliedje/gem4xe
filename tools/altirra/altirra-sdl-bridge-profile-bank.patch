@@ -1,16 +1,12 @@
-From c284c3695a7c478068e3ea1b15ac5a30bff88e93 Mon Sep 17 00:00:00 2001
+From 1fca2400b607abc9a690b7274f4313b19e899b96 Mon Sep 17 00:00:00 2001
 From: Slaapliedje <meh@thefnords.org>
 Date: Fri, 25 Sep 2026 16:23:43 -0600
-Subject: [PATCH] bridge: PROFILE_DUMP reports the program bank (addr24, gaddr)
+Subject: [PATCH] bridge: PROFILE_DUMP reports the 65C816 program bank
 
-The profiler records PC + (K << 16) plus the global address base, but
-PROFILE_DUMP and PROFILE_DUMP_TREE masked every address to 16 bits.  On a
-65C816, code at the same offset in two banks then read as one address,
-and bank $00's OS ROM showed up under far functions at the same offset.
-"addr" is unchanged for existing clients; each row gains "addr24"
-(bank and PC) and "gaddr" (the record's full value).
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+PROFILE_DUMP and PROFILE_DUMP_TREE masked each address to 16 bits, so
+code at the same offset in two banks came out as identical rows.  Each
+row keeps "addr" and gains "addr24" (bank:PC) and "gaddr" (the
+profiler's full record address).
 ---
  src/AltirraSDL/AltirraBridge/docs/COMMANDS.md       |  7 +++++++
  .../source/bridge/bridge_commands_debug2.cpp        | 13 +++++++++++++
