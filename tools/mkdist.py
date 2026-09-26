@@ -137,6 +137,7 @@ SYSTEM = [
     ("calc.rsc", "CALC.RSC"),
     ("clock.g4a", "CLOCK.PRG"),
     ("clock.rsc", "CLOCK.RSC"),
+    ("g4bench.g4a", "G4BENCH.PRG"),
     ("clockacc.g4a", "CLOCK.ACC"),
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
@@ -166,6 +167,11 @@ WHAT_IT_IS = {
                  "the machine knows",
     "CLOCK.RSC": "its panel, and the templates that decide how a time "
                  "and a date are written",
+    "G4BENCH.PRG": "a benchmark: lines, boxes, circles, text, blits, "
+                   "dialogs, windows and a Mandelbrot, timed on this "
+                   "machine, shown in a window and written to G4BENCH.TXT "
+                   "beside it -- a number to compare with somebody "
+                   "else's machine",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "
                  "menu: the AES loads it once at start-up and it stays "

@@ -83,7 +83,8 @@ APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         ("build/calc.g4a", "APPS>CALC.PRG"),
         ("build/calc.rsc", "APPS>CALC.RSC"),
         ("build/clock.g4a", "APPS>CLOCK.PRG"),
-        ("build/clock.rsc", "APPS>CLOCK.RSC")]
+        ("build/clock.rsc", "APPS>CLOCK.RSC"),
+        ("build/g4bench.g4a", "APPS>G4BENCH.PRG")]
 DIRS = ["GEM", "APPS"]
 BOOT = ["CD >GEM", "GEM"]
 

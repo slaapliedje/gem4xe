@@ -630,6 +630,12 @@ CLOCK_OBJS = $(G4A_LIB) build/apps/clock.o build/apps/clockapp.o
 $(eval $(call g4a,calc,$(CALC_OBJS),1536,256,512,,))
 $(eval $(call g4a,clock,$(CLOCK_OBJS),1536,256,512,,))
 
+# G4BENCH (src/apps/g4bench.c, docs/roadmap-0.9.md): no resource, a
+# window, and a memory form of up to 1 KB for its blit test -- which a
+# form must have in bank $$00, so it is near bss here.
+G4BENCH_OBJS = $(G4A_LIB) build/apps/g4bench.o
+$(eval $(call g4a,g4bench,$(G4BENCH_OBJS),3328,1024,768,,))
+
 # The clock AS AN ACCESSORY (src/apps/clockacc.c): the same clock.o, a
 # different main, and the extension the AES looks for in the system's own
 # directory.  The reservations are what the map says it uses rather than
@@ -815,6 +821,18 @@ build/bench-antic.atr: build/bench_antic.xex
 # How long the product floppies take to boot, split into the DOS and the
 # first pass, the load and unpack, and the desktop (docs/phase56.md).
 # ARGS=--profile says where the load's time goes.  Not a gate.
+# G4BENCH as the desktop of a DOS 2 disk, so the shell runs it straight
+# after the boot (tests/emu/g4bench.py, docs/roadmap-0.9.md).
+build/g4bench-boot.atr: build/gem.xex build/g4bench.g4a build/lang.rsc build/816.com
+	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
+	    --add build/g4bench.g4a DESKTOP.PRG --add build/lang.rsc LANG.RSC \
+	    --add build/816.com 816.COM
+
+g4bench: build/g4bench-boot.atr build/g4bench.sym
+	python3 tests/emu/g4bench.py $(ARGS)
+
 bench-boot: build/gem-boot.atr build/gem-sdx.atr
 	python3 tests/emu/bench_boot.py --sdx="$(SRC_SDX)" $(ARGS)
 
@@ -1334,7 +1352,7 @@ build/m36-boot.atr: $(SP_DEPS) build/general.cfg
 # D1: and D2: before any DOS runs.  No SIDE.SYS, no driver on the card.
 # tools/apt.py writes the table, tests/host/test_apt.py checks it against
 # the rules Altirra's own parser applies, and test-cf boots it.
-build/gem-cf.img: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/hello_app.g4a \
+build/gem-cf.img: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/hello_app.g4a build/g4bench.g4a \
                   build/lang.rsc build/gem4xe.cfg build/816.com $(APP_DEPS) $(ACCP_DEPS) tools/mkcf.py tools/apt.py tools/atr.py
 	@rm -f $@
 	python3 tools/mkcf.py $@
@@ -1373,7 +1391,7 @@ build/gem-sdx.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs
 # ...and its other half: the applications and the desk accessory, with an
 # INSTALL.BAT of their own and no AUTOEXEC.BAT, because it is not a boot
 # disk (tools/mkfloppy.py, docs/media.md).  No DOS, so it travels too.
-build/gem-apps.atr: build/hello_app.g4a $(APP_DEPS) $(ACCP_DEPS) tools/mkfloppy.py tools/mkcf.py tools/atr.py
+build/gem-apps.atr: build/hello_app.g4a build/g4bench.g4a $(APP_DEPS) $(ACCP_DEPS) tools/mkfloppy.py tools/mkcf.py tools/atr.py
 	@rm -f $@
 	python3 tools/mkfloppy.py --apps $@
 
@@ -1528,7 +1546,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-boot test-install
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-boot test-install g4bench
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1612,7 +1630,7 @@ DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-c
              build/gem4xe-sys.car
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
-             build/prefs.rsc \
+             build/prefs.rsc build/g4bench.g4a \
              $(APP_DEPS) $(ACCP_DEPS)
 
 dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
@@ -2044,4 +2062,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot g4bench gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
