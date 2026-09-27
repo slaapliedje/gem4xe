@@ -418,13 +418,16 @@ static void sh_ldauto(const char *path, const char *name)
 {
     APP  app;
     WORD st;
+    RSHOLD held;
 
     if (app_load_file(path, &app) != APP_OK)
         return;                         /* a bad one is skipped, not fatal */
     proc_name(proc_app, name);
     gd_termres = 0;                     /* it has to ask, every time */
     sh_nauto++;
+    rs_hold(&held);                     /* what it loads is its own */
     (void)app_exec(&app);
+    rs_unclaim(&held);
     st = gd_termres;
     gd_termres = 0;
     if (!st) {
@@ -656,6 +659,7 @@ static void sh_ldcpx(const char *path, const char *name)
     uint32_t e = sh_cpx_far + (uint32_t)sh_ncpx * CPXE_SIZE;
     uint8_t  tail[5];
     uint32_t info = 0;
+    RSHOLD   held;
 
     (void)name;
     if (app_load_file(path, &app) != APP_OK) {
@@ -671,7 +675,9 @@ static void sh_ldcpx(const char *path, const char *name)
     far_strput(e + CPXE_FILE, name, CPXE_FILELEN);   /* for CPX_Save */
     far_strput(sh_cmd_far, path, SH_CMDLEN);
     gd_termres = 0;
+    rs_hold(&held);                     /* its resource is its own */
     (void)app_run(app.entry);
+    rs_unclaim(&held);
     far_get((uint8_t *)&info, e + CPXE_INFO, 4);
     if (!info || !gd_termres) {
         /* It declined, or ended without asking to stay -- either way

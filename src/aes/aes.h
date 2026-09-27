@@ -745,6 +745,15 @@ void rs_imaddr(uint32_t *base, uint16_t *len);
 void rs_ciaddr(uint32_t *base, uint16_t *len);
 WORD rs_load(const char *name, WORD wants_far);   /* wants_far: the caller takes far addresses */
 WORD rs_free(void);
+/* The running process's resource slots, taken and put back around a
+ * program that stays (src/aes/rsrc.c rs_hold): a module's or an AUTO
+ * program's resource is permanent and belongs to no process. */
+typedef struct {
+    uint32_t r1, f1, r2, f2;
+    uint16_t m1, m2;
+} RSHOLD;
+void rs_hold(RSHOLD *h);
+void rs_unclaim(const RSHOLD *h);
 WORD rs_gaddr(UWORD rtype, UWORD rindex, uint32_t *paddr);
 WORD rs_saddr(UWORD rtype, UWORD rindex, uint32_t addr);
 void rs_obfix(OBJECT FAR *tree, WORD obj);

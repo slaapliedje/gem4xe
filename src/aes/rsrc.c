@@ -757,6 +757,44 @@ WORD rs_load(const char *name, WORD wants_far)
     return 1;
 }
 
+/* A PROGRAM THAT STAYS KEEPS WHAT IT LOADED, AND GIVES UP THE CLAIM.
+ *
+ * A control panel module and an AUTO program are RUN, in whatever
+ * process the shell is in at the time -- record 0, the one the desktop
+ * is about to be started in -- and end with Ptermres, below the keep
+ * mark, so the resource a module loads at its cpx_init is permanent,
+ * which is right: the module holds pointers into it for the life of the
+ * machine.  What was wrong was that record 0 went on CLAIMING it.  The
+ * desktop's own DESKTOP.RSC then became the nested resource, and every
+ * nested load after it -- PREFS.RSC, for Set preferences, DOS command, a
+ * .TTP's parameters and Install application -- was refused as a third,
+ * and reported as "PREFS.RSC is not on the disk" (docs/phase61.md).
+ *
+ * So the shell takes the process's slots before it runs such a program
+ * and puts them back after: what the program loaded stays where it is,
+ * and belongs to nobody -- as an accessory's resource belongs to the
+ * accessory's own process and never to the desktop's.  The far blocks
+ * the loader tracks per SLOT are forgotten too, not released: they are
+ * below the keep mark with the rest. */
+void rs_hold(RSHOLD *h)
+{
+    h->r1 = rs_1;  h->m1 = rs_1mark;  h->f1 = rs_1far;
+    h->r2 = rs_2;  h->m2 = rs_2mark;  h->f2 = rs_2far;
+}
+
+void rs_unclaim(const RSHOLD *h)
+{
+    WORD i;
+
+    if (rs_1 != h->r1 || rs_2 != h->r2)
+        for (i = 0; i < 2; i++) {
+            rs_ci[i].base = 0;
+            rs_im[i].base = 0;
+        }
+    rs_1 = h->r1;  rs_1mark = h->m1;  rs_1far = h->f1;
+    rs_2 = h->r2;  rs_2mark = h->m2;  rs_2far = h->f2;
+}
+
 uint32_t rs_loaded(void)
 {
     return rs_cur;
