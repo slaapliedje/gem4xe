@@ -1082,24 +1082,21 @@ static WORD do_fopen(WNODE *pw, WORD curr, const char FAR *name)
  * do_open's frame under every window it opens -- the desktop's deepest
  * stack, 164 bytes deeper (milestone 6).  External, it keeps its own
  * frame, paid only on the way out to a program. */
-WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
-              const char *args)
+/* THE ONE WAY A PROGRAM IS RUN: `app_path` the program's whole path,
+ * of which the first `dir` characters are its directory -- made the
+ * current one, the TOS desktop's "default directory: application" --
+ * and `args` its command tail, or none.  A double-click on a program, a
+ * document of a type somebody installed, and a file dropped on a
+ * program's icon all end here (docs/phase61.md).  pw and curr are the
+ * window put back when the program is refused. */
+static WORD run_prog(char *app_path, WORD dir, const char *args,
+                     WNODE *pw, WORD curr)
 {
-    char app_path[LEN_ZPATH];
     char tail[SH_TAILLEN];
-    const char *spec = pw->w_path.p_spec;
-    WORD n = 0, k = 0, i, ret;
+    WORD i, k, ret;
+    char keep = app_path[dir];
 
-    while (spec[n])                             /* "A:\SUB\*.*" less the "*.*" */
-        n++;
-    n -= 3;
-    while (name[k])
-        k++;
-    if (n + k >= LEN_ZPATH)                     /* the full path must fit */
-        return FALSE;
-    for (i = 0; i < n; i++)
-        app_path[i] = spec[i];
-    app_path[i] = 0;
+    app_path[dir] = 0;
     desk_busy(TRUE);                            /* set_default_path: disk i/o */
     Dsetdrv((WORD)(app_path[0] - 'A'));
     if (Dsetpath(app_path) < 0) {
@@ -1108,9 +1105,7 @@ WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
         return FALSE;
     }
     desk_busy(FALSE);
-    for (k = 0; name[k]; k++)                   /* the full path */
-        app_path[i++] = name[k];
-    app_path[i] = 0;
+    app_path[dir] = keep;                       /* the full path again */
     for (i = 0; i < SH_TAILLEN; i++)            /* pro_run: no arguments, */
         tail[i] = 0;                            /* the CR after the NUL */
     tail[2] = 0x0D;
@@ -1131,9 +1126,198 @@ WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
     ret = shel_write(SHW_EXEC, 1, 1, app_path, tail);
     if (!ret)
         desk_busy(FALSE);
-    do_wopen(FALSE, pw->w_id, curr, &G.g_desk);
+    if (pw)
+        do_wopen(FALSE, pw->w_id, curr, &G.g_desk);
     return ret;
 }
+
+/* A window's directory and a name in it, as one path: "A:\SUB\" and
+ * "NAME.EXT" into `out`, LEN_ZPATH.  The directory's length, or -1 when
+ * the whole will not fit. */
+static WORD win_pathof(const WNODE *pw, const char FAR *name, char *out)
+{
+    const char *spec = pw->w_path.p_spec;
+    WORD n = 0, k = 0, i;
+
+    while (spec[n])                             /* "A:\SUB\*.*" less the "*.*" */
+        n++;
+    n -= 3;
+    while (name[k])
+        k++;
+    if (n + k >= LEN_ZPATH)
+        return -1;
+    for (i = 0; i < n; i++)
+        out[i] = spec[i];
+    for (k = 0; name[k]; k++)
+        out[i++] = name[k];
+    out[i] = 0;
+    return n;
+}
+
+WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
+              const char *args)
+{
+    char app_path[LEN_ZPATH];
+    WORD dir = win_pathof(pw, name, app_path);
+
+    if (dir < 0)                                /* the full path must fit */
+        return FALSE;
+    return run_prog(app_path, dir, args, pw, curr);
+}
+
+/* -- installed applications -------------------------------------------- */
+
+/* Options -> Install application: a program, and the TYPE of document it
+ * edits -- an extension -- so that opening such a document runs it with
+ * the document's path as its command tail, the TOS desktop's own rule.
+ * Kept in DESKTOP.INF as "#G" lines, which is also how they survive the
+ * desktop exiting every time it runs a program.
+ *
+ * Deliberately NOT in G: tests/emu/m17 holds the desktop's G to its
+ * model byte for byte, and a desk with nothing installed is exactly the
+ * desk it was -- the same globals, the same INF text. */
+#define N_APPS    8
+#define APP_EXTLEN 4                    /* three and the NUL */
+typedef struct {
+    char ext[APP_EXTLEN];               /* "" for a free slot */
+    char path[LEN_ZPATH];               /* the program's whole path */
+} DAPP;
+static DAPP desk_apps[N_APPS];
+
+/* A name's extension, upper case as the DOS gives it, into ext; FALSE
+ * when it has none. */
+static WORD ext_of(const char FAR *name, char *ext)
+{
+    WORD k = 0;
+
+    while (*name && *name != '.')
+        name++;
+    if (*name != '.')
+        return FALSE;
+    name++;
+    while (name[k] && k < APP_EXTLEN - 1) {
+        ext[k] = name[k];
+        k++;
+    }
+    ext[k] = 0;
+    return (WORD)(k != 0);
+}
+
+static WORD same(const char *a, const char *b)
+{
+    while (*a && *a == *b) {
+        a++;
+        b++;
+    }
+    return (WORD)(*a == *b);
+}
+
+/* The slot a document type is installed in, or -1. */
+static WORD app_byext(const char *ext)
+{
+    WORD i;
+
+    for (i = 0; i < N_APPS; i++)
+        if (desk_apps[i].ext[0] && same(desk_apps[i].ext, ext))
+            return i;
+    return -1;
+}
+
+/* What a program is installed for, into ext ("" for nothing). */
+void app_typeof(const char *path, char *ext)
+{
+    WORD i, k;
+
+    ext[0] = 0;
+    for (i = 0; i < N_APPS; i++)
+        if (desk_apps[i].ext[0] && same(desk_apps[i].path, path)) {
+            for (k = 0; k < APP_EXTLEN; k++)
+                ext[k] = desk_apps[i].ext[k];
+            return;
+        }
+}
+
+/* Install a program for a document type, or with ext "" take it out.
+ * A program has one type and a type one program: installing either
+ * again replaces what was there.  FALSE when every slot is taken. */
+WORD app_install(const char *path, const char *ext)
+{
+    WORD i, k, free_slot = -1;
+
+    for (i = 0; i < N_APPS; i++) {              /* the old entries go */
+        if (desk_apps[i].ext[0] && (same(desk_apps[i].path, path)
+                                    || (ext[0] && same(desk_apps[i].ext, ext))))
+            desk_apps[i].ext[0] = 0;
+        if (!desk_apps[i].ext[0] && free_slot < 0)
+            free_slot = i;
+    }
+    if (!ext[0])
+        return TRUE;
+    if (free_slot < 0)
+        return FALSE;
+    for (k = 0; k < APP_EXTLEN - 1 && ext[k]; k++)
+        desk_apps[free_slot].ext[k] = ext[k];
+    desk_apps[free_slot].ext[k] = 0;
+    for (k = 0; k < LEN_ZPATH - 1 && path[k]; k++)
+        desk_apps[free_slot].path[k] = path[k];
+    desk_apps[free_slot].path[k] = 0;
+    return TRUE;
+}
+
+/* A document opened: its type's program run with the document's path
+ * as its command tail.  FALSE when no program is installed for it --
+ * the caller then asks Show / Print / Cancel as before.  Not static,
+ * for do_aopen's reason: inlined, its two paths would sit in do_open's
+ * frame under every window the desktop opens. */
+WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name)
+{
+    char ext[APP_EXTLEN], doc[LEN_ZPATH], prog[LEN_ZPATH];
+    WORD i, k, dir = 0;
+
+    if (!ext_of(name, ext) || (i = app_byext(ext)) < 0)
+        return FALSE;
+    if (win_pathof(pw, name, doc) < 0)
+        return FALSE;
+    for (k = 0; desk_apps[i].path[k]; k++) {
+        prog[k] = desk_apps[i].path[k];
+        if (prog[k] == '\\')
+            dir = (WORD)(k + 1);
+    }
+    prog[k] = 0;
+    return run_prog(prog, dir, doc, pw, curr);
+}
+
+/* Is this listing entry a program -- the extension says so? */
+WORD win_isprog(const FNODE FAR *pf)
+{
+    return (WORD)(!(pf->f_attr & FA_SUBDIR) && win_which(pf) == IB_APPL);
+}
+
+/* A file dropped on a program's icon: that program run with the file's
+ * path, whatever its type.  `src` is the window the file came from and
+ * its first selected item is the file; `pd`/`dobj` the program.  FALSE
+ * when dobj is not a program -- the drop is then a copy, as before. */
+WORD do_dropopen(WNODE *src, WNODE *pd, WORD dobj)
+{
+    FNODE FAR *pf = win_fnode(pd, dobj);
+    FNODE FAR *ps;
+    char doc[LEN_ZPATH], prog[LEN_ZPATH];
+    WORD i, dir;
+
+    if (!pf || (pf->f_attr & FA_SUBDIR) || win_which(pf) != IB_APPL)
+        return FALSE;
+    ps = src->w_path.p_flist;
+    for (i = 0; i < src->w_path.p_count; i++, ps++)
+        if (ps->f_flags & F_SELECTED)
+            break;
+    if (i >= src->w_path.p_count || (ps->f_attr & FA_SUBDIR))
+        return FALSE;
+    if (win_pathof(src, ps->f_name, doc) < 0
+        || (dir = win_pathof(pd, pf->f_name, prog)) < 0)
+        return FALSE;
+    return run_prog(prog, dir, doc, pd, dobj);
+}
+
 
 /* A DOCUMENT in a window: the GEM Desktop's Show / Print / Cancel.
  *
@@ -1215,6 +1399,8 @@ WORD do_open(WORD wh, WORD obj)
             (void)fun_askline(args);
         return do_aopen(pw, obj, pf->f_name, args);
     }
+    if (do_docapp(pw, obj, pf->f_name))         /* a type somebody installed */
+        return TRUE;
     do_docu(pw, pf->f_name);
     return FALSE;                               /* a document: never a run */
 }
@@ -1389,6 +1575,18 @@ static WORD inf_write(void)
         p = put_hex2(p, G.g_patcol[i][1]);
     }
     p = put_far(p, "\r\n");
+    /* The installed applications, one "#G" a program: the type, then
+     * the path, each ended by "@" as the donor ends its strings.  None
+     * installed, no lines -- the text is what it was before there were
+     * any (tests/emu/m19 reads the file back). */
+    for (i = 0; i < N_APPS; i++)
+        if (desk_apps[i].ext[0]) {
+            p = put_far(p, "#G ");
+            p = put_far(p, desk_apps[i].ext);
+            p = put_far(p, "@ ");
+            p = put_far(p, desk_apps[i].path);
+            p = put_far(p, "@\r\n");
+        }
     for (i = 0; i < NUM_WNODES; i++, pws++) {
         p = put_far(p, "#W");
         p = put_hex2(p, pws->hsl_save);
@@ -1506,6 +1704,28 @@ static void inf_parse(const char FAR *pcurr)
             }
             desk_patcol_apply();
             break;
+        case 'G': {                     /* an installed application */
+            char ext[APP_EXTLEN], path[LEN_ZPATH];
+
+            pcurr++;
+            while (*pcurr == ' ')
+                pcurr++;
+            for (i = 0; *pcurr && *pcurr != '@' && i < APP_EXTLEN - 1; i++)
+                ext[i] = *pcurr++;
+            ext[i] = 0;
+            while (*pcurr && *pcurr != '@')
+                pcurr++;
+            if (*pcurr)
+                pcurr++;
+            while (*pcurr == ' ')
+                pcurr++;
+            for (i = 0; *pcurr && *pcurr != '@' && i < LEN_ZPATH - 1; i++)
+                path[i] = *pcurr++;
+            path[i] = 0;
+            if (ext[0] && path[0])
+                (void)app_install(path, ext);
+            break;
+        }
         case 'W':
             pcurr++;
             if (wincnt < NUM_WNODES) {

@@ -254,6 +254,23 @@ NOBS_CMD = 5
 CMD_W, CMD_H = 62, 7
 CMD_TMPL, CMD_VALID = "Command: " + "_" * 50, "X"
 
+# PREFS.RSC's third tree: Options -> Install application (phase 61) --
+# the program selected, and the type of document it edits, so that
+# opening such a document runs it (src/desk/deskfun.c fun_install).
+# Here for the reason the other two are: it costs the pool nothing
+# until it is open.  Install, Remove, Cancel in a row.
+ADAPPBOX = 2
+AABOX, AATITLE, AANAME, AATYPE, AAOK, AARMV, AACNCL = 0, 1, 2, 3, 4, 5, 6
+NOBS_APP = 7
+APP_W, APP_H = 36, 9
+APP_NAME_TMPL, APP_TYPE_TMPL = "Program: ________.___", "Document type: ___"
+# ...and PREFS.RSC's free strings: what the dialog says when it cannot
+STAPPSEL, STAPPFUL = 0, 1
+APP_ALERTS = [
+    (STAPPSEL, "STAPPSEL", "[1][Select a program in a|window first.][ OK ]"),
+    (STAPPFUL, "STAPPFUL", "[1][Eight applications are|installed already.][ OK ]"),
+]
+
 # ICONBLKs, in the order of the table; IG_* name them
 IB_HARD, IB_FLOPPY, IB_TRASH, IB_FOLDER, IB_APPL, IB_DOCU = 0, 1, 2, 3, 4, 5
 IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
@@ -263,6 +280,9 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
+    ("ADAPPBOX", ADAPPBOX), ("AANAME", AANAME), ("AATYPE", AATYPE),
+    ("AAOK", AAOK), ("AARMV", AARMV), ("AACNCL", AACNCL),
+    ("STAPPSEL", STAPPSEL), ("STAPPFUL", STAPPFUL),
     ("ADCMDBOX", ADCMDBOX), ("CMTITLE", CMTITLE), ("CMLINE", CMLINE),
     ("CMOK", CMOK), ("CMCNCL", CMCNCL),
     ("ADPREF", ADPREF), ("PRTITLE", PRTITLE), ("PRBGLBL", PRBGLBL),
@@ -305,7 +325,7 @@ INDICES = [
 
 # The items the desktop does not do yet: disabled at start (menu_ienable),
 # not in the file, so the file stays RCS-shaped.
-NOT_YET = (FORMITEM, IICNITEM, IAPPITEM)
+NOT_YET = (FORMITEM, IICNITEM)
 
 # The menu, box by box: (title, box x, box width, items); an item is a
 # string, "-" for a separator, and (string, state) for a state.
@@ -636,12 +656,41 @@ def cmd_tree(r):
     return r.tree(objs)
 
 
+def app_tree(r):
+    """ADAPPBOX: a program, and the document type it edits."""
+    third = APP_W // 3
+    objs = [
+        (NIL, AATITLE, AACNCL, G_BOX, NONE, OUTLINED, 0x00021100,
+         ch(0), ch(0), ch(APP_W), ch(APP_H)),
+        (AANAME, NIL, NIL, G_STRING, NONE, NORMAL,
+         r.string("INSTALL APPLICATION"),
+         ch((APP_W - 19) // 2), ch(1), ch(19), ch(1)),
+        (AATYPE, NIL, NIL, G_FTEXT, NONE, NORMAL,
+         r.ted(" " * APP_NAME_TMPL.count("_"), APP_NAME_TMPL, "F"),
+         ch(3), ch(3), ch(len(APP_NAME_TMPL)), ch(1)),
+        (AAOK, NIL, NIL, G_FTEXT, EDITABLE, NORMAL,
+         r.ted(" " * APP_TYPE_TMPL.count("_"), APP_TYPE_TMPL, "F"),
+         ch(3), ch(5), ch(len(APP_TYPE_TMPL)), ch(1)),
+        (AARMV, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
+         r.string("Install"), ch(2), ch(7), ch(9), ch(1)),
+        (AACNCL, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
+         r.string("Remove"), ch(third + 2), ch(7), ch(9), ch(1)),
+        (ROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
+         r.string("Cancel"), ch(2 * third + 1), ch(7), ch(9), ch(1)),
+    ]
+    assert len(objs) == NOBS_APP, (len(objs), NOBS_APP)
+    return r.tree(objs)
+
+
 def build_prefs():
-    """PREFS.RSC: the chooser and the DOS command dialog, loaded only
-    while one of them is open."""
+    """PREFS.RSC: the chooser, the DOS command dialog and Install
+    application, loaded only while one of them is open."""
     r = rsc.Rsc()
     assert pref_tree(r) == ADPREF
     assert cmd_tree(r) == ADCMDBOX
+    assert app_tree(r) == ADAPPBOX
+    for i, name, text in APP_ALERTS:
+        assert r.free_string(text) == i, (name, i)
     return r
 
 
@@ -708,8 +757,8 @@ def main(argv):
     pref = build_prefs().file()
     with open(argv[3], "wb") as f:
         f.write(pref)
-    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} objects in "
-          f"two trees -- loaded only while a dialog is open")
+    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} objects in "
+          f"three trees -- loaded only while a dialog is open")
     return 0
 
 

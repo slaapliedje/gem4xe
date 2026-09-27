@@ -276,6 +276,12 @@ WORD act_count(WORD root, WORD *pfirst);
 /* ...and what a rubber band leaves: everything the box touches. */
 void act_allselect(WORD wh, WORD root, const GRECT *box);
 WORD do_open(WORD wh, WORD obj);
+WORD do_dropopen(WNODE *src, WNODE *pd, WORD dobj);
+WORD win_isprog(const FNODE FAR *pf);
+WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name);
+void fun_install(WNODE *pw);
+void app_typeof(const char *path, char *ext);
+WORD app_install(const char *path, const char *ext);
 WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
                const char *args);   /* args: a .TTP's line, or "" */
 WORD fun_askline(char *line);           /* one line, in the PREFS dialog */

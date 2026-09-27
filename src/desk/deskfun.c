@@ -748,6 +748,76 @@ WORD fun_askline(char *line)
     return (WORD)(n != 0);
 }
 
+/* Options -> Install application: the program selected in the top
+ * window, and the type of document it edits (src/desk/deskwin.c keeps
+ * the list and saves it in DESKTOP.INF).  The dialog lives in PREFS.RSC,
+ * loaded over the desktop's while it is up.  Install with an empty type
+ * is Remove. */
+void fun_install(WNODE *pw)
+{
+    OBJECT *tree;
+    FNODE FAR *pf = 0;
+    char places[LEN_ZFNAME], path[LEN_ZPATH], ext[4];
+    const char *spec;
+    WORD i, n, k, ret;
+
+    if (!rsrc_load("PREFS.RSC")) {
+        fun_alert(1, STNOPREF);
+        return;
+    }
+    if (pw) {
+        pf = pw->w_path.p_flist;
+        for (i = 0; i < pw->w_path.p_count; i++, pf++)
+            if (pf->f_flags & F_SELECTED)
+                break;
+        if (i >= pw->w_path.p_count || !win_isprog(pf))
+            pf = 0;
+    }
+    if (!pf) {
+        fun_alert(1, STAPPSEL);                 /* PREFS.RSC's own string */
+        rsrc_free();
+        return;
+    }
+    spec = pw->w_path.p_spec;                   /* "A:\SUB\*.*": the path */
+    for (n = 0; spec[n]; n++)
+        ;
+    n -= 3;
+    for (k = 0; pf->f_name[k]; k++)
+        ;
+    if (n + k >= LEN_ZPATH) {
+        rsrc_free();
+        return;
+    }
+    for (i = 0; i < n; i++)
+        path[i] = spec[i];
+    for (k = 0; pf->f_name[k]; k++)
+        path[i++] = pf->f_name[k];
+    path[i] = 0;
+
+    rsrc_gaddr(R_TREE, ADAPPBOX, (void **)&tree);
+    fmt_name(pf->f_name, places);
+    inf_sset(tree, AANAME, places);
+    app_typeof(path, ext);
+    inf_sset(tree, AATYPE, ext);
+    fun_start(tree);
+    ret = (WORD)(form_do(tree, AATYPE) & 0x7FFF);
+    fun_end();
+    tree[ret].ob_state = NORMAL;
+    if (ret == AAOK || ret == AARMV) {
+        ext[0] = 0;
+        if (ret == AAOK) {
+            inf_sget(tree, AATYPE, places);
+            for (i = 0, k = 0; places[i] && k < 3; i++)
+                if (places[i] != ' ')
+                    ext[k++] = places[i];
+            ext[k] = 0;
+        }
+        if (!app_install(path, ext))
+            fun_alert(1, STAPPFUL);
+    }
+    rsrc_free();                                /* the nested one */
+}
+
 void fun_command(void)
 {
     char line[LEN_ZCMD];

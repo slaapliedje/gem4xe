@@ -405,6 +405,9 @@ static WORD do_optnmenu(WORD item)
     case PREFITEM:
         do_prefs();
         break;
+    case IAPPITEM:
+        fun_install(win_ontop());
+        break;
     default:
         break;
     }
@@ -447,7 +450,8 @@ static WORD hndl_menu(WORD title, WORD item)
  * it started as.  Anywhere else the file layer takes over: another
  * window or a folder in one is a copy, a copy with SHIFT held is a
  * move, and the trash is a delete. */
-/* TRUE when the press turned out to be a drag and was acted on; FALSE
+/* TRUE when the press turned out to be a drag and was acted on -- 2
+ * when that drag ran a program, which ends the desktop; FALSE
  * when the button had already come up, which makes it a click and the
  * caller's business (hndl_button). */
 static WORD hndl_drag(WNODE *pw, WORD obj, WORD wh, WORD root)
@@ -485,6 +489,10 @@ static WORD hndl_drag(WNODE *pw, WORD obj, WORD wh, WORD root)
             dobj = 0;                           /* the window itself */
         if (dwh == wh && (dobj == 0 || dobj == obj))
             return TRUE;                        /* where it already is */
+        /* ON A PROGRAM: that program run with the file, the TOS
+         * desktop's other way of opening a document (docs/phase61.md) */
+        if (dobj && do_dropopen(pw, pd, dobj))
+            return 2;
     }
     fun_file2any(pw, dwh, dobj, kstate);
     return TRUE;
@@ -545,8 +553,12 @@ static WORD hndl_button(WORD clicks, WORD mx, WORD my, WORD kstate)
         act_select(wh, root, obj);              /* just the one is opened */
         return do_open(wh, obj);
     }
-    if (obj && pw && hndl_drag(pw, obj, wh, root))
-        return FALSE;
+    if (obj && pw) {
+        WORD d = hndl_drag(pw, obj, wh, root);  /* 2: a program ran */
+
+        if (d)
+            return (WORD)(d == 2);
+    }
     if (!obj && pw && hndl_rubber(wh, root, mx, my))
         return FALSE;
     act_bsclick(wh, root, obj, kstate);
