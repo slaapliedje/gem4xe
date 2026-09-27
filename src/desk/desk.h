@@ -269,6 +269,8 @@ void win_close(WNODE *pw, WORD close_window);
 void do_wredraw(WORD wh, const GRECT *pc);
 void act_chg(WORD wh, WORD root, WORD obj, WORD set, WORD dodraw);
 void act_select(WORD wh, WORD root, WORD obj);
+void act_selall(WNODE *pw);
+void win_cycle(void);
 /* A click's effect on the selection: SHIFT toggles one item, a plain
  * click makes one the selection, and a click on nothing clears it. */
 void act_bsclick(WORD wh, WORD root, WORD obj, WORD kstate);
@@ -280,6 +282,7 @@ WORD do_dropopen(WNODE *src, WNODE *pd, WORD dobj);
 WORD win_isprog(const FNODE FAR *pf);
 WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name);
 void fun_install(WNODE *pw);
+void fun_dinfo(WORD obj);
 void app_typeof(const char *path, char *ext);
 WORD app_install(const char *path, const char *ext);
 WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,

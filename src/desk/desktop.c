@@ -272,8 +272,13 @@ static WORD do_filemenu(WORD item)
             return do_open(DESKWH, obj);
         break;
     case SHOWITEM:                              /* what the selection is,
-                                                 * and its name to change */
-        if (pw)
+                                                 * and its name to change --
+                                                 * or a drive on the desk */
+        if (pw && sel_item(pw->w_root))
+            fun_info(pw);
+        else if ((obj = sel_item(DROOT)) != 0)
+            fun_dinfo(obj);
+        else if (pw)
             fun_info(pw);
         break;
     case NFOLITEM:                              /* a folder in the top
@@ -292,6 +297,14 @@ static WORD do_filemenu(WORD item)
     case CLSWITEM:
         if (pw)
             win_close(pw, TRUE);
+        break;
+    case CYCLITEM:                              /* the bottom window up */
+        win_cycle();
+        break;
+    case SALLITEM:                              /* everything the top
+                                                 * window lists */
+        if (pw)
+            act_selall(pw);
         break;
     case CMDITEM:                               /* a line for the DOS, and a
                                                  * window on what it printed */
@@ -580,6 +593,8 @@ static const struct {
     { 'N' - '@', FILEMENU, NFOLITEM },
     { 'H' - '@', FILEMENU, CLOSITEM },
     { 'U' - '@', FILEMENU, CLSWITEM },
+    { 'W' - '@', FILEMENU, CYCLITEM },
+    { 'A' - '@', FILEMENU, SALLITEM },
     { 'D' - '@', FILEMENU, DELTITEM },
     { 'Z' - '@', FILEMENU, CMDITEM },
     { 'Q' - '@', FILEMENU, QUITITEM },

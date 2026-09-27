@@ -57,16 +57,18 @@ DESKMENU, FILEMENU, VIEWMENU, OPTNMENU = 3, 4, 5, 6
 THEDROPS = 7
 DESKBOX, ABOUITEM = 8, 9                    # 10 separator, 11..16 accessories
 FILEBOX, OPENITEM, SHOWITEM = 17, 18, 19    # 20 separator
-NFOLITEM, CLOSITEM, CLSWITEM = 21, 22, 23   # 24 separator
-DELTITEM, FORMITEM, CMDITEM = 25, 26, 27    # 28 separator.  CMDITEM sits
-QUITITEM = 29                               # where EmuTOS puts its CLIITEM
-VIEWBOX, ICONITEM, TEXTITEM = 30, 31, 32    # 33 separator
-NAMEITEM, TYPEITEM, SIZEITEM, DATEITEM, NSRTITEM = 34, 35, 36, 37, 38  # 39
-FITITEM = 40
-OPTNBOX, IICNITEM, IAPPITEM = 41, 42, 43    # 44 separator
-PREFITEM = 45                               # 46 separator
-READITEM, SAVEITEM = 47, 48
-NOBS_MENU = 49
+NFOLITEM, CLOSITEM, CLSWITEM = 21, 22, 23
+CYCLITEM = 24                               # 25 separator (phase 62)
+SALLITEM, MASKITEM = 26, 27                 # 28 separator (phase 62)
+DELTITEM, FORMITEM, CMDITEM = 29, 30, 31    # 32 separator.  CMDITEM sits
+QUITITEM = 33                               # where EmuTOS puts its CLIITEM
+VIEWBOX, ICONITEM, TEXTITEM = 34, 35, 36    # 37 separator
+NAMEITEM, TYPEITEM, SIZEITEM, DATEITEM, NSRTITEM = 38, 39, 40, 41, 42  # 43
+FITITEM = 44
+OPTNBOX, IICNITEM, IAPPITEM = 45, 46, 47    # 48 separator
+PREFITEM = 49                               # 50 separator
+READITEM, SAVEITEM = 51, 52
+NOBS_MENU = 53
 
 # ADDINFO objects.  DEVERSN and DEOK moved down one when the gem4xe
 # version line went in; they are constants for exactly that reason, and
@@ -264,6 +266,18 @@ AABOX, AATITLE, AANAME, AATYPE, AAOK, AARMV, AACNCL = 0, 1, 2, 3, 4, 5, 6
 NOBS_APP = 7
 APP_W, APP_H = 36, 9
 APP_NAME_TMPL, APP_TYPE_TMPL = "Program: ________.___", "Document type: ___"
+# PREFS.RSC's fourth tree: File -> Show info with a DRIVE selected on the
+# desk (phase 63) -- what is on it, counted, and what is left.  The counts
+# are the delete's walk; the free bytes GEMDOS's Dfree.
+ADDRVBOX = 3
+DRBOX, DRTITLE, DRNAME, DRFOLDS, DRFILES, DRUSED, DRFREE, DROK = range(8)
+NOBS_DRV = 8
+DRV_W, DRV_H = 34, 12
+DRV_NAME = "Drive:   ________"
+DRV_FOLDS = "Folders: __________"
+DRV_FILES = "Files:   __________"
+DRV_USED = "Used:    __________ bytes"
+DRV_FREE = "Free:    __________ bytes"
 # ...and PREFS.RSC's free strings: what the dialog says when it cannot
 STAPPSEL, STAPPFUL = 0, 1
 APP_ALERTS = [
@@ -280,6 +294,9 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
+    ("ADDRVBOX", ADDRVBOX), ("DRNAME", DRNAME), ("DRFOLDS", DRFOLDS),
+    ("DRFILES", DRFILES), ("DRUSED", DRUSED), ("DRFREE", DRFREE),
+    ("DROK", DROK),
     ("ADAPPBOX", ADAPPBOX), ("AANAME", AANAME), ("AATYPE", AATYPE),
     ("AAOK", AAOK), ("AARMV", AARMV), ("AACNCL", AACNCL),
     ("STAPPSEL", STAPPSEL), ("STAPPFUL", STAPPFUL),
@@ -297,6 +314,7 @@ INDICES = [
     ("OPTNMENU", OPTNMENU), ("DESKBOX", DESKBOX), ("ABOUITEM", ABOUITEM),
     ("OPENITEM", OPENITEM), ("SHOWITEM", SHOWITEM), ("NFOLITEM", NFOLITEM),
     ("CLOSITEM", CLOSITEM), ("CLSWITEM", CLSWITEM), ("DELTITEM", DELTITEM),
+    ("CYCLITEM", CYCLITEM), ("SALLITEM", SALLITEM), ("MASKITEM", MASKITEM),
     ("FORMITEM", FORMITEM), ("CMDITEM", CMDITEM), ("QUITITEM", QUITITEM),
     ("ICONITEM", ICONITEM),
     ("TEXTITEM", TEXTITEM), ("NAMEITEM", NAMEITEM), ("TYPEITEM", TYPEITEM),
@@ -325,7 +343,7 @@ INDICES = [
 
 # The items the desktop does not do yet: disabled at start (menu_ienable),
 # not in the file, so the file stays RCS-shaped.
-NOT_YET = (FORMITEM, IICNITEM)
+NOT_YET = (FORMITEM, IICNITEM, MASKITEM)
 
 # The menu, box by box: (title, box x, box width, items); an item is a
 # string, "-" for a separator, and (string, state) for a state.
@@ -342,7 +360,10 @@ MENU = [
                            keyed("Show info...", "I", FILE_W), "-",
                            keyed("New folder...", "N", FILE_W),
                            keyed("Close folder", "H", FILE_W),
-                           keyed("Close window", "U", FILE_W), "-",
+                           keyed("Close window", "U", FILE_W),
+                           keyed("Cycle windows", "W", FILE_W), "-",
+                           keyed("Select all", "A", FILE_W),
+                           "  Set file mask...", "-",
                            keyed("Delete...", "D", FILE_W), "  Format...",
                            keyed("DOS command...", "Z", FILE_W), "-",
                            keyed("Quit", "Q", FILE_W)]),
@@ -682,6 +703,30 @@ def app_tree(r):
     return r.tree(objs)
 
 
+def drive_tree(r):
+    """ADDRVBOX: a drive, what is on it, and what is free."""
+    def field(nxt, tmpl, y):
+        return (nxt, NIL, NIL, G_FTEXT, NONE, NORMAL,
+                r.ted(" " * tmpl.count("_"), tmpl, "X"),
+                ch(3), ch(y), ch(len(tmpl)), ch(1))
+    objs = [
+        (NIL, DRTITLE, DROK, G_BOX, NONE, OUTLINED, 0x00021100,
+         ch(0), ch(0), ch(DRV_W), ch(DRV_H)),
+        (DRNAME, NIL, NIL, G_STRING, NONE, NORMAL,
+         r.string("DRIVE INFORMATION"),
+         ch((DRV_W - 17) // 2), ch(1), ch(17), ch(1)),
+        field(DRFOLDS, DRV_NAME, 3),
+        field(DRFILES, DRV_FOLDS, 4),
+        field(DRUSED, DRV_FILES, 5),
+        field(DRFREE, DRV_USED, 7),
+        field(DROK, DRV_FREE, 8),
+        (ROOT, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT | LASTOB, NORMAL,
+         r.string("OK"), ch((DRV_W - 9) // 2), ch(10), ch(9), ch(1)),
+    ]
+    assert len(objs) == NOBS_DRV, (len(objs), NOBS_DRV)
+    return r.tree(objs)
+
+
 def build_prefs():
     """PREFS.RSC: the chooser, the DOS command dialog and Install
     application, loaded only while one of them is open."""
@@ -689,6 +734,7 @@ def build_prefs():
     assert pref_tree(r) == ADPREF
     assert cmd_tree(r) == ADCMDBOX
     assert app_tree(r) == ADAPPBOX
+    assert drive_tree(r) == ADDRVBOX
     for i, name, text in APP_ALERTS:
         assert r.free_string(text) == i, (name, i)
     return r
@@ -757,8 +803,8 @@ def main(argv):
     pref = build_prefs().file()
     with open(argv[3], "wb") as f:
         f.write(pref)
-    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} objects in "
-          f"three trees -- loaded only while a dialog is open")
+    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} objects in "
+          f"four trees -- loaded only while a dialog is open")
     return 0
 
 

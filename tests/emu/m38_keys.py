@@ -9,6 +9,8 @@ hndl_kbd -- each checked by what it did rather than by a picture:
     ^N       File -> New folder, KEYS typed, RETURN  KEYS in the listing
     down     (CONTROL and =) a line                  KEYS moves up
     ^D       File -> Delete of the selection, RETURN KEYS gone again
+    ^A       File -> Select all                      every item selected
+    ^W       File -> Cycle windows, with two open    the lower one on top
     ^U       File -> Close window                    no window
     ^Q       File -> Quit                            the shell asked to shut down
 
@@ -25,6 +27,7 @@ from a8test.launcher import launch            # noqa: E402
 import symfile                                # noqa: E402
 import shots                                  # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS, DISK   # noqa: E402
+from aesref import SELECTED                    # noqa: E402
 
 problems = []
 
@@ -100,6 +103,35 @@ def main():
             b.key("RETURN")
             t.settle()
             check(not listed(t, "KEYS"), "^D deletes the selection")
+
+        # ^A: every item of the top window selected
+        b.key("A", ctrl=True)
+        t.settle()
+        tree = t.g_screen()
+        top = [w for w in shots.children(b, tree, 0)
+               if w != shots.DROOT and shots.children(b, tree, w)][-1]
+        items = shots.children(b, tree, top)
+        chosen = [i for i in items if shots.obj(b, tree, i)["state"] & SELECTED]
+        check(items and len(chosen) == len(items),
+              f"^A selects everything in the window ({len(chosen)} of {len(items)})")
+
+        # the up arrow (CONTROL and -) takes the window back to its top
+        b.key("MINUS", ctrl=True)
+        t.settle()
+        check(listed(t, "APPS"), "the up arrow scrolls it back")
+
+        # ^W: two windows, and the one underneath comes up
+        t.dclick(t.item("APPS"))                # this one now shows APPS
+        b.key("1")                              # a second, on A:'s root
+        t.settle()
+        check(windows(t) == 2 and listed(t, "GEM"),
+              "1 again opens a second window, on top")
+        b.key("W", ctrl=True)
+        t.settle()
+        check(listed(t, "CALC.PRG"), "^W brings the window underneath up")
+        b.key("U", ctrl=True)
+        t.settle()
+        check(windows(t) == 1, "^U closes the top one")
 
         b.key("U", ctrl=True)
         t.settle()

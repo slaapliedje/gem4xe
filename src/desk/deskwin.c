@@ -861,6 +861,44 @@ void act_allselect(WORD wh, WORD root, const GRECT *box)
     }
 }
 
+/* File -> Select all: every item the window lists, not only those in
+ * view -- the listing's own flags, which is what Delete and a drag work
+ * from, then the objects that are showing, drawn. */
+void act_selall(WNODE *pw)
+{
+    FNODE FAR *pf = pw->w_path.p_flist;
+    WORD i;
+
+    for (i = 0; i < pw->w_path.p_count; i++, pf++)
+        pf->f_flags = (WORD)(pf->f_flags | F_SELECTED);
+    for (i = G.g_screen[pw->w_root].ob_head; i >= WOBS_START;
+         i = G.g_screen[i].ob_next)
+        act_chg(pw->w_id, pw->w_root, i, TRUE, TRUE);
+}
+
+/* File -> Cycle windows: the one at the bottom to the top, as a click on
+ * it would, through the desktop's own WM_TOPPED -- ROOT's children are
+ * in stacking order, bottom-most first (cnx_put). */
+void win_cycle(void)
+{
+    WORD wob, msg[8];
+
+    for (wob = G.g_screen[ROOT].ob_head; wob > ROOT; wob = G.g_screen[wob].ob_next) {
+        WNODE *pw;
+
+        if (wob == DROOT)
+            continue;
+        pw = &G.g_wlist[wob - (DROOT + 1)];
+        if (pw->w_id <= 0 || pw == win_ontop())
+            continue;
+        msg[0] = WM_TOPPED;
+        msg[1] = msg[2] = 0;
+        msg[3] = pw->w_id;
+        hndl_wmsg(msg);
+        return;
+    }
+}
+
 /* How many of a window's items are selected, and the first of them
  * (0 when none): what the File menu asks before it does anything. */
 WORD act_count(WORD root, WORD *pfirst)

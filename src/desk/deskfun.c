@@ -818,6 +818,67 @@ void fun_install(WNODE *pw)
     rsrc_free();                                /* the nested one */
 }
 
+/* File -> Show info with a DRIVE selected on the desk (the TOS desktop's
+ * disk information): its folders, its files and the bytes they hold,
+ * counted by the walk a delete counts with, and what GEMDOS says is
+ * free.  A DOS that cannot say leaves Free at nothing rather than making
+ * a number up.
+ *
+ * THE WALK FIRST, then the dialog: the walk puts up the desktop's own
+ * alerts when a path is too deep, and an alert's string comes from
+ * whichever resource is current -- which, once PREFS.RSC is loaded over
+ * DESKTOP.RSC, is the wrong one. */
+void fun_dinfo(WORD obj)
+{
+    OBJECT *tree;
+    DISKINFO di;
+    LONG freeb = -1;
+    WORD drive = (WORD)((obj_info(obj)->i.blk.ib_char & 0xFF) - 'A');
+    char label[LABEL_LEN];
+    WORD ok, k;
+
+    if (drive < 0 || drive > 25)
+        return;                                 /* the trash */
+    /* padded to the field's width: a template shows its underscores
+     * wherever the text stops short of it */
+    for (k = 0; obj_info(obj)->i.label[k] && k < LABEL_LEN - 1; k++)
+        label[k] = obj_info(obj)->i.label[k];
+    for (; k < LABEL_LEN - 1; k++)
+        label[k] = ' ';
+    label[k] = 0;
+    put_str(op_path, "A:\\*.*");
+    op_path[0] = (char)('A' + drive);
+    desk_busy(TRUE);
+    G.g_nfiles = 0;
+    G.g_ndirs = 0;
+    G.g_opsize = 0;
+    ok = walk(0, OP_COUNT);
+    if (Dfree((DISKINFO FAR *)&di, (WORD)(drive + 1)) == E_OK)
+        freeb = di.b_free * di.b_secsiz * di.b_clsiz;
+    desk_busy(FALSE);
+    if (!ok)
+        return;
+
+    if (!rsrc_load("PREFS.RSC")) {
+        fun_alert(1, STNOPREF);
+        return;
+    }
+    rsrc_gaddr(R_TREE, ADDRVBOX, (void **)&tree);
+    inf_sset(tree, DRNAME, label);
+    inf_numset(tree, DRFOLDS, G.g_ndirs);
+    inf_numset(tree, DRFILES, G.g_nfiles);
+    inf_numset(tree, DRUSED, G.g_opsize);
+    if (freeb >= 0)
+        inf_numset(tree, DRFREE, freeb);
+    else
+        inf_sset(tree, DRFREE, "");
+    fun_start(tree);
+    form_do(tree, 0);
+    fun_end();
+    tree[DROK].ob_state = NORMAL;
+    rsrc_free();                                /* the nested one */
+}
+
 void fun_command(void)
 {
     char line[LEN_ZCMD];
