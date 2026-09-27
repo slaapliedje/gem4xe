@@ -306,6 +306,9 @@ static WORD do_filemenu(WORD item)
         if (pw)
             act_selall(pw);
         break;
+    case MASKITEM:                              /* which files it lists */
+        fun_mask(pw);
+        break;
     case CMDITEM:                               /* a line for the DOS, and a
                                                  * window on what it printed */
         fun_command();

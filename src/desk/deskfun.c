@@ -779,9 +779,7 @@ void fun_install(WNODE *pw)
         return;
     }
     spec = pw->w_path.p_spec;                   /* "A:\SUB\*.*": the path */
-    for (n = 0; spec[n]; n++)
-        ;
-    n -= 3;
+    n = spec_dirlen(spec);
     for (k = 0; pf->f_name[k]; k++)
         ;
     if (n + k >= LEN_ZPATH) {
@@ -853,6 +851,10 @@ void fun_dinfo(WORD obj)
     G.g_ndirs = 0;
     G.g_opsize = 0;
     ok = walk(0, OP_COUNT);
+    /* THE LISTINGS' DTA BACK: the walk leaves its own set, and every
+     * window listed after this would read an empty one -- five nameless
+     * items and "0 bytes", which is what test-m41 caught */
+    Fsetdta(G.g_dta);
     if (Dfree((DISKINFO FAR *)&di, (WORD)(drive + 1)) == E_OK)
         freeb = di.b_free * di.b_secsiz * di.b_clsiz;
     desk_busy(FALSE);
@@ -877,6 +879,39 @@ void fun_dinfo(WORD obj)
     fun_end();
     tree[DROK].ob_state = NORMAL;
     rsrc_free();                                /* the nested one */
+}
+
+/* File -> Set file mask: which of the top window's files it lists,
+ * typed the way a name is, in its eight places and three.  Its folders
+ * are listed whatever the mask is (src/desk/deskwin.c pn_active). */
+void fun_mask(WNODE *pw)
+{
+    OBJECT *tree;
+    char places[LEN_ZFNAME], mask[LEN_ZFNAME];
+    const char *spec;
+    WORD ret;
+
+    if (!pw)
+        return;
+    if (!rsrc_load("PREFS.RSC")) {
+        fun_alert(1, STNOPREF);
+        return;
+    }
+    rsrc_gaddr(R_TREE, ADMASKBOX, (void **)&tree);
+    spec = pw->w_path.p_spec;
+    fmt_name((const char FAR *)(spec + spec_dirlen(spec)), places);
+    inf_sset(tree, MSMASK, places);
+    fun_start(tree);
+    ret = (WORD)(form_do(tree, MSMASK) & 0x7FFF);
+    fun_end();
+    tree[ret].ob_state = NORMAL;
+    if (ret == MSOK) {
+        inf_sget(tree, MSMASK, places);
+        unfmt_name(places, mask);
+    }
+    rsrc_free();                                /* the nested one */
+    if (ret == MSOK)
+        win_setmask(pw, mask);
 }
 
 void fun_command(void)

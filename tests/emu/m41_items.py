@@ -18,7 +18,10 @@ from a8test.launcher import launch            # noqa: E402
 import atr                                    # noqa: E402
 import deskref                                # noqa: E402
 import symfile                                # noqa: E402
+import shots                                  # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS, DISK   # noqa: E402
+from aesref import W_FULLER                   # noqa: E402
+from deskrsc import FILEMENU, MASKITEM, CLOSITEM   # noqa: E402
 
 FARMEM_BRK = 8
 problems = []
@@ -51,6 +54,31 @@ def disk_counts(path):
                 size += e.size
     walk()
     return dirs, files, size
+
+
+def listing(t):
+    """The labels in the window on top (tests/emu/shots.py Tour.item)."""
+    b, tree = t.b, t.g_screen()
+    for top in reversed(shots.children(b, tree, 0)):
+        if top == shots.DROOT or not shots.children(b, tree, top):
+            continue
+        return sorted(shots.cstring(b, shots.obj(b, tree, i)["spec"] + 34).strip()
+                      for i in shots.children(b, tree, top))
+    return []
+
+
+def set_mask(t, keys):
+    t.choose(FILEMENU, MASKITEM)
+    t.b.frames(10)
+    t.settle()
+    for k in ("BACKSPACE",) * 12:               # the field's old mask out
+        t.b.key(k)
+        t.b.frames(2)
+    for k in keys:
+        t.b.key(k)
+        t.b.frames(3)
+    t.b.key("RETURN")
+    t.settle()
 
 
 def main():
@@ -86,6 +114,30 @@ def main():
         b.key("RETURN")
         t.settle()
         check(far() == far0, "...and OK puts it away")
+
+        # -- Set file mask -----------------------------------------------
+        t.dclick(t.desk_icon("DISK A"))
+        t.click(t.gadget(W_FULLER))
+        set_mask(t, ["ASTERISK", "PERIOD", "B", "A", "T"])
+        got = listing(t)
+        check(got == ["APPS", "AUTOEXEC.BAT", "GEM", "STARTUP.BAT"],
+              f"*.BAT lists the BATs and the folders: {got}")
+        # *.RSC: nothing in the root, and GEM's resources below it
+        set_mask(t, ["ASTERISK", "PERIOD", "R", "S", "C"])
+        got = listing(t)
+        check(got == ["APPS", "GEM"], f"*.RSC leaves the root its folders: {got}")
+        t.dclick(t.item("GEM"))
+        got = listing(t)
+        check("DESKTOP.RSC" in got and "PREFS.RSC" in got and "GEM.COM" not in got
+              and all(n.endswith(".RSC") for n in got),
+              f"...and the mask goes down into GEM: {got}")
+        t.choose(FILEMENU, CLOSITEM)
+        got = listing(t)
+        check(got == ["APPS", "GEM"], f"...and back up: {got}")
+        set_mask(t, [])
+        got = listing(t)
+        check("X32G.DOS" in got and len(got) == 5,
+              f"an empty mask lists everything again: {got}")
     finally:
         emu.stop()
     print(f"gem4xe-m41: {'FAIL' if problems else 'PASS'} -- the small desktop "

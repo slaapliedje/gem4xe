@@ -278,6 +278,13 @@ DRV_FOLDS = "Folders: __________"
 DRV_FILES = "Files:   __________"
 DRV_USED = "Used:    __________ bytes"
 DRV_FREE = "Free:    __________ bytes"
+# PREFS.RSC's fifth tree: File -> Set file mask (phase 64) -- which files
+# the top window lists; its folders are listed whatever the mask says.
+ADMASKBOX = 4
+MSBOX, MSTITLE, MSMASK, MSOK, MSCNCL = range(5)
+NOBS_MASK = 5
+MSK_W, MSK_H = 30, 7
+MSK_TMPL = "Mask: ________.___"                     # 8 places and 3
 # ...and PREFS.RSC's free strings: what the dialog says when it cannot
 STAPPSEL, STAPPFUL = 0, 1
 APP_ALERTS = [
@@ -294,6 +301,8 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
+    ("ADMASKBOX", ADMASKBOX), ("MSMASK", MSMASK), ("MSOK", MSOK),
+    ("MSCNCL", MSCNCL),
     ("ADDRVBOX", ADDRVBOX), ("DRNAME", DRNAME), ("DRFOLDS", DRFOLDS),
     ("DRFILES", DRFILES), ("DRUSED", DRUSED), ("DRFREE", DRFREE),
     ("DROK", DROK),
@@ -343,7 +352,7 @@ INDICES = [
 
 # The items the desktop does not do yet: disabled at start (menu_ienable),
 # not in the file, so the file stays RCS-shaped.
-NOT_YET = (FORMITEM, IICNITEM, MASKITEM)
+NOT_YET = (FORMITEM, IICNITEM)
 
 # The menu, box by box: (title, box x, box width, items); an item is a
 # string, "-" for a separator, and (string, state) for a state.
@@ -727,6 +736,25 @@ def drive_tree(r):
     return r.tree(objs)
 
 
+def mask_tree(r):
+    """ADMASKBOX: the top window's file mask, typed as a name is."""
+    objs = [
+        (NIL, MSTITLE, MSCNCL, G_BOX, NONE, OUTLINED, 0x00021100,
+         ch(0), ch(0), ch(MSK_W), ch(MSK_H)),
+        (MSMASK, NIL, NIL, G_STRING, NONE, NORMAL, r.string("FILE MASK"),
+         ch((MSK_W - 9) // 2), ch(1), ch(9), ch(1)),
+        (MSOK, NIL, NIL, G_FTEXT, EDITABLE, NORMAL,
+         r.ted(" " * MSK_TMPL.count("_"), MSK_TMPL, "F"),
+         ch(6), ch(3), ch(len(MSK_TMPL)), ch(1)),
+        (MSCNCL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
+         r.string("OK"), ch(4), ch(5), ch(9), ch(1)),
+        (ROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
+         r.string("Cancel"), ch(MSK_W - 13), ch(5), ch(9), ch(1)),
+    ]
+    assert len(objs) == NOBS_MASK, (len(objs), NOBS_MASK)
+    return r.tree(objs)
+
+
 def build_prefs():
     """PREFS.RSC: the chooser, the DOS command dialog and Install
     application, loaded only while one of them is open."""
@@ -735,6 +763,7 @@ def build_prefs():
     assert cmd_tree(r) == ADCMDBOX
     assert app_tree(r) == ADAPPBOX
     assert drive_tree(r) == ADDRVBOX
+    assert mask_tree(r) == ADMASKBOX
     for i, name, text in APP_ALERTS:
         assert r.free_string(text) == i, (name, i)
     return r
@@ -803,8 +832,8 @@ def main(argv):
     pref = build_prefs().file()
     with open(argv[3], "wb") as f:
         f.write(pref)
-    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} objects in "
-          f"four trees -- loaded only while a dialog is open")
+    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} + {NOBS_MASK} objects in "
+          f"five trees -- loaded only while a dialog is open")
     return 0
 
 

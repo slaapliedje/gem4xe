@@ -289,6 +289,56 @@ static void fn_read(FNODE *d, const FNODE FAR *s)
         *pd++ = *ps++;
 }
 
+/* -- the file mask ------------------------------------------------------ */
+
+/* A window's path is "A:\SUB\" and a MASK, "*.*" until File -> Set file
+ * mask says otherwise (phase 64).  How long the directory part is: up to
+ * and including its last backslash. */
+WORD spec_dirlen(const char *spec)
+{
+    WORD n, last = 0;
+
+    for (n = 0; spec[n]; n++)
+        if (spec[n] == '\\')
+            last = (WORD)(n + 1);
+    return last;
+}
+
+/* Does NAME.EXT match a mask of * and ?, as the DOS matches one?  A name
+ * with no extension is NAME. -- so "*.*" is everything, the DOS's rule. */
+static WORD mask_match(const char *mask, const char FAR *name)
+{
+    char nm[LEN_ZFNAME + 1];
+    const char *m = mask, *star_m = 0, *star_n = 0, *n = nm;
+    WORD k, dot = FALSE;
+
+    for (k = 0; name[k] && k < LEN_ZFNAME - 1; k++) {
+        nm[k] = name[k];
+        if (name[k] == '.')
+            dot = TRUE;
+    }
+    if (!dot)
+        nm[k++] = '.';
+    nm[k] = 0;
+    while (*n) {
+        if (*m == '*') {
+            star_m = ++m;
+            star_n = n;
+        } else if (*m == '?' || *m == *n) {
+            m++;
+            n++;
+        } else if (star_m) {
+            m = star_m;
+            n = ++star_n;
+        } else {
+            return FALSE;
+        }
+    }
+    while (*m == '*')
+        m++;
+    return (WORD)(*m == 0);
+}
+
 /* Read the directory through the DTA into the FNODEs, each one into its
  * place in the order: the count and the bytes together.  An error from
  * Fsfirst lists nothing. */
@@ -300,11 +350,26 @@ static void pn_active(PNODE *pn)
     LONG ret;
     WORD count = 0, i;
 
+    char all[LEN_ZPATH];
+    WORD dir = spec_dirlen(pn->p_spec);
+    const char *mask = pn->p_spec + dir;
+
     pn->p_size = 0;                             /* read again after a delete */
     pn->p_count = 0;
-    ret = Fsfirst(pn->p_spec, DISPATTR);
+    /* EVERYTHING is read and the FILES are held to the mask: a folder is
+     * always listed, as the TOS desktop lists it, or a mask of *.TXT
+     * would hide every way down the tree. */
+    for (i = 0; i < dir; i++)
+        all[i] = pn->p_spec[i];
+    all[i++] = '*';
+    all[i++] = '.';
+    all[i++] = '*';
+    all[i] = 0;
+    ret = Fsfirst(all, DISPATTR);
     while (ret == E_OK && count < NUM_FNODES) {
-        if (dta->d_fname[0] != '.') {
+        if (dta->d_fname[0] != '.'
+            && ((dta->d_attrib & FA_SUBDIR)
+                || mask_match(mask, (const char FAR *)dta->d_fname))) {
             fn.f_obid = 0;
             fn.f_flags = 0;
             fn.f_seq = count;               /* where the directory had it */
@@ -1090,22 +1155,43 @@ static WORD do_fopen(WNODE *pw, WORD curr, const char FAR *name)
     GRECT t;
     WORD n = 0, i;
 
+    const char *mask;
+
     wind_get_grect(pw->w_id, WF_WORKXYWH, &t);
-    while (spec[n])                             /* "A:\SUB\*.*" less the "*.*" */
-        n++;
-    n -= 3;
+    n = spec_dirlen(spec);                      /* "A:\SUB\" */
+    mask = spec + n;                            /* the window's mask goes
+                                                 * down with it */
     for (i = 0; i < n; i++)
         path[i] = spec[i];
-    while (*name && i < LEN_ZPATH - 5)
+    while (*name && i < LEN_ZPATH - 14)
         path[i++] = *name++;
     if (*name)
         return FALSE;
     path[i++] = '\\';
-    path[i++] = '*';
-    path[i++] = '.';
-    path[i++] = '*';
+    while (*mask && i < LEN_ZPATH - 1)
+        path[i++] = *mask++;
     path[i] = 0;
     return do_diropen(pw, FALSE, curr, path, &t, TRUE);
+}
+
+/* File -> Set file mask: the window listed again, in the same place,
+ * through its new mask -- "" means everything. */
+void win_setmask(WNODE *pw, const char *mask)
+{
+    char path[LEN_ZPATH];
+    const char *spec = pw->w_path.p_spec;
+    GRECT t;
+    WORD n = spec_dirlen(spec), i;
+
+    for (i = 0; i < n; i++)
+        path[i] = spec[i];
+    if (!*mask)
+        mask = "*.*";
+    while (*mask && i < LEN_ZPATH - 1)
+        path[i++] = *mask++;
+    path[i] = 0;
+    wind_get_grect(pw->w_id, WF_WORKXYWH, &t);
+    (void)do_diropen(pw, FALSE, 0, path, &t, TRUE);
 }
 
 /* A program in a window: its folder becomes the default directory and
@@ -1177,9 +1263,7 @@ static WORD win_pathof(const WNODE *pw, const char FAR *name, char *out)
     const char *spec = pw->w_path.p_spec;
     WORD n = 0, k = 0, i;
 
-    while (spec[n])                             /* "A:\SUB\*.*" less the "*.*" */
-        n++;
-    n -= 3;
+    n = spec_dirlen(spec);                      /* "A:\SUB\", less the mask */
     while (name[k])
         k++;
     if (n + k >= LEN_ZPATH)
@@ -1379,9 +1463,7 @@ void do_docu(WNODE *pw, const char FAR *name)
     const char *spec = pw->w_path.p_spec;
     WORD n = 0, k = 0, i;
 
-    while (spec[n])                             /* "A:\SUB\*.*" less the "*.*" */
-        n++;
-    n -= 3;
+    n = spec_dirlen(spec);                      /* "A:\SUB\", less the mask */
     while (name[k])
         k++;
     if (n + k >= LEN_ZPATH)
@@ -1460,12 +1542,14 @@ void win_close(WNODE *pw, WORD close_window)
         }
         for (i = last; i > 0 && spec[i - 1] != '\\'; i--)
             ;
-        if (i > 0) {                            /* "A:\SUB\*.*" -> "A:\*.*" */
+        if (i > 0) {                            /* "A:\SUB\*.*" -> "A:\*.*",
+                                                 * the mask kept */
+            const char *mask = spec + spec_dirlen(spec);
+
             for (n = 0; n < i; n++)
                 path[n] = spec[n];
-            path[n++] = '*';
-            path[n++] = '.';
-            path[n++] = '*';
+            while (*mask && n < LEN_ZPATH - 1)
+                path[n++] = *mask++;
             path[n] = 0;
             wind_get_grect(pw->w_id, WF_WORKXYWH, &t);
             do_diropen(pw, FALSE, 0, path, &t, TRUE);

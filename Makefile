@@ -1854,7 +1854,7 @@ test-m39: build/gem-shots.atr build/desktop.sym build/calc.sym
 	python3 tests/emu/m39_install.py
 
 # The small desktop items of 0.9's item 4, on the product disk (phases
-# 63 on): Show info on a drive, so far.
+# 63 on): Show info on a drive, and Set file mask.
 test-m41: build/gem-shots.atr build/desktop.sym
 	python3 tests/emu/m41_items.py
 
