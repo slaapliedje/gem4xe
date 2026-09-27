@@ -200,6 +200,9 @@ static void do_prefs(void)
     tree[PRWIND].ob_state = NORMAL;
     spec = curdesk;
     pref_show(tree, spec);
+    tree[PRCNFDEL].ob_state = (UWORD)(desk_asks(CNF_DELETE) ? SELECTED : NORMAL);
+    tree[PRCNFCPY].ob_state = (UWORD)(desk_asks(CNF_COPY) ? SELECTED : NORMAL);
+    tree[PRCNFOVW].ob_state = (UWORD)(desk_asks(CNF_OVERWRITE) ? SELECTED : NORMAL);
     start_dialog(tree);
 
     for (;;) {
@@ -228,6 +231,10 @@ static void do_prefs(void)
     tree[PROK].ob_state = NORMAL;
     tree[PRCNCL].ob_state = NORMAL;
     end_dialog();
+    if (ret == PROK)                /* the toggles, before the file goes */
+        desk_setasks((WORD)(((tree[PRCNFDEL].ob_state & SELECTED) ? CNF_DELETE : 0)
+                            | ((tree[PRCNFCPY].ob_state & SELECTED) ? CNF_COPY : 0)
+                            | ((tree[PRCNFOVW].ob_state & SELECTED) ? CNF_OVERWRITE : 0)));
 
     rsrc_free();                    /* the nested one: ours is untouched */
 

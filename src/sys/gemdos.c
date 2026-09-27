@@ -559,6 +559,48 @@ static LONG gd_fsnext(void)
     return gd_next(sl);
 }
 
+/* Is the file gw->full names really in the directory it names?  SpartaDOS
+ * 3.2 opens ">GEM>X32G.DOS" for reading from the ROOT when GEM has no
+ * X32G.DOS (measured through the desktop's copy, docs/phase65.md; SDX
+ * 4.50 does not), so there a program would read the wrong file and a test
+ * for "is the name taken" would say yes.  The directory, read as its own
+ * entries the way Fsfirst reads it, is the witness; gw->in is borrowed
+ * for its CIO name, and gw->cio -- the file's -- is left as it was. */
+static WORD gd_in_dir(void)
+{
+    char *full = gw->full, want[GD_NAMEMAX], name[GD_NAMEMAX];
+    uint8_t ent[GD_RAWENT];
+    WORD k = gd_split(full), there = 0;
+    uint16_t got;
+    int16_t iocb;
+
+    if (strlen(full + k) >= GD_NAMEMAX)
+        return 0;
+    strcpy(want, full + k);
+    strcpy(full + k, "*.*");
+    dos_cioname(full, gw->in);
+    strcpy(full + k, want);
+    iocb = cio_open(gw->in, CIO_A_RAWDIR, 0);
+    if (iocb < 0)
+        return 0;
+    for (;;) {
+        WORD st = cio_read(iocb, ent, GD_RAWENT, &got);   /* not a byte: B8 */
+        if (got < GD_RAWENT || (ent[0] & 0xF8) == 0)
+            break;                      /* the end of the directory */
+        if ((ent[0] & 0x08) && !(ent[0] & 0x30)) {  /* a file, in use */
+            gd_rawname(ent, name);
+            if (dos_wildcmp(want, name)) {
+                there = 1;
+                break;
+            }
+        }
+        if (st != CIO_OK)
+            break;
+    }
+    cio_close(iocb);
+    return there;
+}
+
 static LONG gd_open(LONG fname, uint8_t aux1)
 {
     LONG d = gd_name(fname);
@@ -566,6 +608,9 @@ static LONG gd_open(LONG fname, uint8_t aux1)
 
     if (d < 0)
         return d;
+    if (dos.kind == DOS_SPARTA && aux1 == CIO_A_READ
+        && gd_split(gw->full) > 3 && !gd_in_dir())
+        return GD_EFILNF;               /* not the root's, in its place */
     iocb = cio_open(gw->cio, aux1, 0);
     if (iocb < 0)
         return gd_err((uint8_t)-iocb, 0);

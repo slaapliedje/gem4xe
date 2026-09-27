@@ -1805,7 +1805,20 @@ class Desktop:
             return False
         return True
 
+    def copy_conflict(self):
+        """deskfun.c copy_conflict: the name tested with Fopen.  Taken,
+        the NAME CONFLICT dialog would follow (phase 65) -- no gate the
+        model drives copies onto a taken name, so it says so rather than
+        guess at the calls."""
+        fd = self.dst_gemdos(FOPEN, 0)
+        if fd < 0:
+            return True
+        self.gemdos(FCLOSE, (fd,))
+        raise NotImplementedError("the model copies onto a taken name: "
+                                  + self.dst_path)
+
     def copy_one(self, op):
+        self.copy_conflict()
         if not self.copy_file():
             return False
         if op == OP_MOVE and self.op_gemdos(FDELETE) != E_OK:

@@ -272,6 +272,14 @@ void act_select(WORD wh, WORD root, WORD obj);
 void act_selall(WNODE *pw);
 void win_cycle(void);
 WORD spec_dirlen(const char *spec);
+/* What the desktop asks before it acts (Set preferences, phase 65): a
+ * bit set means ASK.  All three by default. */
+#define CNF_DELETE    1
+#define CNF_COPY      2
+#define CNF_OVERWRITE 4
+#define CNF_ALL       7
+WORD desk_asks(WORD what);
+void desk_setasks(WORD bits);
 /* A click's effect on the selection: SHIFT toggles one item, a plain
  * click makes one the selection, and a click on nothing clears it. */
 void act_bsclick(WORD wh, WORD root, WORD obj, WORD kstate);

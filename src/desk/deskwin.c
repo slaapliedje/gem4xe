@@ -289,6 +289,26 @@ static void fn_read(FNODE *d, const FNODE FAR *s)
         *pd++ = *ps++;
 }
 
+/* -- what the desktop asks --------------------------------------------- */
+
+/* Set preferences' Confirm row (phase 65).  Not in G, for the reason the
+ * installed applications are not: G is held to its model byte for byte,
+ * and a desk left at its defaults must be the desk it was.  In the INF
+ * the bits go out INVERTED, in the "#E" line's second byte -- the one
+ * that has always been written as 0 -- so that asking everything, the
+ * default, writes exactly the text it always did. */
+static WORD desk_confirm = CNF_ALL;
+
+WORD desk_asks(WORD what)
+{
+    return (WORD)((desk_confirm & what) != 0);
+}
+
+void desk_setasks(WORD bits)
+{
+    desk_confirm = (WORD)(bits & CNF_ALL);
+}
+
 /* -- the file mask ------------------------------------------------------ */
 
 /* A window's path is "A:\SUB\" and a MASK, "*.*" until File -> Set file
@@ -1673,13 +1693,13 @@ static WORD inf_write(void)
     p = put_far(p, "\r\n");
     /* the environment, in the donor's first byte: bit 7 is the text
      * view, bits 6-5 the sort (deskapp.c INF_E1_VIEWTEXT).  The second
-     * byte is the donor's date and clock formats, which are the
-     * resource's here (deskrsc.py STFLINE), so it goes out as zero and
-     * is not read back. */
+     * byte was the donor's date and clock formats, which are the
+     * resource's here (deskrsc.py STFLINE); it carries what the desktop
+     * does NOT ask since phase 65, zero when it asks everything. */
     p = put_far(p, "#E");
     p = put_hex2(p, (WORD)((G.g_iview == V_TEXT ? INF_E1_VIEWTEXT : 0)
                            | ((G.g_isort == S_NSRT ? 0 : G.g_isort) << 5)));
-    p = put_hex2(p, 0);
+    p = put_hex2(p, (WORD)(~desk_confirm & CNF_ALL));   /* what is NOT asked */
     p = put_hex2(p, 0);
     p = put_hex2(p, 0);
     p = put_hex2(p, (WORD)((G.g_isort == S_NSRT ? INF_E5_NOSORT : 0)
@@ -1808,7 +1828,9 @@ static void inf_parse(const char FAR *pcurr)
 
             pcurr++;
             e1 = scan_2(&pcurr);
-            scan_2(&pcurr);                     /* the donor's date and clock */
+            desk_setasks((WORD)(~scan_2(&pcurr) & CNF_ALL));    /* what is not
+                                                 * asked (desk_asks); the rest
+                                                 * are the donor's date and clock */
             scan_2(&pcurr);                     /* formats, and its video     */
             scan_2(&pcurr);                     /* words: the resource's here */
             e5 = scan_2(&pcurr);

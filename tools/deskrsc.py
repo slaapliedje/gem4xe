@@ -105,9 +105,12 @@ PRPAT0 = 7                                  # ...through PRPAT0 + 7, in PRPATBOX
 PRCOLLBL, PRCOLBOX = 15, 16
 PRCOL0 = 17                                 # ...through PRCOL0 + 15, in PRCOLBOX
 PRSMPLBL, PRSAMPLE = 33, 34
-PROK, PRCNCL = 35, 36
-NOBS_PREF = 37
-PREF_W, PREF_H = 40, 17
+# what the desktop asks before it acts (phase 65): three toggles, each
+# free of the others
+PRCNFLBL, PRCNFDEL, PRCNFCPY, PRCNFOVW = 35, 36, 37, 38
+PROK, PRCNCL = 39, 40
+NOBS_PREF = 41
+PREF_W, PREF_H = 46, 19
 N_PAT, N_COL = 8, 16
 
 # Free strings: the icon labels, and every alert the desktop puts up.
@@ -285,6 +288,15 @@ MSBOX, MSTITLE, MSMASK, MSOK, MSCNCL = range(5)
 NOBS_MASK = 5
 MSK_W, MSK_H = 30, 7
 MSK_TMPL = "Mask: ________.___"                     # 8 places and 3
+# PREFS.RSC's sixth tree: NAME CONFLICT (phase 65) -- a copy onto a
+# name that is taken, when Set preferences says to ask: the name there,
+# the copy's name (editable), and Copy / Skip / Stop.
+ADCNFBOX = 5
+NCBOX, NCTITLE, NCOLD, NCNEW, NCCOPY, NCSKIP, NCSTOP = range(7)
+NOBS_NC = 7
+NC_W, NC_H = 34, 9
+NC_OLD = "Name there:   ________.___"
+NC_NEW = "Copy's name:  ________.___"
 # ...and PREFS.RSC's free strings: what the dialog says when it cannot
 STAPPSEL, STAPPFUL = 0, 1
 APP_ALERTS = [
@@ -301,6 +313,8 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
+    ("ADCNFBOX", ADCNFBOX), ("NCOLD", NCOLD), ("NCNEW", NCNEW),
+    ("NCCOPY", NCCOPY), ("NCSKIP", NCSKIP), ("NCSTOP", NCSTOP),
     ("ADMASKBOX", ADMASKBOX), ("MSMASK", MSMASK), ("MSOK", MSOK),
     ("MSCNCL", MSCNCL),
     ("ADDRVBOX", ADDRVBOX), ("DRNAME", DRNAME), ("DRFOLDS", DRFOLDS),
@@ -317,6 +331,7 @@ INDICES = [
     ("PRCOLLBL", PRCOLLBL), ("PRCOLBOX", PRCOLBOX), ("PRCOL0", PRCOL0),
     ("PRSMPLBL", PRSMPLBL), ("PRSAMPLE", PRSAMPLE),
     ("PROK", PROK), ("PRCNCL", PRCNCL),
+    ("PRCNFDEL", PRCNFDEL), ("PRCNFCPY", PRCNFCPY), ("PRCNFOVW", PRCNFOVW),
     ("N_PAT", N_PAT), ("N_COL", N_COL),
     ("ADMENU", ADMENU), ("ADDINFO", ADDINFO),
     ("DESKMENU", DESKMENU), ("FILEMENU", FILEMENU), ("VIEWMENU", VIEWMENU),
@@ -655,12 +670,21 @@ def pref_tree(r):
                      ch((i % 8) * 3), ch((i // 8) * 2), ch(2), ch(1)))
     objs.append((PRSAMPLE, NIL, NIL, G_STRING, NONE, NORMAL,
                  r.string("Sample:"), ch(2), ch(12), ch(7), ch(1)))
-    objs.append((PROK, NIL, NIL, G_BOX, NONE, NORMAL, 0x00001143,
+    objs.append((PRCNFLBL, NIL, NIL, G_BOX, NONE, NORMAL, 0x00001143,
                  ch(12), ch(12), ch(12), ch(2)))
+    # Confirm: which of the three the desktop asks before doing
+    objs.append((PRCNFDEL, NIL, NIL, G_STRING, NONE, NORMAL,
+                 r.string("Confirm:"), ch(2), ch(15), ch(8), ch(1)))
+    objs.append((PRCNFCPY, NIL, NIL, G_BUTTON, SELECTABLE, SELECTED,
+                 r.string("Delete"), ch(12), ch(15), ch(8), ch(1)))
+    objs.append((PRCNFOVW, NIL, NIL, G_BUTTON, SELECTABLE, SELECTED,
+                 r.string("Copy"), ch(22), ch(15), ch(8), ch(1)))
+    objs.append((PROK, NIL, NIL, G_BUTTON, SELECTABLE, SELECTED,
+                 r.string("Overwrite"), ch(32), ch(15), ch(11), ch(1)))
     objs.append((PRCNCL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT,
-                 NORMAL, r.string("OK"), ch(7), ch(15), ch(9), ch(1)))
+                 NORMAL, r.string("OK"), ch(9), ch(17), ch(9), ch(1)))
     objs.append((ROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB,
-                 NORMAL, r.string("Cancel"), ch(22), ch(15), ch(9), ch(1)))
+                 NORMAL, r.string("Cancel"), ch(26), ch(17), ch(9), ch(1)))
     assert len(objs) == NOBS_PREF, (len(objs), NOBS_PREF)
     return r.tree(objs)
 
@@ -755,6 +779,30 @@ def mask_tree(r):
     return r.tree(objs)
 
 
+def conflict_tree(r):
+    """ADCNFBOX: a copy onto a name that is taken."""
+    objs = [
+        (NIL, NCTITLE, NCSTOP, G_BOX, NONE, OUTLINED, 0x00021100,
+         ch(0), ch(0), ch(NC_W), ch(NC_H)),
+        (NCOLD, NIL, NIL, G_STRING, NONE, NORMAL, r.string("NAME CONFLICT"),
+         ch((NC_W - 13) // 2), ch(1), ch(13), ch(1)),
+        (NCNEW, NIL, NIL, G_FTEXT, NONE, NORMAL,
+         r.ted(" " * NC_OLD.count("_"), NC_OLD, "F"),
+         ch(3), ch(3), ch(len(NC_OLD)), ch(1)),
+        (NCCOPY, NIL, NIL, G_FTEXT, EDITABLE, NORMAL,
+         r.ted(" " * NC_NEW.count("_"), NC_NEW, "F"),
+         ch(3), ch(4), ch(len(NC_NEW)), ch(1)),
+        (NCSKIP, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
+         r.string("Copy"), ch(2), ch(7), ch(8), ch(1)),
+        (NCSTOP, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
+         r.string("Skip"), ch(13), ch(7), ch(8), ch(1)),
+        (ROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
+         r.string("Stop"), ch(24), ch(7), ch(8), ch(1)),
+    ]
+    assert len(objs) == NOBS_NC, (len(objs), NOBS_NC)
+    return r.tree(objs)
+
+
 def build_prefs():
     """PREFS.RSC: the chooser, the DOS command dialog and Install
     application, loaded only while one of them is open."""
@@ -764,6 +812,7 @@ def build_prefs():
     assert app_tree(r) == ADAPPBOX
     assert drive_tree(r) == ADDRVBOX
     assert mask_tree(r) == ADMASKBOX
+    assert conflict_tree(r) == ADCNFBOX
     for i, name, text in APP_ALERTS:
         assert r.free_string(text) == i, (name, i)
     return r
@@ -832,8 +881,8 @@ def main(argv):
     pref = build_prefs().file()
     with open(argv[3], "wb") as f:
         f.write(pref)
-    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} + {NOBS_MASK} objects in "
-          f"five trees -- loaded only while a dialog is open")
+    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} + {NOBS_MASK} + {NOBS_NC} objects in "
+          f"six trees -- loaded only while a dialog is open")
     return 0
 
 

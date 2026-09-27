@@ -343,6 +343,64 @@ static WORD make_dir(void)
 /* One file, op_path to dst_path, through the arena's buffer.  A copy
  * that stops half way leaves nothing behind: a truncated file looks
  * like a whole one to everything that reads it afterwards. */
+/* THE NAME IS TAKEN: what to do about it.  Set preferences' Overwrite
+ * off, it is replaced, as it always was; on, the TOS desktop's NAME
+ * CONFLICT -- the name there, the copy's name to edit, and Copy (under
+ * the name in the field: the same one replaces), Skip or Stop.  Tested
+ * with Fopen rather than Fsfirst, which would take the walk's DTA.
+ *
+ * The dialog is PREFS.RSC's, loaded over the desktop's for as long as
+ * it is up, and the operation's own dialog -- DESKTOP.RSC's, on the
+ * screen under it -- is drawn again after.  CF_COPY, CF_SKIP, CF_STOP. */
+#define CF_COPY 0
+#define CF_SKIP 1
+#define CF_STOP 2
+static WORD copy_conflict(void)
+{
+    OBJECT *tree;
+    GRECT d;
+    char places[LEN_ZFNAME], name[LEN_ZFNAME], *tail;
+    LONG fd;
+    WORD ret;
+
+    for (;;) {
+        fd = Fopen(dst_path, 0);
+        if (fd < 0)
+            return CF_COPY;                     /* free: copy */
+        Fclose((WORD)fd);
+        if (!desk_asks(CNF_OVERWRITE))
+            return CF_COPY;                     /* replaced, unasked */
+        if (!rsrc_load("PREFS.RSC"))
+            return CF_STOP;
+        rsrc_gaddr(R_TREE, ADCNFBOX, (void **)&tree);
+        tail = path_tail(dst_path);
+        fmt_name((const char FAR *)tail, places);
+        inf_sset(tree, NCOLD, places);
+        inf_sset(tree, NCNEW, places);
+        form_center(tree, &d.g_x, &d.g_y, &d.g_w, &d.g_h);
+        form_dial(FMD_START, 0, 0, 0, 0, d.g_x, d.g_y, d.g_w, d.g_h);
+        objc_draw(tree, ROOT, MAX_DEPTH, d.g_x, d.g_y, d.g_w, d.g_h);
+        ret = (WORD)(form_do(tree, NCNEW) & 0x7FFF);
+        tree[ret].ob_state = NORMAL;
+        inf_sget(tree, NCNEW, places);
+        form_dial(FMD_FINISH, 0, 0, 0, 0, d.g_x, d.g_y, d.g_w, d.g_h);
+        rsrc_free();                            /* the nested one */
+        objc_draw(G.a_delete, ROOT, MAX_DEPTH, dlg.g_x, dlg.g_y,
+                  dlg.g_w, dlg.g_h);           /* the operation's, again */
+        if (ret == NCSKIP)
+            return CF_SKIP;
+        if (ret != NCCOPY)
+            return CF_STOP;
+        unfmt_name(places, name);
+        if (!name[0])
+            return CF_SKIP;
+        if (same_path(name, tail))
+            return CF_COPY;                     /* the same name: replace */
+        put_str(tail, name);                    /* a new one: ask again if
+                                                 * that is taken too */
+    }
+}
+
 static WORD copy_file(void)
 {
     LONG in, out, got, put;
@@ -391,6 +449,15 @@ static WORD copy_file(void)
  * drives of a floppy machine are not the same drive anyway. */
 static WORD copy_one(WORD op)
 {
+    switch (copy_conflict()) {                  /* the name taken? */
+    case CF_SKIP:
+        return TRUE;                            /* nothing copied, and for a
+                                                 * move nothing taken away */
+    case CF_STOP:
+        return FALSE;
+    default:
+        break;
+    }
     if (!copy_file())
         return FALSE;
     if (op == OP_MOVE && !del_file())
@@ -613,16 +680,21 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
     if (!ok)
         return;
 
-    op_title(op);                               /* ...and ask */
+    op_title(op);                               /* ...and ask -- unless
+                                                 * Set preferences said not
+                                                 * to, when the counts are
+                                                 * shown and it goes ahead */
     inf_numset(tree, CDFILES, G.g_nfiles);
     inf_numset(tree, CDFOLDS, G.g_ndirs);
     fun_start(tree);
-    form_do(tree, 0);
-    ok = inf_what(tree, CDOK);
-    if (!ok) {
-        fun_end();
-        op_title(OP_DELETE);
-        return;
+    if (desk_asks(CNF_COPY)) {
+        form_do(tree, 0);
+        ok = inf_what(tree, CDOK);
+        if (!ok) {
+            fun_end();
+            op_title(OP_DELETE);
+            return;
+        }
     }
 
     desk_busy(TRUE);                            /* ...and do it */
@@ -1094,14 +1166,16 @@ void fun_del(WNODE *pw)
     if (!ok)
         return;
 
-    inf_numset(tree, CDFILES, G.g_nfiles);      /* ...and ask */
+    inf_numset(tree, CDFILES, G.g_nfiles);      /* ...and ask, if asked to */
     inf_numset(tree, CDFOLDS, G.g_ndirs);
     fun_start(tree);
-    form_do(tree, 0);
-    ok = inf_what(tree, CDOK);
-    if (!ok) {
-        fun_end();
-        return;
+    if (desk_asks(CNF_DELETE)) {
+        form_do(tree, 0);
+        ok = inf_what(tree, CDOK);
+        if (!ok) {
+            fun_end();
+            return;
+        }
     }
 
     desk_busy(TRUE);                            /* ...and do it */
