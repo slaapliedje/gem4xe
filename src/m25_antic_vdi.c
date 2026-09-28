@@ -16,6 +16,7 @@
 #include "aes/proc.h"
 #include "vdi/font.h"
 #include "vdi/vdidev.h"    /* which device this program is about */
+#include "sys/farmem.h"
 
 #define STATUS ((volatile unsigned char *) 0x0600)
 
@@ -157,6 +158,43 @@ TASK void main(void)
         ob_draw(tree, 0, MAX_DEPTH);
     }
 
+
+    /* -- vro_cpyfm through memory ------------------------------------
+     * The text, from the screen into a form in bank $00, from there into
+     * the far save form the AES keeps menus in, and back onto the screen
+     * somewhere empty -- at a different bit position every step, so the
+     * row copy's shifts and edge masks both ways are all in the picture
+     * (phase 66: this path took five seconds a drop-down in 0.8.1). */
+    farmem_probe();
+    {
+        static uint8_t near_buf[20 * 16];      /* 160 x 16, one plane */
+        static MFDB scr, mem, far;
+        static const WORD hops[3][8] = {
+            { 19, 78, 118, 87,    3,  2, 102, 11 },
+            {  3,  2, 102, 11,   37, 50, 136, 59 },
+            { 37, 50, 136, 59,  211, 85, 310, 94 },
+        };
+        MFDB *from[3], *to[3];
+        WORD k, i;
+
+        mem.fd_addr = (uint32_t)(uint16_t)near_buf;
+        mem.fd_w = 160; mem.fd_h = 16; mem.fd_wdwidth = 10;
+        mem.fd_nplanes = 1;
+        vdi_save_form(&far);
+        STATUS[3] = far.fd_addr >= 0x10000UL ? 'F' : 'N';
+        from[0] = &scr; to[0] = &mem;
+        from[1] = &mem; to[1] = &far;
+        from[2] = &far; to[2] = &scr;
+        set1(VSWR_MODE, MD_REPLACE);
+        for (k = 0; k < 3; k++) {
+            for (i = 0; i < 8; i++)
+                ptsin[i] = hops[k][i];
+            contrl[7] = (WORD)(uint16_t)from[k]; contrl[8] = 0;
+            contrl[9] = (WORD)(uint16_t)to[k];   contrl[10] = 0;
+            intin[0] = S_ONLY;
+            call(VRO_CPYFM, 4, 1);
+        }
+    }
 
     STATUS[2] = 'K';
     for (;;)
