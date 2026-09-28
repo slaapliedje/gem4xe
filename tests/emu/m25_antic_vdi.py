@@ -97,6 +97,26 @@ def model():
     return v.dev
 
 
+# The milestone's last act (src/m25_antic_vdi.c): the text's rectangle
+# through a form in bank $00 and the far save form and back onto the
+# screen.  Each hop is pixel for pixel, so the three together are one
+# copy from the first rectangle to the last.
+COPY_FROM = (19, 78)
+COPY_TO = (211, 85)
+COPY_W, COPY_H = 100, 10
+
+
+def model_copied(dev):
+    """model()'s pixels, and the round trip through memory on top."""
+    grid = [[dev.bit(x, y) for x in range(AN_W)] for y in range(AN_H)]
+    sx, sy = COPY_FROM
+    dx, dy = COPY_TO
+    for y in range(COPY_H):
+        for x in range(COPY_W):
+            grid[dy + y][dx + x] = dev.bit(sx + x, sy + y)
+    return grid
+
+
 def tree(L):
     """The four objects src/m25_antic_vdi.c builds: an OUTLINED box with
     a 2px border and the colour word $1100, a title, an edit field, and a
@@ -187,7 +207,15 @@ def main(argv):
         im = Image.open(SHOT).convert("RGB")
         px = im.load()
 
-        want = model()
+        check(bytes(b.memdump(STATUS + 3, 1)) == b"F",
+              "the save form was not in far memory, so the far half of the "
+              "round trip through memory was not tested")
+        grid = model_copied(model())
+
+        class want:                         # the model, with the copy
+            @staticmethod
+            def bit(x, y):
+                return grid[y][x]
         seen = {px[SHOT_X0 + x, SHOT_Y0 + y]
                 for y in range(AN_H) for x in range(AN_W)}
         check(len(seen) == 2,

@@ -19,6 +19,7 @@
 #include "vdidev.h"
 #include "../antic/antic.h"
 #include "../sys/farmem.h"
+#include <string.h>
 #include "font.h"      /* vdi_font: WHICH face, which is not this file's choice */
 
 void dev_fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
@@ -369,6 +370,93 @@ static void form_put(const RFORM *f, WORD x, WORD y, uint8_t v)
     }
 }
 
+/* A row's bytes in or out of a form, near or far. */
+static void row_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
+{
+    if (a + n <= 0x10000UL) {
+        uint8_t *p = (uint8_t *)(uint16_t)a;
+        if (put)
+            memcpy(p, buf, n);
+        else
+            memcpy(buf, p, n);
+    } else if (put) {
+        far_put(a, buf, n);
+    } else {
+        far_get(buf, a, n);
+    }
+}
+
+/* Two different forms copy a row of whole bytes at a time: the source
+ * row read once, shifted into the destination's bit positions, and the
+ * first and last destination bytes merged under a mask so not a pixel
+ * outside the rectangle changes.  The pixel path below costs two 32-bit
+ * multiplies and two far accesses a PIXEL: 0.8.1's tester saw a
+ * drop-down take five seconds to appear at 14 MHz (the save under it is
+ * screen to far memory, and the restore the same back), and G4BENCH had
+ * screen to memory and back at 650-750 ms for 64x32.  The same form both
+ * ends keeps the pixel path, which knows which way an overlap runs. */
+#define ROW_MAX 48                      /* a screen row is 41 at most */
+
+static WORD copy_rows(const RFORM *src, WORD sx1, WORD sy1,
+                      const RFORM *dst, WORD dx1, WORD dy1, WORD w, WORD h)
+{
+    /* on the stack: bank $00 has no 50 bytes to keep for this (the
+     * LoRAM budget, tests/host/test_memory.py) */
+    uint8_t row[ROW_MAX + 2], e0, e1;
+    uint16_t n, i, lead;
+    uint8_t lm, rm, off;
+    uint32_t sa, da;
+    WORD y, q, sb;
+
+    if (src->base == dst->base || w <= 0 || h <= 0)
+        return 0;
+    n = (uint16_t)((((UWORD)(dx1 + w - 1)) >> 3) - ((UWORD)dx1 >> 3) + 1);
+    if (n > ROW_MAX)
+        return 0;
+    lm = (uint8_t)(0xFF >> (dx1 & 7));
+    rm = (uint8_t)(0xFF << (7 - ((dx1 + w - 1) & 7)));
+    if (n == 1)
+        lm = rm = (uint8_t)(lm & rm);
+    /* the source pixel under the destination's first whole byte: it may
+     * be left of the source row's start, and those bits are masked off,
+     * so a zero byte stands in for what would be read there */
+    q = (WORD)(sx1 - (dx1 & 7));
+    if (q < 0) {                        /* -7..-1: a byte before byte 0 */
+        lead = 1;
+        sb = 0;
+        off = (uint8_t)(q + 8);
+    } else {
+        lead = 0;
+        sb = (WORD)((UWORD)q >> 3);
+        off = (uint8_t)(q & 7);
+    }
+    sa = src->base + (uint32_t)(UWORD)sy1 * src->stride + (UWORD)sb;
+    da = dst->base + (uint32_t)(UWORD)dy1 * dst->stride + ((UWORD)dx1 >> 3);
+    for (y = 0; y < h; y++) {
+        /* n + 1 source bytes feed n shifted ones; the last may lie past
+         * the row, and is read only for bits the mask throws away --
+         * so it is not read at all past the form's own row */
+        uint16_t want = (uint16_t)(n + 1 - lead);
+        if ((uint16_t)(sb + want) > src->stride)
+            want = (uint16_t)(src->stride - sb);
+        row[0] = 0;
+        row[want + lead] = 0;
+        row_io(sa, row + lead, want, 0);
+        row_io(da, &e0, 1, 0);
+        row_io(da + n - 1, &e1, 1, 0);
+        for (i = 0; i < n; i++)         /* in place: row[i + 1] is still
+                                         * the source when row[i] is made */
+            if (off)
+                row[i] = (uint8_t)((row[i] << off) | (row[i + 1] >> (8 - off)));
+        row[0] = (uint8_t)((e0 & (uint8_t)~lm) | (row[0] & lm));
+        row[n - 1] = (uint8_t)((e1 & (uint8_t)~rm) | (row[n - 1] & rm));
+        row_io(da, row, n, 1);
+        sa += src->stride;
+        da += dst->stride;
+    }
+    return 1;
+}
+
 void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
                    const RFORM *dst, WORD dx1, WORD dy1, WORD w, WORD h)
 {
@@ -382,6 +470,8 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
                    (int16_t)w, (int16_t)h);
         return;
     }
+    if (copy_rows(src, sx1, sy1, dst, dx1, dy1, w, h))
+        return;
     back_y = (WORD)(dy1 > sy1);
     back_x = (WORD)(dx1 > sx1);
     for (y = 0; y < h; y++) {
