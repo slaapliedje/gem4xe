@@ -1353,7 +1353,8 @@ build/m36-boot.atr: $(SP_DEPS) build/general.cfg
 # tools/apt.py writes the table, tests/host/test_apt.py checks it against
 # the rules Altirra's own parser applies, and test-cf boots it.
 build/gem-cf.img: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/hello_app.g4a build/g4bench.g4a \
-                  build/lang.rsc build/gem4xe.cfg build/816.com $(APP_DEPS) $(ACCP_DEPS) tools/mkcf.py tools/apt.py tools/atr.py
+                  build/lang.rsc build/gem4xe.cfg build/816.com $(APP_DEPS) $(ACCP_DEPS) tools/mkcf.py tools/apt.py tools/atr.py \
+                  $(QED_IF_BUILT)
 	@rm -f $@
 	python3 tools/mkcf.py $@
 
@@ -1394,6 +1395,37 @@ build/gem-sdx.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs
 build/gem-apps.atr: build/hello_app.g4a build/g4bench.g4a $(APP_DEPS) $(ACCP_DEPS) tools/mkfloppy.py tools/mkcf.py tools/atr.py
 	@rm -f $@
 	python3 tools/mkfloppy.py --apps $@
+
+# QED, the ST's GEM text editor (0.9, item 5).  It is built in its own
+# tree -- the port, slaapliedje/qed-gem4xe, whose QED sources are QED's
+# and whose terms are QED's -- and taken from there: QED is the port's
+# checkout (its gem4xe/ directory), built with `make` in it.  Its NOTICE
+# travels as QED.TXT with the two licence texts it names (tools/mkcf.py,
+# QED).  The card takes QED when it has been built and does without when
+# it has not, so a tree with no port still builds and tests; the release
+# wants it, and says how to get it.
+QED ?= $(HOME)/dev/qed/gem4xe
+QED_FILES = build/qed/QED.PRG build/qed/QED.RSC build/qed/QED.TXT \
+            build/qed/QEDLGPL.TXT build/qed/QEDAPACH.TXT
+QED_IF_BUILT = $(if $(wildcard $(QED)/build/QED.G4A),$(QED_FILES))
+
+build/qed/QED.PRG: $(wildcard $(QED)/build/QED.G4A)
+	@test -f $(QED)/build/QED.G4A || { echo "$(QED)/build/QED.G4A: not there -- build QED first: make -C $(QED) (the port, slaapliedje/qed-gem4xe), or set QED="; exit 1; }
+	@mkdir -p build/qed
+	cp $(QED)/build/QED.G4A $@
+build/qed/QED.RSC: build/qed/QED.PRG
+	cp $(QED)/build/QED.RSC $@
+build/qed/QED.TXT: build/qed/QED.PRG
+	cp $(QED)/NOTICE $@
+build/qed/QEDAPACH.TXT: build/qed/QED.PRG
+	cp $(QED)/LICENSE-APACHE-2.0 $@
+build/qed/QEDLGPL.TXT: COPYING.LIB
+	@mkdir -p build/qed
+	cp COPYING.LIB $@
+
+build/gem-qed.atr: $(QED_FILES) tools/mkfloppy.py tools/mkcf.py tools/atr.py
+	@rm -f $@
+	python3 tools/mkfloppy.py --qed $@
 
 # The SpartaDOS disk: a fresh SDFS volume booting the 3.2 fixture's DOS,
 # the same files as the DOS 2 disk, the shell's applications and a
@@ -1626,11 +1658,11 @@ build/gem4xe-sdk.tar.gz: $(SDK_FILES)
 # that could go stale cannot).  DIST is the name it takes: the date and
 # the commit unless you say otherwise.
 DIST ?= build/gem4xe-$(shell date +%F)-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
-DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-cf.img \
+DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-qed.atr build/gem-cf.img \
              build/gem4xe-sys.car
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
-             build/prefs.rsc build/g4bench.g4a \
+             build/prefs.rsc build/g4bench.g4a $(QED_FILES) \
              $(APP_DEPS) $(ACCP_DEPS)
 
 dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
@@ -1654,7 +1686,7 @@ dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
 VERSION := $(shell cat VERSION)
 RELEASE  = build/gem4xe-$(VERSION)
 
-release: $(DIST_SYS) build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr \
+release: $(DIST_SYS) $(QED_FILES) build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr build/gem-qed.atr \
          build/gem4xe-sys.car build/gem4xe-sdk.tar.gz \
          tools/mkdist.py tools/dist/README.md tools/mksdk.py
 	@python3 -c 'import sys; sys.exit(b"version $(VERSION)\0" not in open("build/desktop.rsc","rb").read())' \
@@ -1662,9 +1694,10 @@ release: $(DIST_SYS) build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr \
 	python3 tools/mkdist.py $(RELEASE) --public --tar $(RELEASE).tar.gz --zip $(RELEASE).zip
 	cp build/gem-sdx.atr $(RELEASE).atr
 	cp build/gem-apps.atr $(RELEASE)-apps.atr
+	cp build/gem-qed.atr $(RELEASE)-qed.atr
 	cp build/gem4xe-sys.car $(RELEASE).car
 	cd build && sha256sum gem4xe-$(VERSION).tar.gz gem4xe-$(VERSION).zip gem4xe-$(VERSION).atr \
-	    gem4xe-$(VERSION)-apps.atr gem4xe-$(VERSION).car > gem4xe-$(VERSION).sha256
+	    gem4xe-$(VERSION)-apps.atr gem4xe-$(VERSION)-qed.atr gem4xe-$(VERSION).car > gem4xe-$(VERSION).sha256
 
 test-emu: 
 	python3 tests/emu/p0_probe.py

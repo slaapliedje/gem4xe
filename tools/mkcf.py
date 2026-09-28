@@ -85,6 +85,19 @@ APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         ("build/clock.g4a", "APPS>CLOCK.PRG"),
         ("build/clock.rsc", "APPS>CLOCK.RSC"),
         ("build/g4bench.g4a", "APPS>G4BENCH.PRG")]
+# QED, the ST's GEM text editor, ported outside this tree
+# (slaapliedje/qed-gem4xe) and taken from its build by the Makefile.  On
+# the card beside the other programs, and on a floppy of its own: at
+# 360 KB with its resource it does not fit on the applications floppy.
+# Flat in \APPS\ rather than a folder of its own, so the applications'
+# INSTALL.BAT (COPY >APPS>*.*) installs it unchanged.  QED.TXT is its
+# NOTICE -- four parts, four sets of terms, and QED's own says it may
+# not be SOLD -- and the two licence texts that NOTICE names are beside it.
+QED = [("build/qed/QED.PRG", "APPS>QED.PRG"),
+       ("build/qed/QED.RSC", "APPS>QED.RSC"),
+       ("build/qed/QED.TXT", "APPS>QED.TXT"),
+       ("build/qed/QEDLGPL.TXT", "APPS>QEDLGPL.TXT"),
+       ("build/qed/QEDAPACH.TXT", "APPS>QEDAPACH.TXT")]
 DIRS = ["GEM", "APPS"]
 BOOT = ["CD >GEM", "GEM"]
 
@@ -171,8 +184,13 @@ def fat_volume(blocks, out):
 def build(out, mb=16, system_mb=8, adds=(), boot=BOOT, root=None, fat_mb=0,
           cfg=None):
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # QED only when it has been built (the Makefile's QED_IF_BUILT): the
+    # card is a gate's disk too, and a tree without the port still tests
+    qed = QED if all(os.path.isfile(os.path.join(root, p)) for p, _ in QED) else []
+    if not qed:
+        print(f"{out}: no QED (build/qed/ is not built) -- the card goes without it")
     system = [(cfg if cfg and name == "GEM>GEM4XE.CFG" else path, name)
-              for path, name in SYSTEM + APPS]
+              for path, name in SYSTEM + APPS + qed]
     if fat_mb:
         fat_blocks = fat_mb * MB // apt.BLOCK
         apt_lba = FAT_LBA + fat_blocks

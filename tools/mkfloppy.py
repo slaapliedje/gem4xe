@@ -19,6 +19,10 @@ the stub every blank SDFS disk has.
                 of its own.  Not a boot disk: it goes
                 in another drive beside the system, and the desktop opens
                 it there.
+  gem-qed.atr   QED, the text editor, in \\APPS\\ with its notices, and
+                the applications' INSTALL.BAT.  720 KB: QED does not fit
+                a 360 KB floppy, so this one is an image for what reads
+                images, not a disk for a drive.
 
 A floppy is where gem4xe starts, not where it lives (docs/media.md).
 Each disk's INSTALL.BAT copies what that disk holds onto a drive the
@@ -34,7 +38,7 @@ Both stay double-sided, which the system alone no longer needs, so that
 the pair is one geometry: the XF551, every SIO emulator and every FAT
 loader read it, and SDX mounts it.
 
-  python3 tools/mkfloppy.py <out.atr> [--apps] [--add FILE PATH]...
+  python3 tools/mkfloppy.py <out.atr> [--apps | --qed] [--add FILE PATH]...
   python3 tools/mkfloppy.py --batch system|apps <out.bat>
 
 The file tables and the batch files are tools/mkcf.py's own, so the pair
@@ -54,12 +58,12 @@ SECTORS = 1440                                   # DSDD, as an XF551 writes
 
 
 def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
-          dirs=("GEM",), volname="GEM4XE"):
+          dirs=("GEM",), volname="GEM4XE", sectors=SECTORS):
     """The system floppy by default; build_apps() for the other."""
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     table = mkcf.SYSTEM if table is None else table
     install = mkcf.INSTALL_SYSTEM if install is None else install
-    img = ATRImage(SECTOR, SECTORS)
+    img = ATRImage(SECTOR, sectors)
     fs = Sdfs.format(img, volname)
     for d in dirs:
         fs.mkdir(d)
@@ -84,11 +88,26 @@ def build_apps(out, root=None):
                  mkcf.DIRS, "GEMAPPS")
 
 
+# QED is 361 KB with its resource, and a double-sided double-density
+# floppy holds 360: so its image is twice that, 720 KB -- an IMAGE rather
+# than a floppy, for what reads one (an SIO emulator, a FujiNet, a
+# SIDE3's loader, SDX mounting it), not a drive.
+QED_SECTORS = 2 * SECTORS
+
+
+def build_qed(out, root=None):
+    """QED's own image (mkcf.QED), with the applications' INSTALL.BAT."""
+    return build(out, (), None, root, mkcf.QED, mkcf.INSTALL_APPS,
+                 mkcf.DIRS, "GEMQED", QED_SECTORS)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("out")
     ap.add_argument("--apps", action="store_true",
                     help="the applications floppy rather than the system's")
+    ap.add_argument("--qed", action="store_true",
+                    help="QED's floppy (mkcf.QED)")
     ap.add_argument("--batch", choices=("system", "apps"),
                     help="write that disk's INSTALL.BAT to OUT, and nothing else")
     ap.add_argument("--add", nargs=2, action="append", default=[],
@@ -99,7 +118,9 @@ def main(argv=None):
             f.write(mkcf.batch(mkcf.INSTALL_SYSTEM if a.batch == "system"
                                else mkcf.INSTALL_APPS))
         return 0
-    if a.apps:
+    if a.qed:
+        build_qed(a.out)
+    elif a.apps:
         build_apps(a.out)
     else:
         build(a.out, a.add)

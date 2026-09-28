@@ -114,6 +114,15 @@ DISKS = [
      "system.  An accessory is loaded from the system's own `\\GEM\\` "
      "when GEM starts, so the Clock is in the Desk menu once this disk "
      "is installed, not while it sits in a drive."),
+    ("gem-qed.atr", "disks/gem-qed.atr", "sdfs",
+     "**QED, the text editor** from the Atari ST, in `\\APPS\\` with the "
+     "notice of what it is made of (`QED.TXT`) and the two licences that "
+     "names, on a 720 KB image with the applications floppy's "
+     "`INSTALL.BAT`.  An image and not a floppy: QED and its resource are "
+     "361 KB, which no 360 KB disk holds, so this is for what reads an "
+     "image -- an SIO emulator, a FujiNet, a loader, or SDX mounting it "
+     "-- or for `-INSTALL D2:` onto your own drive.  **QED may be given "
+     "away but not sold**: its author's terms, in `QED.TXT`."),
     ("gem-cf.img", "disks/gem-cf.img", None,
      "A 16 MB CF card: an APT partition table and two SDFS partitions, "
      "with the system and the desk accessory in `\\GEM\\` and the "
@@ -144,6 +153,11 @@ SYSTEM = [
     ("calcacc.g4a", "CALC.ACC"),
     ("general.g4a", "GENERAL.CPX"),
     ("general.rsc", "GENERAL.RSC"),
+    ("qed/QED.PRG", "QED.PRG"),
+    ("qed/QED.RSC", "QED.RSC"),
+    ("qed/QED.TXT", "QED.TXT"),
+    ("qed/QEDLGPL.TXT", "QEDLGPL.TXT"),
+    ("qed/QEDAPACH.TXT", "QEDAPACH.TXT"),
 ]
 
 WHAT_IT_IS = {
@@ -194,6 +208,17 @@ WHAT_IT_IS = {
                    "*.CPX it finds there and CONTROL.ACC lists them.  What "
                    "you set is saved and put back at the next boot",
     "GENERAL.RSC": "its dialog",
+    "QED.PRG": "QED, THE TEXT EDITOR from the Atari ST, ported "
+               "(slaapliedje/qed-gem4xe): its own sources, unchanged.  "
+               "Open, edit and save text files.  It may be given away "
+               "but NOT SOLD -- its author's terms, in QED.TXT",
+    "QED.RSC": "its menus and dialogs, 33 KB, which gem4xe loads into far "
+               "memory",
+    "QED.TXT": "what QED.PRG is made of and on what terms: QED's own, the "
+               "gem4xe application kit and cflib (LGPL), and the C "
+               "library's Apache NuttX code (Apache 2.0)",
+    "QEDLGPL.TXT": "the LGPL 2.1, which QED.TXT names",
+    "QEDAPACH.TXT": "the Apache License 2.0, which QED.TXT names",
 }
 
 
@@ -290,7 +315,7 @@ def card_layout():
     """What goes in which directory of the card, read from the tool that
     builds it, so the page's install-by-hand recipe is the card's own."""
     dirs = {}
-    for _path, name in mkcf.SYSTEM + mkcf.APPS:
+    for _path, name in mkcf.SYSTEM + mkcf.APPS + mkcf.QED:
         d, n = name.split(">")
         dirs.setdefault(d, []).append(n)
     return dirs
@@ -309,7 +334,7 @@ TESTER = {
         "name.  At the SpartaDOS X\nprompt (quit GEM to get there), on the "
         "drive the floppy is in,\n`-INSTALL` and the drive to put it on --\n\n"
         "    -INSTALL D2:\n\n"
-        "-- first with `gem-sdx.atr`, then with `gem-apps.atr`.  The "
+        "-- first with `gem-sdx.atr`, then with `gem-apps.atr`, and `gem-qed.atr` for QED.  The "
         "system's gives\nthe drive an `AUTOEXEC.BAT` that starts GEM, "
         "unless it has one already,\nwhich is left alone.  Installing a "
         "newer gem4xe is the same again.\n\n"
@@ -357,7 +382,7 @@ def public_text():
             "on the drive the floppy is in, `-INSTALL` and the drive to put "
             "it on --") +
             "\n\n    -INSTALL D2:\n\n" + fill(
-            f"-- first with `gem-sdx.atr`, then with `gem-apps.atr`.  The "
+            f"-- first with `gem-sdx.atr`, then with `gem-apps.atr`, and `gem-qed.atr` for QED.  The "
             f"system's gives the drive an `AUTOEXEC.BAT` of two lines, "
             f"{boot}, unless it has one already, which is left alone; "
             f"installing a newer gem4xe is the same again.  Or by hand "
