@@ -41,7 +41,8 @@ from aesref import (Obj, NIL, G_BOX, G_STRING, G_BUTTON,   # noqa: E402
 from anticref import AN_W, AN_H              # noqa: E402
 from m4_aes import Layout, GSX_START, OBJC_DRAW, FULL   # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
-                    VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT)
+                    VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
+                    VS_CLIP)
 
 # Where the harness pretends the application pool starts: the model puts
 # the tree's strings there and nothing on the target reads them back, so
@@ -65,6 +66,10 @@ SCRIPT = [
     (VSWR_MODE, (), (MD_REPLACE,)),
     (VST_COLOR, (), (1,)),
     (V_GTEXT, (20, 80), tuple(ord(c) for c in "GEM ON ANTIC")),
+    # the clip through a glyph at each end (phase 67)
+    (VS_CLIP, (213, 140, 244, 160), (1,)),
+    (V_GTEXT, (210, 150), tuple(ord(c) for c in "CLIPPED")),
+    (VS_CLIP, (), (0,)),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]

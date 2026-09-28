@@ -147,6 +147,10 @@ void dev_font_changed(void)
 {
 }
 
+void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
+                     WORD sx, WORD sy, WORD w, WORD h,
+                     WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
+
 void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
 {
     WORD mode = (WORD)(vwk.wrt_mode + 1);
@@ -158,10 +162,28 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
      * pixel path does. */
     if (overlay && mode == MD_REPLACE)
         mode = MD_TRANS;
-    if (vwk.clip &&
-        (cx < vwk.xmn_clip || cy < vwk.ymn_clip ||
-         cx + FONT_W - 1 > vwk.xmx_clip || cy + FONT_H - 1 > vwk.ymx_clip))
-        return;                             /* the cell, or none of it */
+    if (cx < 0 || cy < 0 || cx + FONT_W > AN_W || cy + FONT_H > AN_H ||
+        (vwk.clip &&
+         (cx < vwk.xmn_clip || cy < vwk.ymn_clip ||
+          cx + FONT_W - 1 > vwk.xmx_clip || cy + FONT_H - 1 > vwk.ymx_clip))) {
+        /* A cell the clip or the screen edge cuts: the pixels of it that
+         * are inside, through the raster path that clips by the row and
+         * the column -- what the VBXE device's draw_glyph_cpu does.  It
+         * used to be "the cell, or none of it", and a redraw whose edge
+         * crossed a word left the letters under the edge blank: a 0.8.1
+         * tester's DISK A read "DIS  A" under an F after About closed
+         * (docs/phase67.md). */
+        uint8_t g[FONT_H];
+        WORD row;
+
+        for (row = 0; row < FONT_H; row++)
+            g[row] = *(const uint8_t FAR *)
+                      (vdi_font + (uint32_t)row * FONT_STRIDE + (ch & 0xFF));
+        dev_raster_1bpp((const uint8_t FAR *)g, 1, 0, 0, FONT_W, FONT_H,
+                        cx, cy, mode, vwk.text_color,
+                        mode == MD_ERASE ? vwk.text_color : 0);
+        return;
+    }
     {
         /* A run of one: the same pixels as antic_glyph, which the product
          * no longer links -- the DOS 2 floppy had no room for both

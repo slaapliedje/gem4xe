@@ -82,6 +82,24 @@ TASK void main(void)
         call(V_GTEXT, 1, (WORD)i);
     }
 
+    /* text the clip cuts through a glyph at both ends: the pixels of
+     * each cut glyph inside the clip, as a redraw under a closing dialog
+     * needs (phase 67 -- it was the whole cell or none of it) */
+    {
+        static const char s[] = "CLIPPED";
+        WORD i;
+        ptsin[0] = 213; ptsin[1] = 140; ptsin[2] = 244; ptsin[3] = 160;
+        intin[0] = 1;
+        call(VS_CLIP, 2, 1);
+        for (i = 0; s[i]; i++)
+            intin[i] = (WORD)(unsigned char)s[i];
+        ptsin[0] = 210;
+        ptsin[1] = 150;
+        call(V_GTEXT, 1, (WORD)i);
+        intin[0] = 0;
+        call(VS_CLIP, 0, 1);
+    }
+
     /* -- and the AES on top of it ------------------------------------
      * gsx_start is where the AES learns what device it is on: it asks
      * the VDI for the extent, the depth and the system font's cell, and
