@@ -145,3 +145,12 @@ class KitLicence(unittest.TestCase):
             head = f.read(200)
         self.assertIn("GNU LESSER GENERAL PUBLIC LICENSE", head)
         self.assertIn("Version 2.1", head)
+
+    def test_the_examples_are_0bsd(self):
+        examples = [src for dst, src in self.manifest()
+                    if dst.startswith("example/")]
+        self.assertEqual(len(examples), 3, "the kit's examples were not found")
+        for src in examples:
+            with open(os.path.join(ROOT, src), encoding="latin-1") as f:
+                self.assertIn("SPDX-License-Identifier: 0BSD", f.readline(),
+                              f"{src} is not tagged 0BSD")

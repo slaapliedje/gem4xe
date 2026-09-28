@@ -495,9 +495,11 @@ What the LGPL asks of a program you give out (its section 6), in short:
   done this;
 - change the library itself and the changes stay LGPL.
 
-The rest of the kit -- `tools/`, `doc/` and `example/` -- is GPLv2 or
-later like gem4xe itself (`COPYING`).  The tools are not linked into
-anything you build, so their licence stays with them.
+The examples in `example/` are **0BSD** -- no conditions at all, not
+even a notice -- because they are there to be copied: start your
+program from one and it is yours.  The rest of the kit, `tools/` and
+`doc/`, is GPLv2 or later like gem4xe itself (`COPYING`); the tools are
+not linked into anything you build, so their licence stays with them.
 
 gem4xe itself -- `GEM.COM`, the desktop, the accessories -- is GPLv2 or
 later.  The library was written for gem4xe rather than taken from

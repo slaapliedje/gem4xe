@@ -33,8 +33,10 @@ them, and the provenance each mentions is interface, not text --
   * `clib.c` names EmuTOS only as the reason the tree is GPL; its
     functions were written to the ISO C standard's wording.
 
-The kit's `tools/`, `doc/` and `example/` stay GPLv2 or later
-(`COPYING`); they are not linked into what a program builds.  The
+The kit's three examples (`tools/sdk/hello.c`, `acc.c`, `cpx.c`) are
+**0BSD**, since they exist to be copied into somebody's own program.
+Its `tools/` and `doc/` stay GPLv2 or later (`COPYING`); they are not
+linked into what a program builds.  The
 engine links `clib.c` and `portab.h` too, and an LGPL file inside a GPL
 program is simply GPL there -- nothing about `GEM.COM` changes.
 
