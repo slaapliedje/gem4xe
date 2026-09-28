@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gem.h -- what a gem4xe application sees of GEM.
  *
  * An application is a separate program: it is linked against nothing of

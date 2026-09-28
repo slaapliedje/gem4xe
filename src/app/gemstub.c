@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gemstub.c -- the routines Calypsi's C library asks the BOARD to provide,
  * answered over GEMDOS.
  *

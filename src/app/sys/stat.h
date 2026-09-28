@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* sys/stat.h -- what a port asks a file the POSIX way: its kind, size
  * and dates.  Calypsi's C library has no <sys/stat.h> (and no <sys/> at
  * all), so this one is the kit's, over GEMDOS: stat() is lib/gemstat.c,

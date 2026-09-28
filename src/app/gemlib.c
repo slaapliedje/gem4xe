@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gemlib.c -- an application's GEM bindings, over the three COP entries.
  *
  * The shape is the classic GEM library's: one set of arrays, a parameter

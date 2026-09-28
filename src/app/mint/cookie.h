@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* mint/cookie.h -- the ST's cookie jar, which this machine has not got.
  *
  * A TOS program asks the jar what the machine is (_MCH), what the CPU

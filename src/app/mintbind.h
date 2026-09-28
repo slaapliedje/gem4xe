@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* mintbind.h -- mintlib's MiNT system-call bindings.
  *
  * gem4xe is not MiNT and does not pretend to be: there are no processes,

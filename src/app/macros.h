@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* macros.h -- mintlib's, as far as an ST source reaches into it: min,
  * max, and PATH_MAX, which mintlib's <limits.h> has and Calypsi's does
  * not.  The value is the system's own (gem.h, GEM_PATH_MAX). */

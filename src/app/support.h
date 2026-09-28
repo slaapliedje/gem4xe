@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* support.h -- mintlib's grab-bag of non-ISO string functions, which ST
  * sources reach for by reflex and no ISO C library has.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* time.h -- the kit's clock, with a THIRTY-TWO BIT time_t.
  *
  * WHY THIS FILE EXISTS, which is the only interesting thing about it.

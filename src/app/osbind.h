@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* osbind.h -- the TOS system-call bindings, under the name an ST source
  * includes.  On the ST this declares the BIOS, XBIOS and GEMDOS traps;
  * here the system serves GEMDOS and a handful of the others, and gem.h

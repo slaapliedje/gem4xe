@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* cpxmain.c -- the glue that makes a CPX module a program.
  *
  * A module author writes cpx_init and nothing else (src/app/cpx.h).

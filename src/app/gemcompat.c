@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gemcompat.c -- the names an Atari ST source expects and no ISO C
  * library has: the non-ISO string functions (<support.h>) and the
  * directory walk (<dirent.h>).

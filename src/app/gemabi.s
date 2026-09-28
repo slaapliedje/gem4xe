@@ -1,3 +1,4 @@
+;;; SPDX-License-Identifier: LGPL-2.1-or-later
 ;;; ---------------------------------------------------------------------------
 ;;; gemabi.s -- an application's three entry points into gem4xe.
 ;;;

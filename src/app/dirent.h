@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* dirent.h -- opendir/readdir/closedir, the names an ST program reaches
  * for, over one Fsfirst and a run of Fsnext.
  *

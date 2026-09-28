@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* portab.h -- the compiler's dialect, in one place.
  *
  * gem4xe is C, but a 65816 C compiler has to say things ISO C cannot:

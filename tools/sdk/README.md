@@ -476,7 +476,30 @@ loader is the donor's, and the file's format is the ST's.
 
 ## Licence
 
-GPLv2 or later, like the rest of gem4xe -- see `COPYING`.  The library
-here is part of gem4xe, so a program that links it inherits that;
-`gem.h` and the bindings are the interface a GEM program has always
-had, and the terms are the ones EmuTOS's are under.
+**What your program links is LGPL-2.1-or-later** -- everything in
+`include/` and `lib/`, each file tagged `SPDX-License-Identifier:
+LGPL-2.1-or-later`; the text is `COPYING.LIB`.  So a program built with
+this kit is yours to license as you like -- freeware, shareware, closed,
+or a port of an ST program under its own old terms -- and gem4xe's GPL
+does not follow it into your program.
+
+What the LGPL asks of a program you give out (its section 6), in short:
+
+- say that it uses the gem4xe application library, under the LGPL, and
+  include `COPYING.LIB`;
+- let the person who has it relink it against a changed library.  A
+  `.G4A` is linked all in one piece, so that means giving them your
+  program's source, or its object files and the link line -- `make`
+  here leaves the objects in `build/`, and this `Makefile` is the link
+  line.  An open-source program has already
+  done this;
+- change the library itself and the changes stay LGPL.
+
+The rest of the kit -- `tools/`, `doc/` and `example/` -- is GPLv2 or
+later like gem4xe itself (`COPYING`).  The tools are not linked into
+anything you build, so their licence stays with them.
+
+gem4xe itself -- `GEM.COM`, the desktop, the accessories -- is GPLv2 or
+later.  The library was written for gem4xe rather than taken from
+EmuTOS, which is why it can carry the lesser licence; `docs/licence.md`
+in the gem4xe tree has the whole position.

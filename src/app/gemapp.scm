@@ -1,3 +1,4 @@
+;;; SPDX-License-Identifier: LGPL-2.1-or-later
 ;;; gemapp.scm -- linker rules for a gem4xe application.
 ;;;
 ;;; An application is linked at PLACEHOLDER addresses and relocated by the

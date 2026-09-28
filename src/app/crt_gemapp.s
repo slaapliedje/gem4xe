@@ -1,3 +1,4 @@
+;;; SPDX-License-Identifier: LGPL-2.1-or-later
 ;;; ---------------------------------------------------------------------------
 ;;; crt_gemapp.s -- the start-up of a gem4xe application.
 ;;;

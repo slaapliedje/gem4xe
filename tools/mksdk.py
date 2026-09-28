@@ -28,7 +28,8 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 # (where it goes in the kit, where it comes from in the tree)
 MANIFEST = [
     ("README.md",           "tools/sdk/README.md"),
-    ("COPYING",             "COPYING"),
+    ("COPYING",             "COPYING"),     # the tools, doc and examples
+    ("COPYING.LIB",         "COPYING.LIB"), # include/ and lib/: what links
     ("Makefile",            "tools/sdk/Makefile"),
     ("include/gem.h",       "src/app/gem.h"),
     ("include/portab.h",    "src/portab.h"),

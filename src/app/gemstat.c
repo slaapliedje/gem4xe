@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gemstat.c -- stat() over GEMDOS.  See include/sys/stat.h.
  *
  * One Fsfirst answers everything a DTA holds: the attribute, the size and

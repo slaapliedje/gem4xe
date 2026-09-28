@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gemx.h -- gemlib's "gem.h and the AES 4 / MagiC extensions".  There is
  * nothing beyond gem.h to add here: gem4xe serves one AES, and the calls
  * an extension would add are either in gem.h already or not served. */

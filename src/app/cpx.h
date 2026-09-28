@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* cpx.h -- the control panel extension contract.
  *
  * A CPX is a module the control panel hosts: it brings its own dialog and

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* gemtime.c -- the kit's clock over GEMDOS.  See include/time.h, which
  * says why the kit has a <time.h> of its own at all (B20: a 64-bit
  * time_t puts every date one division away from executing data).

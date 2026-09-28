@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* clib.c -- the C library functions gem4xe uses, so that it uses nobody
  * else's -- plus two it does NOT use itself, memcmp and memchr, which are
  * here for the same reason on an application's behalf; and malloc and

@@ -18,6 +18,13 @@ Two claims:
     and the set below is what the link needs TODAY.  A new name in it is
     something to look at, not a reason to edit this list without reading
     why.
+
+And one about the application kit (tools/mksdk.py):
+
+  * **everything a program links from the kit is LGPL-2.1-or-later.**
+    Each file the kit ships in include/ or lib/ says so on its first
+    line, and COPYING.LIB travels with them -- so a GPL-only file cannot
+    be added to what an application links without this failing.
 """
 import glob
 import os
@@ -107,3 +114,34 @@ class Licence(unittest.TestCase):
                      "strcmp", "strncmp", "strchr"):
             self.assertRegex(src, r"\b" + name + r"\s*\(",
                              f"clib.c no longer defines {name}")
+
+
+LGPL_TAG = "SPDX-License-Identifier: LGPL-2.1-or-later"
+
+
+class KitLicence(unittest.TestCase):
+    """Needs no build: it reads the kit's manifest and the tree."""
+
+    def manifest(self):
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import mksdk
+        return mksdk.MANIFEST
+
+    def test_what_a_program_links_is_lgpl(self):
+        linked = [(dst, src) for dst, src in self.manifest()
+                  if dst.startswith(("include/", "lib/"))]
+        self.assertGreater(len(linked), 20, "the kit's manifest was not read")
+        for dst, src in linked:
+            with open(os.path.join(ROOT, src), encoding="latin-1") as f:
+                first = f.readline()
+            self.assertIn(LGPL_TAG, first,
+                          f"kit {dst} ({src}) is not tagged LGPL-2.1-or-later "
+                          f"on its first line")
+
+    def test_copying_lib_travels_with_it(self):
+        self.assertIn(("COPYING.LIB", "COPYING.LIB"), self.manifest())
+        with open(os.path.join(ROOT, "COPYING.LIB")) as f:
+            head = f.read(200)
+        self.assertIn("GNU LESSER GENERAL PUBLIC LICENSE", head)
+        self.assertIn("Version 2.1", head)

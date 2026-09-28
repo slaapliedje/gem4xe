@@ -6,6 +6,38 @@ licence is inherited rather than chosen.  What follows is the part that
 is not obvious, written down because it was got wrong once in this
 tree's own README and because it decides what may be linked.
 
+**The application kit is the exception: LGPL-2.1-or-later** (`COPYING.LIB`,
+since 2026-09-28).  Every file the kit hands a program to compile or
+link -- its `include/` and `lib/`, which is `src/app/`, `src/portab.h`
+and `src/sys/clib.c` in this tree -- carries `SPDX-License-Identifier:
+LGPL-2.1-or-later` on its first line.  A program built with the kit is
+therefore its author's to license: gem4xe's GPL does not follow the
+bindings into it.  The first program that needed that is QED, whose
+1994 terms forbid distribution for a fee -- a restriction the GPL does
+not allow on a combined work and the LGPL does (section 6 wants only
+that the terms permit modification, and that the person can relink).
+
+The kit could change licence because it is **this project's own code**.
+Every file was checked on 2026-09-28: git names one author for all of
+them, and the provenance each mentions is interface, not text --
+
+  * `cpx.h` reads its contract "out of COPS" (GPL-2).  Compared line by
+    line against COPS's `cpx.h`, `cpx_bind.h`, `callback.h` and `cops.h`,
+    seven lines agree, and all seven are Atari's flag and error constants
+    (`CPX_SETONLY 0x0001`, `XAL_FILE_ERR 2` ...): names and values a CPX
+    has to use, not expression.
+  * The mintlib mentions (`mintbind.h`, `support.h`, `macros.h`,
+    `sys/stat.h`, `mint/cookie.h` ...) name the header or the field a
+    ported source expects.  mintlib's own terms would allow the LGPL
+    in any case.
+  * `clib.c` names EmuTOS only as the reason the tree is GPL; its
+    functions were written to the ISO C standard's wording.
+
+The kit's `tools/`, `doc/` and `example/` stay GPLv2 or later
+(`COPYING`); they are not linked into what a program builds.  The
+engine links `clib.c` and `portab.h` too, and an LGPL file inside a GPL
+program is simply GPL there -- nothing about `GEM.COM` changes.
+
 ## The donor's two wordings, and GPLv2 section 9
 
 EmuTOS does not say the same thing in both halves:
@@ -179,6 +211,10 @@ Apache-2.0 unit comes back, or if the vendor-runtime set grows beyond
 what is listed above.  It is the same discipline as
 `tests/host/test_memory.py`: a number the machine checks rather than a
 paragraph somebody remembers.
+
+It also reads the kit's manifest (`tools/mksdk.py`) and fails if a file
+the kit ships in `include/` or `lib/` lacks the LGPL tag, so a GPL-only
+file cannot slip into what an application links.
 
     python3 -m unittest tests.host.test_licence
 
