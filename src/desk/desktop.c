@@ -104,8 +104,17 @@ static void desk_build(void)
     map = (UWORD)Dsetdrv(Dgetdrv());
     gx = gy = 0;
     for (drive = 0, n = 0; drive < MAX_DRIVES; drive++) {
-        if (!(map & (1U << drive)))
+        const char *own = drv_own_set() ? drv_icon_label(drive) : 0;
+
+        if (drv_own_set() ? !own : !(map & (1U << drive)))
             continue;
+        if (own) {                              /* Install icon's (phase 74) */
+            desk_icon((WORD)(n % xcnt), (WORD)(n / xcnt),
+                      drive > 1 ? IB_HARD : IB_FLOPPY, own, (WORD)('A' + drive));
+            gy = (WORD)(n / xcnt);
+            n++;
+            continue;
+        }
         gx = (WORD)(n % xcnt);
         gy = (WORD)(n / xcnt);
         {
@@ -127,6 +136,14 @@ static void desk_build(void)
     if (n && (WORD)((n - 1) / xcnt) >= gy)
         gx = (WORD)(xcnt - 1);
     desk_icon(gx, gy, IB_TRASH, trash, 0);
+}
+
+/* The desk again, from nothing: after Install icon, or an INF whose "#M"
+ * lines chose the drive icons.  The windows are the AES's and stay. */
+void desk_rebuild(void)
+{
+    desk_build();
+    do_wredraw(DESKWH, &G.g_desk);
 }
 
 /* The selected item under root, or 0. */
@@ -423,15 +440,25 @@ static WORD do_optnmenu(WORD item)
         if (!inf_save())
             fun_alert(1, STSVINF);
         break;
-    case READITEM:
+    case READITEM: {
+        WORD own = drv_own_set();
+
         if (!inf_read())
             fun_alert(1, STRDINF);
+        else if (own || drv_own_set())
+            desk_rebuild();                     /* "#M" before or after it:
+                                                 * a desk nobody changed is
+                                                 * left exactly as it was */
         break;
+    }
     case PREFITEM:
         do_prefs();
         break;
     case IAPPITEM:
         fun_install(win_ontop());
+        break;
+    case IICNITEM:
+        fun_icon(sel_item(DROOT));    /* a drive icon, or 0 */
         break;
     default:
         break;
@@ -778,6 +805,8 @@ int main(void)
         return 1;
     }
     app_start();
+    if (drv_own_set())
+        desk_build();                           /* the INF chose the drives */
     wind_newdesk(G.g_screen, DROOT);
     wind_update(BEG_UPDATE);
     do_wredraw(DESKWH, &G.g_desk);

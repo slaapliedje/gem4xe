@@ -1307,6 +1307,64 @@ WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
     return run_prog(app_path, dir, args, pw, curr);
 }
 
+/* -- the desk's drive icons ---------------------------------------------- */
+
+/* Options -> Install icon (phase 74): the drive icons on the desk, as a
+ * person has chosen them -- which drives, and what each is called.  Until
+ * somebody installs or removes one the desk shows the DOS's drive map, as
+ * it always has; after, it shows this set, and DESKTOP.INF keeps it as
+ * "#M" lines, EmuTOS's form ("#M 00 00 01 FF E DISK D5:@ @" -- the letter,
+ * because a path is GEMDOS's).  An INF with no "#M" is the map again.
+ *
+ * Not in G, for the same reason as the installed applications below: a
+ * desk nobody has changed is exactly the desk it was. */
+#define N_DRVICONS 8                    /* D1: to D8: */
+static char drv_names[N_DRVICONS][LABEL_LEN];   /* "" for no icon */
+static WORD drv_own;                    /* the set is somebody's */
+
+WORD drv_own_set(void)
+{
+    return drv_own;
+}
+
+/* The label of drive (0 for D1:) in the chosen set, or 0 for none. */
+const char *drv_icon_label(WORD drive)
+{
+    if (drive < 0 || drive >= N_DRVICONS || !drv_names[drive][0])
+        return 0;
+    return drv_names[drive];
+}
+
+/* Take the set over from the desk as it is, the first time somebody
+ * changes it: the map's icons, each with the label it shows. */
+void drv_icon_seed(WORD drive, const char *label)
+{
+    WORD i;
+
+    if (drive < 0 || drive >= N_DRVICONS)
+        return;
+    for (i = 0; label[i] && i < LABEL_LEN - 1; i++)
+        drv_names[drive][i] = label[i];
+    drv_names[drive][i] = 0;
+}
+
+void drv_icon_own(void)
+{
+    WORD i;
+
+    if (drv_own)
+        return;
+    for (i = 0; i < N_DRVICONS; i++)
+        drv_names[i][0] = 0;
+    drv_own = TRUE;
+}
+
+void drv_icon_remove(WORD drive)
+{
+    if (drive >= 0 && drive < N_DRVICONS)
+        drv_names[drive][0] = 0;
+}
+
 /* -- installed applications -------------------------------------------- */
 
 /* Options -> Install application: a program, and the TYPE of document it
@@ -1729,6 +1787,21 @@ static WORD inf_write(void)
             p = put_far(p, desk_apps[i].path);
             p = put_far(p, "@\r\n");
         }
+    /* The desk's own drive icons, when somebody has chosen them: one
+     * "#M" a drive, EmuTOS's columns -- place (unused here, the desk
+     * lays them out), the icon, FF, the drive's letter, the label. */
+    if (drv_own)
+        for (i = 0; i < N_DRVICONS; i++)
+            if (drv_names[i][0]) {
+                char c[2];
+                p = put_far(p, i > 1 ? "#M 00 00 00 FF " : "#M 00 00 01 FF ");
+                c[0] = (char)('A' + i);
+                c[1] = 0;
+                p = put_far(p, c);
+                p = put_far(p, " ");
+                p = put_far(p, drv_names[i]);
+                p = put_far(p, "@ @\r\n");
+            }
     for (i = 0; i < NUM_WNODES; i++, pws++) {
         p = put_far(p, "#W");
         p = put_hex2(p, pws->hsl_save);
@@ -1814,6 +1887,8 @@ static void inf_parse(const char FAR *pcurr)
     WSAVE FAR *pws;
     WORD wincnt = 0, rev, i;
 
+    drv_own = FALSE;                    /* the map, unless "#M" says */
+
     while (*pcurr) {
         if (*pcurr++ != '#')
             continue;
@@ -1848,6 +1923,29 @@ static void inf_parse(const char FAR *pcurr)
             }
             desk_patcol_apply();
             break;
+        case 'M': {                     /* a drive icon (EmuTOS's form) */
+            WORD k, drive;
+            char label[LABEL_LEN];
+
+            pcurr++;
+            for (k = 0; k < 4; k++)             /* x, y, the icon, FF */
+                (void)scan_2(&pcurr);
+            while (*pcurr == ' ')
+                pcurr++;
+            drive = (WORD)((*pcurr & 0x5F) - 'A');
+            if (*pcurr)
+                pcurr++;
+            while (*pcurr == ' ')
+                pcurr++;
+            for (i = 0; *pcurr && *pcurr != '@' && i < LABEL_LEN - 1; i++)
+                label[i] = *pcurr++;
+            label[i] = 0;
+            if (drive >= 0 && drive < N_DRVICONS) {
+                drv_icon_own();
+                drv_icon_seed(drive, label[0] ? label : " ");
+            }
+            break;
+        }
         case 'G': {                     /* an installed application */
             char ext[APP_EXTLEN], path[LEN_ZPATH];
 

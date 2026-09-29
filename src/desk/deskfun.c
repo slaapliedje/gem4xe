@@ -1214,3 +1214,74 @@ void fun_del(WNODE *pw)
     fun_end();
     win_rebld(pw);
 }
+
+/* Options -> Install icon (phase 74): a drive icon on the desk, its drive
+ * and its label.  With a drive icon selected the dialog is that icon's,
+ * and Remove takes it away; with none it is a new one.  The drive is
+ * typed as its digit -- D5: is 5 -- and a label left empty is "DISK D5:".
+ *
+ * The first change takes the set over from the desk as it stands -- the
+ * DOS's map, with the labels it shows -- so installing D5: adds to D1:
+ * and D2: rather than replacing them (src/desk/deskwin.c drv_icon_own).
+ * The desk is built again after; Save desktop keeps the set. */
+void fun_icon(WORD sel)
+{
+    OBJECT *tree;
+    char digit[4], label[LABEL_LEN];
+    WORD was, ret, drive, i;
+
+    was = sel ? icon_letter(sel) : 0;
+    if (!was)
+        sel = 0;                                /* the trash is not a drive */
+    if (!rsrc_load("PREFS.RSC")) {
+        fun_alert(1, STNOPREF);
+        return;
+    }
+    rsrc_gaddr(R_TREE, ADICNBOX, (void **)&tree);
+    digit[0] = was ? (char)('1' + was - 'A') : 0;
+    digit[1] = 0;
+    inf_sset(tree, ICDRIVE, digit);
+    inf_sset(tree, ICLABEL, sel ? obj_info(sel)->i.label : "");
+    tree[ICREMV].ob_state = (UWORD)(sel ? NORMAL : DISABLED);
+    fun_start(tree);
+    ret = (WORD)(form_do(tree, ICDRIVE) & 0x7FFF);
+    fun_end();
+    tree[ret].ob_state = NORMAL;
+    inf_sget(tree, ICDRIVE, digit);
+    inf_sget(tree, ICLABEL, label);
+    rsrc_free();                                /* the nested one */
+    if (ret != ICINST && ret != ICREMV)
+        return;
+
+    if (!drv_own_set()) {                       /* the desk as it stands */
+        drv_icon_own();
+        for (i = 0; i < 8; i++) {
+            WORD o = obj_get_obid((WORD)('A' + i));
+            if (o)
+                drv_icon_seed(i, obj_info(o)->i.label);
+        }
+    }
+    if (ret == ICREMV) {
+        drv_icon_remove((WORD)(was - 'A'));
+    } else {
+        drive = (WORD)(digit[0] - '1');
+        if (drive < 0 || drive > 7)
+            return;                             /* no drive, nothing done */
+        for (i = 0; label[i]; i++)
+            ;
+        while (i > 0 && label[i - 1] == ' ')
+            label[--i] = 0;
+        if (!label[0]) {                        /* "DISK D5:" */
+            const char *s = "DISK D";
+            for (i = 0; s[i]; i++)
+                label[i] = s[i];
+            label[i++] = (char)('1' + drive);
+            label[i++] = ':';
+            label[i] = 0;
+        }
+        if (was && was - 'A' != drive)
+            drv_icon_remove((WORD)(was - 'A')); /* the icon moved drive */
+        drv_icon_seed(drive, label);
+    }
+    desk_rebuild();
+}

@@ -297,6 +297,15 @@ NOBS_NC = 7
 NC_W, NC_H = 34, 9
 NC_OLD = "Name there:   ________.___"
 NC_NEW = "Copy's name:  ________.___"
+# PREFS.RSC's seventh tree: Install icon (phase 74) -- a drive icon on the
+# desk, added, changed or removed: the drive as its digit (D1: to D8:),
+# and the label under the icon.
+ADICNBOX = 6
+ICBOX, ICTITLE, ICDRIVE, ICLABEL, ICINST, ICREMV, ICCNCL = range(7)
+NOBS_IC = 7
+IC_W, IC_H = 32, 9
+IC_DRV = "Drive:  D_:"
+IC_LBL = "Label:  ____________"
 # ...and PREFS.RSC's free strings: what the dialog says when it cannot
 STAPPSEL, STAPPFUL = 0, 1
 APP_ALERTS = [
@@ -313,6 +322,8 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
+    ("ADICNBOX", ADICNBOX), ("ICDRIVE", ICDRIVE), ("ICLABEL", ICLABEL),
+    ("ICINST", ICINST), ("ICREMV", ICREMV), ("ICCNCL", ICCNCL),
     ("ADCNFBOX", ADCNFBOX), ("NCOLD", NCOLD), ("NCNEW", NCNEW),
     ("NCCOPY", NCCOPY), ("NCSKIP", NCSKIP), ("NCSTOP", NCSTOP),
     ("ADMASKBOX", ADMASKBOX), ("MSMASK", MSMASK), ("MSOK", MSOK),
@@ -367,7 +378,7 @@ INDICES = [
 
 # The items the desktop does not do yet: disabled at start (menu_ienable),
 # not in the file, so the file stays RCS-shaped.
-NOT_YET = (FORMITEM, IICNITEM)
+NOT_YET = (FORMITEM,)
 
 # The menu, box by box: (title, box x, box width, items); an item is a
 # string, "-" for a separator, and (string, state) for a state.
@@ -803,6 +814,30 @@ def conflict_tree(r):
     return r.tree(objs)
 
 
+def icon_tree(r):
+    """ADICNBOX: a drive icon on the desk -- its drive and its label."""
+    objs = [
+        (NIL, ICTITLE, ICCNCL, G_BOX, NONE, OUTLINED, 0x00021100,
+         ch(0), ch(0), ch(IC_W), ch(IC_H)),
+        (ICDRIVE, NIL, NIL, G_STRING, NONE, NORMAL, r.string("INSTALL ICON"),
+         ch((IC_W - 12) // 2), ch(1), ch(12), ch(1)),
+        (ICLABEL, NIL, NIL, G_FTEXT, EDITABLE, NORMAL,
+         r.ted(" ", IC_DRV, "9"),
+         ch(3), ch(3), ch(len(IC_DRV)), ch(1)),
+        (ICINST, NIL, NIL, G_FTEXT, EDITABLE, NORMAL,
+         r.ted(" " * IC_LBL.count("_"), IC_LBL, "X"),
+         ch(3), ch(4), ch(len(IC_LBL)), ch(1)),
+        (ICREMV, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
+         r.string("Install"), ch(2), ch(7), ch(8), ch(1)),
+        (ICCNCL, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
+         r.string("Remove"), ch(12), ch(7), ch(8), ch(1)),
+        (ROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
+         r.string("Cancel"), ch(22), ch(7), ch(8), ch(1)),
+    ]
+    assert len(objs) == NOBS_IC, (len(objs), NOBS_IC)
+    return r.tree(objs)
+
+
 def build_prefs():
     """PREFS.RSC: the chooser, the DOS command dialog and Install
     application, loaded only while one of them is open."""
@@ -813,6 +848,7 @@ def build_prefs():
     assert drive_tree(r) == ADDRVBOX
     assert mask_tree(r) == ADMASKBOX
     assert conflict_tree(r) == ADCNFBOX
+    assert icon_tree(r) == ADICNBOX
     for i, name, text in APP_ALERTS:
         assert r.free_string(text) == i, (name, i)
     return r
@@ -881,8 +917,8 @@ def main(argv):
     pref = build_prefs().file()
     with open(argv[3], "wb") as f:
         f.write(pref)
-    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} + {NOBS_MASK} + {NOBS_NC} objects in "
-          f"six trees -- loaded only while a dialog is open")
+    print(f"{argv[3]}: {len(pref)} bytes, {NOBS_PREF} + {NOBS_CMD} + {NOBS_APP} + {NOBS_DRV} + {NOBS_MASK} + {NOBS_NC} + {NOBS_IC} objects in "
+          f"seven trees -- loaded only while a dialog is open")
     return 0
 
 
