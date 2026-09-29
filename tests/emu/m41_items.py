@@ -18,6 +18,8 @@ from a8test.launcher import launch            # noqa: E402
 import atr                                    # noqa: E402
 import tempfile                               # noqa: E402
 import shutil                                 # noqa: E402
+from sdx816 import find_text                  # noqa: E402
+from m17_desktop import header, DESKTOP, DESK_SYM   # noqa: E402
 import deskref                                # noqa: E402
 import symfile                                # noqa: E402
 import shots                                  # noqa: E402
@@ -108,6 +110,36 @@ def listing_of(t, folder):
     return got
 
 
+# A document written the way an ST or a PC writes one: CR LF endings, and
+# a tab.  The desktop's viewer used to end a line only at the Atari's EOL
+# ($9B), so this was ONE line cut at eighty columns (phase 70).
+DOC_TEXT = b"FIRST LINE\r\nSECOND LINE\r\n\tTABBED\r\n"
+DOC_LINES = 3
+
+
+def find_below(shot, text):
+    """The LAST place `text` stands on the screen: the alert's message says
+    "Show it, print it, or cancel?" above its Show button, and find_text
+    answers the first from the top.  Each hit is painted out and the
+    search run again, until there is none."""
+    from PIL import Image
+    from vbxeref import SHOT_X0, SHOT_Y0, SCR_W
+    im = Image.open(shot).convert("RGB")
+    last = None
+    tmp = shot + ".find.png"
+    while True:
+        im.save(tmp)
+        at = find_text(tmp, text)
+        if at is None:
+            break
+        last = at
+        for y in range(SHOT_Y0, SHOT_Y0 + at[1] + 8):
+            for x in range(SHOT_X0, SHOT_X0 + SCR_W):
+                im.putpixel((x, y), (255, 255, 255))
+    os.remove(tmp)
+    return last
+
+
 def quiet_disk():
     """A copy of the product disk with a DESKTOP.INF that asks nothing:
     the #E line's second byte is what is NOT confirmed (phase 65), and
@@ -121,6 +153,7 @@ def quiet_disk():
         text += (f"#W 00 00 {deskref.WIN_XCELL:02X} {y:02X} "
                  f"{deskref.WIN_WCELL:02X} {deskref.WIN_HCELL:02X} 00 @\r\n")
     fs.add_file("DESKTOP.INF", text.encode("latin-1"))
+    fs.add_file("DOC.TXT", DOC_TEXT)
     img.save(tmp)
     return tmp
 
@@ -228,6 +261,30 @@ def main():
         b.key("D", ctrl=True)
         t.settle()
         check("STARTUP.BAT" not in listing(t), "...and a delete goes through unasked")
+
+        # -- a document off an ST or a PC, shown (phase 70) -------------
+        t.choose(FILEMENU, CLOSITEM)            # up from GEM to the root
+        set_mask(t, ["ASTERISK", "PERIOD", "T", "X", "T"])
+        t.dclick(t.item("DOC.TXT"))
+        b.frames(40)
+        t.settle()
+        shot = os.path.join(HERE, "..", "..", "build", "shots", "tour-m41-docalert.png")
+        b.screenshot(shot)
+        at = find_below(shot, "Show")           # the button, not the message
+        check(at is not None, "a document asks Show / Print / Cancel")
+        if at:
+            t.click((at[0] + 16, at[1] + 4))
+            b.frames(60)
+            t.settle()
+            link_near, _, _ = header(DESKTOP)
+            dsyms = symfile.load(DESK_SYM)
+            near = b.peek16(syms["app_near"])
+            lines = b.peek16(near + dsyms["cmd_lines"] - link_near)
+            shot2 = os.path.join(HERE, "..", "..", "build", "shots", "tour-m41-docshow.png")
+            b.screenshot(shot2)
+            check(lines == DOC_LINES and find_text(shot2, "SECOND LINE") is not None,
+                  f"CR LF ends a line: the viewer counts {lines} line(s), "
+                  f"wanted {DOC_LINES}, and draws SECOND LINE as its own row")
     finally:
         emu.stop()
         shutil.rmtree(os.path.dirname(quiet), ignore_errors=True)

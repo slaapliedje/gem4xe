@@ -71,12 +71,30 @@ static const uint8_t FAR *cmd_textp(void)
     return (const uint8_t FAR *)cmd_buf + CMD_TEXT;
 }
 
+/* THE LINE ENDINGS A FILE MAY CARRY, and how many bytes the one at off
+ * takes: the Atari's EOL, an ST's or a PC's CR LF (one ending, not two),
+ * a bare LF, a bare CR -- or 0 when off is not one.  Only the EOL used to
+ * count, which was right for what a DOS command prints and wrong for a
+ * document shown from the desktop: a file off an ST or a PC has no $9B
+ * in it at all, and came up as one line cut at eighty columns.  Every
+ * walk below asks this, so the count, the slider and the text agree. */
+static UWORD cmd_eol(UWORD off)
+{
+    const uint8_t FAR *p = cmd_textp();
+    WORD c = p[off];
+
+    if (c == EOL || c == '\n')
+        return 1;
+    if (c == '\r')
+        return (UWORD)((off + 1 < cmd_len && p[off + 1] == '\n') ? 2 : 1);
+    return 0;
+}
+
 /* Where line n starts: walked from the top line shown when n is at or
  * past it, from the start otherwise. */
 static UWORD cmd_seek(WORD n)
 {
-    const uint8_t FAR *p = cmd_textp();
-    UWORD off = 0;
+    UWORD off = 0, k;
     WORD i = 0;
 
     if (n >= cmd_top) {
@@ -84,46 +102,65 @@ static UWORD cmd_seek(WORD n)
         i = cmd_top;
     }
     while (i < n && off < cmd_len) {
-        if (p[off] == EOL)
+        k = cmd_eol(off);
+        if (k) {
             i++;
-        off++;
+            off += k;
+        } else {
+            off++;
+        }
     }
     return off;
 }
 
-/* The lines in the text, counted once the command has run. */
+/* The lines in the text, counted once the command has run: every ending,
+ * and a last line the text never ended. */
 static void cmd_count(void)
 {
-    const uint8_t FAR *p = cmd_textp();
-    UWORD off, len = cmd_len;
-    WORD n = 0;
+    UWORD off = 0, len = cmd_len, k;
+    WORD n = 0, open = 0;
 
-    for (off = 0; off < len; off++)
-        if (p[off] == EOL)
+    while (off < len) {
+        k = cmd_eol(off);
+        if (k) {
             n++;
-    if (len) {
-        len--;
-        if (p[len] != EOL)
-            n++;
+            off += k;
+            open = 0;
+        } else {
+            off++;
+            open = 1;
+        }
     }
-    cmd_lines = n;
+    cmd_lines = (WORD)(n + open);
     cmd_top = 0;
     cmd_top_off = 0;
 }
 
 /* One line from off into d (CMD_COLS + 1): printable ATASCII as it is,
- * inverse video as the character, anything else as a space, cut at the
- * width.  Answers the offset after its EOL, or the end. */
+ * inverse video as the character, a tab as spaces to the next eighth
+ * column, anything else as a space, cut at the width.  Answers the
+ * offset after its ending, or the end. */
 static UWORD cmd_line(UWORD off, char *d)
 {
     const uint8_t FAR *p = cmd_textp();
     WORD n = 0, c;
+    UWORD k;
 
     while (off < cmd_len) {
+        k = cmd_eol(off);
+        if (k) {
+            off += k;
+            break;
+        }
         c = p[off];
         off++;
-        if (c == EOL)
-            break;
+        if (c == '\t') {
+            do {
+                if (n < CMD_COLS)
+                    d[n++] = ' ';
+            } while (n < CMD_COLS && (n & 7));
+            continue;
+        }
         c &= 0x7F;
         if (c < 0x20 || c == 0x7F)
             c = ' ';

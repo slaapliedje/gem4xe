@@ -24,6 +24,15 @@ PTR_STATE ptr_seen;
 static uint8_t last_x, last_y;      /* previous line pair per axis (polled) */
 static uint16_t last_qlo, last_qhi; /* the IRQ's counters as last consumed  */
 static WORD    pot_pending;
+/* THE RIGHT BUTTON IS NOT BELIEVED UNTIL ITS LINE HAS BEEN SEEN FREE.  An
+ * ST mouse leaves the paddle line open when the button is up, and it
+ * counts to ~229.  A switchable ST/Amiga mouse drives it low in either
+ * mode, and the line reads "held" from power-on: every menu then waits
+ * for a release that never comes (the menu bar takes over only with ALL
+ * buttons up, src/aes/menu.c) and a double-click never matches -- a
+ * 0.9 tester's report.  A button that has never been up is not a press;
+ * the first time it reads free, it is trusted from then on. */
+static uint8_t rmb_seen_free;
 
 static uint8_t xem_port;            /* XEM1: joystick port it answered on */
 
@@ -173,6 +182,7 @@ void ptr_init(ptr_kind kind, WORD x, WORD y)
     ptr_warp(x, y);
     lines_select(kind);
     pot_pending = 0;
+    rmb_seen_free = 0;
     xem_found = 0;
     xem_wheel = 0;
     if (kind == PTR_TABLET || kind == PTR_XEM1
@@ -226,8 +236,13 @@ static void poll_relative(void)
      * what made the right button stick down and the desktop unusable.) */
     if (pot_pending && (ALLPOT & (1 << (ptr_port * 2))) != 0)
         return;                     /* still counting: last answer stands */
-    ptr_state.buttons = (WORD)((ptr_state.buttons & ~2)
-                               | ((POT(ptr_port * 2) < PTR_RMB_MAX) ? 2 : 0));
+    {
+        WORD held = (WORD)(POT(ptr_port * 2) < PTR_RMB_MAX);
+        if (!held)
+            rmb_seen_free = 1;
+        ptr_state.buttons = (WORD)((ptr_state.buttons & ~2)
+                                   | ((held && rmb_seen_free) ? 2 : 0));
+    }
     POTGO = 0;
     pot_pending = 1;
 }
