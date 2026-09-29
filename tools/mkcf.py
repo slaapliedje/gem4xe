@@ -79,6 +79,8 @@ APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         # CONTROL.ACC hosts them (src/app/cpx.h).  A .CPX is a .G4A too.
         ("build/general.g4a", "GEM>GENERAL.CPX"),
         ("build/general.rsc", "GEM>GENERAL.RSC"),
+        ("build/color.g4a", "GEM>COLOR.CPX"),
+        ("build/color.rsc", "GEM>COLOR.RSC"),
         ("build/hello_app.g4a", "APPS>HELLO.PRG"),
         ("build/calc.g4a", "APPS>CALC.PRG"),
         ("build/calc.rsc", "APPS>CALC.RSC"),

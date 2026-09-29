@@ -1005,6 +1005,7 @@ ACC_DEPS  = build/m28_acc.g4a
 # desktop launches -- the AES loads it once at start-up and it outlives
 # every program (src/aes/shel.c).
 ACCP_DEPS = build/general.g4a build/general.rsc \
+            build/color.g4a build/color.rsc \
             build/clockacc.g4a build/clock.rsc \
             build/cpanelacc.g4a build/cpanel.rsc \
             build/calcacc.g4a build/calc.rsc
@@ -1048,7 +1049,22 @@ build/appsld/cpxmain.o: src/app/cpxmain.c src/app/cpx.h src/app/gem.h
 	@mkdir -p build/appsld
 	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -o $@ $<
 GENERAL_OBJS = $(G4A_LIB_LD) build/appsld/cpxmain.o build/appsld/general.o
-$(eval $(call g4a,general,$(GENERAL_OBJS),1024,256,512,,,$(LIB_LD)))
+# 512/128 with a 256-byte stack: what its map says it uses -- the stack
+# was the whole of its 1,024 bytes of bss -- because a module's near
+# region is taken from the application pool for good, and QED needs the
+# room (docs/phase69.md).  The stack is only the module's own frames at
+# load: cpx_call runs on the panel's, and the AES serves a call on its own.
+$(eval $(call g4a,general,$(GENERAL_OBJS),512,128,256,,,$(LIB_LD)))
+
+# COLOR.CPX (src/apps/color.c): the screen's pens, 0.9's item 6.  Built as
+# GENERAL.CPX is, and as small.
+build/color.rsc build/colorrsc.h: tools/colorrsc.py tools/rsc.py tools/aesref.py
+	python3 tools/colorrsc.py build/color.rsc build/colorrsc.h
+build/appsld/color.o: src/apps/color.c src/app/cpx.h src/app/gem.h build/colorrsc.h
+	@mkdir -p build/appsld
+	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
+COLOR_OBJS = $(G4A_LIB_LD) build/appsld/cpxmain.o build/appsld/color.o
+$(eval $(call g4a,color,$(COLOR_OBJS),512,128,256,,,$(LIB_LD)))
 
 # The control panel extension gate (src/m35_cpx.c): a module, built with
 # the kit's cpx glue (src/app/cpxmain.c) exactly as any CPX would be.
@@ -1321,6 +1337,8 @@ SP_APPS   = --mkdir APPS \
 	    --add build/general.g4a "GEM>GENERAL.CPX" \
 	    --add build/general.rsc "GEM>GENERAL.RSC" \
 	    --add build/m35_cpx.g4a "GEM>TEST.CPX" \
+	    --add build/color.g4a "GEM>COLOR.CPX" \
+	    --add build/color.rsc "GEM>COLOR.RSC" \
 	    --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
 	    --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
 SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a build/general.g4a build/general.rsc tools/mkspdisk.py tools/atr.py
@@ -1578,7 +1596,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-boot test-install g4bench
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-boot test-install g4bench
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1891,6 +1909,11 @@ test-m39: build/gem-shots.atr build/desktop.sym build/calc.sym
 test-m41: build/gem-shots.atr build/desktop.sym
 	python3 tests/emu/m41_items.py
 
+# The Color control panel extension (phase 69): a pen stepped live,
+# Cancel putting it back, and OK's palette restored at the next boot.
+test-m42: build/gem-shots.atr build/color.g4a
+	python3 tests/emu/m42_color.py
+
 test-m22: build/m22-boot.atr build/calc.sym build/clock.sym
 	python3 tests/emu/m22_apps.py
 
@@ -2110,4 +2133,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-m41 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-m41 test-m42 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean

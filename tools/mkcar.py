@@ -47,6 +47,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mkxex                                            # noqa: E402
+import mkcf                                     # noqa: E402
 import mkdist                                           # noqa: E402
 
 BUILD = os.path.normpath(
@@ -256,7 +257,13 @@ def system():
     anyway, and a file added there is on the cartridge with nothing else
     touched.
     """
-    return [(name, os.path.join(BUILD, src)) for src, name in mkdist.SYSTEM]
+    # ...less QED (phase 68), which is 361 KB and would take the ROM's CIO
+    # about a minute to hand over at the 1.79 MHz a cartridge is read at,
+    # and whose five files would not fit src/cartd.s's directory beside
+    # the system's.  It is on the card, its own image and the release.
+    qed = {n.split(">")[1] for _p, n in mkcf.QED}
+    return [(name, os.path.join(BUILD, src)) for src, name in mkdist.SYSTEM
+            if name not in qed]
 
 
 def main(argv):

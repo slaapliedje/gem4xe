@@ -174,7 +174,21 @@ def main(argv):
             out.append((name.upper(), g4a_near(p), pr, pk))
         return out
 
-    def walk(base, pool, accs, title, loud):
+    def modules(*names):
+        """(name, near) for each control panel module that loads.  The AES
+        loads *.CPX BEFORE the accessories (src/aes/shel.c) and keeps
+        each one's near region for good; a module has no process and no
+        queue, and its resource goes far (it is large-data).  Left out
+        until phase 69, which is how a second module nearly took the room
+        QED is launched in without this tool noticing."""
+        out = []
+        for name in names:
+            p = os.path.join(BUILD, name + ".g4a")
+            if os.path.exists(p):
+                out.append((name.upper() + ".CPX", g4a_near(p)))
+        return out
+
+    def walk(base, pool, accs, title, loud, mods=()):
         """The bump allocator, in the order the machine runs it: proc_init,
         then each accessory (queue, near region, resource), then the
         desktop.  A PROGRAM's near region is page-aligned (app.c:
@@ -204,6 +218,8 @@ def main(argv):
             say(title)
             say(f"  {'pool':<34} {pool:6d}   ${base:04X}")
         take(PROC_STORE, 2, "process records")
+        for nm, near in mods:
+            take(near, 0x100, nm + " near region")
         for nm, near, pr, pk in accs:
             take(ACC_QUEUE, 2, nm + " message queue")
             take(near, 0x100, nm + " near region")
@@ -214,6 +230,7 @@ def main(argv):
         # desktop and its resource are above it, and come and go with it.
         if loud:
             say(f"  {'-- permanent below here':<34} {'':6}   ${brk:04X}")
+        room[title] = top - ((brk + 0xFF) & ~0xFF)
         take(desk, 0x100, "the desktop")
         if desk_rsc:
             take(desk_rsc, 2, "its resource", desk_peak)
@@ -239,12 +256,14 @@ def main(argv):
     # to read through afterwards, which is a speed question.  The runner's
     # pool is deliberately smaller and has always been under it; what the
     # runner must satisfy is the hard one, that the peak fits at all.
+    room = {}
+    product = ("the application pool, with everything the product "
+               "ships resident")
     for mapname, accs, floor, title in (
             ("gem.map", accessories(("clockacc", "clock"),
                                     ("cpanelacc", "cpanel"),
                                     ("calcacc", "calc")), POOL_FLOOR[0],
-             "the application pool, with everything the product "
-             "ships resident"),
+             product),
             ("m3desk.map", accessories(("m28_acc", None)), 0,
              "...and the conformance runner's pool, which is smaller and "
              "carries the desktop beside an accessory (test-m28)")):
@@ -255,7 +274,8 @@ def main(argv):
         if "AppPool" not in rr:
             continue
         base, pool = rr["AppPool"][0], rr["AppPool"][1]
-        free, worst = walk(base, pool, accs, title, not quiet)
+        free, worst = walk(base, pool, accs, title, not quiet,
+                           modules("general", "color") if title == product else ())
         if worst < 0:
             bad.append(f"{mapname}: the pool runs out by {-worst} bytes "
                        f"while a resource is loading -- rs_load takes the "
@@ -265,6 +285,21 @@ def main(argv):
         elif free < floor:
             bad.append(f"{mapname}: the pool would have {free} bytes free, "
                        f"wanted {floor} -- {POOL_FLOOR[1]}")
+
+    # WHAT A LAUNCHED PROGRAM GETS: the desktop gives its place up when it
+    # runs one (src/aes/shel.c), so a program's near region may use all
+    # of the pool above the permanent floor.  QED is the largest shipped,
+    # and it is built outside this tree; when it is here, it must fit.
+    if product in room:
+        say(f"  a program launched from the desktop gets {room[product]} bytes")
+        qed = os.path.join(BUILD, "qed", "QED.PRG")
+        if os.path.exists(qed):
+            need = g4a_near(qed)
+            say(f"  QED.PRG asks for {need}")
+            if need > room[product]:
+                bad.append(f"QED.PRG asks for {need} bytes of the pool and a "
+                           f"program gets {room[product]} with everything "
+                           f"resident: it would not start (docs/phase69.md)")
 
     say("")
     if bad:

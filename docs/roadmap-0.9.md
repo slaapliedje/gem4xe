@@ -23,7 +23,7 @@ features, and applications to use it with.
 | 3 | **Install application**, and a file dropped on a program's icon -- so a document opens the program that edits it | **done** (phase 61) |
 | 4 | **The small desktop items** -- Select all, Close folder (up a level), Cycle windows, Show info on a drive, Set file mask, the name-conflict dialog on copy and the confirm-delete/copy/overwrite preferences | **done** (phases 62-65) |
 | 5 | **QED shipped**, if its licence allows it -- ported and gated, not yet in the tree's distribution | **done** (phase 68) |
-| 6 | **A Color CPX** for the control panel, beside `GENERAL.CPX` | |
+| 6 | **A Color CPX** for the control panel, beside `GENERAL.CPX` | **done** (phase 69) |
 
 ## Not 0.9
 
