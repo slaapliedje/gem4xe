@@ -2,6 +2,13 @@
 #include "portab.h"
 #include <string.h>
 #include "dos.h"
+#include "../antic/antic.h"     /* AN_DLIST: where that screen starts */
+
+/* The OS's display-list shadow: $8000 when the screen up is gem4xe's ANTIC
+ * one (src/antic/antic.c).  Read here rather than asking the VDI which
+ * device is open, because the conformance runner links this file without
+ * the ANTIC driver. */
+#define SDLSTL   (*(volatile uint16_t *)0x0230)
 #include "cio.h"
 #include "app.h"
 #include "farmem.h"
@@ -310,7 +317,7 @@ int32_t dos_command(uint32_t line, uint32_t out, uint32_t max)
     uint8_t *comtab = DOSVEC;
     uint8_t *lbuf = comtab + SDX_LBUF;
     uint16_t *putv;
-    uint16_t memlo, was, i;
+    uint16_t memlo, memtop, was, i;
     uint8_t handle;
 
     if (!sdx_asked)
@@ -340,13 +347,26 @@ int32_t dos_command(uint32_t line, uint32_t out, uint32_t max)
     handle = comtab[SDX_STDOUT];
     comtab[SDX_STDOUT] = SDX_PUTV_H;
 
-    /* the room, then the run */
+    /* the room, then the run.  ON ANTIC THE ROOM STOPS AT THE DISPLAY
+     * LIST: "$9000-$9BFF, idle" above is the VBXE machine's, and on an
+     * ANTIC one $8000 up is the list and the framebuffer ANTIC is showing
+     * (src/antic/antic.h).  A command given MEMTOP's $9C1F there may load
+     * over both -- a 0.9 tester's ANTIC machine went to a black screen and
+     * stopped on File -> DOS command.  Not reproduced on the emulated
+     * Rapidus with VER, DIR or CHKDSK, which fit in what the pool has
+     * free, so this closes the door rather than being proven to be the
+     * one that let it in; a command too big for the room is refused by
+     * the DOS for memory, which is an answer rather than a crash. */
     memlo = MEMLO;
+    memtop = MEMTOP;
     MEMLO = pool_mark();
+    if (SDLSTL == AN_DLIST && MEMTOP > AN_DLIST - 1)
+        MEMTOP = AN_DLIST - 1;
     vram_unmap();
     sdx_vec = sdx_xcomli;
     sdx_call(0);
 
+    MEMTOP = memtop;
     MEMLO = memlo;
     comtab[SDX_STDOUT] = handle;
     *putv = was;

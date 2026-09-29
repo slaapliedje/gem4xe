@@ -5,20 +5,27 @@
  * the surface the VDI's second driver rasterises into, and the thing
  * that stops the VBXE's assumptions leaking into portable code.
  *
- * WHERE IT LIVES, AND WHY IT IS 168 LINES.  ANTIC fetches over the chip
+ * WHERE IT LIVES, AND WHY IT IS 192 LINES.  ANTIC fetches over the chip
  * bus with 16-bit addresses, so the framebuffer has to be in bank $00
  * and in motherboard RAM -- not the accelerator's SRAM, which ANTIC
  * cannot see, and not the banked window $4000-$7FFF, which a DOS
  * switches out from under itself while it services a call and which
  * ANTIC would then happily display.  What is left is the region
- * src/gem4xe.scm reserves for the VBXE's MEMAC window, $8000-$9BFF,
- * which on a machine with no VBXE is simply free: 7,168 bytes, bounded
- * above by SpartaDOS X's screen at $9C00.  Take the display list off the
- * front and 168 lines of 40 bytes is what fits.  The ceiling is memory,
- * not ANTIC.
+ * src/gem4xe.scm reserves for the VBXE's MEMAC window, $8000-$9FFF,
+ * which on a machine with no VBXE is simply free as far as $9BFF -- and
+ * the 768 bytes above that are the OS's text screen under a cartridge
+ * (MEMTOP $9C1F) or plain RAM without one (the screen is then under
+ * $C000).  GRAPHICS 8's full 192 lines end at $9EFF, inside either.
  *
- *     $8000-$80AE   the display list, 175 bytes
- *     $8100-$9B3F   the framebuffer, 168 x 40 = 6,720 bytes
+ * TAKING THE OS'S SCREEN IS SAFE because nothing writes to it while GEM
+ * runs: GEM draws on its own list, a DOS command's output is captured
+ * (src/sys/dos.c, PUT_V), and the command's memory stops below $8000 on
+ * this screen.  When GEM quits it reopens E: (src/crt_atari.s), and the
+ * OS builds its screen again.  It was 168 lines, for the $9C00 bound,
+ * until 0.9.1 -- the ceiling was memory, never ANTIC.
+ *
+ *     $8000-$80C9   the display list, 202 bytes
+ *     $8100-$9EFF   the framebuffer, 192 x 40 = 7,680 bytes
  *
  * THE FRAMEBUFFER IS LINEAR, which it has no right to be: ANTIC's memory
  * counter wraps at a 4 KB boundary, so a screen that crosses one usually
@@ -41,7 +48,7 @@
 #define AN_DLIST    0x8000U             /* the display list             */
 #define AN_SCREEN   0x8100U             /* the framebuffer              */
 #define AN_W        320                 /* pixels across                */
-#define AN_H        168                 /* ...and down                  */
+#define AN_H        192                 /* ...and down: GRAPHICS 8's    */
 #define AN_STRIDE   (AN_W / 8)          /* 40 bytes a line              */
 #define AN_BYTES    ((uint16_t)AN_STRIDE * AN_H)
 #define AN_SPLIT    96                  /* the line the 4 KB crossing

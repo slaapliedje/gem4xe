@@ -6,7 +6,7 @@
  *
  * AND THE SCREEN IS NOT FAST.  This file used to say the framebuffer is
  * "plain motherboard RAM the accelerator reaches at full speed".  It is
- * motherboard RAM, at $8100-$9B3F, in the Rapidus's window 2 -- which
+ * motherboard RAM, at $8100-$9EFF, in the Rapidus's window 2 -- which
  * rapidus_speedup() keeps on the 1.79 MHz bus always, because the VBXE's
  * MEMAC window is in it on the other device.  So every read and write of
  * a screen byte here is a slow-bus cycle however fast the CPU is, and the

@@ -24,7 +24,9 @@
 ;;;                farload's staging buffer and its unpacker borrow it at
 ;;;                LOAD time (farstage, stagecode)
 ;;;   $9C00-$9FFF  the rest of the MEMAC window: SpartaDOS X's screen
-;;;                (MEMTOP $9C1F), so not even the stage goes there
+;;;                (MEMTOP $9C1F), so not even the stage goes there --
+;;;                but with no VBXE the ANTIC screen takes $9C00-$9EFF
+;;;                while GEM runs, for its last 24 lines (src/antic/antic.h)
 ;;;   $A000-$BFFF  NOT OURS: SpartaDOS X is a cartridge and this is it.
 ;;;                Under a disk DOS it is RAM and gem4xe leaves it alone.
 ;;;   $C000-$CFFF  OS ROM   -- and under it, RAM a DOS may live in (src/sys/irq.c)

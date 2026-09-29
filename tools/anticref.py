@@ -9,7 +9,7 @@ mask is a difference in the framebuffer and not something that has to be
 inferred from a picture.
 """
 
-AN_W, AN_H = 320, 168
+AN_W, AN_H = 320, 192             # src/antic/antic.h (168 until 0.9.1)
 AN_STRIDE = AN_W // 8
 
 LEFT = (0xFF, 0x7F, 0x3F, 0x1F, 0x0F, 0x07, 0x03, 0x01)

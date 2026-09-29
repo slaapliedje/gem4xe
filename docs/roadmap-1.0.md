@@ -30,6 +30,7 @@ The figures are milliseconds a call, from the 0.9 reference
 | 11 | **SpartaDOS 3.2's root fallback in `Fdelete`**: its "is it still there?" open can find the root's file too (phase 65 fixed `Fopen`'s) | |
 | 12 | **`memreport`'s pool model** is a page under the live machine (7,168 against 7,424, phase 69): find the page | |
 | 13 | **MyDOS**, measured for the same root fallback | |
+| 14 | **`gem4xe.car` gives a white screen in Altirra** (an AtariAge report, after 0.9): reproduce with the reporter's Altirra settings, since the gates boot it green | |
 
 ## Not in the tree's hands
 

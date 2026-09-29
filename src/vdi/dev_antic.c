@@ -1,6 +1,6 @@
 /* dev_antic.c -- the ANTIC side of the seam (vdidev.h).
  *
- * 320x168 at 1bpp in plain motherboard RAM -- on the 1.79 MHz bus, not at
+ * 320x192 at 1bpp in plain motherboard RAM -- on the 1.79 MHz bus, not at
  * the accelerator's speed (src/antic/antic.c says why).  So every
  * primitive here writes BYTES, each screen byte once, there is no list to
  * compile and nothing to flush -- the write WAS the drawing.  That is
@@ -326,9 +326,9 @@ void dev_line_diag(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
  * WHERE THE SAVE AREA IS, and why it is not in bank $00.  The AES saves
  * the screen under a menu or a dialog into an off-screen form.  On the
  * VBXE device that is VRAM, of which there is half a megabyte spare; on
- * this one a screen is 6,720 bytes and bank $00 has not got them -- the
+ * this one a screen is 7,680 bytes and bank $00 has not got them -- the
  * framebuffer already took the last free region ($8000-$9BFF), which is
- * the same arithmetic that made the screen 168 lines (src/antic/antic.h).
+ * the arithmetic src/antic/antic.h does for the screen's 192 lines.
  *
  * So the save area lives in FAR memory, in the accelerator's own SRAM,
  * taken once from the far allocator.  An MFDB's fd_addr is 24 bits wide
