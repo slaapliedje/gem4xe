@@ -599,6 +599,18 @@ drew nothing at all, because `Isin` returned `sin_tbl[0]` for every angle
 and each point of the curve landed on its centre.  A sweep of the whole
 tree's generated assembly for the broken idiom found no other site.
 
+**The sweep was done once, and a one-time sweep is not a check.**  Phase
+69's COLOR.CPX unpacked a saved nibble as `WORD byte = b[i]; byte >> 4`,
+and a saved white came back at boot with no red: `0xFF >> 4` was -1.
+`mscan.wrong_bit()` now looks for the idiom in every build (`make mscan`):
+n logical shifts, n >= 3 and not 8, then the sign extension of an n-bit
+field.  Its first run found two more, both harmless only because the
+results are small -- `SCR_W >> 6` in `gdp_rbox` and the INF's sort field
+`>> 5` in `inf_parse` -- and both are unsigned now.  `mscan_b12.s` is the
+fixture that proves it can report; `make check-cc` runs it.  A result
+below 2^(n-1) survives the wrong sign extension, which is why this sat
+unseen: the shape is the bug, not the answer.
+
 
 ## B13 and B14 — an arrowhead's two ends
 

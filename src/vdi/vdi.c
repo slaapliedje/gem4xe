@@ -1709,7 +1709,7 @@ static void gdp_rbox(WORD sub)
     if (x1 > x2) { WORD t = x1; x1 = x2; x2 = t; }
     if (y1 < y2) { WORD t = y1; y1 = y2; y2 = t; }   /* (x1,y1) lower left */
 
-    xr = (WORD)(SCR_W >> 6);
+    xr = (WORD)((UWORD)SCR_W >> 6);     /* unsigned: B12 (tools/ccbug) */
     if (xr > (x2 - x1) / 2) xr = (WORD)((x2 - x1) / 2);
     yr = xr;                                /* square pixels */
     if (yr > (y1 - y2) / 2) yr = (WORD)((y1 - y2) / 2);

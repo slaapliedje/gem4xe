@@ -269,6 +269,11 @@ def main():
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b23.s")
     fixtures["B23 mscan finds the read below the stack"] = (
         len(list(_mscan.stack_zero(_fix))), 1)
+    # ...and B12's: the compiler's own -O1 assembly, one wrong-bit shift
+    # and an unsigned control beside it that must stay silent.
+    _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b12.s")
+    fixtures["B12 mscan finds the shift from the wrong bit"] = (
+        len(list(_mscan.wrong_bit(_fix))), 1)
 
     # The same discipline for the negative-Y scan.  Calypsi #82 is fixed in
     # the 5.18 this tree requires, so the scan guards a shape rather than a

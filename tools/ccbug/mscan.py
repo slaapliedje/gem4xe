@@ -342,6 +342,47 @@ def stack_zero(path):
             yield func, n, line.strip()
 
 
+def _imm(text, op):
+    """The immediate of `op ##n`, or None."""
+    m = re.match(rf"^\s*{op}\s+##(-?(?:0x)?[0-9A-Fa-f]+)\s*$", text)
+    if not m:
+        return None
+    v = m.group(1)
+    return int(v, 16) if v.lower().startswith("0x") else int(v)
+
+
+def wrong_bit(path):
+    """B12: a signed 16-bit `x >> n` (n >= 3, n != 8) emitted as n logical
+    shifts and then a sign extension of an N-BIT field -- `eor ##(1<<(n-1))
+    / and ##((1<<n)-1) / sec / sbc ##(1<<(n-1))` -- where the field is
+    16-n bits wide.  900 >> 4 comes out -8, and 0xFF >> 4 comes out -1
+    (tools/ccbug/README.md, B12; COLOR.CPX's boot restore, phase 69).
+    Yields (function, line, n)."""
+    func, run, seq = "?", 0, []
+    for n, raw in enumerate(open(path, encoding="latin-1"), 1):
+        line = raw.split(";", 1)[0].rstrip()
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):", line)
+        if m:
+            func = m.group(1)
+            line = line[m.end():]
+        text = line.strip()
+        if not text or text.startswith("."):
+            continue
+        seq.append((n, text))
+        seq = seq[-4:]
+        if len(seq) == 4 and run >= 3 and run != 8:
+            (n0, a), (_, b), (_, c), (_, d) = seq
+            half, mask = 1 << (run - 1), (1 << run) - 1
+            if (_imm(a, "eor") == half and _imm(b, "and") == mask
+                    and c == "sec" and _imm(d, "sbc") == half):
+                yield func, n0, run
+        if re.match(r"^lsr\s+a$", text):
+            run += 1
+        elif not (len(seq) >= 1 and seq[-1][1] == text and run >= 3
+                  and any(text.startswith(o) for o in ("eor", "and", "sec", "sbc"))):
+            run = 0
+
+
 def tree_sources():
     """The C the tree compiles, with the flags it compiles them with."""
     out = []
@@ -369,7 +410,7 @@ def build_scan():
     if not files:
         sys.exit("mscan --build: no assembly beside the objects -- run "
                  "`make mscan`, which rebuilds with CC_ASM=1")
-    calls = widths = zeros = 0
+    calls = widths = zeros = shifts = 0
     for f in files:
         rel = os.path.relpath(f, ROOT)
         for func, n, tgt in scan(f):
@@ -382,10 +423,15 @@ def build_scan():
         for func, n, text in stack_zero(f):
             print(f"{rel}:{n}: {func}: `{text}` reads below the stack (B23)")
             zeros += 1
+        for func, n, k in wrong_bit(f):
+            print(f"{rel}:{n}: {func}: a signed >> {k} sign-extends a "
+                  f"{k}-bit field (B12): shift an unsigned copy")
+            shifts += 1
     print(f"mscan: {len(files)} object(s) of the build scanned; {calls} "
           f"call(s) reached narrow, {widths} immediate(s) reached in the "
-          f"wrong width, {zeros} read(s) below the stack")
-    return 1 if calls or widths or zeros else 0
+          f"wrong width, {zeros} read(s) below the stack, {shifts} signed "
+          f"shift(s) from the wrong bit")
+    return 1 if calls or widths or zeros or shifts else 0
 
 
 def main(argv):

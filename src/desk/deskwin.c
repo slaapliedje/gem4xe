@@ -1836,7 +1836,7 @@ static void inf_parse(const char FAR *pcurr)
             e5 = scan_2(&pcurr);
             desk_view((WORD)((e1 & INF_E1_VIEWTEXT) ? V_TEXT : V_ICON));
             desk_sort((WORD)((e5 & INF_E5_NOSORT) ? S_NSRT
-                             : (e1 & INF_E1_SORTMASK) >> 5));
+                             : (UWORD)(e1 & INF_E1_SORTMASK) >> 5));  /* B12 */
             desk_fit(!(e5 & INF_E5_NOSIZE));
             break;
         }
