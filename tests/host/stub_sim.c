@@ -17,6 +17,7 @@
 #include "gem.h"
 #include <stdio.h>
 #include <string.h>
+#include <calypsi/stubs.h>
 
 #define STUB_MAX 64
 
@@ -34,6 +35,12 @@ SIMPLE_CALL void aes_call(AESPB FAR *pb) { (void)pb; }
 
 SIMPLE_CALL void dos_call(GDPB FAR *pb)
 {
+    /* Pterm and Pterm0 do not come back, on the machine or here: the
+     * kit's exit() is Pterm (src/app/gemstub.c), and this hands the end to
+     * the simulator's own, where --exit-breakpoint stops.  Not counted --
+     * the program's last CALL is still the write the test looks for. */
+    if (pb->fn == 0x4C || pb->fn == 0x00)
+        _Stub_exit(pb->fn == 0x4C ? pb->arg[0] : 0);
     stub_calls++;
     stub_fn = pb->fn;
     if (pb->fn == 0x40) {               /* Fwrite(handle, count, buf) */

@@ -146,3 +146,25 @@ int _Stub_remove(const char *path)
     LONG r = Fdelete(path);
     return r < 0 ? -errno_of(r) : 0;
 }
+
+/* exit() ENDS THE PROGRAM, as it does on an ST: GEMDOS Pterm, which takes
+ * the program down and the shell back up (src/sys/gemdos.c) exactly as
+ * returning from main does.  Without it the link took Calypsi's simplified
+ * exit, which ends in _Stub_exit -- a wait that never returns, the right
+ * thing on a board where the program is the whole machine and a hang
+ * here: QED quits with exit(0), and File > Quit left it spinning with its
+ * menu bar up and the desktop never coming back (docs/phase72.md).
+ * Nothing is flushed -- the simplified exit flushed nothing either -- so
+ * a program that writes through stdio closes its files first, which
+ * every ST program already does. */
+void exit(int status)
+{
+    Pterm((WORD)status);
+    for (;;)
+        ;                               /* Pterm does not come back */
+}
+
+void _Exit(int status)
+{
+    exit(status);
+}
