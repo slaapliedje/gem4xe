@@ -215,6 +215,15 @@ CASES = [
       4: [F(2), K("EQUALS", ARROW_DOWN, ctrl=True)],
       5: [F(5), K("B", 0x62)]}),
 
+    # The ST's Help and Undo on this keyboard: the 1200XL's F1 and F2,
+    # and the HELP key every XL/XE has (src/vdi/vdi.c, kb_translate).
+    ("evnt_keybd: F1 and HELP are Help, F2 is Undo", dialog,
+     [draw(), (EVNT_KEYBD,), (EVNT_KEYBD,), (EVNT_KEYBD,), (EVNT_KEYBD,)],
+     {1: [F(3), K("F1", 0x6200)],
+      2: [F(2), K("F2", 0x6100)],
+      3: [F(2), K("HELP", 0x6200)],
+      4: [F(2), K("F1", 0x6200, shift=True)]}),
+
     ("evnt_button: press, release, satisfied at entry; graf_mkstate", dialog,
      [(EVNT_BUTTON, (), (1, 1, 1)), (EVNT_BUTTON, (), (1, 1, 0)),
       (EVNT_BUTTON, (), (1, 1, 0)), (GRAF_MKSTATE,),

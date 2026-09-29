@@ -2300,6 +2300,17 @@ static WORD kb_translate(uint8_t code)
     const uint8_t *tab = (const uint8_t *)KEYDEF;
     WORD idx = (WORD)(code & 0x3F);
     uint8_t a;
+
+    /* The ST's Help and Undo, which this keyboard does not have: the
+     * 1200XL's F1 and F2, and the HELP key every XL and XE has.  By the
+     * code, before the table, and whatever SHIFT or CONTROL is held --
+     * the ST's Help is Help with SHIFT down too.  QED answers both. */
+    switch (idx) {
+    case 0x03:                                  /* F1   */
+    case 0x11: return 0x6200;                   /* HELP */
+    case 0x04: return 0x6100;                   /* F2: Undo */
+    default:   break;
+    }
     /* The table has three rows, not four: with CONTROL and SHIFT both
      * held the two offsets summed to 192 and read past its end.  Control
      * wins, and SHIFT is still there to be seen in the modifier state

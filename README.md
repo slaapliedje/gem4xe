@@ -78,7 +78,7 @@ full-screen repaints.
 | `make test-m5` | PASS | linear RAM probed on a **Rapidus**: banks `$04-$EF`, 14.8 MB |
 | `make test-m5p` | PASS | the same probe on a **plain 65C816** with high banks and no accelerator — the shape of an Antonia, and the proof that nothing here depends on one board. Needs this tree's AltirraSDL fork (`tools/altirra/altirra-sdl-cpu-highbanks.patch`) |
 | `make test-m6` | PASS | far code copied up and running from the banks the linker chose — bank `$01`, and `$01`+`$02` in a forced-spill link; bank `$00` on the fast bus |
-| `make test-m7` | 10/10 | `evnt_*`, `form_do`, `form_dial`, `graf_watchbox` under host-driven input |
+| `make test-m7` | 12/12 | `evnt_*`, `form_do`, `form_dial`, `graf_watchbox` under host-driven input, and the ST's Help and Undo from F1, HELP and F2 |
 | `make test-m8` | 12/12 | the window manager and the control manager: rectangle lists, moves, gadgets, `WM_*` |
 | `make test-m9` | 4/4 | menus: the bar, drop-downs, `MN_SELECTED`, screenshotted inside the wait |
 | `make test-m10` | 28/28 | native-mode interrupts: the OS shadowed into SRAM byte for byte, the VBI, a ~4 kHz timer, the keyboard, a trak-ball counted under interrupt, and a clean return to DOS |
