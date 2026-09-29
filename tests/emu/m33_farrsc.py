@@ -53,7 +53,8 @@ RSC = os.path.join(ROOT, "build", "farrsc.rsc")
 NAMES = ("m33_step", "m33_loaded", "m33_bank", "m33_lo", "m33_hdrlo", "m33_hdrhi",
          "m33_ap5", "m33_ap6", "m33_cx", "m33_cy", "m33_cw", "m33_ch",
          "m33_find", "m33_findok", "m33_str0", "m33_gfree", "m33_model",
-         "m33_mtfar", "m33_mtnear", "m33_mtlo")
+         "m33_mtfar", "m33_mtnear", "m33_mtlo", "m33_kidret", "m33_kidsame",
+         "m33_kidbank")
 POOL = 14336
 DARK_MIN = 2000                 # a 40x28-cell dialog with 20 rows of text has far more
 
@@ -189,6 +190,17 @@ def main(argv=()):
             check(v["m33_mtnear"] == 1,
                   f"menu_text wrote into bank $00 at ${v['m33_mtlo']:04X}: "
                   f"the bank was dropped from ob_spec")
+            # A Pexec child, and the resource after it (gemdos.c gd_pexec):
+            # the base was kept in a 16-bit `void *` while the child ran,
+            # and came back without its bank until 0.9.1.
+            print(f"  Pexec M32KID.PRG: returned {v['m33_kidret']}, tree 0 after it "
+                  f"in bank ${v['m33_kidbank']:02X} "
+                  f"({'the same address' if v['m33_kidsame'] else 'MOVED'})")
+            check(v["m33_kidret"] == 5,
+                  f"Pexec of M32KID.PRG returned {v['m33_kidret']}, expected its exit(5)")
+            check(v["m33_kidsame"] == 1,
+                  f"after a Pexec child the resource's tree 0 is in bank "
+                  f"${v['m33_kidbank']:02X}, not ${v['m33_bank']:02X}: the bank was dropped")
             check(te >= 0 and v["m33_gfree"] == 1,
                   f"rsrc_free returned {v['m33_gfree']} (step {v['m33_step']}), expected 1")
             b.key("RETURN")                 # and leave

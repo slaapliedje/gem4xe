@@ -457,7 +457,7 @@ build/fsel_rsc.o: build/fsel_rsc.c
 build/fsel.o: src/aes/fsel.c src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/fsel_rsc.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
-build/shel.o: src/aes/shel.c src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/lang_rsc.h
+build/shel.o: src/aes/shel.c src/sys/abi.h src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/lang_rsc.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
 build/scrap.o: src/aes/scrap.c src/aes/aes.h src/sys/farmem.h
@@ -1509,12 +1509,12 @@ build/m29-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt 
 
 # The far-resource gate's disk (test-m33): the stand-in desktop, the two
 # builds of the one program, and the resource neither could load before.
-build/m33-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt build/test.rsc $(SHELL_DEPS) build/m33_farrsc.g4a build/m33s_farrsc.g4a build/farrsc.rsc tools/mkspdisk.py tools/atr.py
+build/m33-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt build/test.rsc $(SHELL_DEPS) build/m33_farrsc.g4a build/m33s_farrsc.g4a build/farrsc.rsc build/m32_kid.g4a tools/mkspdisk.py tools/atr.py
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
 	    --add build/m33_farrsc.g4a M33.PRG --add build/m33s_farrsc.g4a M33S.PRG \
-	    --add build/farrsc.rsc FARRSC.RSC
+	    --add build/farrsc.rsc FARRSC.RSC --add build/m32_kid.g4a M32KID.PRG
 
 # And the same again for the application whose far IMAGE crosses a bank
 # (src/m31_huge.c).  Its own disk for the reason m29's is its own: a file

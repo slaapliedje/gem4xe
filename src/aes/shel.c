@@ -36,6 +36,7 @@
 #include "sys/gemdos.h"
 #include "sys/farmem.h"
 #include "sys/ctx.h"
+#include "sys/abi.h"                    /* app_run: a CPX is run, not exec'd */
 #include "aes/proc.h"
 #include "lang_rsc.h"
 

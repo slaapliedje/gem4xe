@@ -28,6 +28,14 @@
 set -e
 CC="${CC65816:?ccdep.sh: CC65816 is not set}"
 
+# Two warnings are errors here, because on this machine each one has been
+# a real bug.  A pointer is 16 bits in the small data model and a far
+# address 24, so an int<->pointer conversion can drop a bank: Pexec kept a
+# far resource's base in a `void *` and gave it back in bank $00 (0.9.1,
+# docs/phase77.md).  And a call to an undeclared function uses the default
+# convention, which is right for app_run only by luck of the registers.
+set -- -Werror=int-conversion -Werror=implicit-function-declaration "$@"
+
 out=""; prev=""
 for a in "$@"; do
     [ "$prev" = "-o" ] && out="$a"

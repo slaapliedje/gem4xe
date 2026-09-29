@@ -2167,8 +2167,8 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     APP child;
     uint32_t std, dup, keep, save, pdta;
     uint8_t rows[GD_STDS + GD_DUPS];
-    uint16_t owned, ateof, near, api_sp, vwk, rscmark, rscmark2;
-    void *rsc, *rsc2;
+    uint16_t owned, ateof, near, api_sp, vwk;
+    RSHOLD held;
     WORD depth, i, st;
     LONG r;
 
@@ -2200,10 +2200,11 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     owned = p->p_gdowned;
     ateof = p->p_gdateof;
     pdta = p->p_gddta;
-    rsc = p->p_rsc;
-    rscmark = p->p_rscmark;
-    rsc2 = p->p_rsc2;
-    rscmark2 = p->p_rscmark2;
+    /* The parent's resource slots, all six fields, by the AES's own pair:
+     * until 0.9.1 two of them went through `void *` -- 16 bits in this
+     * data model -- and a far resource came back without its bank, and
+     * the far marks were not kept at all. */
+    rs_hold(&held);
     api_sp = gem_api_sp;
     depth = gem_depth;
     vwk = vdi_virtuals_open();
@@ -2225,10 +2226,7 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     p->p_gdowned = owned;
     p->p_gdateof = ateof;
     p->p_gddta = pdta;
-    p->p_rsc = rsc;
-    p->p_rscmark = rscmark;
-    p->p_rsc2 = rsc2;
-    p->p_rscmark2 = rscmark2;
+    rs_unclaim(&held);
     vdi_close_virtuals_but(vwk);
     pool_release(child.pool_mark);
     far_release(child.far_mark);

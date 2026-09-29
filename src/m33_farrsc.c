@@ -41,6 +41,12 @@
  *                 as a file selector that drew and then hung the machine,
  *                 with nothing to connect it to a menu call, so what is
  *                 checked here is the WRITE, not any symptom of it.
+ *   m33_kidret    Pexec of M32KID.PRG returned its exit(5)...
+ *   m33_kidsame   ...and rsrc_gaddr gives the SAME far tree address after
+ *                 it.  Pexec kept the parent's resource base in a `void *`
+ *                 while the child ran -- 16 bits in the small data model
+ *                 the system is built in -- and put it back without its
+ *                 bank, until 0.9.1 (a tester's build, which warned).
  *   m33_gfree     rsrc_free returned 1, the far block given back
  */
 #include "portab.h"
@@ -60,6 +66,12 @@ NEAR WORD m33_model;          /* 4 = large, 2 = small: sizeof a pointer */
 NEAR WORD m33_mtfar;          /* menu_text wrote at the far ob_spec */
 NEAR WORD m33_mtnear;         /* ...and bank $00 at its low word is untouched */
 NEAR WORD m33_mtlo;           /* that low word, for the gate to report */
+NEAR WORD m33_kidret;         /* what the Pexec child ended with */
+NEAR WORD m33_kidsame;        /* tree 0 at the same far address after it */
+NEAR WORD m33_kidbank;        /* ...and the bank it came back with */
+
+NEAR char m33_kid[] = "M32KID.PRG";
+NEAR char m33_kidtail[] = "\003far";
 
 /* The name near, so that neither kit has to bounce it: what this program
  * tests is the resource, not the string shim. */
@@ -145,6 +157,11 @@ int main(void)
          * move the dark-pixel count the gate measures. */
         if (tree)
             check_menu_text(tree);
+        m33_kidret = (WORD)Pexec(0, m33_kid, m33_kidtail, 0);
+        if (rsrc_gaddr(R_TREE, FR_DIALOG, &p)) {
+            m33_kidbank = (WORD)((uint32_t)p >> 16);
+            m33_kidsame = (WORD)(p == (void *)tree);
+        }
         m33_gfree = rsrc_free();
         m33_step = 8;
     }

@@ -710,7 +710,7 @@ static void run_script(void)
                 break;
             case 35:                        /* menu_register: pid, str addr */
                 intout[0] = mn_register(intin[0],
-                                        (const char *)(uint16_t)intin[1]);
+                                        (uint32_t)(uint16_t)intin[1]);
                 c4 = 1;
                 break;
             /* menu_popup, with the MENU block spelled out in intin
