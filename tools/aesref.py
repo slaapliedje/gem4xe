@@ -3678,9 +3678,23 @@ class AES:
                     return 1 if field == 0 else 0
             return -1
 
+        # fsel.c dir_sset / dir_sget / path_changed: the line says D1:,
+        # the path A: (phase 73)
+        def shown(p):
+            if len(p) > 1 and "A" <= p[0] < chr(ord("A") + NM_DRIVES) and p[1] == ":":
+                return f"D{ord(p[0]) - ord('A') + 1}" + p[1:]
+            return p
+
+        def typed(line):
+            if len(line) > 2 and line[0] in "Dd" and "1" <= line[1] <= "8" and line[2] == ":":
+                line = chr(ord("A") + int(line[1]) - 1) + line[2:]
+            elif len(line) > 1 and "1" <= line[0] <= "8" and line[1] == ":":
+                line = chr(ord("A") + int(line[0]) - 1) + line[1:]
+            return line[:LEN_FSPATH - 1]
+
         def path_changed(p):
             n = ted(FSDIRECT).txtlen - 1
-            return p[:n] != text(FSDIRECT).s[:n]
+            return shown(p)[:n] != text(FSDIRECT).s[:n]
 
         def get_drive(p):
             d = fs_drive_number(p)
@@ -3813,7 +3827,7 @@ class AES:
             locold.s = locstr.s
             set_mask()
             ted(FTITLE).ptext = work + 128 + 2 * LEN_FSPATH
-            inf_sset(FSDIRECT, locstr.s)
+            inf_sset(FSDIRECT, shown(locstr.s))
             selname = fs_fmt_str(sel)
             inf_sset(FSSELECT, selname)
             selname = " " + selname
@@ -3841,7 +3855,7 @@ class AES:
                 _, mx, my = self.gsx_mouse()
                 if newlist:
                     fs_sel(sel, NORMAL)
-                    inf_sset(FSDIRECT, locstr.s)
+                    inf_sset(FSDIRECT, shown(locstr.s))
                     p, pend = fs_pspec(locstr.s)
                     locstr.s = p[:pend] + mask.s
                     curr = sel = 0
@@ -3915,17 +3929,17 @@ class AES:
                 if touchob == FSCANCEL:
                     break
                 if not newlist and not newdrive and path_changed(locstr.s):
-                    if get_drive(text(FSDIRECT).s) != get_drive(locstr.s):
+                    if get_drive(typed(text(FSDIRECT).s)) != get_drive(locstr.s):
                         newdrive = True
                     else:
                         newlist = True
-                    locstr.s = text(FSDIRECT).s
+                    locstr.s = typed(text(FSDIRECT).s)
                 if newdrive:
                     select_drive(touchob - FS1STDRV, True)
                     newdrive = False
                     newlist = True
                 if newlist:
-                    inf_sset(FSDIRECT, locstr.s)
+                    inf_sset(FSDIRECT, shown(locstr.s))
                     set_mask()
                     if not error:
                         selname = selname[:1]

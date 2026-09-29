@@ -458,7 +458,7 @@ static void win_sname(WNODE *pw)
 {
     char *d = put_str(pw->w_name, " ");
 
-    d = put_str(d, pw->w_path.p_spec);
+    d = drv_show(d, pw->w_path.p_spec, (WORD)(sizeof pw->w_name - 2));
     put_str(d, " ");
 }
 
@@ -1152,7 +1152,7 @@ static WORD do_dopen(WORD curr)
         act_chg(DESKWH, DROOT, curr, FALSE, TRUE);
         return FALSE;
     }
-    path[0] = (char)(obj_info(curr)->i.blk.ib_char & 0xFF);
+    path[0] = (char)icon_letter(curr);
     path[1] = ':';
     path[2] = '\\';
     path[3] = '*';
@@ -1518,7 +1518,7 @@ WORD do_open(WORD wh, WORD obj)
     FNODE FAR *pf;
 
     if (wh == DESKWH) {
-        if (obj_info(obj)->i.blk.ib_char & 0xFF)
+        if (icon_letter(obj))
             do_dopen(obj);
         return FALSE;                           /* else the trash */
     }

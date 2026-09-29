@@ -93,8 +93,11 @@ def build():
     ]
     for i in range(NM_DRIVES):
         nxt = FSDRIVES if i == NM_DRIVES - 1 else FS1STDRV + i + 1
-        objs.append((nxt, NIL, NIL, G_BOXCHAR, TOUCHEXIT, NORMAL,
-                     ((ord("A") + i) << 24) | 0x00FF1100,
+        # "D1" to "D8", the Atari's names for the drives -- the path the
+        # program gets back still says A: to H: (src/aes/fsel.c dir_sset)
+        objs.append((nxt, NIL, NIL, G_BOXTEXT, TOUCHEXIT, NORMAL,
+                     r.ted(f"D{i + 1}", "", "", just=TE_CNTR, color=0x1100,
+                           thickness=-1),
                      ch(0), ch(i), ch(3), ch(1)))
     objs += [
         (FSOK, FCLSBOX, FILEBOX, G_IBOX, NONE, NORMAL, 0x00001100,

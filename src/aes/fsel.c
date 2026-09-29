@@ -67,7 +67,7 @@
 #define LEN_FSNAME  (FS_LEN_NAME + 1)   /* flag, NAME.EXT, NUL: the donor's 14 */
 #define LEN_FSPATH  (FS_LEN_DIRECT + 9) /* X:\ and a mask the field's width */
 #define MAX_FILES   64                  /* the donor's nm_files, fixed */
-#define LEN_FSWORK  (3 * LEN_FSPATH + MAX_FILES * 2)
+#define LEN_FSWORK  (4 * LEN_FSPATH + MAX_FILES * 2)   /* ...and the typed line */
 
 #define PATHSEP     '\\'
 #define DRIVESEP    ':'
@@ -480,13 +480,70 @@ static void select_drive(OBJECT FAR *tree, WORD drive, WORD redraw)
     }
 }
 
+/* THE DIRECTORY LINE SAYS D1:, and the path under it says A:.  A person
+ * reads the Atari's names -- D1: to D8:, as the desktop's icons and
+ * windows do (phase 73) -- and the program that asked gets its path back
+ * in GEMDOS's, which is what every ST program passes and expects.  So the
+ * line is translated as it is filled and as it is read, and nowhere else:
+ * the path is A:\ from end to end. */
+static WORD shown_drive(const char *path)
+{
+    return (WORD)(path[0] >= 'A' && path[0] < 'A' + NM_DRIVES
+                  && path[1] == DRIVESEP);
+}
+
+/* The path into the directory line, as it is shown. */
+static void dir_sset(OBJECT FAR *tree, const char *path)
+{
+    TEDINFO FAR *ted = ted_of(tree, FS_FSDIRECT);
+    char *d = (char *)(uint16_t)ted->te_ptext;
+    char *end = d + ted->te_txtlen - 1;
+
+    if (shown_drive(path) && end - d > 3) {
+        *d++ = 'D';
+        *d++ = (char)('1' + path[0] - 'A');
+        path++;
+    }
+    while (*path && d < end)
+        *d++ = *path++;
+    *d = 0;
+}
+
+/* What was typed on the directory line, as a path: "D1:" (or "1:") is
+ * A:, a letter is itself, and the rest is copied. */
+static void dir_sget(char *path, const char *line)
+{
+    const char *s = line;
+    WORD n = 0;
+
+    if ((s[0] == 'D' || s[0] == 'd') && s[1] >= '1' && s[1] <= '8'
+        && s[2] == DRIVESEP) {
+        path[n++] = (char)('A' + s[1] - '1');
+        s += 2;
+    } else if (s[0] >= '1' && s[0] <= '8' && s[1] == DRIVESEP) {
+        path[n++] = (char)('A' + s[0] - '1');
+        s += 1;
+    }
+    while (*s && n < LEN_FSPATH - 1)
+        path[n++] = *s++;
+    path[n] = 0;
+}
+
 /* Does the path differ from what the directory field shows? */
 static WORD path_changed(OBJECT FAR *tree, const char *path)
 {
     TEDINFO FAR *ted = ted_of(tree, FS_FSDIRECT);
+    const char *line = (const char *)(uint16_t)ted->te_ptext;
+    WORD n = (WORD)(ted->te_txtlen - 1);
 
-    return strncmp(path, (const char *)(uint16_t)ted->te_ptext,
-                   (size_t)(ted->te_txtlen - 1)) != 0;
+    if (shown_drive(path)) {
+        if (line[0] != 'D' || line[1] != (char)('1' + path[0] - 'A'))
+            return TRUE;
+        line += 2;
+        path++;
+        n -= 2;
+    }
+    return strncmp(path, line, (size_t)n) != 0;
 }
 
 static WORD get_drive(const char *path)
@@ -574,7 +631,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     ted_of(tree, FS_FTITLE)->te_ptext = (uint16_t)mask;
 
     ad_fpath = (char *)(uint16_t)ted_of(tree, FS_FSDIRECT)->te_ptext;
-    inf_sset(tree, FS_FSDIRECT, locstr);
+    dir_sset(tree, locstr);
 
     ad_fname = (char *)(uint16_t)ted_of(tree, FS_FSSELECT)->te_ptext;
     fmt_str(pisel, selname);
@@ -607,7 +664,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
 
         if (newlist) {
             fs_sel(tree, sel, NORMAL);
-            inf_sset(tree, FS_FSDIRECT, locstr);
+            dir_sset(tree, locstr);
             pstr = fs_pspec(locstr, 0);
             strcpy(pstr, mask);
             curr = 0;
@@ -718,11 +775,14 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
             break;
 
         if (!newlist && !newdrive && path_changed(tree, locstr)) {
-            if (get_drive(ad_fpath) != get_drive(locstr))
+            char *typed = mask + LEN_FSPATH;    /* the work area's fourth */
+
+            dir_sget(typed, ad_fpath);
+            if (get_drive(typed) != get_drive(locstr))
                 newdrive = TRUE;
             else
                 newlist = TRUE;
-            strcpy(locstr, ad_fpath);
+            strcpy(locstr, typed);
         }
 
         if (newdrive) {
@@ -732,7 +792,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
         }
 
         if (newlist) {
-            inf_sset(tree, FS_FSDIRECT, locstr);
+            dir_sset(tree, locstr);
             set_mask(mask, locstr);
             if (!error) {
                 selname[1] = 0;

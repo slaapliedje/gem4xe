@@ -447,7 +447,7 @@ def main(argv):
         b.frames(10)
         t.shot("desk")
 
-        t.dclick(t.desk_icon("DISK A"))
+        t.dclick(t.desk_icon("DISK D1:"))
         t.click(t.gadget(W_FULLER))
         t.go((400, 150))
         t.shot("window")

@@ -596,7 +596,7 @@ static WORD drop_path(WORD dst_wh, WORD dst_obj, char *path)
     FNODE FAR *pf;
 
     if (dst_wh == DESKWH) {
-        WORD drive = (WORD)(obj_info(dst_obj)->i.blk.ib_char & 0xFF);
+        WORD drive = (WORD)icon_letter(dst_obj);
 
         if (!drive)
             return FALSE;                       /* the trash: not a place */
@@ -635,7 +635,7 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
     WORD i, ok, op, chose = FALSE;
 
     op = (kstate & (MODE_LSHIFT | MODE_RSHIFT)) ? OP_MOVE : OP_COPY;
-    if (dst_wh == DESKWH && !(obj_info(dst_obj)->i.blk.ib_char & 0xFF)) {
+    if (dst_wh == DESKWH && !icon_letter(dst_obj)) {
         fun_del(pw);                            /* the trash */
         return;
     }
@@ -903,7 +903,7 @@ void fun_dinfo(WORD obj)
     OBJECT *tree;
     DISKINFO di;
     LONG freeb = -1;
-    WORD drive = (WORD)((obj_info(obj)->i.blk.ib_char & 0xFF) - 'A');
+    WORD drive = (WORD)(icon_letter(obj) - 'A');
     char label[LABEL_LEN];
     WORD ok, k;
 

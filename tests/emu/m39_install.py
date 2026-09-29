@@ -75,7 +75,7 @@ def main():
         t = Tour(b, syms, out)
         b.frames(10)
 
-        t.dclick(t.desk_icon("DISK A"))
+        t.dclick(t.desk_icon("DISK D1:"))
         t.dclick(t.item("APPS"))
         t.click(t.item("CALC.PRG"))
         t.choose(OPTNMENU, IAPPITEM)

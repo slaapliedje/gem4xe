@@ -99,8 +99,8 @@ try:
     t = Tour(b, syms, out)
     b.frames(10)
     timed("idle, nothing to do", lambda: b.frames(30))
-    t.go(t.desk_icon("DISK A"))
-    timed("open DISK A", lambda: t.run(shots.DCLICK(t.desk_icon("DISK A"))))
+    t.go(t.desk_icon("DISK D1:"))
+    timed("open DISK A", lambda: t.run(shots.DCLICK(t.desk_icon("DISK D1:"))))
     g = t.gadget(W_FULLER); t.go(g)
     timed("full the window", lambda: t.run(shots.CLICK()))
     # the window's directory as LINES of text: the text-heavy redraw

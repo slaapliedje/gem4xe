@@ -175,7 +175,7 @@ def main():
         far = lambda: b.peek24(syms["farmem"] + FARMEM_BRK)   # noqa: E731
 
         # -- Show info on a drive ---------------------------------------
-        t.click(t.desk_icon("DISK A"))
+        t.click(t.desk_icon("DISK D1:"))
         far0 = far()
         b.key("I", ctrl=True)
         b.frames(20)
@@ -193,7 +193,7 @@ def main():
         check(far() == far0, "...and OK puts it away")
 
         # -- Set file mask -----------------------------------------------
-        t.dclick(t.desk_icon("DISK A"))
+        t.dclick(t.desk_icon("DISK D1:"))
         t.click(t.gadget(W_FULLER))
         set_mask(t, ["ASTERISK", "PERIOD", "B", "A", "T"])
         got = listing(t)
@@ -246,7 +246,7 @@ def main():
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, out)
         b.frames(10)
-        t.dclick(t.desk_icon("DISK A"))
+        t.dclick(t.desk_icon("DISK D1:"))
         t.click(t.gadget(W_FULLER))
         set_mask(t, ["ASTERISK", "PERIOD", "B", "A", "T"])
         copy_in(t, "STARTUP.BAT", "GEM", answer=False)

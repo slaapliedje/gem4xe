@@ -239,6 +239,8 @@ WORD obj_walloc(WORD x, WORD y, WORD w, WORD h);
 void obj_wfree(WORD obj, WORD x, WORD y, WORD w, WORD h);
 WORD obj_ialloc(WORD wparent, WORD x, WORD y, WORD w, WORD h);
 WORD obj_get_obid(WORD drive);
+WORD icon_letter(WORD obj);
+char *drv_show(char *d, const char *path, WORD n);
 SCREENINFO *obj_info(WORD obj);
 WORD obj_text(WORD wparent, WORD x, WORD y, WORD w, WORD h);
 WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,

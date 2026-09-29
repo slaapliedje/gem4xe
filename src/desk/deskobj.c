@@ -114,6 +114,39 @@ WORD obj_ialloc(WORD wparent, WORD x, WORD y, WORD w, WORD h)
     return objnum;
 }
 
+/* THE DRIVES ARE D1: TO D8:, WHERE A PERSON READS THEM, and A: to H:
+ * underneath, where GEMDOS and every ST program read them (phase 73).  An
+ * icon shows its drive's digit and a label that says "D1:"; the letter
+ * a path wants is recovered here, so nothing that builds a path has to
+ * know which the icon shows.  0 for an icon that is not a drive. */
+WORD icon_letter(WORD obj)
+{
+    WORD c = (WORD)(obj_info(obj)->i.blk.ib_char & 0xFF);
+
+    if (c >= '1' && c <= '8')
+        return (WORD)('A' + c - '1');
+    if (c >= 'A' && c <= 'P')
+        return c;
+    return 0;
+}
+
+/* A path as it is shown: "A:\GEM" as "D1:\GEM", anything else as it is.
+ * At most n bytes go into d, the NUL among them; d's end is returned. */
+char *drv_show(char *d, const char *path, WORD n)
+{
+    char *end = d + n - 1;
+
+    if (path[0] >= 'A' && path[0] <= 'H' && path[1] == ':' && n > 3) {
+        *d++ = 'D';
+        *d++ = (char)('1' + path[0] - 'A');
+        path++;
+    }
+    while (*path && d < end)
+        *d++ = *path++;
+    *d = 0;
+    return d;
+}
+
 /* The desk icon of a drive letter, or 0. */
 WORD obj_get_obid(WORD drive)
 {
@@ -121,8 +154,7 @@ WORD obj_get_obid(WORD drive)
 
     for (objnum = G.g_screen[DROOT].ob_head; objnum >= WOBS_START;
          objnum = G.g_screen[objnum].ob_next) {
-        if (G.g_screen[objnum].ob_type == G_ICON
-         && (obj_info(objnum)->i.blk.ib_char & 0xFF) == drive)
+        if (G.g_screen[objnum].ob_type == G_ICON && icon_letter(objnum) == drive)
             return objnum;
     }
     return 0;
@@ -178,6 +210,8 @@ WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
     pic->ib_ytext = pic->ib_hicon;
     pic->ib_wtext = (WORD)(MAX_ICONTEXT_WIDTH * G.g_wchar);
     pic->ib_htext = (WORD)(G.g_hchar + 2);
+    if (letter >= 'A' && letter <= 'H')         /* the digit, D1:'s 1 */
+        letter = (WORD)('1' + letter - 'A');
     pic->ib_char = (WORD)((pic->ib_char & 0xFF00) | letter);
     d = si->i.label;
     while (*label && d < si->i.label + LABEL_LEN - 1)

@@ -255,6 +255,13 @@ def far_strcmp(a, b):
     return ca - cb
 
 
+
+def drv_show(path):
+    """deskobj.c drv_show: "A:\\GEM" as a person reads it, "D1:\\GEM"."""
+    if len(path) > 1 and "A" <= path[0] <= "H" and path[1] == ":":
+        return f"D{ord(path[0]) - ord('A') + 1}" + path[1:]
+    return path
+
 class CharArray:
     """A char[size] the program writes into in place with put_str: the
     bytes past the NUL stay what they were, as the target's do, and the
@@ -636,6 +643,8 @@ class Desktop:
         ib.text.y = ib.icon.h
         ib.text.w = MAX_ICONTEXT_WIDTH * self.wchar
         ib.text.h = self.hchar + 2
+        if ord("A") <= letter <= ord("H"):      # the digit, D1:'s 1 (phase 73)
+            letter = ord("1") + letter - ord("A")
         ib.char = (ib.char & 0xFF00) | letter
         self.labels[obid - WOBS_START].put(label[:LABEL_LEN - 1])
         ib.ptext = addr + ICONBLK_SIZE
@@ -696,7 +705,7 @@ class Desktop:
             if not drvmap & (1 << drive):
                 continue
             gx, gy = n % xcnt, n // xcnt
-            label = disk[:LABEL_LEN - 3] + " " + chr(ord("A") + drive)
+            label = disk[:LABEL_LEN - 5] + f" D{drive + 1}:"
             self.desk_icon(gx, gy, IB_HARD if drive > 1 else IB_FLOPPY,
                            label, ord("A") + drive)
             n += 1
@@ -847,7 +856,7 @@ class Desktop:
     @staticmethod
     def win_sname(pw):
         d = pw.name.put(" ")
-        d = pw.name.put(pw.path.spec.s, d)
+        d = pw.name.put(drv_show(pw.path.spec.s), d)
         pw.name.put(" ", d)
 
     def win_sinfo(self, pw):
@@ -1231,7 +1240,7 @@ class Desktop:
             self.fun_alert(1, STNOWIND)
             self.act_chg(DESKWH, DROOT, curr, False, True)
             return False
-        path = chr(self.obj_info(curr).char & 0xFF) + ":\\*.*"
+        path = chr(self.icon_letter(curr)) + ":\\*.*"
         o = self.screen[pw.root]
         box = Rect(o.ob_x, o.ob_y, o.ob_width, o.ob_height)
         if not self.do_diropen(pw, True, curr, path, box, True):
@@ -1278,7 +1287,7 @@ class Desktop:
         """True only when a program ran (the donor's do_open): the
         desktop is done then."""
         if wh == DESKWH:
-            if self.obj_info(obj).char & 0xFF:
+            if self.icon_letter(obj):
                 self.do_dopen(obj)
             return False                            # else the trash
         pw = self.win_find(wh)
@@ -1505,11 +1514,21 @@ class Desktop:
         n = self.inf_write()
         self.call(SHEL_PUT, (n,), tree=self.shelbuf)
 
+    def icon_letter(self, obj):
+        """deskobj.c icon_letter: the drive letter an icon stands for, its
+        digit read back; 0 for one that is not a drive."""
+        c = self.obj_info(obj).char & 0xFF
+        if ord("1") <= c <= ord("8"):
+            return ord("A") + c - ord("1")
+        if ord("A") <= c <= ord("P"):
+            return c
+        return 0
+
     def obj_get_obid(self, drive):
         objnum = self.screen[DROOT].ob_head
         while objnum >= WOBS_START:
             o = self.screen[objnum]
-            if o.ob_type == G_ICON and (self.obj_info(objnum).char & 0xFF) == drive:
+            if o.ob_type == G_ICON and self.icon_letter(objnum) == drive:
                 return objnum
             objnum = o.ob_next
         return 0
@@ -2097,7 +2116,7 @@ class Desktop:
     def drop_path(self, dst_wh, dst_obj):
         """Where a drop landed, as a path ending in "*.*", or None."""
         if dst_wh == DESKWH:
-            drive = self.obj_info(dst_obj).icon.char & 0xFF
+            drive = self.icon_letter(dst_obj)
             if not drive:
                 return None                     # the trash: not a place
             return chr(drive) + ":\\*.*"
@@ -2120,7 +2139,7 @@ class Desktop:
         tree = self.a_delete
         pn = pw.path
         op = OP_MOVE if kstate & (MODE_LSHIFT | MODE_RSHIFT) else OP_COPY
-        if dst_wh == DESKWH and not (self.obj_info(dst_obj).icon.char & 0xFF):
+        if dst_wh == DESKWH and not self.icon_letter(dst_obj):
             self.fun_del(pw)                    # the trash
             return
         dest = self.drop_path(dst_wh, dst_obj)

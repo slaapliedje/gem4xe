@@ -111,10 +111,12 @@ static void desk_build(void)
         {
             char *d = label;
             const char *s = disk;
-            while (*s && d < label + LABEL_LEN - 3)
+            while (*s && d < label + LABEL_LEN - 5)
                 *d++ = *s++;
-            *d++ = ' ';
-            *d++ = (char)('A' + drive);
+            *d++ = ' ';                         /* "DISK D1:", as SDX */
+            *d++ = 'D';                         /* and a person say it */
+            *d++ = (char)('1' + drive);
+            *d++ = ':';
             *d = 0;
         }
         desk_icon(gx, gy, drive > 1 ? IB_HARD : IB_FLOPPY, label, (WORD)('A' + drive));
