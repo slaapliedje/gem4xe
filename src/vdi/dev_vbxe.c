@@ -18,6 +18,8 @@
 #include "vdi.h"
 #include "vdidev.h"
 #include "../vbxe/vbxe.h"
+#include "../sys/farmem.h"
+#include <string.h>
 #include "font.h"
 
 /* The VDI's pen order into this device's hardware indices; the table is
@@ -1182,22 +1184,9 @@ static uint32_t form_row(WORD y, WORD stride)
     return r;
 }
 
-/* One pixel into a form, already known to be inside it. */
-static void rform_plot(const RFORM *f, WORD x, WORD y, WORD hwpen)
-{
-    uint32_t a = f->base + form_row(y, f->stride) + (uint32_t)(x >> 1);
-    uint8_t  b = vram_read8(a);
-    if (x & 1)
-        b = (uint8_t)((b & 0xF0) | (hwpen & 0x0F));
-    else
-        b = (uint8_t)((b & 0x0F) | ((hwpen & 0x0F) << 4));
-    vram_write8(a, b);
-}
-
-
 void dev_save_form(MFDB *m)
 {
-    m->fd_addr = VR_SAVE;
+    m->fd_addr = VR_SAVE | VR_FORM_TAG;
     m->fd_w = SCR_W;
     m->fd_h = vdev->h;          /* the screen, not the buffer */
     m->fd_wdwidth = SCR_W / 16;
@@ -1209,40 +1198,156 @@ void dev_save_form(MFDB *m)
 /* The screen, as a form. */
 void dev_screen_form(RFORM *f)
 {
-    f->base = VR_SCREEN0;  f->stride = SCR_STRIDE;
+    f->base = VR_SCREEN0 | VR_FORM_TAG;  f->stride = SCR_STRIDE;
     f->w = SCR_W;  f->h = vdev->h;  f->screen = 1;
 }
 
-/* One blit when both ends share their alignment and the width is a whole
- * number of bytes; otherwise pixel by pixel through the window, in the
- * direction that keeps an overlapping move safe.  The blitter has no
- * shifter, which is why the fast path is so particular -- and why a
- * window that moves by an EVEN number of pixels stays on it. */
+/* n bytes of a form into buf, or out of it.  The address says where the
+ * form is: VRAM through the window a page at a time, a program's memory
+ * in bank $00 directly, anything above it through the far helpers.
+ * Until 0.9.1 every form was taken for VRAM, so a program's memory form
+ * was read from and written to the VRAM at its address -- G4BENCH's
+ * memory copies landed on the screen, a pixel at a time. */
+static void span_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
+{
+    if (a & VR_FORM_TAG) {
+        a &= ~VR_FORM_TAG;
+        if (put) {
+            vram_write(a, buf, n);
+            return;
+        }
+        while (n) {
+            uint16_t k = (uint16_t)(0x1000 - (uint16_t)(a & 0x0FFF)), j;
+            volatile uint8_t *w = vram_win(a);
+
+            if (k > n)
+                k = n;
+            for (j = 0; j < k; j++)
+                buf[j] = w[j];
+            a += k;
+            buf += k;
+            n = (uint16_t)(n - k);
+        }
+    } else if (a + n <= 0x10000UL) {
+        uint8_t *p = (uint8_t *)(uint16_t)a;
+        if (put)
+            memcpy(p, buf, n);
+        else
+            memcpy(buf, p, n);
+    } else if (put) {
+        far_put(a, buf, n);
+    } else {
+        far_get(buf, a, n);
+    }
+}
+
+/* A rectangle a row at a time, through a buffer, ROW_CHUNK destination
+ * bytes at once: the source read, its pixels put in the destination's
+ * places -- a byte copy when both ends share their parity, a nibble at
+ * a time when they do not -- and the partial byte at either end merged
+ * with what the destination holds.  Rows run bottom-up and chunks
+ * right-to-left when the destination is below or right of the source,
+ * so a move inside one form never reads a pixel it has already
+ * written. */
+#define ROW_CHUNK 24      /* on the stack, as ANTIC's is: LoRAM has no room */
+
+static void copy_rows(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
+                      uint32_t db, uint16_t ds, WORD dx1, WORD dy1,
+                      WORD w, WORD h)
+{
+    uint8_t row_src[ROW_CHUNK + 1], row_dst[ROW_CHUNK];
+    WORD back_y = (WORD)(dy1 > sy1), back_x = (WORD)(dx1 > sx1);
+    WORD y;
+
+    for (y = 0; y < h; y++) {
+        WORD r = back_y ? (WORD)(h - 1 - y) : y;
+        uint32_t sr = sb + form_row((WORD)(sy1 + r), (WORD)ss);
+        uint32_t dr = db + form_row((WORD)(dy1 + r), (WORD)ds);
+        WORD done = 0;
+
+        while (done < w) {
+            WORD n = (WORD)(w - done), i, sx, dx;
+            uint16_t sn, dn;
+
+            if (n > 2 * ROW_CHUNK - 2)
+                n = 2 * ROW_CHUNK - 2;
+            i = back_x ? (WORD)(w - done - n) : done;
+            sx = (WORD)(sx1 + i);
+            dx = (WORD)(dx1 + i);
+            sn = (uint16_t)((UWORD)((sx & 1) + n + 1) >> 1);
+            dn = (uint16_t)((UWORD)((dx & 1) + n + 1) >> 1);
+            span_io(sr + (UWORD)((UWORD)sx >> 1), row_src, sn, 0);
+            if (dx & 1)
+                span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, 1, 0);
+            if ((dx + n) & 1)
+                span_io(dr + (UWORD)((UWORD)dx >> 1) + dn - 1,
+                        row_dst + dn - 1, 1, 0);
+            if (((sx ^ dx) & 1) == 0) {
+                uint8_t first = row_dst[0], last = row_dst[dn - 1];
+
+                memcpy(row_dst, row_src, dn);
+                if (dx & 1)
+                    row_dst[0] = (uint8_t)((first & 0xF0) | (row_src[0] & 0x0F));
+                if ((dx + n) & 1)
+                    row_dst[dn - 1] = (uint8_t)((row_src[dn - 1] & 0xF0)
+                                                | (last & 0x0F));
+            } else {
+                UWORD s = (UWORD)(sx & 1), d = (UWORD)(dx & 1), k;
+
+                for (k = 0; k < (UWORD)n; k++, s++, d++) {
+                    uint8_t v = row_src[s >> 1];
+                    uint8_t *p = &row_dst[d >> 1];
+
+                    v = (s & 1) ? (uint8_t)(v & 0x0F) : (uint8_t)(v >> 4);
+                    *p = (d & 1) ? (uint8_t)((*p & 0xF0) | v)
+                                 : (uint8_t)((*p & 0x0F) | (v << 4));
+                }
+            }
+            span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, dn, 1);
+            done = (WORD)(done + n);
+        }
+    }
+}
+
+/* Screen and save buffer are both in VRAM, and there the blitter moves
+ * whatever it can: everything when both ends are even and the width is
+ * whole bytes, and otherwise, when the two ends share their parity, the
+ * even middle -- leaving at most a column at each edge to the rows
+ * above.  The blitter has no shifter, so ends of different parity, and
+ * any form in a program's memory, go by rows.  For a move the edge on
+ * the side it moves towards goes first and the other last: each then
+ * reads only pixels nothing has written yet. */
 void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
                    const RFORM *dst, WORD dx1, WORD dy1, WORD w, WORD h)
 {
-    WORD y;
+    uint32_t sb = src->base, db = dst->base;
+    WORD l, r, mw;
 
-    if (((sx1 ^ dx1) & 1) == 0 && (sx1 & 1) == 0 && (w & 1) == 0) {
-        blit_move(src->base + form_row(sy1, src->stride) + (uint32_t)(sx1 >> 1),
-                  src->stride,
-                  dst->base + form_row(dy1, dst->stride) + (uint32_t)(dx1 >> 1),
-                  dst->stride,
-                  (uint16_t)(w >> 1), (uint16_t)h);
+    if (!(sb & db & VR_FORM_TAG) || ((sx1 ^ dx1) & 1)) {
+        copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, w, h);
         return;
     }
-    for (y = 0; y < h; y++) {
-        WORD sy = (dy1 > sy1) ? (WORD)(sy1 + h - 1 - y) : (WORD)(sy1 + y);
-        WORD dy = (dy1 > sy1) ? (WORD)(dy1 + h - 1 - y) : (WORD)(dy1 + y);
-        WORD i;
-        for (i = 0; i < w; i++) {
-            WORD sx = (dx1 > sx1) ? (WORD)(sx1 + w - 1 - i) : (WORD)(sx1 + i);
-            WORD dx = (dx1 > sx1) ? (WORD)(dx1 + w - 1 - i) : (WORD)(dx1 + i);
-            uint32_t a = src->base + form_row(sy, src->stride) + (uint32_t)(sx >> 1);
-            uint8_t  v = vram_read8(a);
-            rform_plot(dst, dx, dy, (WORD)((sx & 1) ? (v & 0x0F) : (v >> 4)));
-        }
-    }
+    l = (WORD)(sx1 & 1);                /* a column left of the even middle */
+    r = (WORD)((sx1 + w) & 1);          /* ...and one right of it */
+    mw = (WORD)(w - l - r);
+    if (r && dx1 > sx1)
+        copy_rows(sb, src->stride, (WORD)(sx1 + w - 1), sy1,
+                  db, dst->stride, (WORD)(dx1 + w - 1), dy1, 1, h);
+    if (l && dx1 <= sx1)
+        copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, 1, h);
+    if (mw > 0)
+        blit_move((sb & ~VR_FORM_TAG) + form_row(sy1, src->stride)
+                      + (uint32_t)((UWORD)(sx1 + l) >> 1),
+                  src->stride,
+                  (db & ~VR_FORM_TAG) + form_row(dy1, dst->stride)
+                      + (uint32_t)((UWORD)(dx1 + l) >> 1),
+                  dst->stride,
+                  (uint16_t)((UWORD)mw >> 1), (uint16_t)h);
+    if (l && dx1 > sx1)
+        copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, 1, h);
+    if (r && dx1 <= sx1)
+        copy_rows(sb, src->stride, (WORD)(sx1 + w - 1), sy1,
+                  db, dst->stride, (WORD)(dx1 + w - 1), dy1, 1, h);
 }
 
 /* VDI pen -> hardware pen.

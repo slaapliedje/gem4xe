@@ -86,6 +86,13 @@ def make_icon():
 
 ICON_BITS, ICON_W, ICON_H, ICON_WDW = make_icon()
 
+# A program's own form, in vdi_scratch after the MFDBs at 512..571: 128 x 20
+# at four planes, wide enough that a row takes more than one of the
+# driver's buffers (dev_vbxe.c ROW_CHUNK, 46 pixels), and its MFDB after it.
+MEM_AT, MEM_W, MEM_H = 576, 128, 20
+MEM_BYTES = MEM_W // 2 * MEM_H
+MEM_MFDB = MEM_AT + MEM_BYTES
+
 # --- the cases ----------------------------------------------------------
 # Every case starts from a cleared screen so each is independent.
 CASES = [
@@ -924,6 +931,56 @@ CASES = [
         (VRO_CPYFM, (21, 20, 79, 59, 21, 20, 79, 59), (3,), "from_save"),
         (VRO_CPYFM, (21, 20, 79, 59, 200, 100, 258, 139), (3,), "from_save")]),
 
+    # --- a form in the PROGRAM's memory: 128x20 at four planes, in
+    # vdi_scratch.  Until 0.9.1 the driver took every form for VRAM, and
+    # these went to the screen at the form's address a pixel at a time
+    # (G4BENCH's long white screen).  "to_mem" / "from_mem"; the gate
+    # also compares the form's bytes with the model's.
+    ("cpyfm to a memory form and back", [
+        (VSF_COLOR, (), (2,)), (VR_RECFL, (20, 20, 147, 39), ()),
+        (VSF_COLOR, (), (6,)), (VR_RECFL, (30, 25, 49, 34), ()),
+        (VSF_COLOR, (), (9,)), (VR_RECFL, (140, 20, 147, 39), ()),
+        (VRO_CPYFM, (20, 20, 147, 39, 0, 0, 127, 19), (3,), "to_mem"),
+        (VSF_COLOR, (), (0,)), (VR_RECFL, (0, 0, 199, 99), ()),
+        (VRO_CPYFM, (0, 0, 127, 19, 200, 100, 327, 119), (3,), "from_mem")]),
+
+    ("cpyfm memory form at odd x: nibbles moved both ways", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (21, 20, 140, 39), ()),
+        (VSF_COLOR, (), (1,)), (VR_RECFL, (33, 23, 48, 30), ()),
+        (VSF_COLOR, (), (12,)), (VR_RECFL, (21, 20, 21, 39), ()),
+        (VSF_COLOR, (), (3,)), (VR_RECFL, (140, 20, 140, 39), ()),
+        (VRO_CPYFM, (21, 20, 140, 39, 0, 0, 119, 19), (3,), "to_mem"),
+        (VRO_CPYFM, (21, 20, 70, 34, 3, 5, 52, 19), (3,), "to_mem"),
+        (VRO_CPYFM, (1, 0, 118, 19, 300, 100, 417, 119), (3,), "from_mem"),
+        (VRO_CPYFM, (0, 0, 100, 19, 401, 150, 501, 169), (3,), "from_mem"),
+        (VRO_CPYFM, (3, 2, 60, 12, 101, 180, 158, 190), (3,), "from_mem")]),
+
+    # Screen to screen at an odd x: the even middle is blitted and the
+    # edge columns go by rows, the edge on the side of the move first.
+    ("cpyfm screen at odd x, same parity, overlapping", [
+        (VSF_COLOR, (), (4,)), (VR_RECFL, (21, 20, 100, 59), ()),
+        (VSF_COLOR, (), (7,)), (VR_RECFL, (21, 20, 21, 59), ()),
+        (VSF_COLOR, (), (10,)), (VR_RECFL, (100, 20, 100, 59), ()),
+        (VSF_COLOR, (), (6,)), (VR_RECFL, (40, 30, 43, 33), ()),
+        (VRO_CPYFM, (21, 20, 100, 59, 23, 22, 102, 61), (3,)),
+        (VRO_CPYFM, (23, 22, 102, 61, 21, 24, 100, 63), (3,)),
+        (VRO_CPYFM, (21, 24, 100, 63, 21, 20, 100, 59), (3,)),
+        (VRO_CPYFM, (22, 20, 99, 59, 202, 120, 279, 159), (3,))]),
+
+    # ...and by ONE pixel, across more than a buffer's width: every
+    # nibble moves, the rows run through the buffer right to left.
+    ("cpyfm screen by one pixel, wider than a buffer", [
+        (VSF_COLOR, (), (3,)), (VR_RECFL, (20, 20, 219, 39), ()),
+        (VSF_COLOR, (), (9,)), (VR_RECFL, (25, 20, 26, 39), ()),
+        # single pixels where the buffers meet: dev_vbxe.c's ROW_CHUNK is
+        # 24 bytes, 46 pixels a pass, so x = 66, 112, 158, 204 from x = 20
+        (VSF_COLOR, (), (11,)), (VR_RECFL, (66, 22, 66, 37), ()),
+        (VSF_COLOR, (), (2,)), (VR_RECFL, (158, 22, 158, 37), ()),
+        (VSF_COLOR, (), (13,)), (VR_RECFL, (219, 20, 219, 39), ()),
+        (VRO_CPYFM, (20, 20, 219, 39, 21, 20, 220, 39), (3,)),
+        (VRO_CPYFM, (21, 20, 220, 39, 20, 50, 219, 69), (3,)),
+        (VRO_CPYFM, (20, 50, 219, 69, 19, 50, 218, 69), (3,))]),
+
     ("cpyfm from a form, destination clipped by the screen edge", [
         (VSF_COLOR, (), (4,)), (VR_RECFL, (0, 0, 39, 19), ()),
         (VSF_COLOR, (), (7,)), (VR_RECFL, (10, 5, 29, 14), ()),
@@ -1015,7 +1072,7 @@ def main(argv):
     count_addr = syms["vdi_result_count"]
     scratch_room = min(a for a in syms.values() if a > scratch_addr) - scratch_addr
     _RESULTS_ADDR[0], _COUNT_ADDR[0] = results_addr, count_addr
-    assert 552 + 20 <= scratch_room, "the MFDBs must fit vdi_scratch"
+    assert MEM_MFDB + 20 <= scratch_room, "the forms must fit vdi_scratch"
 
     emu = launch(tag="m3", memsize="1088K", extra_args=["--disk", DISK])
     b = emu.bridge
@@ -1069,8 +1126,11 @@ def main(argv):
             print(f"  -- {gw}x{gh}, stride {gstride} "
                   f"(shot column {vbxeref.shot_x0(gw)} on) --")
             save = vdiref.VramForm.save_buffer(scratch_addr + 552, w=gw, h=gh)
+            mem = vdiref.MemForm(scratch_addr + MEM_AT, MEM_W, MEM_H,
+                                 MEM_W // 16, 4, scratch_addr + MEM_MFDB)
             FORMS = {"icon": (ICON_BITS, ICON_WDW),
-                     "to_save": (None, save), "from_save": (save, None)}
+                     "to_save": (None, save), "from_save": (save, None),
+                     "to_mem": (None, mem), "from_mem": (mem, None)}
             run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       script_addr, scratch_addr, results_addr, count_addr,
                       script_room)
@@ -1112,6 +1172,9 @@ def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       pack_mfdb(scratch_addr, ICON_W, ICON_H, ICON_WDW))
             b.memload(scratch_addr + 532, pack_mfdb(0, 0, 0, 0))
             b.memload(scratch_addr + 552, save.pack())
+            mem = FORMS["to_mem"][1]
+            b.memload(mem.addr, bytes(MEM_BYTES))
+            b.memload(mem.mfdb_addr, mem.pack())
             poke_script(b, script_addr, resolved, scratch_addr + 512, script_room,
                         screen_mfdb=scratch_addr + 532)
             b.poke(STATUS + ST_DONE, 0)
@@ -1136,6 +1199,16 @@ def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                         err = (f"call {i} (op {full[i][0]}) returned {rec}, "
                                f"expected {ref.results[i]}")
                         break
+
+            # A program's memory form: its bytes, which no screenshot shows.
+            if not err and any(len(r) > 3 and r[3] in ("to_mem", "from_mem")
+                               for r in script):
+                got = bytes(b.memdump(mem.addr, MEM_BYTES))
+                want = bytes(ref.dev.cpu[mem.addr:mem.addr + MEM_BYTES])
+                if got != want:
+                    k = next(i for i in range(MEM_BYTES) if got[i] != want[i])
+                    err = (f"memory form byte {k} (row {k // mem.stride}) is "
+                           f"${got[k]:02X}, expected ${want[k]:02X}")
 
             shot = os.path.join(SHOTDIR, f"m3-{px}-{idx:02d}.png")
             b.screenshot(shot)

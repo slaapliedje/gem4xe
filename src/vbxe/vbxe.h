@@ -183,6 +183,10 @@
 #define VR_STRIP           ((VR_SAVE + VB_BYTES_MAX + 0xFFFUL) & ~0xFFFUL)
 #define VR_STRIP_LEN       0x1000UL
 /* VR_STRIP + VR_STRIP_LEN onward is free: window backing stores, icons */
+/* A raster form in VRAM says so in its address: the screen's and the save
+ * buffer's carry this bit (src/vdi/dev_vbxe.c, dev_copy_form).  Any other
+ * form's address is the program's memory, bank $00 or far.            */
+#define VR_FORM_TAG        0x80000000UL
 
 /* ---- MEMAC A window --------------------------------------------------- */
 /* 4 KB at $8000.  NOT MEMAC B: that is fixed at $4000-$7FFF, where U1MB's

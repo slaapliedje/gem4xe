@@ -1513,7 +1513,8 @@ class VramForm:
         one has to say so.  VR_SAVE itself does not move: the VRAM map is
         laid out for the widest overlay whatever is being shown
         (src/vbxe/vbxe.h)."""
-        return cls(vram_symbol("VR_SAVE"), w, h, w // 16, 4, mfdb_addr)
+        return cls(vram_symbol("VR_SAVE") | vram_symbol("VR_FORM_TAG"),
+                   w, h, w // 16, 4, mfdb_addr)
 
     @property
     def stride(self):
@@ -1521,6 +1522,13 @@ class VramForm:
 
     def pack(self):
         return pack_mfdb(self.addr, self.w, self.h, self.wdwidth, self.planes)
+
+
+class MemForm(VramForm):
+    """An MFDB whose fd_addr is the PROGRAM's memory in bank $00, as any
+    application's own form is.  Its address has no VR_FORM_TAG, so the
+    driver reads and writes it where it is (devref.Vbxe.cpu in the
+    model), not in VRAM."""
 
 
 def encode(script, mfdb_addr=0, screen_mfdb=0):

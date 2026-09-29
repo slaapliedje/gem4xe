@@ -100,6 +100,8 @@ class Vbxe:
         self.hw_pal = bytearray(48)
         self.palette_all(GEM_PAL if pal is None else pal)
         self.sv = None                  # (bx, y, nb, nr, bytes) under the cursor
+        # the program's bank $00: where a form that is not in VRAM lives
+        self.cpu = bytearray(0x10000)
         self.clear()
 
     # -- colours ---------------------------------------------------------
@@ -212,16 +214,20 @@ class Vbxe:
         return self.read_pixel(self.base, self.stride, x, y)
 
     # -- raster forms ----------------------------------------------------
+    # A form in VRAM carries this bit in its address (vbxe.h VR_FORM_TAG):
+    # the screen and the save buffer.  Any other address is the program's.
+    TAG = vbxeref.vram_symbol("VR_FORM_TAG")
+
     def screen_form(self):
-        return self.base, self.stride, self.w, self.h, True
+        return self.base | self.TAG, self.stride, self.w, self.h, True
 
     def save_form(self):
         """Where the AES saves what a menu or a dialog covers: a whole
         screen at VR_SAVE, laid out like the screen.  VRAM is the reason
         this is cheap here and the reason the other device has to find
         the room somewhere else."""
-        return Form(vbxeref.vram_symbol("VR_SAVE"), self.w, self.h,
-                    self.stride)
+        return Form(vbxeref.vram_symbol("VR_SAVE") | self.TAG, self.w,
+                    self.h, self.stride)
 
     def read_pixel(self, base, stride, x, y):
         v = self.s.mem[base + y * stride + (x >> 1)]
@@ -235,29 +241,46 @@ class Vbxe:
         else:
             self.s.mem[a] = (b & 0x0F) | (value << 4)
 
+    def _space(self, a):
+        """(memory, address) of a form's address: VRAM when it is tagged,
+        the program's bank $00 when it is not."""
+        if a & self.TAG:
+            return self.s.mem, a & ~self.TAG
+        return self.cpu, a
+
     def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h):
         """A rectangle moved between forms, in PIXELS, already clipped.
 
-        The blitter has no shifter, so 4bpp pixels can only be moved
-        between positions of the same parity: when they are -- and the
-        run is a whole number of bytes -- it is one blit, and otherwise it
-        is pixel by pixel through the MEMAC window.  Both paths must
-        produce the same pixels, which is what the conformance cases
-        check.  The direction is chosen so an overlapping move does not
-        eat its own source.
+        What each pixel ends up as, not how the driver gets it there: the
+        driver blits what it can between VRAM forms and goes by rows
+        through a buffer for the rest (src/vdi/dev_vbxe.c), and every one
+        of its paths must give these pixels.  The direction is chosen so
+        an overlapping move does not eat its own source.
         """
-        if ((sx1 ^ dx1) & 1) == 0 and (sx1 & 1) == 0 and (w & 1) == 0:
-            self.s.move(sb + sy1 * ss + (sx1 >> 1), ss,
-                        db + dy1 * ds + (dx1 >> 1), ds, w >> 1, h)
+        sm, sa = self._space(sb)
+        dm, da = self._space(db)
+        if (sm is dm is self.s.mem and ((sx1 ^ dx1) & 1) == 0
+                and (sx1 & 1) == 0 and (w & 1) == 0):
+            self.s.move(sa + sy1 * ss + (sx1 >> 1), ss,
+                        da + dy1 * ds + (dx1 >> 1), ds, w >> 1, h)
             return
+
+        def get(x, y):
+            v = sm[sa + y * ss + (x >> 1)]
+            return (v & 0x0F) if (x & 1) else (v >> 4)
+
+        def put(x, y, v):
+            a = da + y * ds + (x >> 1)
+            b = dm[a]
+            dm[a] = ((b & 0xF0) | v) if (x & 1) else ((b & 0x0F) | (v << 4))
+
         for y in range(h):
             sy = (sy1 + h - 1 - y) if dy1 > sy1 else (sy1 + y)
             dy = (dy1 + h - 1 - y) if dy1 > sy1 else (dy1 + y)
             for i in range(w):
                 sx = (sx1 + w - 1 - i) if dx1 > sx1 else (sx1 + i)
                 dx = (dx1 + w - 1 - i) if dx1 > sx1 else (dx1 + i)
-                self.write_pixel(db, ds, dx, dy,
-                                 self.read_pixel(sb, ss, sx, sy))
+                put(dx, dy, get(sx, sy))
 
     # -- the cursor ------------------------------------------------------
     # The VDI owns WHERE the pointer is and whether it is shown; the
