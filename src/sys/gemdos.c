@@ -1347,15 +1347,13 @@ static LONG gd_drvmap(void)
 }
 
 /* ---- memory ---------------------------------------------------------------
- * The far heap is a bump allocator (src/sys/farmem.h): nothing can be
- * given back from the middle of it.  What can be done is done.  Every
- * block Malloc hands out carries a LONG in front of it, its size and a
- * mark, and the LAST block -- the one ending at the heap's cursor -- is
- * given back by Mfree and cut down in place by Mshrink, which is what a
- * program that allocates, uses and frees in turn needs.  A block below it
- * keeps its memory until the program ends, and the call succeeds.  The
- * mark tells an address Malloc never gave out (EIMBA), and a block Mfree
- * has had loses it, so a second Mfree of it is refused as well.
+ * Every block Malloc hands out is a far block of the program's own
+ * (src/sys/farmem.c) with a LONG in front of it, its size and a mark.
+ * Mfree gives it back and Mshrink cuts it down in place, wherever it is
+ * -- the bump heap before phase 79 could do that only for the last block,
+ * and kept the rest until the program ended.  The mark tells an address
+ * Malloc never gave out (EIMBA), and a block Mfree has had loses it, so
+ * a second Mfree of it is refused as well.
  *
  * Malloc that cannot answers 0, the ST's NULL.  It answered ENSMEM here
  * until the C functions came, which a program testing for NULL would have
@@ -1369,7 +1367,7 @@ static LONG gd_malloc(LONG n)
     uint32_t a, room;
 
     if (n < 0) {
-        room = ((uint32_t)(farmem.last_bank + 1) << 16) - farmem.brk;
+        room = far_largest(0);          /* a block is inside one bank */
         if (room <= MB_HDR)
             return 0;
         return (LONG)(room - MB_HDR);
@@ -1388,17 +1386,11 @@ static uint32_t gd_block(LONG a)
 {
     uint32_t h = (uint32_t)a - MB_HDR;
 
-    if ((uint32_t)a < 0x10000UL + MB_HDR || (uint32_t)a > farmem.brk)
+    if ((uint32_t)a < 0x10000UL + MB_HDR || !far_size(h))
         return 0;
     if (((uint32_t)rd32(h) & ~MB_SIZE) != MB_MARK)
         return 0;
     return h;
-}
-
-/* Where that block ends, rounded as far_alloc rounded it. */
-static uint32_t gd_block_end(uint32_t h)
-{
-    return h + ((MB_HDR + ((uint32_t)rd32(h) & MB_SIZE) + 3) & ~3UL);
 }
 
 static LONG gd_mfree(LONG a)
@@ -1407,25 +1399,23 @@ static LONG gd_mfree(LONG a)
 
     if (!h)
         return GD_EIMBA;
-    if (gd_block_end(h) == farmem.brk)
-        far_release(h);
     wr32(h, 0);
+    far_free(h);
     return 0;
 }
 
 /* Mshrink: smaller only, as on the ST (EGSBF for bigger). */
 static LONG gd_mshrink(LONG a, LONG n)
 {
-    uint32_t h = gd_block(a), end;
+    uint32_t h = gd_block(a);
 
     if (!h)
         return GD_EIMBA;
     if (n < 0 || (uint32_t)n > ((uint32_t)rd32(h) & MB_SIZE))
         return GD_EGSBF;
-    end = gd_block_end(h);
     wr32(h, (LONG)(MB_MARK | (uint32_t)n));
-    if (end == farmem.brk)
-        far_release(gd_block_end(h));
+    if (n)
+        far_shrink(h, MB_HDR + (uint32_t)n);
     return 0;
 }
 
@@ -2165,7 +2155,7 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
 {
     PROC *p = rlr;
     APP child;
-    uint32_t std, dup, keep, save, pdta;
+    uint32_t std, dup, save, pdta;
     uint8_t rows[GD_STDS + GD_DUPS];
     uint16_t owned, ateof, near, api_sp, vwk;
     RSHOLD held;
@@ -2179,14 +2169,13 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     r = gd_name(fname);
     if (r < 0)
         return r;
-    keep = farmem.brk;
     save = far_alloc(SH_SAVELEN + DTA_SIZE);    /* the shell's words, the child's DTA */
     if (!save)
         return GD_ENSMEM;
     near = app_near;
     st = app_load_file(gw->full, &child);
     if (st != APP_OK) {
-        far_release(keep);
+        far_free(save);
         app_near = near;
         return gd_loaderr(st);
     }
@@ -2229,9 +2218,9 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     rs_unclaim(&held);
     vdi_close_virtuals_but(vwk);
     pool_release(child.pool_mark);
-    far_release(child.far_mark);
+    far_free_owner((uint8_t)child.owner);  /* the child's, every block */
     sh_pop(save);
-    far_release(keep);
+    far_free(save);
     app_near = near;
     return r;
 }

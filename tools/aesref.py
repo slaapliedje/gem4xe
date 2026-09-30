@@ -4939,13 +4939,12 @@ class AES:
                 raise ValueError("Malloc(-1): the room is the target's to know")
             if n == 0:
                 return 0
-            # Each block carries a LONG in front of it, its size, so that
-            # the last one can be given back (src/sys/gemdos.c, MB_HDR):
-            # the address is four past the heap's cursor, and the cursor
-            # moves by the block and the header together, rounded.
-            ret = self.dos_brk + 4
-            self.dos_brk += (n + 4 + 3) & ~3
-            return ret
+            # Each block carries a LONG in front of it, its size and a mark
+            # (src/sys/gemdos.c, MB_HDR), and is a far block of the
+            # program's own: the allocator's first fit, which dos_brk --
+            # a tools/farref.py Heap the gate placed -- answers exactly.
+            ret = self.dos_brk.alloc(n + 4)
+            return ret + 4 if ret else 0
         if fn == 0x39:                  # Dcreate: a folder in a listed
             # directory, empty, and listed itself from now on
             path = self.mem[long_(0)].s

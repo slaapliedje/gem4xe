@@ -59,6 +59,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch, config_dir_for  # noqa: E402
+from farheap import far_heap, heap_text  # noqa: E402
 import atr, mkcar, symfile, vbxeref         # noqa: E402
 from m4_aes import SHOTDIR                  # noqa: E402
 from product_boot import desk_model         # noqa: E402
@@ -99,7 +100,6 @@ MEMLO = 0x02E7                              # ...and what cd_install sets it to
                                             # with no DOS: past the
 DEV_TOP = 0x0710                             # $0700 + the DOS-2-shaped sixteen
 DOS_2 = 0                                   # src/sys/dos.h
-FARMEM_BRK = 8                              # src/sys/farmem.h
 LOAD_WAIT = 6000                            # frames to give the load; it takes
                                             # about 1,300, and the margin is for
                                             # a slower machine, not a hung one
@@ -314,40 +314,108 @@ def os_screen(b):
     return " ".join(r.strip() for r in rows if r.strip())
 
 
-def too_small():
-    """A 65C816 with too little memory for the desktop: Altirra's own
-    65C816 with its 960K of high memory, which is what a 0.9.1 tester
-    turned on.  The desktop's load failed, gem4xe left without a word, and
-    on the cartridge leaving is a cold start (src/cart.s) -- so it booted
-    the cartridge again: a loading screen, a white one, and round, for
-    ever.  Now gem4xe says why and, with no DOS to go back to, WAITS
-    (src/gem.c exit_desk, src/crt_atari.s).  Both halves are checked: the
-    words on the OS's screen, and that the machine is still there ten
-    seconds later rather than booting again -- then that a key does start
-    it again."""
+def small_machines():
+    """Altirra's own 65C816, with the high memory a person picks for it.
+
+    960K is what a 0.9.1 tester turned on, and the cartridge looped: the
+    desktop did not fit, gem4xe left without a word, and on a cartridge
+    leaving is a cold start (docs/phase78.md).  Since the far heap's
+    allocator (phase 79) the desktop fits there, and that is what is
+    checked first: the shell has run it.
+
+    Then the two ways a machine can still be too small, each of which must
+    say so and WAIT -- a cold start would clear the words and boot into
+    the same failure again:
+
+      192K     the loader refuses before gem4xe starts: no RAM where its
+               far heap would begin (src/cart.s)
+      the heap cut to three banks, through the bridge, after the probe
+               and before the shell runs: gem4xe starts and the desktop
+               does not fit (src/gem.c exit_desk).  Altirra offers no size
+               between 192K and 960K, so the gate makes one."""
     import langrsc
     words = dict(langrsc.STRINGS)
-    want = [words["EXIT_NOFAR"], words["EXIT_FARKB"], words["EXIT_ANYKEY"]]
-    print("  a 65C816 with 960K, no accelerator:")
+    syms = symfile.load(SYMS)
+
+    def wait_for(b, text, tries=100):
+        got = ""
+        for _ in range(tries):                  # 1.79 MHz: minutes, not seconds
+            b.frames(150)
+            got = os_screen(b)
+            if text in got:
+                break
+        return got
+
+    def still_waiting(b, tag, text):
+        before = b.peek(CARTSTEP)               # a cold start would reset it
+        b.frames(500)
+        step = b.peek(CARTSTEP)
+        check(step == before and text in os_screen(b),
+              f"{tag}: ten seconds on, CARTSTEP {step} and the words "
+              f"{'still there' if text in os_screen(b) else 'gone'}: it did "
+              f"not wait")
+
+    # 960K: the desktop
+    print("  a 65C816 with 960K, no accelerator: the desktop")
+    emu = launch(tag="m37k960", memsize="1088K", rapidus=False, cpu816=15,
+                 extra_args=["--cart", CAR_SYS])
+    b = emu.bridge
+    try:
+        runs = 0
+        for _ in range(100):
+            b.frames(150)
+            runs = b.peek16(syms["sh_runs"])
+            if runs:
+                break
+        b.frames(600)
+        fm = bytes(b.memdump(syms["farmem"], 4))
+        print(f"    banks ${fm[1]:02X}-${fm[2]:02X}; the shell has run "
+              f"{b.peek16(syms['sh_runs'])} program(s), "
+              f"{b.peek16(syms['far_blocks'])} far blocks")
+        check(runs >= 1 and b.peek(CARTSTEP) == STEP_RUN,
+              "m37k960: the desktop never ran on 960K")
+        b.screenshot(os.path.join(ROOT, "build", "shots", "m37k960.png"))
+    finally:
+        emu.stop()
+
+    # 192K: the loader's refusal
+    print("  a 65C816 with 192K: the loader refuses")
+    emu = launch(tag="m37k192", memsize="1088K", rapidus=False, cpu816=3,
+                 extra_args=["--cart", CAR_SYS])
+    b = emu.bridge
+    try:
+        text = wait_for(b, "Press a key")
+        print(f"    the screen: {text!r}")
+        check("no linear RAM" in text and "Press a key" in text,
+              "m37k192: the loader's refusal is not on the screen")
+        still_waiting(b, "m37k192", "no linear RAM")
+    finally:
+        emu.stop()
+
+    # the heap cut to three banks: gem4xe's own words
+    want = [words["EXIT_NOFAR"], "192 " + words["EXIT_FARKB"],
+            words["EXIT_ANYKEY"]]
+    print("  the far heap cut to three banks: gem4xe says why")
     emu = launch(tag="m37small", memsize="1088K", rapidus=False, cpu816=15,
                  extra_args=["--cart", CAR_SYS])
     b = emu.bridge
     try:
-        text = ""
-        for _ in range(100):                    # 1.79 MHz: minutes, not seconds
-            b.frames(150)
-            text = os_screen(b)
-            if want[-1] in text:
+        fm = syms["farmem"]
+        for _ in range(400):                    # until farmem_probe has run
+            b.frames(10)
+            if b.peek(fm + 3):
                 break
+        first = b.peek(fm + 1)
+        check(b.peek16(syms["sh_runs"]) == 0 and b.peek(fm + 3),
+              "m37small: the probe had not run, or the shell already had")
+        b.poke(fm + 2, first + 2)               # last_bank
+        b.poke(fm + 3, 3)                       # banks
+        b.memload(fm + 4, (3 << 16).to_bytes(4, "little"))   # bytes
+        text = wait_for(b, want[-1])
         print(f"    the screen: {text!r}")
         for w in want:
             check(w in text, f"m37small: {w!r} is not on the screen")
-        b.frames(500)
-        step = b.peek(CARTSTEP)
-        check(step == STEP_RUN and want[0] in os_screen(b),
-              f"m37small: ten seconds on, CARTSTEP {step} and the words "
-              f"{'still there' if want[0] in os_screen(b) else 'gone'}: it "
-              f"did not wait")
+        still_waiting(b, "m37small", want[0])
         b.key("SPACE")
         b.frames(300)
         step = b.peek(CARTSTEP)
@@ -436,8 +504,7 @@ def whole_system(floppy=False):
         check(kind == DOS_2, f"the system calls this a kind-{kind} DOS, not "
                              f"DOS 2 -- dos_ident read $0700 as something else")
         mark = b.peek16(syms["app_near"])
-        brk = int.from_bytes(bytes(b.memdump(syms["farmem"] + FARMEM_BRK, 4)),
-                             "little")
+        brk = far_heap(b, syms)
         pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
         room = (b.peek16(syms["app_pool_hi"]) - b.peek16(syms["pool_brk"])) & 0xFFFF
         # THE DESK PICTURE DOES NOT SHOW THE ACCESSORIES, so it must not
@@ -567,7 +634,7 @@ def main():
     overlay()
     whole_system()
     whole_system(floppy=True)
-    too_small()
+    small_machines()
 
     print(f"\ngem4xe-m37: {'PASS' if not problems else 'FAIL'} -- a "
           f"cartridge, {len(problems)} problem(s)")

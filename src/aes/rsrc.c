@@ -40,7 +40,7 @@
  * rs_cur is the one a call acts on; rs_loaded() hands its base out. */
 #define rs_1        (rlr->p_rsc)        /* the resident resource's BASE, 0 if none */
 #define rs_1mark    (rlr->p_rscmark)    /* the pool before its load */
-#define rs_1far     (rlr->p_rscfar)     /* the far heap before its load, when it went far; 0 in the pool */
+#define rs_1far     (rlr->p_rscfar)     /* its far block, to free; 0 in the pool */
 #define rs_2        (rlr->p_rsc2)
 #define rs_2mark    (rlr->p_rscmark2)
 #define rs_2far     (rlr->p_rscfar2)
@@ -378,7 +378,7 @@ void rs_fixit(uint32_t base)
  * SLOT -- a nested resource freed first must not take the outer one's
  * with it -- while rs_imbase/rs_cibase answer for the last load placed. */
 typedef struct {
-    uint32_t base, mark, top;   /* the block; the heap before and after it */
+    uint32_t base;              /* the block, 0 if none */
 } FARBLK;
 static uint32_t rs_imbase;      /* where they went, 0 if they stayed */
 static uint16_t rs_imsize;
@@ -394,7 +394,7 @@ static void rs_imfar(uint8_t *mem, uint16_t im_off, uint16_t size)
 {
     uint16_t im_len = (uint16_t)(size - im_off);
     uint16_t im_near;
-    uint32_t base, mark;
+    uint32_t base;
     WORD i;
 
     RSHDR h;
@@ -428,16 +428,10 @@ static void rs_imfar(uint8_t *mem, uint16_t im_off, uint16_t size)
     }
     rs_imbase = 0;
     rs_imsize = 0;
-    mark = farmem.brk;
     base = far_alloc(im_len);
     if (!base)
         return;                         /* no far memory: leave them be */
-    {
-        FARBLK *f = &rs_im[rs_2 ? 1 : 0];
-        f->base = base;
-        f->mark = mark;
-        f->top = farmem.brk;
-    }
+    rs_im[rs_2 ? 1 : 0].base = base;
     im_near = (uint16_t)((uint16_t)mem + im_off);
     far_put(base, (const uint8_t *)im_near, im_len);
     for (i = 0; i < h.rsh_nib; i++) {
@@ -484,21 +478,21 @@ uint32_t rs_cibase;                     /* where the extension went, 0 if none *
 uint16_t rs_cisize;
 static FARBLK   rs_ci[2];               /* by slot, as rs_im */
 
-/* Give a slot's far blocks back, each while it is still the top of the
- * heap -- the extension was taken after the images, so it is asked first.
- * `slot` is 1 or 2, as rs_1/rs_2 are named. */
+/* Give a slot's far blocks back -- wherever they are: the heap frees any
+ * block, not just its top (phase 79).  `slot` is 1 or 2, as rs_1/rs_2
+ * are named. */
 static void rs_farback(WORD slot)
 {
     FARBLK *f = &rs_ci[slot - 1];
-    if (f->base && farmem.brk == f->top) {
-        far_release(f->mark);
+    if (f->base) {
+        far_free(f->base);
         if (rs_cibase == f->base)
             rs_cibase = rs_cisize = 0;
         f->base = 0;
     }
     f = &rs_im[slot - 1];
-    if (f->base && farmem.brk == f->top) {
-        far_release(f->mark);
+    if (f->base) {
+        far_free(f->base);
         f->base = 0;
     }
 }
@@ -533,15 +527,10 @@ static WORD rs_cicons(int16_t fd, RSHDR *h, uint16_t size)
     ext_len = true_len - size;
     rs_cibase = 0;
     rs_cisize = 0;
-    {
-        FARBLK *f = &rs_ci[rs_2 ? 1 : 0];
-        f->mark = farmem.brk;
-        base = far_alloc(ext_len);
-        if (!base)
-            return 0;
-        f->base = base;
-        f->top = farmem.brk;
-    }
+    base = far_alloc(ext_len);
+    if (!base)
+        return 0;
+    rs_ci[rs_2 ? 1 : 0].base = base;
     far_put(base, ext, sizeof ext);
 
     /* the rest of it, through a slice of what the pool has spare */
@@ -637,7 +626,7 @@ WORD rs_load(const char *name, WORD wants_far)
     uint16_t got, size, mark;
     int16_t fd;
     uint8_t *mem;
-    uint32_t base, fmark = 0;
+    uint32_t base;
     WORD ok, gofar, far = 0;
 
     if (rs_1 && rs_2)               /* one resident and one nested is all */
@@ -702,7 +691,6 @@ WORD rs_load(const char *name, WORD wants_far)
         uint8_t buf[128];
         uint16_t left, n, off;
 
-        fmark = farmem.brk;
         base = far_alloc(size);
         if (!base) {
             cio_close(fd);
@@ -717,7 +705,7 @@ WORD rs_load(const char *name, WORD wants_far)
             st = cio_read(fd, buf, n, &got);
             if ((st != CIO_OK && st != CIO_OK_EOF) || got != n) {
                 cio_close(fd);
-                far_release(fmark);
+                far_free(base);
                 return 0;
             }
             far_put(base + off, buf, n);
@@ -730,9 +718,9 @@ WORD rs_load(const char *name, WORD wants_far)
         return 0;
     }
     if (rs_1) {                     /* nested: rs_cur now answers with it */
-        rs_2 = base;  rs_2mark = mark;  rs_2far = far ? fmark : 0;
+        rs_2 = base;  rs_2mark = mark;  rs_2far = far ? base : 0;
     } else {
-        rs_1 = base;  rs_1mark = mark;  rs_1far = far ? fmark : 0;
+        rs_1 = base;  rs_1mark = mark;  rs_1far = far ? base : 0;
     }
     rs_fixit(base);
     ok = 1;
@@ -812,7 +800,7 @@ WORD rs_free(void)
 {
     if (rs_2) {                     /* the nested one first: LIFO */
         if (rs_2far)
-            far_release(rs_2far);
+            far_free(rs_2far);
         else
             pool_release(rs_2mark);
         rs_2 = 0;
@@ -823,7 +811,7 @@ WORD rs_free(void)
     if (!rs_1)
         return 0;
     if (rs_1far)
-        far_release(rs_1far);
+        far_free(rs_1far);
     else
         pool_release(rs_1mark);
     rs_1 = 0;

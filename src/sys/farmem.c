@@ -137,7 +137,8 @@ void farmem_probe(void)
     farmem.kind = FARMEM_NONE;
     farmem.first_bank = farmem.last_bank = farmem.banks = 0;
     farmem.bytes = 0;
-    farmem.brk = 0;
+    far_blocks = 0;
+    far_table = 0;
 
     /* Name the board if we recognise it.  This does not affect sizing. */
     if (far_read8(0xFF0000UL) == '6' && far_read8(0xFF0001UL) == 'S')
@@ -178,68 +179,7 @@ void farmem_probe(void)
     farmem.banks = best_len;
     farmem.last_bank = (uint8_t)(best_first + best_len - 1);
     farmem.bytes = (uint32_t)best_len << 16;
-    /* The bump starts at the foot of the run, which is already past the far
-     * code. */
-    farmem.brk = (uint32_t)best_first << 16;
-}
-
-/* A bump allocator.  gem4xe has no need to free far memory -- the AES's
- * lifetime is the program's -- and a bump pointer over megabytes is both
- * correct and impossible to fragment. */
-/* ⚠ A BLOCK MAY NOT CROSS A BANK BOUNDARY.  Calypsi's `FAR` pointer
- * arithmetic is 16-bit WITHIN a bank -- carrying into the bank byte is
- * what `__huge` is for -- so a buffer that straddles one wraps round to
- * the bottom of its own bank the moment it is indexed past the edge,
- * and the bottom of a far bank is the far code image.  That is the same
- * corruption the comment at the top of this file describes, reached by
- * another road: a fault that moves with the layout, because whether a
- * block straddles depends on where the image ended.
- *
- * So a request that will not fit in what is left of the current bank
- * starts the next one.  The gap is lost, which costs at most 64 KB of
- * the fifteen megabytes this machine has -- and buys an allocator whose
- * blocks can be indexed. */
-/* The far heap's floor, and it is there for the reason the pool's is
- * (src/sys/app.c): app_free winds the heap back to where app_load found
- * it, which is right for the program and wrong for anything permanent
- * taken since.  The shell's buffers, the file selector's names, GEMDOS's
- * state and an accessory's whole far image are all below it. */
-static uint32_t far_low;
-uint16_t far_refused;
-
-void far_keep_mark(void)
-{
-    far_low = farmem.brk;
-}
-
-void far_release(uint32_t mark)
-{
-    if (mark < far_low) {
-        far_refused++;
-        return;
-    }
-    farmem.brk = mark;
-}
-
-uint32_t far_alloc(uint32_t bytes)
-{
-    uint32_t base = farmem.brk;
-    uint32_t end = (uint32_t)(farmem.last_bank + 1) << 16;
-    uint32_t bank_end;
-
-    if (!farmem.banks || bytes == 0)
-        return 0;
-    bytes = (bytes + 3) & ~3UL;                 /* keep it 4-byte aligned */
-    if (bytes > 0x10000UL)                      /* no block can be indexed
-                                                 * past its own bank */
-        return 0;
-    bank_end = (base | 0xFFFFUL) + 1;
-    if (base + bytes > bank_end)
-        base = bank_end;                        /* start the next bank */
-    if (base + bytes > end || base + bytes < base)
-        return 0;
-    farmem.brk = base + bytes;
-    return base;
+    far_heap_init();
 }
 
 /* -- A FAR POINTER'S ARITHMETIC IS SIXTEEN BITS.
@@ -277,20 +217,6 @@ uint32_t far_alloc(uint32_t bytes)
  * What lives here must be reached by RECOMPUTING the address for each
  * access -- far_read8, far_write8, far_copy_span -- and never by walking
  * a pointer across the boundary. */
-uint32_t far_alloc_span(uint32_t bytes)
-{
-    uint32_t base = farmem.brk;
-    uint32_t end = (uint32_t)(farmem.last_bank + 1) << 16;
-
-    if (!farmem.banks || bytes == 0)
-        return 0;
-    bytes = (bytes + 3) & ~3UL;
-    if (base + bytes > end || base + bytes < base)
-        return 0;
-    farmem.brk = base + bytes;
-    return base;
-}
-
 /* Bank-safe copies, for what far_alloc_span handed out: the address is
  * rebuilt at every bank boundary instead of being walked over it.  The
  * inner copies are the ordinary far_put/far_copy, which are correct
@@ -323,20 +249,300 @@ void far_copy_span(uint32_t dst, uint32_t src, uint32_t len)
     }
 }
 
-/* Whole banks, for what must not straddle one: an application's code,
- * which the 65816 executes bank by bank (src/gem4xe.scm on why).  The
- * cursor moves up to the next bank boundary first, so the banks come
- * back aligned; what that skips is lost to the bump allocator, as
- * everything it hands out is.  Returns the first bank's number. */
+
+/* ---------------------------------------------------------------------------
+ * THE ALLOCATOR -- blocks with owners, freed in any order (phase 79).
+ *
+ * It was a bump pointer with marks until 0.9.2, which could only give
+ * back the top of the heap and so needed every release to be the reverse
+ * of the takes.  Its cost was measured on a 65C816 with 960K: an
+ * accessory of 4 KB took two whole banks, a resource loaded between two
+ * programs started another, and the desktop never got its turn
+ * (docs/phase78.md).  Now:
+ *
+ *   A TABLE OF BLOCKS, sorted by address, in the first bank of the heap
+ *   (it is block 0, the system's).  Free space is what lies between them
+ *   -- there is no second list to keep in step with the first.  Each
+ *   entry is the address with its OWNER in the top byte, and the length.
+ *
+ *   OWNERS.  0 is the system: the shell's buffers, the desktop's cached
+ *   file, the table.  Every program app_load takes in gets one of its
+ *   own (far_new_owner), and far_owner says whose the next block is --
+ *   src/sys/ctx.c sets it at every switch, so a block an accessory asks
+ *   for at run time is the accessory's.  A program's exit frees its owner
+ *   (far_free_owner); an accessory's is never freed, which is what made it
+ *   permanent, where the bump allocator needed a floor for that.
+ *
+ *   FOUR KINDS OF REQUEST, each the lowest that fits:
+ *     far_alloc        4-aligned, never across a bank (a far pointer's
+ *                      arithmetic is sixteen bits, the note above)
+ *     far_alloc_span   4-aligned, MAY cross: a file read whole
+ *     far_alloc_page   page-aligned, and ending at or below `limit` in its
+ *                      bank: a program's code relocated by pages, which
+ *                      must stay under the $D5 page (src/gem4xe.scm)
+ *     far_alloc_banks  whole banks, taken from the TOP of the heap down,
+ *                      so a big program does not cut the small blocks'
+ *                      space at the bottom in two
+ *
+ * tools/farref.py is the same rules in Python -- the model the desktop
+ * gates place the desktop with, held to this file by test_farmem.py.
+ */
+#define FB_MAX      256                 /* blocks; the table is 2 KB */
+#define FB_ADDR     0x00FFFFFFUL
+
+typedef struct {
+    uint32_t at;                        /* owner << 24 | address */
+    uint32_t len;
+} FBLK;
+
+uint8_t  far_owner;
+uint16_t far_blocks;
+uint32_t far_table;
+
+#define FB(i)       (((FBLK FAR *)far_table)[i])
+
+static uint32_t heap_lo(void) { return (uint32_t)farmem.first_bank << 16; }
+static uint32_t heap_hi(void) { return (uint32_t)(farmem.last_bank + 1) << 16; }
+
+static uint32_t fb_start(uint16_t i)
+{
+    uint32_t at = FB(i).at;
+    return at & FB_ADDR;
+}
+
+static uint32_t fb_end(uint16_t i)
+{
+    uint32_t len = FB(i).len;
+    return fb_start(i) + ((len + 3) & ~3UL);
+}
+
+/* The gap before entry i (i == far_blocks: the gap above the last). */
+static uint32_t gap_lo(uint16_t i) { return i ? fb_end((uint16_t)(i - 1)) : heap_lo(); }
+static uint32_t gap_hi(uint16_t i) { return i < far_blocks ? fb_start(i) : heap_hi(); }
+
+/* Entry i made the block at..at+len, owner far_owner, the rest moved up. */
+static uint32_t fb_insert(uint16_t i, uint32_t at, uint32_t len)
+{
+    uint16_t k;
+    FBLK e;
+
+    if (far_blocks >= FB_MAX)
+        return 0;
+    for (k = far_blocks; k > i; k--) {
+        e = FB(k - 1);
+        FB(k) = e;
+    }
+    e.at = at | ((uint32_t)far_owner << 24);
+    e.len = len;
+    FB(i) = e;
+    far_blocks++;
+    return at;
+}
+
+static void fb_remove(uint16_t i)
+{
+    FBLK e;
+
+    far_blocks--;
+    for (; i < far_blocks; i++) {
+        e = FB(i + 1);
+        FB(i) = e;
+    }
+}
+
+void far_heap_init(void)
+{
+    uint8_t keep = far_owner;
+
+    far_blocks = 0;
+    far_table = 0;
+    far_owner = 0;
+    if (!farmem.banks)
+        return;
+    far_table = heap_lo();
+    fb_insert(0, far_table, (uint32_t)FB_MAX * sizeof(FBLK));
+    far_owner = keep;
+}
+
+/* Where a request of `bytes` fits in [lo, hi), or 0.
+ *   how 0: 4-aligned, inside one bank      2: page-aligned, below `limit`
+ *   how 1: 4-aligned, may cross banks          in its bank */
+static uint32_t fit(uint32_t lo, uint32_t hi, uint32_t bytes, uint16_t how,
+                    uint32_t limit)
+{
+    uint32_t a;
+
+    if (how == 2) {
+        a = (lo + 0xFFUL) & ~0xFFUL;
+        if ((a & 0xFFFFUL) + bytes > limit)
+            a = (a | 0xFFFFUL) + 1;     /* the next bank's foot */
+        if ((a & 0xFFFFUL) + bytes > limit)
+            return 0;
+    } else {
+        a = (lo + 3) & ~3UL;
+        if (how == 0 && (a & 0xFFFFUL) + bytes > 0x10000UL)
+            a = (a | 0xFFFFUL) + 1;
+    }
+    if (a < lo || a + bytes > hi || a + bytes < a)
+        return 0;
+    return a;
+}
+
+static uint32_t take(uint32_t bytes, uint16_t how, uint32_t limit)
+{
+    uint16_t i;
+    uint32_t a;
+
+    if (!far_table || bytes == 0)
+        return 0;
+    if (how == 0 && bytes > 0x10000UL)  /* no block can be indexed past */
+        return 0;                       /* its own bank */
+    for (i = 0; i <= far_blocks; i++) {
+        a = fit(gap_lo(i), gap_hi(i), bytes, how, limit);
+        if (a)
+            return fb_insert(i, a, bytes);
+    }
+    return 0;
+}
+
+uint32_t far_alloc(uint32_t bytes)       { return take(bytes, 0, 0); }
+uint32_t far_alloc_span(uint32_t bytes)  { return take(bytes, 1, 0); }
+uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
+{
+    return take(bytes, 2, limit);
+}
+
+/* n whole banks, the LOWEST run that is free: the first bank's number.
+ * Low, not from the top where they would keep out of the small blocks'
+ * way: on a Rapidus the top of the heap is SDRAM, behind a cache that no
+ * gate here can say is coherent for code the loader writes and then runs
+ * (docs/rapidus-cache.md), and the first megabyte is SRAM. */
 uint16_t far_alloc_banks(uint16_t n)
 {
-    uint32_t base = (farmem.brk + 0xFFFFUL) & ~0xFFFFUL;
-    uint32_t end = (uint32_t)(farmem.last_bank + 1) << 16;
-    uint32_t bytes = (uint32_t)n << 16;
-    if (!farmem.banks || n == 0)
+    uint16_t i;
+    uint32_t bytes = (uint32_t)n << 16, a;
+
+    if (!far_table || n == 0)
         return 0;
-    if (base + bytes > end || base + bytes < base)
+    for (i = 0; i <= far_blocks; i++) {
+        a = (gap_lo(i) + 0xFFFFUL) & ~0xFFFFUL;
+        if (a + bytes > gap_hi(i) || a + bytes < a)
+            continue;
+        if (!fb_insert(i, a, bytes))
+            return 0;
+        return (uint16_t)(a >> 16);
+    }
+    return 0;
+}
+
+static uint16_t fb_find(uint32_t addr)
+{
+    uint16_t i;
+
+    for (i = 0; i < far_blocks; i++)
+        if (fb_start(i) == addr)
+            return i;
+    return 0xFFFF;
+}
+
+uint16_t far_free(uint32_t addr)
+{
+    uint16_t i = fb_find(addr);
+
+    if (i == 0xFFFF || i == 0)          /* not a block; or the table */
         return 0;
-    farmem.brk = base + bytes;
-    return (uint16_t)(base >> 16);
+    fb_remove(i);
+    return 1;
+}
+
+void far_free_owner(uint8_t owner)
+{
+    uint16_t i = 1;
+
+    if (!owner)                         /* the system's are for ever */
+        return;
+    while (i < far_blocks) {
+        uint32_t at = FB(i).at;
+        if ((uint8_t)(at >> 24) == owner)
+            fb_remove(i);
+        else
+            i++;
+    }
+}
+
+uint16_t far_shrink(uint32_t addr, uint32_t bytes)
+{
+    uint16_t i = fb_find(addr);
+    uint32_t len;
+
+    if (i == 0xFFFF || i == 0)
+        return 0;
+    len = FB(i).len;
+    if (bytes == 0 || bytes > len)
+        return 0;
+    FB(i).len = bytes;
+    return 1;
+}
+
+uint32_t far_size(uint32_t addr)
+{
+    uint16_t i = fb_find(addr);
+    uint32_t len;
+
+    if (i == 0xFFFF)
+        return 0;
+    len = FB(i).len;
+    return len;
+}
+
+/* The biggest request of kind `span` (0: inside a bank, 1: may cross) that
+ * would succeed now. */
+uint32_t far_largest(uint16_t span)
+{
+    uint16_t i;
+    uint32_t best = 0, lo, hi, n, b;
+
+    if (!far_table)
+        return 0;
+    for (i = 0; i <= far_blocks; i++) {
+        lo = (gap_lo(i) + 3) & ~3UL;
+        hi = gap_hi(i);
+        if (hi <= lo)
+            continue;
+        if (span) {
+            n = hi - lo;
+        } else {
+            n = 0;
+            for (b = lo; b < hi; b = (b | 0xFFFFUL) + 1) {
+                uint32_t e = (b | 0xFFFFUL) + 1;
+                if (e > hi)
+                    e = hi;
+                if (e - b > n)
+                    n = e - b;
+            }
+        }
+        if (n > best)
+            best = n;
+    }
+    return best;
+}
+
+/* An owner that has no blocks, for a program about to be loaded. */
+uint8_t far_new_owner(void)
+{
+    static uint8_t next = 1;
+    uint16_t tries, i;
+
+    for (tries = 0; tries < 255; tries++) {
+        uint8_t o = next;
+        next = (uint8_t)(next == 255 ? 1 : next + 1);
+        for (i = 0; i < far_blocks; i++) {
+            uint32_t at = FB(i).at;
+            if ((uint8_t)(at >> 24) == o)
+                break;
+        }
+        if (i == far_blocks)
+            return o;
+    }
+    return 0;
 }

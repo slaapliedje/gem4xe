@@ -425,14 +425,17 @@ def main(argv):
                  if e.in_use and e.nameable]
         print(f"  GEMDOS: version ${dosres[0] & 0xFFFF:04X}, drive {dosres[1]}, "
               f"{dosres[2]} entries (image {len(files)}), Fsnext {dosres[3]}, "
-              f"Fopen(missing) {dosres[4]}, {dosres[5]} banks free, DTA {dosres[6]}")
+              f"Fopen(missing) {dosres[4]}, largest block {dosres[5]} KB, DTA {dosres[6]}")
         check(dosres[0] == 0x1500, f"Sversion answered ${dosres[0] & 0xFFFF:04X}, not $1500")
         check(dosres[1] == 0, f"Dgetdrv answered {dosres[1]}, not A")
         check(dosres[2] == len(files), f"Fsfirst/Fsnext saw {dosres[2]} entries; "
               f"the image has {len(files)}")
         check(dosres[3] == -49, f"the search ended with {dosres[3]}, not ENMFIL")
         check(dosres[4] == -33, f"Fopen of a missing file answered {dosres[4]}, not EFILNF")
-        check(dosres[5] >= 1, f"Malloc(-1) reports {dosres[5]} whole banks free")
+        # the largest free block, as the ST answers it: a block is inside
+        # one bank (src/sys/farmem.c), so a whole free bank less the header
+        check(dosres[5] == 63, f"Malloc(-1) reports a largest block of "
+                               f"{dosres[5]} KB, not a bank's 63")
         check(dosres[6] == 1, "Fgetdta did not answer the DTA Fsetdta was given")
         arec = vdiref.decode(b.memdump(app["results"] + base, ncalls * REC_WORDS * 2), ncalls)
         # what the application got back and went on to use

@@ -51,6 +51,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import aesref, vdiref, vbxeref, symfile, atr    # noqa: E402
 import deskref                              # noqa: E402
+import copy                                 # noqa: E402
+import farref                               # noqa: E402
+from farheap import far_heap, heap_then, heap_text  # noqa: E402
 from deskref import Desktop, DROOT, GLOBES_SIZE  # noqa: E402
 from aesref import (W_CLOSER, W_FULLER, W_DNARROW, W_RTARROW,  # noqa: E402
                     FA_RDONLY, FA_HIDDEN, FA_SUBDIR, FA_ARCHIVE)
@@ -162,31 +165,40 @@ def desk_g(b, syms):
             + (g_link & 0xFFFF))
 
 
-def desk_places(brk):
-    """Where app_load and rs_load put the desktop, as the model must see it.
+def desk_places(heap):
+    """Where the shell, app_load and rs_load put the desktop, as the model
+    must see it -- the allocator's own rules (tools/farref.py) run on the
+    target's heap as it stood before (far_heap):
 
-    The .g4a blob sits at `brk` (shel.c far_read_file), the code's banks
-    start at the next bank boundary (app.c app_load, farmem.c
-    far_alloc_banks), and what follows them is the resource: the WHOLE file
-    when the desktop is a large-data program, because rs_load puts it far
-    rather than in the pool, or just the icon bitmaps rs_fixit moved up
-    when it is not (src/aes/rsrc.c).
+      the .g4a file   far_read_file: the largest free span, shrunk to it
+      the code        far_alloc_banks: the lowest whole banks free
+      the resource    far_alloc, first fit: the WHOLE file when the
+                      desktop is a large-data program, because rs_load
+                      puts it far rather than in the pool, or just the
+                      icon bitmaps rs_fixit moved up when it is not
+                      (src/aes/rsrc.c)
 
-    Returns the keywords Desktop() wants, so the five gates that build the
-    model share one copy of this arithmetic instead of five.
+    and the heap after all that, as the desktop's own, for GEMDOS's
+    Malloc in the model (aesref, dos_brk).
+
+    Returns the keywords Desktop() wants, so the gates that build the
+    model share one copy of this instead of each its own.
     """
     link_near, near_size, far_banks = header(DESKTOP)
-    desk_len = (os.path.getsize(DESKTOP) + 3) & ~3
-    far_base = (brk + desk_len + 0xFFFF) & ~0xFFFF
-    after = far_base + (far_banks << 16)
+    h = copy.deepcopy(heap)
+    h.owner = 0
+    h.read_file(os.path.getsize(DESKTOP))       # the shell's, kept
+    h.owner = 0xFE                              # the desktop's
+    far_base = h.alloc_banks(far_banks) << 16
     large = desk_large()
     rlen = rsc_rssize(DESK_RSC) if large else rsc_imlen(DESK_RSC)
+    rsc = h.alloc(rlen) if rlen else 0
     return dict(link_near=link_near, near_size=near_size,
                 far_base=far_base if large else None,
                 link_bank=link_bank(DESKTOP),
-                rsc_far=after if large else None,
-                imbase=after if (not large and rlen) else None,
-                dos_brk=after + ((rlen + 3) & ~3))
+                rsc_far=rsc if large else None,
+                imbase=rsc if (not large and rlen) else None,
+                dos_brk=h)
 
 
 def listing(disk):
@@ -374,7 +386,7 @@ def inputs(memo):
 
 def model(mark, brk, pointer, drvmap):
     """The prelude and the desktop against the model: (v, a, want, d, memo).
-    `brk` is the far heap's cursor before the shell reads the desktop's
+    `brk` is the far heap (far_heap) before the shell reads the desktop's
     file to it."""
     v, a, want = aesref.run(PRELUDE, [], {}, pointer=pointer, pool=mark)
     # sh_main before the desktop: the previous program's workstations
@@ -390,7 +402,7 @@ def model(mark, brk, pointer, drvmap):
     # Where the loader and rs_load put the desktop: desk_places() above,
     # shared with the other four gates that build this model.
     pl = desk_places(brk)
-    a.dos_brk = pl.pop("dos_brk")
+    a.dos_brk = copy.deepcopy(pl.pop("dos_brk"))
     a.dos_dirs = listing(DISK)
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
@@ -465,8 +477,8 @@ def main(argv):
         r = Runner(b, syms)
         r.run(PRELUDE)
         rec = r.run([(ALLOC, (), ())])[0][2:]
-        mark, room, brk = rec[6] & 0xFFFF, rec[7], (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"before: pool ${mark:04X}, {room} free; far brk ${brk:06X}; "
+        mark, room, brk = rec[6] & 0xFFFF, rec[7], far_heap(b, syms)
+        print(f"before: pool ${mark:04X}, {room} free; far heap {heap_text(brk)}; "
               f"DOS kind {kind}, drive map {drvmap:#04x}")
 
         # The model, all the way through: the desktop's script, its plans
@@ -623,12 +635,12 @@ def main(argv):
 
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]
-        brk2 = (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"after:  pool ${mark2:04X}, {room2} free; far brk ${brk2:06X}")
+        brk2 = far_heap(b, syms)
+        print(f"after:  pool ${mark2:04X}, {room2} free; far heap {heap_text(brk2)}")
         check((mark2, room2) == (mark, room),
               f"the pool after: mark ${mark2:04X}, {room2} free; was ${mark:04X}, {room}")
-        check(brk2 == brk + desk_len,
-              f"far brk moved {brk2 - brk} bytes; the desktop's file is {desk_len}")
+        diff = heap_then(brk, brk2, desk_len)
+        check(diff is None, f"the far heap after the desktop: {diff}")
         lw = low_water(b)
         used, size = stk_hi + 1 - lw, stk_hi - stk_lo + 1
         print(f"stack:  {used} of {size} bytes used at the low-water mark (${lw:04X})")

@@ -1,67 +1,73 @@
-/* farmem_sim.c -- far_alloc, asked for the blocks that used to break it.
+/* farmem_sim.c -- the far allocator, run through a script of requests.
  *
- * A block may not cross a bank boundary: Calypsi's `FAR` pointer
- * arithmetic is 16 bits WITHIN a bank, so a buffer that straddles one
- * wraps to the bottom of its own bank the moment it is indexed past the
- * edge -- and the bottom of a far bank is the far code image.  That is
- * what corrupted the file selector for a whole afternoon
- * (docs/phase24.md), and this is the shape of the case that did it: a
- * heap whose cursor is near the top of a bank, and a block bigger than
- * what is left.
+ * tests/host/test_farmem.py writes the script (farmem_script.h) and runs
+ * the same one through tools/farref.py: every answer here must be the
+ * model's.  Each step is {op, a, b}; `a` of a free or a shrink names an
+ * EARLIER step, whose answer is the address.  After every step the whole
+ * table is checked: sorted, no two blocks overlapping, and no block made
+ * by far_alloc crossing a bank -- a far pointer's arithmetic is sixteen
+ * bits, so one that did would wrap into the bottom of its own bank
+ * (docs/phase24.md).
  *
- * The loader's symbol is stubbed: nothing here probes hardware, and
- * far_alloc only reads the cursor and the last bank.
+ * The loader's symbol is stubbed: nothing here probes hardware.
  */
+#include "portab.h"
 #include "sys/farmem.h"
+#include "farmem_script.h"      /* STEPS, script[STEPS][3], FIRST, LAST */
 
 const uint8_t _fl_top[3] = { 0, 0, 1 };     /* the image ends in bank $01 */
 
-#define CASES 8
+uint32_t fm_out[STEPS];
+uint16_t fm_bad;                /* the first step after which the table was
+                                 * wrong, plus one; 0 if never */
+uint16_t fm_crossed;            /* far_alloc blocks that cross a bank */
 
-/* what each case asked for and got: base, and the bank each end is in */
-uint32_t fm_base[CASES];
-uint16_t fm_bank_lo[CASES];
-uint16_t fm_bank_hi[CASES];
-uint16_t fm_straddled;          /* blocks whose two ends differ: must be 0 */
-uint16_t fm_refused;            /* a block bigger than a bank */
+typedef struct { uint32_t at, len; } FBLK;
 
-static void take(int i, uint32_t brk, uint32_t bytes)
+static uint16_t table_ok(void)
 {
-    uint32_t a;
+    uint16_t i;
+    uint32_t end = 0;
+    const FBLK FAR *t = (const FBLK FAR *)far_table;
 
-    farmem.brk = brk;
-    a = far_alloc(bytes);
-    fm_base[i] = a;
-    if (!a) {
-        fm_bank_lo[i] = fm_bank_hi[i] = 0xFFFF;
-        return;
+    for (i = 0; i < far_blocks; i++) {
+        uint32_t a = t[i].at & 0xFFFFFFUL, n = t[i].len;
+        if (a < end)
+            return 0;
+        end = a + ((n + 3) & ~3UL);
     }
-    fm_bank_lo[i] = (uint16_t)(a >> 16);
-    fm_bank_hi[i] = (uint16_t)((a + bytes - 1) >> 16);
-    if (fm_bank_lo[i] != fm_bank_hi[i])
-        fm_straddled++;
+    return 1;
 }
 
 int main(void)
 {
-    farmem.kind = FARMEM_RAPIDUS;
-    farmem.first_bank = 2;
-    farmem.last_bank = 0xEF;
-    farmem.banks = 0xEE;
+    uint16_t k;
 
-    /* 900 bytes -- the file selector's name list -- from cursors that
-     * leave less than that at the top of a bank */
-    take(0, 0x02FF00UL, 900);
-    take(1, 0x02FFFCUL, 900);
-    take(2, 0x02FC00UL, 900);       /* fits: 1024 left */
-    take(3, 0x020000UL, 900);       /* a whole bank left */
-    /* the awkward sizes: exactly the rest of a bank, and one more */
-    take(4, 0x03FF00UL, 0x100);
-    take(5, 0x03FF00UL, 0x101);
-    /* a block bigger than a bank can never be indexed: refused */
-    take(6, 0x040000UL, 0x10004UL);
-    fm_refused = (uint16_t)(fm_base[6] == 0);
-    /* and the last bank's edge: no room above it, so nothing comes back */
-    take(7, 0xEFFF00UL, 900);
+    farmem.kind = FARMEM_RAPIDUS;
+    farmem.first_bank = FIRST;
+    farmem.last_bank = LAST;
+    farmem.banks = (uint8_t)(LAST - FIRST + 1);
+    farmem.bytes = (uint32_t)farmem.banks << 16;
+    far_heap_init();
+    for (k = 0; k < STEPS; k++) {
+        uint32_t op = script[k][0], a = script[k][1], b = script[k][2], r = 0;
+        switch ((uint16_t)op) {
+        case 1: r = far_alloc(a);
+                if (r && (r >> 16) != ((r + a - 1) >> 16))
+                    fm_crossed++;
+                break;
+        case 2: r = far_alloc_span(a); break;
+        case 3: r = far_alloc_page(a, b); break;
+        case 4: r = far_alloc_banks((uint16_t)a); break;
+        case 5: r = far_free(fm_out[a]); break;
+        case 6: far_free_owner((uint8_t)a); break;
+        case 7: r = far_shrink(fm_out[a], b); break;
+        case 8: far_owner = (uint8_t)a; break;
+        case 9: r = far_largest((uint16_t)a); break;
+        }
+        fm_out[k] = r;
+        if (!fm_bad && !table_ok())
+            fm_bad = (uint16_t)(k + 1);
+    }
     return 0;
 }

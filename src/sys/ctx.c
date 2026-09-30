@@ -122,6 +122,7 @@ uint16_t ctx_park(CTX *to)
         from->depth = gem_depth;
 
         ctx_cur = to;
+        far_owner = (uint8_t)to->owner;
         gem_pb = to->pb;
         gem_api_sp = to->api_sp;
         gem_which = (uint8_t)to->which;

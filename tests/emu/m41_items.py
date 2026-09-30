@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 from a8test.launcher import launch            # noqa: E402
+from farheap import far_heap  # noqa: E402
 import atr                                    # noqa: E402
 import tempfile                               # noqa: E402
 import shutil                                 # noqa: E402
@@ -27,7 +28,6 @@ from shots import Tour, boot, poke16, PTR_NONE, SYMS, DISK   # noqa: E402
 from aesref import W_FULLER                   # noqa: E402
 from deskrsc import FILEMENU, MASKITEM, CLOSITEM   # noqa: E402
 
-FARMEM_BRK = 8
 problems = []
 
 
@@ -172,7 +172,9 @@ def main():
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, out)
         b.frames(10)
-        far = lambda: b.peek24(syms["farmem"] + FARMEM_BRK)   # noqa: E731
+        # the far heap's blocks: a resource loaded is one more, and freed
+        # the table is what it was (src/sys/farmem.c, phase 79)
+        far = lambda: tuple((a, n) for a, n, _ in far_heap(b, syms).blocks)  # noqa: E731
 
         # -- Show info on a drive ---------------------------------------
         t.click(t.desk_icon("DISK D1:"))
@@ -180,7 +182,7 @@ def main():
         b.key("I", ctrl=True)
         b.frames(20)
         t.settle()
-        check(far() > far0, "Show info on DISK A puts up its dialog")
+        check(len(far()) > len(far0), "Show info on DISK A puts up its dialog")
         g = t.G()
         got = (peek32(b, g + deskref.g_offset("g_ndirs")),
                peek32(b, g + deskref.g_offset("g_nfiles")),

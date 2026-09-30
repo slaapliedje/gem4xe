@@ -22,7 +22,7 @@
 #define ESC "\033"
 
 WORD m32_res[64];
-LONG m32_mem[6];
+LONG m32_mem[8];
 LONG m32_time[6];               /* Tgettimeofday twice, clock()'s span, its rate */
 WORD m32_step;
 char m32_line[24];
@@ -112,9 +112,18 @@ int main(void)
     m32_mem[2] = Malloc(-1L);
     m32_res[12] = (WORD)Mshrink((void FAR *)p, 100L);
     m32_mem[3] = Malloc(-1L);
+    /* Malloc(-1) is the largest free block, as on the ST -- a whole bank
+     * on a big machine, which a kilobyte elsewhere does not move -- so
+     * what a shrink and a free gave back is shown by where the next
+     * blocks land: 900 bytes into the tail the shrink freed, and 100 into
+     * the block the free gave back (the gate's model says exactly where). */
+    m32_mem[6] = Mxalloc(900L, MX_PREFTTRAM);
     m32_res[14] = (WORD)Mshrink((void FAR *)p, 2000L);
     m32_res[15] = (WORD)Mfree((void FAR *)p);
     m32_mem[4] = Malloc(-1L);
+    m32_mem[7] = Mxalloc(100L, MX_PREFTTRAM);
+    Mfree((void FAR *)m32_mem[7]);
+    Mfree((void FAR *)m32_mem[6]);
     m32_res[17] = (WORD)Mfree((void FAR *)p);
     m32_res[18] = (WORD)Mfree((void FAR *)m32_file);
 

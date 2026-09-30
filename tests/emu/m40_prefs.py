@@ -23,11 +23,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 from a8test.launcher import launch            # noqa: E402
+from farheap import far_heap  # noqa: E402
 import symfile                                # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS, DISK   # noqa: E402
 from deskrsc import OPTNMENU, PREFITEM        # noqa: E402
 
-FARMEM_BRK = 8          # src/sys/farmem.h: four bytes, a LONG, then brk
 problems = []
 
 
@@ -50,7 +50,9 @@ def main():
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, out)
         b.frames(10)
-        far = lambda: b.peek24(syms["farmem"] + FARMEM_BRK)   # noqa: E731
+        # the far heap's blocks: a resource loaded is one more, and freed
+        # the table is what it was (src/sys/farmem.c, phase 79)
+        far = lambda: tuple((a, n) for a, n, _ in far_heap(b, syms).blocks)  # noqa: E731
         pool = lambda: b.peek16(syms["pool_brk"])             # noqa: E731
         far0, pool0 = far(), pool()
 
@@ -58,13 +60,13 @@ def main():
         b.frames(20)
         t.settle()
         far1 = far()
-        check(far1 > far0, f"the chooser's resource was loaded "
-                           f"(far heap ${far0:06X} -> ${far1:06X})")
+        check(len(far1) > len(far0), f"the chooser's resource was loaded "
+                           f"(far blocks {len(far0)} -> {len(far1)})")
         b.key("RETURN")                         # OK: the default
         t.settle()
         check(far() == far0 and pool() == pool0,
-              f"...and freed: far ${far():06X}, pool ${pool():04X}, as "
-              f"before (${far0:06X}, ${pool0:04X})")
+              f"...and freed: {len(far())} far blocks, pool ${pool():04X}, as "
+              f"before ({len(far0)}, ${pool0:04X})")
     finally:
         emu.stop()
     print(f"gem4xe-m40: {'FAIL' if problems else 'PASS'} -- Set preferences, "

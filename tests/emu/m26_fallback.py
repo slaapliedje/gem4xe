@@ -67,10 +67,11 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_text  # noqa: E402
 import atr, devref, symfile                 # noqa: E402
 from anticref import AN_W, AN_H             # noqa: E402
 from product_boot import (desk_model, dos2_listing,   # noqa: E402
-                          DRVBYT, DOS_2, FARMEM_BRK)
+                          DRVBYT, DOS_2)
 from vbxeref import (SCR_W as VB_W, SCR_H as VB_H,   # noqa: E402
                      SHOT_X0 as VB_X0, SHOT_Y0 as VB_Y0)
 
@@ -228,8 +229,7 @@ def one(tag, disk, has_vbxe, want_cfg, want_dev, geom, syms, keep, check):
             kind = b.peek(syms["dos"])
             drvmap = 0x03 if kind != DOS_2 else (b.peek(DRVBYT) or 1)
             mark = b.peek16(syms["app_pool_lo"])
-            brk = int.from_bytes(
-                bytes(b.memdump(syms["farmem"] + FARMEM_BRK, 4)), "little")
+            brk = far_heap(b, syms)
             pointer = (b.peek16(syms["ptr_state"]),
                        b.peek16(syms["ptr_state"] + 2))
             fs = atr.open_fs(atr.ATRImage.load(path))

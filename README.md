@@ -19,10 +19,10 @@ typed — which is what the other media all needed first (`docs/cartridge.md`).
 With a DOS floppy in drive 1 as well, it saves to the floppy (`docs/phase51.md`).
 
 **In Altirra**, give it the machine it needs: a Rapidus (System → Devices),
-or System → CPU → 65C816 with **4 MB** of high memory, and a VBXE if you
-want the 640-pixel screen. On 960K or less the desktop does not fit yet,
-and gem4xe says so and waits for a key (`docs/phase78.md`); on a plain
-6502 the cartridge says it needs a 65C816.
+or System → CPU → 65C816 with **960K** or more of high memory, and a VBXE
+if you want the 640-pixel screen. Less than that and it says so and waits
+for a key (`docs/phase78.md`); on a plain 6502 the cartridge says it needs
+a 65C816.
 
 **A 65C816 with linear RAM is required.** VBXE is not: one `GEM.COM` carries
 both display drivers and chooses at start-up, so a machine without a VBXE gets
@@ -75,7 +75,7 @@ full-screen repaints.
 
 | Gate | | |
 |---|---|---|
-| `make test-host` | 303/303 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
+| `make test-host` | 304/304 | pointer device layer — the ST, Amiga and CX80 models walked through the target's C in the compiler's simulator — .xex far-code staging, and the application bindings: every one of them called in the simulator with the three call gates replaced by recorders, and the parameter block each builds compared with the VDI and AES contracts; the application kit, assembled and built out of a copy of itself in a directory of its own; the far allocator, asked for the blocks that used to straddle a bank; and the distribution, built both ways, with the release checked for the floppies it must not carry and for what its page says instead |
 | `make test-emu` | 5/5 | VBXE FX 1.26 / Rapidus / MEMAC A / CPU switch |
 | `make test-m1` | 5/5 | Calypsi C on the 65C816 |
 | `make test-m2` | PASS | 640×240×4bpp HR overlay, 153,600/153,600 pixels |

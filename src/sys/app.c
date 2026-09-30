@@ -8,6 +8,7 @@
 #include "sys/gemdos.h"
 #include "vdi/vdi.h"
 #include "sys/farmem.h"
+#include "sys/ctx.h"
 
 /* The pool's bounds, from the linker (src/sys/apppool.s). */
 extern const uint16_t app_pool_lo, app_pool_hi;
@@ -132,7 +133,31 @@ static uint32_t rd32(uint32_t at)
     return (uint32_t)rd16(at) | ((uint32_t)rd16(at + 2) << 16);
 }
 
+static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
+                           uint8_t own);
+
+/* A new owner for the program, its far blocks taken as that owner, and
+ * the one before put back: whatever app_load takes is the program's, and
+ * app_free gives every piece back at once (phase 79). */
 int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
+{
+    uint8_t own = far_new_owner(), keep = far_owner;
+    int16_t st;
+
+    if (!own) {
+        memset(app, 0, sizeof *app);
+        return APP_E_FAR;
+    }
+    far_owner = own;
+    st = app_load_as(blob, len, app, own);
+    far_owner = keep;
+    if (st != APP_OK)
+        far_free_owner(own);
+    return st;
+}
+
+static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
+                           uint8_t own)
 {
     uint16_t near_size, far_off, n_nhi, n_nbank, n_fhi, n_fbank, k;
     uint32_t far_size, need, lists, entry, b, far;
@@ -182,7 +207,7 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
     /* A place for each part.  Both allocators are marked first so a
      * failure part-way leaves nothing taken. */
     app->pool_mark = pool_mark();
-    app->far_mark = farmem.brk;
+    app->owner = own;
     near = pool_alloc(near_size, 0x100);
     if (!near)
         return APP_E_POOL;
@@ -253,9 +278,21 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
     return APP_OK;
 }
 
+/* The program runs as its own owner, in whatever context runs it: record
+ * 0 for the desktop, a program, a Pexec child, an AUTO program or a
+ * control panel module.  A switch to an accessory and back sets
+ * far_owner from the context (src/sys/ctx.c), so the owner lives there. */
 int16_t app_exec(const APP *app)
 {
-    return app_run(app->entry);
+    uint16_t keep = ctx_cur->owner;
+    int16_t r;
+
+    ctx_cur->owner = app->owner;
+    far_owner = (uint8_t)app->owner;
+    r = app_run(app->entry);
+    ctx_cur->owner = keep;
+    far_owner = (uint8_t)keep;
+    return r;
 }
 
 void app_free(const APP *app)
@@ -263,7 +300,7 @@ void app_free(const APP *app)
     gemdos_release();               /* its handles, searches and DTA */
     vdi_close_virtuals();           /* its workstations */
     pool_release(app->pool_mark);
-    far_release(app->far_mark);     /* and everything it Malloc'd */
+    far_free_owner((uint8_t)app->owner); /* and everything it Malloc'd */
 }
 
 /* The file, in pieces the size of a slice of the pool (2 KB when the pool
@@ -287,14 +324,25 @@ int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len)
     uint16_t st;                        /* not a byte: B8, tools/ccbug */
     int16_t fd, rc = APP_OK;
 
+    uint32_t room;
+
     *addr = 0;
     *len = 0;
-    if (!farmem.banks)
+    /* CIO cannot say how long a file is, so the read takes the largest
+     * free extent there is and gives back what it did not fill: one
+     * extent, in any bank, and a file as big as the free memory reads
+     * (phase 79; the bump heap took it a piece at a time from the top). */
+    room = far_largest(1) & ~3UL;
+    if (!room)
         return APP_E_FAR;
-    start = farmem.brk;
     fd = cio_open(cioname, CIO_A_READ, 0);
     if (fd < 0)
         return APP_E_FILE;
+    start = far_alloc_span(room);
+    if (!start) {
+        cio_close(fd);
+        return APP_E_FAR;
+    }
     mark = pool_mark();
     n = pool_room();
     n = n > 2048 ? 2048 : (uint16_t)(n & ~3);
@@ -320,8 +368,8 @@ int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len)
              * as APP_E_FILE, which reads like a missing file.  The blob
              * is only ever reached through a far pointer (app_load), so
              * crossing costs it nothing. */
-            at = far_alloc_span(got);
-            if (at != start + total) { /* out of far memory */
+            at = start + total;
+            if (total + got > room) {   /* bigger than the memory there is */
                 rc = APP_E_FAR;
                 break;
             }
@@ -341,9 +389,10 @@ int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len)
     if (rc == APP_OK && !total)
         rc = APP_E_SHORT;               /* an empty file */
     if (rc != APP_OK) {
-        far_release(start);             /* nothing is kept */
+        far_free(start);                /* nothing is kept */
         return rc;
     }
+    far_shrink(start, total);           /* the rest is free again */
     *addr = start;
     return APP_OK;
 }
@@ -351,19 +400,25 @@ int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len)
 int16_t app_load_file(const char *gemname, APP *app)
 {
     char cio[CIO_NAME_MAX + 1];
-    uint32_t blob, len, mark = farmem.brk;
+    uint32_t blob, len;
+    uint8_t own = far_new_owner(), keep = far_owner;
     int16_t st;
 
+    memset(app, 0, sizeof *app);
+    if (!own)
+        return APP_E_FAR;
     dos_cioname(gemname, cio);
+    far_owner = own;
     st = far_read_file(cio, &blob, &len);
-    if (st != APP_OK) {
-        memset(app, 0, sizeof *app);
-        return st;
+    if (st == APP_OK) {
+        st = app_load_as((const uint8_t FAR *)blob, len, app, own);
+        /* The file has been copied into place and patched, and nothing
+         * reads it again: its memory is free now rather than at the
+         * program's end, which the bump heap could not do. */
+        far_free(blob);
     }
-    st = app_load((const uint8_t FAR *)blob, len, app);
+    far_owner = keep;
     if (st != APP_OK)
-        far_release(mark);              /* the file goes too */
-    else
-        app->far_mark = mark;           /* and at app_free, with the rest */
+        far_free_owner(own);
     return st;
 }

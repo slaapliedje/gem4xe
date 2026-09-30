@@ -46,6 +46,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_text  # noqa: E402
 import atr, mkxex, symfile, vbxeref         # noqa: E402
 from m4_aes import SHOTDIR                  # noqa: E402
 from m14_sparta import screen               # noqa: E402
@@ -58,7 +59,6 @@ ELF = os.path.join(BUILD, "gem.elf")
 WRAP_END = 0x010100             # src/gem4xe.scm wrap-page-end
 MYDOS_FLAG = ord("M")           # the boot record's first byte (src/sys/dos.c)
 DOS_2 = 0                       # src/sys/dos.h
-FARMEM_BRK = 8                  # src/sys/farmem.h
 
 problems = []
 
@@ -148,8 +148,7 @@ def main(argv):
         kind = b.peek(syms["dos"])
         check(kind == DOS_2, f"the system calls this a kind-{kind} DOS")
         mark = b.peek16(syms["app_near"])
-        brk = int.from_bytes(bytes(b.memdump(syms["farmem"] + FARMEM_BRK, 4)),
-                             "little")
+        brk = far_heap(b, syms)
         pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
         ref_v, ref_a, d = desk_model(mark, brk, pointer, want_map,
                                      dos2_listing(fs))

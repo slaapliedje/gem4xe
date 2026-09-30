@@ -81,11 +81,12 @@ PROFILE = os.path.join(BUILD, "altirra-cf")
 os.environ["XDG_CONFIG_HOME"] = PROFILE
 
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_text  # noqa: E402
 import apt, atr, mkxex, symfile, vbxeref    # noqa: E402
 from m4_aes import SHOTDIR                  # noqa: E402
 from m14_sparta import screen               # noqa: E402
 from m17_desktop import listing             # noqa: E402
-from product_boot import (BOOT_WAIT, FARMEM_BRK, REFUSAL, STEP,     # noqa: E402
+from product_boot import (BOOT_WAIT, REFUSAL, STEP,     # noqa: E402
                           boot_screen, desk_model, far_byte, far_probes)
 
 CARD = os.path.join(BUILD, "gem-cf.img")
@@ -478,9 +479,9 @@ def main(argv):
               f"{'all as the linker wrote them' if not bad else str(len(bad)) + ' wrong'}")
 
         mark = b.peek16(syms["app_pool_lo"])
-        brk = int.from_bytes(bytes(b.memdump(syms["farmem"] + FARMEM_BRK, 4)), "little")
+        brk = far_heap(b, syms)
         pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
-        print(f"  pool ${mark:04X}, far brk ${brk:06X}, pointer {pointer}")
+        print(f"  pool ${mark:04X}, far heap {heap_text(brk)}, pointer {pointer}")
         ref_v, ref_a, d = desk_model(mark, brk, pointer, DRVMAP, listing(fs))
         check(len(ref_a.shots) == 1, f"the model took {len(ref_a.shots)} shots")
         check((n - 1) & 0xFFFF == d.waits[0],

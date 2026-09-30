@@ -329,6 +329,7 @@ static WORD sh_ldacc(const char *name)
         proc_drop(p);
         return FALSE;
     }
+    p->p_ctx.owner = app.owner;         /* what it takes is its own */
     proc_name(p, name);                 /* what appl_find will search */
     ctx_switch(&p->p_ctx);              /* runs until it parks */
     p->p_stat = P_LIVE;                 /* it has had its first turn */
@@ -677,7 +678,7 @@ static void sh_ldcpx(const char *path, const char *name)
     far_strput(sh_cmd_far, path, SH_CMDLEN);
     gd_termres = 0;
     rs_hold(&held);                     /* its resource is its own */
-    (void)app_run(app.entry);
+    (void)app_exec(&app);               /* as its own owner */
     rs_unclaim(&held);
     far_get((uint8_t *)&info, e + CPXE_INFO, 4);
     if (!info || !gd_termres) {
@@ -976,8 +977,10 @@ WORD sh_main(void)
      * counted (src/sys/app.c), which is the difference between a rule and
      * a comment: an accessory loaded a moment too late used to be freed
      * by the first program to exit, in silence. */
-    pool_keep_mark();
-    far_keep_mark();
+    pool_keep_mark();                   /* the far heap needs no floor: what
+                                         * was taken so far belongs to the
+                                         * system or to a program nothing
+                                         * will free (phase 79) */
     sh_runs = 0;
     sh_lastret = 0;
     sh_lastrc = 0;

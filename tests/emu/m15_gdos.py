@@ -398,8 +398,10 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
 
     # -- far memory: Malloc, Fread into it, Fwrite out of it ----------------------------
     ret, _ = g.call("Malloc", L(-1))
-    check(ret > 0x10000, f"Malloc(-1) {ret:#x}")
-    print(f"  Malloc(-1): {ret} bytes free above bank $00")
+    # the largest free block, as the ST answers it: a block is inside one
+    # bank (src/sys/farmem.c, phase 79), so a free bank less the header
+    check(ret == 0x10000 - 4, f"Malloc(-1) {ret:#x}, not a free bank's $FFFC")
+    print(f"  Malloc(-1): the largest block is {ret} bytes")
     far, _ = g.call("Malloc", L(4096))
     check(far > 0xFFFF, f"Malloc(4096) ${far:06X} is not far")
     h, _ = g.call("Fopen", L(g.string("TEST.TXT")), W(0))

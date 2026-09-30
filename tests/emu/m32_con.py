@@ -40,6 +40,7 @@ WHAT IS NOT: Tsetdate and Tsettime on a clock.  This machine has none,
 and Altirra's DS1305 answers every read with the host's time, so a write
 cannot be read back (src/sys/clock.c); they are checked to refuse.
 """
+import copy
 import os
 import struct
 import sys
@@ -48,6 +49,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_then, heap_text  # noqa: E402
 import aesref, vbxeref, symfile, conref     # noqa: E402
 from m7_form import (poke16, NOT_STARTED, STATUS, ST_GO, ST_DONE,  # noqa: E402
                      SYMS)   # build/m3.sym: this disk's runner
@@ -146,8 +148,8 @@ def main(argv):
         r.run(PRELUDE)
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark, room = rec[6] & 0xFFFF, rec[7]
-        brk = (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"before: pool ${mark:04X}, {room} free; far brk ${brk:06X}")
+        brk = far_heap(b, syms)
+        print(f"before: pool ${mark:04X}, {room} free; far heap {heap_text(brk)}")
 
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))
         ref_v, ref_a, _ = aesref.run(PRELUDE, [], {}, pointer=pointer, pool=mark)
@@ -228,6 +230,9 @@ def main(argv):
         b.key("C", ctrl=True)               # Crawcin: ^C is only a key
         reached(6, "after ^C")
         b.frames(30)
+        # the far heap as the memory calls will find it: the program is
+        # waiting in Cnecin, and nothing between here and them allocates
+        heap_q = far_heap(b, syms)
         b.key("Q")                          # Cconis, then Cnecin
         reached(7, "after Q")
         if not reached(8, "the handles and the memory"):
@@ -238,7 +243,7 @@ def main(argv):
         same(b, "done", ref_v.to_rgb(), "the echoes, and nothing of the file's")
 
         res = struct.unpack("<64h", b.memdump(at("m32_res"), 128))
-        mem = struct.unpack("<6i", b.memdump(at("m32_mem"), 24))
+        mem = struct.unpack("<8i", b.memdump(at("m32_mem"), 32))
 
         # -- the clock: Tgettimeofday and clock() across evnt_timer(500) ----
         # Seconds since 1970 from the RTC read once, microseconds from the
@@ -289,18 +294,46 @@ def main(argv):
         # Super, memory, the clock, aux: and prn:
         want(9, -1, "Super(SUP_INQUIRE)")
         want(10, 0x0100, "Super(0L)")
-        m0, p, m2, m3, m4 = mem[:5]
+        # The memory calls through the allocator's model, from the heap as
+        # it stood (tools/farref.py): Malloc(-1) is the largest free block
+        # less the header, every block carries four bytes in front of it
+        # (src/sys/gemdos.c, MB_HDR).
+        h = copy.deepcopy(heap_q)
+
+        def mroom():
+            n = h.largest(0)
+            return n - 4 if n > 4 else 0
+        w0 = mroom()
+        wp = h.alloc(1004) + 4
+        w2 = mroom()
+        h.shrink(wp - 4, 104)
+        w3 = mroom()
+        wq = h.alloc(904) + 4
+        h.free(wp - 4)
+        w4 = mroom()
+        wr = h.alloc(104) + 4
+        m0, p, m2, m3, m4, _, q, r100 = mem
+        got = (m0, p, m2, m3, m4, q, r100)
+        wanted = (w0, wp, w2, w3, w4, wq, wr)
         check(p > 0xFFFF, f"Mxalloc gave ${p & 0xFFFFFFFF:06X}, not far memory")
-        check(m0 - m2 >= 1004, f"Mxalloc(1000) took {m0 - m2} bytes, not 1004")
+        check(got == wanted,
+              "the memory calls: " + ", ".join(
+                  f"{n} {g:#x}{'' if g == w else f' (model {w:#x})'}"
+                  for n, g, w in zip(("Malloc(-1)", "Mxalloc", "Malloc(-1)",
+                                      "Malloc(-1) after Mshrink", "Malloc(-1) "
+                                      "after Mfree", "the 900", "the 100"),
+                                     got, wanted)))
+        check(q == p + 104, f"the 900 bytes after Mshrink went to ${q:06X}, not "
+                            f"into the tail it gave back at ${p + 104:06X}")
+        check(r100 == p, f"the 100 bytes after Mfree went to ${r100:06X}, not the "
+                      f"freed block at ${p:06X}")
         want(12, 0, "Mshrink to 100")
-        check(m3 - m2 == 900, f"Mshrink to 100 gave back {m3 - m2} bytes, not 900")
         want(14, EGSBF, "Mshrink to more than the block")
-        want(15, 0, "Mfree of the last block")
-        check(m4 - m2 == 1004, f"Mfree gave back {m4 - m2} bytes, not the block's 1004")
+        want(15, 0, "Mfree of a block")
         want(17, EIMBA, "a second Mfree of it")
         want(18, EIMBA, "Mfree of a bank-$00 address")
-        print(f"  memory: Mxalloc ${p:06X}, 1004 taken, 900 back on Mshrink, "
-              f"the rest on Mfree")
+        print(f"  memory: Mxalloc ${p:06X}; after Mshrink 900 more at "
+              f"${q:06X}, after Mfree 100 at ${r100:06X} -- as the model places them")
         want(19, -1, "Tsetdate with no clock")
         want(20, -1, "Tsetdate of day 0")
         want(21, -1, "Tsettime of 31:63:62")
@@ -383,12 +416,12 @@ def main(argv):
         check(not still, f"IOCBs still open after the program: {still}")
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]
-        brk2 = (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"after:  pool ${mark2:04X}, {room2} free; far brk ${brk2:06X}")
+        brk2 = far_heap(b, syms)
+        print(f"after:  pool ${mark2:04X}, {room2} free; far heap {heap_text(brk2)}")
         check((mark2, room2) == (mark, room),
               f"the pool after: mark ${mark2:04X}, {room2} free; was ${mark:04X}, {room}")
-        check(brk2 == brk + desk_len,
-              f"far brk moved {brk2 - brk} bytes; the desktop's file is {desk_len}")
+        diff = heap_then(brk, brk2, desk_len)
+        check(diff is None, f"the far heap after the desktop: {diff}")
     finally:
         emu.stop()
 

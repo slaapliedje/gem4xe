@@ -98,7 +98,7 @@ typedef struct PROC {
      * releases are still in the reverse of the takes. */
     uint32_t p_rsc;             /* its resource's BASE: bank $00 or far (docs/far-trees.md), 0 if none */
     uint16_t p_rscmark;         /* the pool before its load */
-    uint32_t p_rscfar;          /* the far heap before its load, when it went far; 0 in the pool */
+    uint32_t p_rscfar;          /* its far block when it went far (the same as p_rsc); 0 in the pool */
     /* AND ONE NESTED ABOVE IT.  A program whose own resource is resident
      * -- the desktop's -- can still put up a dialog kept in a resource of
      * its own, by loading it over the top and freeing it again: the pool

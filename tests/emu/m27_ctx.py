@@ -48,7 +48,8 @@ WANT_SEQ = [0] + [1, 2] * ROUNDS + [2, 0x11, 0]
 # struct's real size and is checked against the last field's end.
 CTX_SP, CTX_SAVE, CTX_LEN, CTX_DEEP, CTX_ENTRY = 0, 2, 6, 8, 10
 CTX_LIVE, CTX_PB, CTX_API_SP, CTX_WHICH, CTX_DEPTH = 14, 16, 20, 22, 24
-CTX_SIZE = 26
+CTX_OWNER = 26                      # whose far blocks (phase 79)
+CTX_SIZE = 28
 
 
 def word(b, addr):

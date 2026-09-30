@@ -411,8 +411,8 @@ static void sys_op(WORD op)
             pool_release((uint16_t)intin[1]);
         intout[6] = (WORD)pool_mark();
         intout[7] = (WORD)pool_room();
-        intout[8] = (WORD)farmem.brk;
-        intout[9] = (WORD)(farmem.brk >> 16);
+        intout[8] = (WORD)far_largest(1);   /* the far heap has no cursor */
+        intout[9] = (WORD)(far_largest(1) >> 16);  /* now: its biggest gap */
         c4 = 10;
         break;
     /* GEMDOS, on a call block the harness staged in bank $00 (its ret,

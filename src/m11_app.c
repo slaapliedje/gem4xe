@@ -167,7 +167,8 @@ int main(void)
         dosres[3] = (WORD)r;                            /* ENMFIL */
         dosres[4] = (WORD)Fopen("A:\\NOPE.XYZ", 0);      /* EFILNF */
         m = Malloc(-1L);
-        dosres[5] = (WORD)(m >> 16);                    /* banks left */
+        dosres[5] = (WORD)(m >> 10);    /* the largest block, in KB: one
+                                         * bank at most (phase 79) */
         dosres[6] = (WORD)(Fgetdta() == &dta);
         ndos = (WORD)(7 + n);
     }

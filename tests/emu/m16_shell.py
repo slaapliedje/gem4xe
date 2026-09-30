@@ -31,6 +31,7 @@ The desktop's line reads the keyboard through evnt_keybd, so a key is a
 bridge KEY press, as in the form gates; the keys are pressed only after
 the counter shows the program that wants them is up.
 """
+import copy
 import os
 import sys
 
@@ -38,6 +39,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_then, heap_text  # noqa: E402
 import aesref, vdiref, vbxeref, symfile     # noqa: E402
 from m7_form import (poke16, NOT_STARTED, STATUS, ST_GO, ST_DONE, SYMS,  # noqa: E402
                      F, K, RETURN, compare)
@@ -143,8 +145,8 @@ def main(argv):
         r = Runner(b, syms)
         r.run(PRELUDE)
         rec = r.run([(ALLOC, (), ())])[0][2:]
-        mark, room, brk = rec[6] & 0xFFFF, rec[7], (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"before: pool ${mark:04X}, {room} free; far brk ${brk:06X}")
+        mark, room, brk = rec[6] & 0xFFFF, rec[7], far_heap(b, syms)
+        print(f"before: pool ${mark:04X}, {room} free; far heap {heap_text(brk)}")
 
         # The model: the runner's prelude, then what the shell draws for
         # the desktop and what the desktop draws for itself.
@@ -275,12 +277,12 @@ def main(argv):
 
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark2, room2 = rec[6] & 0xFFFF, rec[7]
-        brk2 = (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"after:  pool ${mark2:04X}, {room2} free; far brk ${brk2:06X}")
+        brk2 = far_heap(b, syms)
+        print(f"after:  pool ${mark2:04X}, {room2} free; far heap {heap_text(brk2)}")
         check((mark2, room2) == (mark, room),
               f"the pool after: mark ${mark2:04X}, {room2} free; was ${mark:04X}, {room}")
-        check(brk2 == brk + desk_len,
-              f"far brk moved {brk2 - brk} bytes; the desktop's file is {desk_len}")
+        diff = heap_then(brk, brk2, desk_len)
+        check(diff is None, f"the far heap after the desktop: {diff}")
         lw = low_water(b)
         used, size = stk_hi + 1 - lw, stk_hi - stk_lo + 1
         print(f"stack:  {used} of {size} bytes used at the low-water mark (${lw:04X})")

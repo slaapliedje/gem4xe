@@ -75,6 +75,7 @@ the screen.
 
   python3 tests/emu/product_boot.py [--shot] [--sdx=CART] [NAME]
 """
+import copy
 import os
 import sys
 
@@ -82,6 +83,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_text  # noqa: E402
 import aesref, vbxeref, symfile, atr, mkxex, mkcf  # noqa: E402
 from deskref import Desktop                 # noqa: E402
 from deskrsc import FILEMENU, QUITITEM      # noqa: E402
@@ -111,7 +113,6 @@ BOOT_WAIT = 3000                # frames from the CPU switch to give it to appea
 SDRAM_BASE = 0x080000
 BOOT_INK, BOOT_PAPER = "$00", "$0e"     # src/sys/bootinfo.c INK, PAPER, as HWSTATE prints them
 REFUSAL = "gem4xe needs"        # src/farload.s msg_no816
-FARMEM_BRK = 8                  # the cursor's offset in FARMEM (src/sys/farmem.h)
 RAPIDUS_MCR_BEFORE = 1          # and in RAPIDUS (src/sys/rapidus.h): the MCR ...
 RAPIDUS_CMCR_BEFORE = 5         # ... and the CMCR as the firmware left them
 SEAM = 8                        # bytes checked either side of a chunk seam
@@ -149,7 +150,7 @@ def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False):
     a.tree = a.W_TREE
     a.draw(0, 0, (0, 0, a.gl_width, a.gl_height))
     pl = desk_places(brk)
-    a.dos_brk = pl.pop("dos_brk")
+    a.dos_brk = copy.deepcopy(pl.pop("dos_brk"))
     a.dos_dirs = dirs
     g_link = symfile.load(DESK_SYM)["G"]
 
@@ -486,7 +487,7 @@ def one(name, progname, how, batches, cart, keep, check):
         # below it (docs/phase36.md), so app_pool_lo stopped being the
         # answer the moment the product shipped one.
         mark = b.peek16(syms["app_near"])
-        brk = int.from_bytes(bytes(b.memdump(syms["farmem"] + FARMEM_BRK, 4)), "little")
+        brk = far_heap(b, syms)
         pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
         # What the pool has left with everything the product ships
         # resident.  GEMDOS reads files and directories through a slice
@@ -515,9 +516,6 @@ def one(name, progname, how, batches, cart, keep, check):
         check(b.peek16(syms["pool_refused"]) == 0,
               f"{name}: {b.peek16(syms['pool_refused'])} pool release(s) "
               f"refused -- something tried to free what is permanent")
-        check(b.peek16(syms["far_refused"]) == 0,
-              f"{name}: {b.peek16(syms['far_refused'])} far release(s) "
-              f"refused")
         # ...and how much of the Rapidus's SRAM is left before the far heap
         # crosses into SDRAM at $080000.
         #
@@ -531,11 +529,12 @@ def one(name, progname, how, batches, cart, keep, check):
         #
         # So the number is printed rather than asserted.  Crossing is not
         # a failure; it is the point at which only the real board knows.
-        head = SDRAM_BASE - brk
+        # the far heap has no cursor since phase 79: its highest block
+        head = SDRAM_BASE - max(a + n for a, n, _ in brk.blocks)
         where = (f"{head:,} bytes of SRAM left" if head > 0
                  else f"{-head:,} bytes INTO SDRAM")
         print(f"  DOS kind {kind}, drive map {drvmap:#04x}, pool ${mark:04X}, "
-              f"far brk ${brk:06X} ({where}), pointer {pointer}")
+              f"far heap {heap_text(brk)} ({where}), pointer {pointer}")
         dirs = listing(disk) if sdfs else dos2_listing(fs)
         # File -> DOS command is greyed unless the DOS is a SpartaDOS X of
         # 4.4 or later whose jfsymbol is in place (src/sys/dos.c dos_command)

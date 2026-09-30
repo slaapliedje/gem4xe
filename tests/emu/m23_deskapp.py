@@ -35,6 +35,7 @@ The desktop's screens and its G are checked against tools/deskref.py as
 test-m18 checks them; the calculator's panel against the same host AES
 drawing the same resource, as test-m22 checks it.
 """
+import copy
 import os
 import sys
 
@@ -42,6 +43,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+from farheap import far_heap, heap_then, heap_text  # noqa: E402
 import aesref, vdiref, vbxeref, symfile     # noqa: E402
 import calcrsc, gemdata                     # noqa: E402
 import deskref                              # noqa: E402
@@ -147,7 +149,7 @@ def model(mark, brk, pointer, drvmap):
     memo = {}
 
     model_desk(v, a)
-    a.dos_brk = arena
+    a.dos_brk = copy.deepcopy(arena)
     d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
                 g_link, drvmap, inputs(memo), **pl)
     d.main()
@@ -194,8 +196,8 @@ def main(argv):
         r.run(PRELUDE)
         rec = r.run([(ALLOC, (), ())])[0][2:]
         mark, room = rec[6] & 0xFFFF, rec[7]
-        brk = (rec[8] & 0xFFFF) | (rec[9] << 16)
-        print(f"before: pool ${mark:04X}, {room} free; far brk ${brk:06X}; "
+        brk = far_heap(b, syms)
+        print(f"before: pool ${mark:04X}, {room} free; far heap {heap_text(brk)}; "
               f"DOS kind {kind}, drive map {drvmap:#04x}")
 
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))

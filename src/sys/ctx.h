@@ -63,6 +63,10 @@ typedef struct {
     uint16_t api_sp;
     uint16_t which;     /* a word, not a byte: the assembly never sees this */
     uint16_t depth;
+    /* whose far blocks the program running here takes (src/sys/farmem.c):
+     * a switch makes it far_owner, so an accessory's rsrc_load is the
+     * accessory's and not whoever ran last */
+    uint16_t owner;
 } CTX;
 
 extern CTX      *ctx_cur;       /* the running one; never 0 after ctx_init */

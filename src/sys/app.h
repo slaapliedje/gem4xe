@@ -34,11 +34,12 @@
  *   pool_keep_mark()   everything taken so far is permanent
  *   pool_release(m)    refused, and counted, if m is below that
  *
- * with far_keep_mark() and far_release() the same for the far heap.  The
- * shell sets both once, after the accessories have started and before the
- * first program (src/aes/shel.c).  If gem4xe ever runs two programs at
- * once, THAT is when a real allocator earns its header -- and the seam to
- * put it behind is these four calls.
+ * The far heap had the same pair until phase 79, and now has owners
+ * instead (src/sys/farmem.c): a program's far blocks are freed by owner
+ * at app_free, in any order, and what the system and the accessories took
+ * is permanent because nothing frees their owners.  The shell sets the
+ * pool's floor once, after the accessories have started and before the
+ * first program (src/aes/shel.c).
  */
 #ifndef GEM4XE_APP_H
 #define GEM4XE_APP_H
@@ -67,7 +68,8 @@ typedef struct {
     uint8_t  link_bank;     /* link's map translates: addr - link + base */
     uint16_t fixups;        /* patched bytes, all four lists */
     uint16_t pool_mark;     /* what app_free() winds back to */
-    uint32_t far_mark;
+    uint16_t owner;         /* whose its far blocks are: app_free frees them
+                             * (src/sys/farmem.c, phase 79) */
 } APP;
 
 uint16_t pool_mark(void);                          /* the cursor         */
