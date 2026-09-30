@@ -23,7 +23,7 @@
               .extern irq_kb, irq_kb_head, irq_kb_tail, irq_kb_count
               .extern irq_fault, irq_ptr_on, ptr_port, irq_plo, irq_phi, irq_qtab
               .extern irq_prev_lo, irq_prev_hi, irq_pend, irq_tmp
-              .extern gem_cop
+              .extern irq_cop                 ; src/sys/sei.s, then gem_cop
               .public _irq_vec_cop, _irq_vec_brk, _irq_vec_abort
               .public _irq_vec_nmi, _irq_vec_irq
               .public irq_kput
@@ -39,7 +39,7 @@
 ;;; The stubs: what the vectors hold.  Bank $00, 4 bytes each.
 ;;; ---------------------------------------------------------------------------
               .section code, root
-_irq_vec_cop:   jmp     long:gem_cop    ; the application ABI, src/sys/abi.s
+_irq_vec_cop:   jmp     long:irq_cop    ; irq_sei's, else the ABI's (abi.s)
 _irq_vec_brk:   jmp     long:irq_brk
 _irq_vec_abort: jmp     long:irq_abort
 _irq_vec_nmi:   jmp     long:irq_nmi

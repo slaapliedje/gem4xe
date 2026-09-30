@@ -1,0 +1,20 @@
+diff --git a/src/Altirra/h/cpumachine.inl b/src/Altirra/h/cpumachine.inl
+index 29820e3..be66484 100644
+--- a/src/Altirra/h/cpumachine.inl
++++ b/src/Altirra/h/cpumachine.inl
+@@ -2564,13 +2564,13 @@ for(;;) {
+ 			// and at every fetch after it, for as long as the source stays
+ 			// asserted -- SEI with a POKEY IRQ pending in native mode pushed
+ 			// four bytes per fetch until the stack had wrapped through bank 0.
+-			mIntFlags &= ~kIntFlag_IRQSetPending;
++			/* windows-altirra-bug: the shadow is not cleared */
+ 			break;
+ 
+ 		case kState816_NatIRQVecToPC:
+ 			mPC = 0xFFEE;
+ 			mK = 0;
+-			mIntFlags &= ~kIntFlag_IRQSetPending;
++			/* windows-altirra-bug: the shadow is not cleared */
+ 			break;
+ 
+ 		case kState816_NatBRKVecToPC:

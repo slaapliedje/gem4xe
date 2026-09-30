@@ -74,7 +74,7 @@ M2_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 # out of abi.s for the way a context enters its program, and the runner's
 # own stubs for the engine that is deliberately not linked.
 M27_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m27_ctx.o \
-             build/ctx.o build/ctxs.o build/farmem.o build/abis.o
+             build/ctx.o build/ctxs.o build/farmem.o build/abis.o build/seis.o
 # The ANTIC surface milestone: no VBXE object at all, which is the point
 M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m24_antic.o build/antic.o build/font8x8.o
 # The VDI on the ANTIC device: the same vdi.c, compiled for the other
@@ -82,7 +82,7 @@ M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m25_antic_vdi.o \
              build/vdi.o build/dev_antic.o build/dev_print.o build/emit.o build/antic.o build/pointer.o \
              build/font8x8.o build/font6x6.o build/fillpat.o build/sintbl.o build/font.o \
-             build/farmem.o build/irq.o build/irqs.o build/rapidus.o \
+             build/farmem.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
              build/cio.o build/cios.o build/dos.o build/m25_stub.o \
              build/graf.o build/objc.o build/grlib.o build/event.o \
              build/proc.o build/appl.o build/ctx.o build/ctxs.o \
@@ -96,14 +96,14 @@ M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m30_print.o \
              build/vdi.o build/dev_print.o build/emit.o build/pointer.o \
              build/font8x8.o build/fillpat.o build/sintbl.o build/font.o \
-             build/farmem.o build/irq.o build/irqs.o build/rapidus.o \
+             build/farmem.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
              build/cio.o build/cios.o build/dos.o build/m25_stub.o \
              build/graf.o build/objc.o build/grlib.o build/event.o \
              build/proc.o build/appl.o build/ctx.o build/ctxs.o \
              build/wind.o build/ctrl.o build/menu.o build/form.o \
              build/alert.o build/gemdata.o build/lang.o build/lang_rsc.o \
              build/rsrc.o build/apppool.o
-M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
+M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
 
 # GEM.COM, the product (src/gem.c): the runner's objects with the runner
 # itself and its compiled-in test application taken out, linked on the
@@ -311,6 +311,12 @@ build/abi.o: src/sys/abi.c src/sys/abi.h src/vdi/vdi.h src/aes/aes.h src/sys/gem
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
 build/abis.o: src/sys/abi.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+
+# Interrupts off without an SEI (src/sys/sei.s): in every program that has
+# interrupts on, beside irq.s, abi.s or both.
+build/seis.o: src/sys/sei.s
 	@mkdir -p build
 	$(AS) -o $@ $<
 
@@ -1883,6 +1889,14 @@ test-m16: build/m14-boot.atr
 test-mydos: build/gem-mydos.atr build/desktop.g4a build/desktop.sym build/gem.sym
 	python3 tests/emu/mydos_boot.py
 
+# The cartridge on Windows Altirra's 65C816, whose native-mode IRQ shadow
+# bug AltirraSDL fixed (docs/phase82.md).  Needs an AltirraSDL built with
+# tools/altirra/altirra-sdl-windows-irq-bug.patch, so it is not part of
+# `make test`; with no such build it fails, it does not skip.
+WINBUG ?= $(HOME)/dev/altirra-patched/AltirraSDL.winbug
+test-winbug: build/gem4xe-sys.car build/gem.sym
+	WINBUG=$(WINBUG) python3 tests/emu/winbug.py
+
 test-m37: build/gem4xe.car build/gem4xe-d1.car build/gem4xe-sys.car build/cart-floppy.atr \
           build/desktop.g4a build/desktop.sym build/gem.sym
 	python3 tests/emu/m37_cart.py
@@ -2161,4 +2175,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m40 test-m41 test-m42 test-m43 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean

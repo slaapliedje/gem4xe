@@ -58,7 +58,7 @@
               .rtmodel core, "*"
 
               .extern ae_sp, ae_pokmsk      ; src/crt_atari.s
-              .extern irq_frames, irq_kput  ; src/sys/irq.c, irq.s
+              .extern irq_frames, irq_kput, irq_sei ; src/sys/irq.c, irq.s, sei.s
               .extern irq_cio_swap          ; src/sys/irq.c
               .public cio_call, dsk_call, dos_call, sdx_call, cio_env
               .public sdx_vec, sdx_ax, sdx_put, sdx_put_ptr, sdx_put_left
@@ -133,7 +133,7 @@ sdx_call:     php
               sta     abs:cio_which
               rep     #0x20
               lda     ##0
-os_call:      sei
+os_call:      jsl     irq_sei         ; not SEI: src/sys/sei.s says why
               phb
               phd
               asl     a

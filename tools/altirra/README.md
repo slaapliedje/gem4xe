@@ -230,3 +230,22 @@ Point the harness at it:
 
     ALTIRRASDL=/path/to/AltirraSDL make test
     ALTIRRASDL=/path/to/AltirraSDL make test-m14u   # SDX from a U1MB flash
+
+## altirra-sdl-windows-irq-bug.patch -- Windows Altirra's CPU, on purpose
+
+The reverse of the second fix above: applied to a fixed tree, it takes
+the `kIntFlag_IRQSetPending` clear back out of the two native vector
+states, which gives an AltirraSDL whose 65C816 behaves as Windows
+Altirra's does (to 4.50-test21 at least; the fork's source still marks
+the fix "not yet in Windows Altirra").  gem4xe 0.9.2 crashed on it
+within half a minute of emulated time on the AtariAge reporter's machine
+-- a PAL 130XE, 1088K, VBXE, Rapidus, XL ROM -- as it did in their
+Windows Altirra; since phase 82 it does not (`docs/phase82.md`).  Build
+it beside the real one and run the gates that matter on it:
+
+    git apply /path/to/gem4xe/tools/altirra/altirra-sdl-windows-irq-bug.patch
+    cmake --build build/linux-release --target AltirraSDL
+    cp build/linux-release/src/AltirraSDL/AltirraSDL ~/dev/altirra-patched/AltirraSDL.winbug
+    git checkout src/Altirra/h/cpumachine.inl        # and rebuild the real one
+
+    make test-winbug        # WINBUG= the binary; the default is the path above

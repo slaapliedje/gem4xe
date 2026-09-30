@@ -56,7 +56,10 @@
 #define SAVEDS       __attribute__((saveds))
 #define SECTION(s)   __attribute__((section(s)))
 #define memcpy_far   __memcpy_far
-#define cpu_sei()    __disable_interrupts()
+/* Not __disable_interrupts(): an SEI in native mode can start an IRQ
+ * storm on Windows Altirra (src/sys/sei.s). */
+void irq_sei(void);
+#define cpu_sei()    irq_sei()
 #define cpu_cli()    __enable_interrupts()
 
 #else

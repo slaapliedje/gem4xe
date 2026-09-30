@@ -5,7 +5,9 @@
 ;;; COP #$44 (GEMDOS), the parameter block's address in X:C
 ;;; (src/app/gem.h).  The CPU pushes PB, PC and P, sets I, clears the
 ;;; decimal flag, and arrives here through the bank-$00 stub in
-;;; src/sys/irq.s with M and X as the caller had them.
+;;; src/sys/irq.s and irq_cop in src/sys/sei.s, which takes its own COP
+;;; and passes every other with M and X 16 bits wide -- the caller's
+;;; widths are the ones in the P on the stack.
 ;;;
 ;;; A COP that is not one of those three is somebody else's.  Under Rapidus
 ;;; OS it is the OS's -- COP #$00 is its system emulation call and #$01 its
@@ -47,7 +49,7 @@
 
               .extern _DirectPageStart, _Dp
               .extern gem_entry, gem_pb, gem_which, gem_api_sp, gem_depth
-              .extern gem_cop_pass, gem_term
+              .extern gem_cop_pass, gem_term, irq_sei
               .public gem_cop, app_run
 
 ABI_VDI:      .equ    0x56            ; src/sys/abi.h, src/app/gemabi.s
@@ -122,7 +124,7 @@ gem_cop_call: lda     dp:.tiny(_Dp+4)
               bne     gem_cop_go
               cli                     ; the caller ran with interrupts on
 gem_cop_go:   jsl     gem_entry
-              sei
+              jsl     irq_sei         ; not SEI: src/sys/sei.s says why
               sep     #0x20
               dec     abs:gem_depth
               lda     abs:gem_term
