@@ -836,6 +836,8 @@ class Desktop:
     def pn_active(self, pn):
         pn.size = pn.count = 0                  # read again after a delete
         pn.fnodes = []
+        # the DTA it reads, set here and not trusted (phase 83)
+        self.call(FSETDTA, (self.dta & 0xFFFF, self.dta >> 16))
         ret = self.gemdos(FSFIRST, (pn.spec_addr & 0xFFFF, pn.spec_addr >> 16,
                                     DISPATTR))
         count = 0

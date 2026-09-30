@@ -194,9 +194,28 @@ def main():
         t.settle()
         check(far() == far0, "...and OK puts it away")
 
-        # -- Set file mask -----------------------------------------------
+        # -- Show info on a folder, and the listings after it -----------
+        # Reported from an Antonia: after Show info on APPS every name in
+        # every folder opened was AUTOEXEC.BAT.  The folder's size is the
+        # delete's counting walk, which sets its own DTA, and the listing
+        # read the one it had set before (phase 83).
         t.dclick(t.desk_icon("DISK D1:"))
         t.click(t.gadget(W_FULLER))
+        root = listing(t)
+        apps = listing_of(t, "APPS")
+        t.click(t.item("APPS"))
+        b.key("I", ctrl=True)
+        b.frames(20)
+        t.settle()
+        b.key("RETURN")
+        t.settle()
+        got = listing_of(t, "APPS")
+        check(got == apps, f"after Show info on APPS, APPS lists {got}, "
+                           f"as it did before: {apps}")
+        got = listing(t)
+        check(got == root, f"...and the root, listed again, {got}: {root}")
+
+        # -- Set file mask -----------------------------------------------
         set_mask(t, ["ASTERISK", "PERIOD", "B", "A", "T"])
         got = listing(t)
         check(got == ["APPS", "AUTOEXEC.BAT", "GEM", "STARTUP.BAT"],

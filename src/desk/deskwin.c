@@ -385,6 +385,12 @@ static void pn_active(PNODE *pn)
     all[i++] = '.';
     all[i++] = '*';
     all[i] = 0;
+    /* THE DTA THIS READS, set here and not trusted to be set: the
+     * delete's counting walk (deskfun.c) sets its own, and Show info on
+     * a folder ran it without putting this one back -- every name read
+     * after it was the one left here, AUTOEXEC.BAT on every line of
+     * every window (phase 83). */
+    Fsetdta(dta);
     ret = Fsfirst(all, DISPATTR);
     while (ret == E_OK && count < NUM_FNODES) {
         if (dta->d_fname[0] != '.'
