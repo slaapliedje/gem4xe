@@ -194,6 +194,7 @@ uint8_t cio_xio(uint8_t cmd, const char *name, uint8_t aux1, uint8_t aux2)
 static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
                    uint16_t len)
 {
+    uint8_t st;
     volatile uint8_t *d = (volatile uint8_t *)DCB_DDEVIC;
     volatile uint16_t *w;
 
@@ -209,7 +210,9 @@ static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
     w = (volatile uint16_t *)DCB_DAUX1;
     *w = aux;
     cio_calls++;
-    return (uint8_t)dsk_call(0);
+    st = (uint8_t)dsk_call(0);
+    irq_pokey_resync();             /* and arms timer 1 again (cio.s) */
+    return st;
 }
 
 uint8_t dsk_read(uint8_t unit, uint16_t sector, void *buf, uint16_t len)

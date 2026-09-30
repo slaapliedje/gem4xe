@@ -393,6 +393,38 @@ def small_machines():
     finally:
         emu.stop()
 
+    # 960K under ALTIRRAOS, Altirra's own OS -- which is what a stock Altirra
+    # runs, and what every other gate here does not (tools/a8test/launcher.py
+    # boots the XL ROM).  0.9.2 never got past its first CIO call there: the
+    # OS's SIO poll for the unknown @: device left POKEY counting fast, the
+    # CIO trampoline armed timer 1 before the sampler's settings were back,
+    # and on a 1.79 MHz CPU the interrupt handler took every cycle -- a
+    # black screen on AtariAge (docs/phase81.md).
+    print("  the same 960K under AltirraOS: the desktop")
+    emu = launch(tag="m37aos", memsize="1088K", rapidus=False, cpu816=15,
+                 require_real_rom=False,
+                 extra_args=["--cart", CAR_SYS, "--kernel", "llexl"])
+    b = emu.bridge
+    try:
+        while b.peek(CARTSTEP) != STEP_RUN and b.peek(CARTSTEP) < 30:
+            b.frames(50)
+        b.frames(250)                           # gem4xe's crt has zeroed its data
+        runs = 0
+        for _ in range(100):
+            runs = b.peek16(syms["sh_runs"])
+            if runs:
+                break
+            b.frames(150)
+        d = bytes(b.memdump(syms["irq"], 16))
+        print(f"    the shell has run {runs} program(s); the sampler's divisor "
+              f"{d[7]} for a CPU that counted {int.from_bytes(d[13:15], 'little')}")
+        check(runs >= 1, "m37aos: the desktop never ran under AltirraOS on a "
+                         "1.79 MHz 65C816")
+        check(d[7] > 15, f"m37aos: a 1.79 MHz CPU got the Rapidus's sampler "
+                         f"rate (divisor {d[7]})")
+    finally:
+        emu.stop()
+
     # 192K: the loader's refusal
     print("  a 65C816 with 192K: the loader refuses")
     emu = launch(tag="m37k192", memsize="1088K", rapidus=False, cpu816=3,

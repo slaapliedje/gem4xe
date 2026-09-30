@@ -262,9 +262,17 @@ cio_keepcrit:
               jsl     irq_kput        ; A = the code, 8-bit A and X, DB = $00
               lda     #0xff
               sta     CH
+;;; gem4xe's sources again -- BUT TIMER 1 STAYS OFF: POKEY is still as the
+;;; OS's SIO left it, and irq_pokey_resync, which the C side calls next,
+;;; reprograms the timer and restarts it before it arms it.  Armed here, a
+;;; timer counting by SIO's settings fired again within two hundred cycles
+;;; of every acknowledgement under AltirraOS (Altirra's own OS), and on a
+;;; 1.79 MHz 65C816 the handler then had every cycle and the resync never
+;;; ran: a black screen from the 0.9.2 cartridge (docs/phase81.md).
 cio_nokey:    lda     abs:cio_pokmsk
               sta     POKMSK
-              sta     IRQEN           ; gem4xe's sources again
+              and     #0xfe           ; IRQ_TIMER1
+              sta     IRQEN
               rep     #0x30
               pld
               plb

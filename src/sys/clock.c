@@ -48,6 +48,7 @@
 #include "clock.h"
 #include "cio.h"
 #include "dos.h"
+#include "sys/irq.h"
 
 #define RTC_U1MB 0xD3E2         /* the Ultimate 1MB's RTCIN/RTCOUT */
 #define RTC_SIDE 0xD5E2         /* the SIDE and SIDE 2's, the same chip */
@@ -213,6 +214,7 @@ static uint8_t dos_clock(CLOCK *c)
     t[0] = t[1] = t[2] = 0xFF;
     for (tries = 0; tries < DOS_TRIES && (p & 1); tries++)
         p = dos_call(DOS_KD_GETTD);
+    irq_pokey_resync();                         /* timer 1 armed again (cio.s) */
     *dev = (uint8_t)save;
     if (p & 1)
         return 0;                               /* busy for good */
@@ -382,6 +384,7 @@ static uint8_t dos_setclock(const CLOCK *c)
         t[1] = c->minute;
         t[2] = c->second;
         p = dos_call(DOS_KD_SETTD);
+        irq_pokey_resync();                     /* timer 1 armed again (cio.s) */
     }
     *dev = (uint8_t)save;
     return (uint8_t)!(p & 1);

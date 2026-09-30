@@ -82,9 +82,64 @@ uint8_t     irq_pend, irq_tmp;         /* the handler's scratch */
 /* AUDF1 for the pointer sampler.  The 64 kHz base clock over (n + 1):
  * n = 15 is ~3.96 kHz on a PAL machine, ~4.0 kHz on NTSC, a sample every
  * 250 us -- an ST mouse pushed hard makes a transition every few hundred.
- * A design constant, reported in irq.timer_div so a gate can derive the
- * rate it should measure rather than repeat the number. */
+ * Reported in irq.timer_div so a gate can derive the rate it should
+ * measure rather than repeat the number, and so irq_clock can count time
+ * by it.
+ *
+ * THAT IS A RAPIDUS'S RATE, AND ONLY A RAPIDUS CAN PAY IT.  Each
+ * interrupt costs a native-mode entry, the handler and an RTI, part of it
+ * on the slow bus -- nothing to a 20 MHz CPU and most of a 1.79 MHz one.
+ * Altirra's own 65C816 runs at 1.79 MHz unless told otherwise, and there
+ * the sampler took the whole machine: under AltirraOS, which took the
+ * interrupts about twice as often, gem4xe never got past its first steps
+ * -- an AtariAge report of a black screen from the 0.9.2 cartridge
+ * (docs/phase81.md).  So the rate follows the CPU: cpu_turns() counts
+ * 400 on a 20 MHz Rapidus and 25 on a 1.79 MHz 65C816, and below
+ * SPEED_FULL the divisor grows in proportion, which keeps the sampler's
+ * share of the machine about what it is on a Rapidus.  A slow machine's
+ * mouse is sampled less often and loses counts when it is pushed hard;
+ * that is the cost, and it is not a machine that stops. */
 #define TIMER_DIV    15
+#define SPEED_FULL   200
+#define DIV_MAX      255
+
+static uint8_t timer_div_for(uint16_t speed)
+{
+    uint16_t d;
+
+    if (speed >= SPEED_FULL)
+        return TIMER_DIV;
+    if (speed < (uint16_t)((TIMER_DIV + 1) * SPEED_FULL / (DIV_MAX + 1)))
+        return DIV_MAX;                 /* slower than that: the floor */
+    d = (uint16_t)((TIMER_DIV + 1) * SPEED_FULL / speed - 1);
+    return (uint8_t)(d > DIV_MAX ? DIV_MAX : d);
+}
+
+#define VCOUNT  (*(volatile uint8_t *)0xD40B)
+
+/* How fast this CPU really is: sixteen turns of a loop in its own memory
+ * per look at VCOUNT, while ANTIC draws 128 scanlines -- ANTIC's DMA and
+ * all, which is what a program gets.  The look is an I/O read, and on a
+ * Rapidus every I/O read is a trip to the 1.79 MHz bus, so it is taken
+ * once per sixteen turns or it would be the bus that was measured.
+ * Every read of VCOUNT goes into a word first: spinning on a byte is
+ * compiler bug B16 at -O2 (tools/ccbug). */
+static volatile uint16_t turn_sink;
+
+static uint16_t cpu_turns(void)
+{
+    uint16_t n = 0, v, k;
+
+    do v = VCOUNT; while (v != 8);
+    do v = VCOUNT; while (v == 8);
+    do {
+        for (k = 0; k < 16; k++)
+            turn_sink = k;
+        n++;
+        v = VCOUNT;
+    } while (v < 72);
+    return n;
+}
 
 #define VEC_BASE     0xFFE4
 #define VEC_LEN      12
@@ -257,19 +312,36 @@ static uint8_t find_via(void)
 }
 
 /* The POKEY registers the sampler and the keyboard depend on.  Written at
- * install, and again after every CIO call (src/sys/cio.c): the OS's SIO
+ * install, and again after every CIO call (src/sys/cio.c), which leaves
+ * timer 1 disarmed until this has run (src/sys/cio.s): the OS's SIO
  * takes AUDCTL and the audio-control registers for its serial clock and
  * SKCTL for its serial modes, and what it leaves them as on its way out
- * is its business, not something to rely on.  STIMER is not written here
- * -- that would restart the count, and the divisor has not changed. */
+ * is its business, not something to rely on.
+ *
+ * AND STIMER, WHICH THIS DID NOT WRITE UNTIL 0.9.3.  It restarts the
+ * count, and leaving it out kept the clock from losing the part of a
+ * tick a CIO call interrupts.  But the new AUDCTL and AUDF1 are not what
+ * the channel counts by until it reloads: under AltirraOS -- Altirra's own
+ * OS, which a stock Altirra runs -- the channel was left counting fast,
+ * timer 1 fired again within two hundred cycles of every acknowledgement,
+ * and on a 1.79 MHz 65C816 the handler took every cycle there was -- so
+ * the reprogramming has to come BEFORE the timer is armed, and the
+ * trampoline arming it on its way out was the other half of the bug.
+ * gem4xe never got past its first CIO call: a black screen, from the
+ * 0.9.2 cartridge, reported on AtariAge (docs/phase81.md).  A part of a
+ * tick per CIO call is what the restart costs the clock. */
 void irq_pokey_resync(void)
 {
     AUDCTL = 0;                     /* 64 kHz base, no linking */
-    AUDF1  = TIMER_DIV;
+    AUDF1  = irq.timer_div;
     AUDC1  = 0;                     /* silent */
     SKCTL  = 3;                     /* keyboard scan and debounce, as the OS
                                        leaves it: the keyboard IRQ needs the
                                        scan running */
+    STIMER = 0;                     /* ...counting by those, from now */
+    IRQEN  = POKMSK;                /* and only now armed: the CIO trampoline
+                                       brings the sources back without timer
+                                       1 (src/sys/cio.s) */
 }
 
 static void sources_on(void)
@@ -280,8 +352,7 @@ static void sources_on(void)
     irq_fault = 0;
     irq_prev_lo = irq_prev_hi = 0;
 
-    irq_pokey_resync();
-    STIMER = 0;                     /* load the divisor */
+    irq_pokey_resync();             /* which loads the divisor */
     POKMSK = IRQ_TIMER1 | IRQ_KEY;
     IRQEN  = 0;                     /* drop anything latched while off ... */
     IRQEN  = POKMSK;                /* ... then arm */
@@ -299,7 +370,8 @@ uint8_t irq_install(void)
     irq.via  = IRQ_VIA_NONE;
     irq.bad_byte = 0;
     irq_cio_swap = 0;
-    irq.timer_div = TIMER_DIV;
+    irq.speed = cpu_turns();
+    irq.timer_div = timer_div_for(irq.speed);
     irq.pal = (GTIA_PAL & 0x0E) == 0;
     irq.rom_sum = irq.ram_sum = 0;
     irq.portb_before = PORTB;

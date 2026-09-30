@@ -115,6 +115,9 @@ typedef struct {
                                from the ROM, and ... */
     uint16_t ram_sum;       /* ... read back from the RAM copy, before the
                                vectors were written                        */
+    uint16_t speed;         /* loop turns in 128 scanlines at install: how
+                               fast this CPU really is, which sets
+                               timer_div (irq.c, cpu_turns)               */
 } IRQ_INFO;
 
 extern IRQ_INFO irq;

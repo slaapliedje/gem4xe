@@ -3,6 +3,7 @@
 #include <string.h>
 #include "dos.h"
 #include "../antic/antic.h"     /* AN_DLIST: where that screen starts */
+#include "sys/irq.h"
 
 /* The OS's display-list shadow: $8000 when the screen up is gem4xe's ANTIC
  * one (src/antic/antic.c).  Read here rather than asking the VDI which
@@ -239,6 +240,7 @@ static uint16_t sdx_symbol(const char *name)
     sdx_vec = SDX_JFSYMBOL;
     sdx_ax = (uint16_t)name;
     p = sdx_call(0);
+    irq_pokey_resync();                         /* timer 1 armed again (cio.s) */
     return (uint16_t)((p & 0x02) ? 0 : sdx_ax);    /* Z: no such symbol */
 }
 
@@ -365,6 +367,7 @@ int32_t dos_command(uint32_t line, uint32_t out, uint32_t max)
     vram_unmap();
     sdx_vec = sdx_xcomli;
     sdx_call(0);
+    irq_pokey_resync();                         /* timer 1 armed again (cio.s) */
 
     MEMTOP = memtop;
     MEMLO = memlo;
