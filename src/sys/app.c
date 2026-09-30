@@ -31,6 +31,8 @@ uint16_t app_near;
  * link_bank read from the .g4a header (byte 14).  The desktop became such
  * a program on 2026-09-19 and every gate that reads its G needs this. */
 uint32_t app_far;
+uint32_t app_vars;
+uint8_t  app_vlink;
 
 /* THE FLOOR.  Nothing may be released below this, and what puts things
  * under it is pool_keep_mark(): "everything taken so far is permanent."
@@ -156,6 +158,121 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
     return st;
 }
 
+/* FORMAT 5: A PACKED PROGRAM (phase 80, tools/mkg4a.py write_v5).
+ *
+ * Its code and its far variables are placed APART, each at any page of
+ * any bank: the code where far_alloc_page finds room under the $D5 page,
+ * the variables where it finds room in one bank.  So a 3 KB accessory
+ * takes 3 KB and a few hundred bytes, not the two whole banks formats 3
+ * and 4 give every program -- which is what made the far heap run out on
+ * a 1 MB machine (docs/phase78.md).  Fourteen fixup lists, not four: for
+ * each part, the references to the near region, and to the code and to
+ * the variables -- a whole 24-bit address, its page byte or its bank
+ * byte alone -- delta-coded, which keeps the file no bigger than format
+ * 3 (docs/phase80.md).  A page
+ * fixup adds to an address's middle byte and cannot carry: the code ends
+ * under $D500 wherever it goes, and the variables inside their bank. */
+#define HDR_V5 48
+
+static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
+{
+    uint16_t near_size, code_off, vars_off, k, l, n, o;
+    uint32_t code_size, vars_size, entry, code, vars, at, end;
+    uint8_t  code_link, vars_link, first, second, d[5];
+    uint8_t *near;
+
+    if (len < HDR_V5)
+        return APP_E_SHORT;
+    app->link_near = rd16(b + 4);
+    near_size      = rd16(b + 6);
+    code_off       = rd16(b + 8);
+    code_size      = rd32(b + 10);
+    code_link      = rd8(b + 14);
+    vars_link      = rd8(b + 15);
+    entry          = rd32(b + 16) & 0xFFFFFFUL;
+    vars_off       = rd16(b + 20);
+    vars_size      = rd32(b + 24);
+    if ((uint32_t)HDR_V5 + near_size + code_size > len
+        || code_size > 0xD500UL || vars_size > 0x10000UL)
+        return APP_E_SHORT;
+
+    app->pool_mark = pool_mark();
+    near = pool_alloc(near_size, 0x100);
+    if (!near)
+        return APP_E_POOL;
+    app->near_base = (uint16_t)near;
+    app_near = app->near_base;
+    app->near_size = near_size;
+    code = far_alloc_page(code_size, 0xD500UL);
+    vars = vars_size ? far_alloc_page(vars_size, 0x10000UL) : 0;
+    if (!code || (vars_size && !vars)) {
+        pool_release(app->pool_mark);
+        return APP_E_FAR;               /* app_load frees the owner's blocks */
+    }
+    app->far_addr = code;
+    app->far_size = code_size;
+    app->link_bank = code_link;
+    app->vars_addr = vars;
+    app->vars_link = vars_link;
+    app_far = code;
+    app_vars = vars;
+    app_vlink = vars_link;
+
+    for (k = 0; k < near_size; k++)
+        near[k] = rd8(b + HDR_V5 + k);
+    far_copy_span(code, b + HDR_V5 + near_size, code_size);
+
+    /* near page, code bank, code page, vars bank, vars page */
+    d[0] = (uint8_t)((app->near_base - app->link_near) >> 8);
+    d[1] = (uint8_t)((code >> 16) - code_link);
+    d[2] = (uint8_t)(((code & 0xFFFFUL) - code_off) >> 8);
+    d[3] = (uint8_t)(vars ? (vars >> 16) - vars_link : 0);
+    d[4] = (uint8_t)(vars ? ((vars & 0xFFFFUL) - vars_off) >> 8 : 0);
+    /* Fourteen lists, seven a part (tools/mkg4a.py, V5_LISTS): near page;
+     * code long, page, bank; vars long, page, bank.  A LONG entry is a
+     * 24-bit address's middle byte, its bank byte after it.  Each list is
+     * a count and deltas: a byte 1..255, or 0 and the offset itself. */
+    at = b + HDR_V5 + near_size + code_size;
+    end = b + len;
+    app->fixups = 0;
+    for (l = 0; l < 14; l++) {
+        uint16_t kind = (uint16_t)(l % 7);
+        uint16_t size = l < 7 ? near_size : (uint16_t)code_size;
+        first = kind == 0 ? d[0] : kind == 3 ? d[1] : kind == 6 ? d[3]
+              : kind <= 2 ? d[2] : d[4];
+        second = kind == 1 ? d[1] : kind == 4 ? d[3] : 0;
+        if (at + 2 > end)
+            return APP_E_SHORT;
+        n = rd16(at);
+        at += 2;
+        o = 0;
+        for (k = 0; k < n; k++) {
+            uint8_t step = rd8(at++);
+            if (step)
+                o = (uint16_t)(o + step);
+            else {
+                o = rd16(at);
+                at += 2;
+            }
+            if (at > end || o >= size || (second && o + 1 >= size))
+                return APP_E_FIXUP;
+            if (l < 7) {
+                near[o] = (uint8_t)(near[o] + first);
+                if (second)
+                    near[o + 1] = (uint8_t)(near[o + 1] + second);
+            } else {
+                far_write8(code + o, (uint8_t)(far_read8(code + o) + first));
+                if (second)
+                    far_write8(code + o + 1,
+                               (uint8_t)(far_read8(code + o + 1) + second));
+            }
+        }
+        app->fixups = (uint16_t)(app->fixups + n);
+    }
+    app->entry = entry + ((uint32_t)d[1] << 16) + ((uint32_t)d[2] << 8);
+    return APP_OK;
+}
+
 static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
                            uint8_t own)
 {
@@ -178,6 +295,12 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
      * goes nowhere. */
     if (rd8(b + 3) == 1 || rd8(b + 3) == 2)
         return APP_E_OLDSDK;
+    if (rd8(b + 3) == 5) {
+        app->owner = own;           /* app_free frees by it: without this
+                                     * every packed program's blocks outlived
+                                     * it (m17 caught the desktop's) */
+        return app_load_v5(b, len, app);
+    }
     if (rd8(b + 3) != 3 && rd8(b + 3) != 4)
         return APP_E_MAGIC;
     /* The ONE difference between 3 and 4, as between 1 and 2 before them:

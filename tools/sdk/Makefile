@@ -23,10 +23,11 @@
 # gets its main() from lib/cpxmain.c, so you write cpx_init() instead
 # (example/cpx.c).
 #
-# A program is linked THREE times -- once at the placeholder addresses
-# lib/gemapp.scm gives it, once with its near region a page higher and
-# once with its far region a bank higher -- and tools/mkg4a.py takes the
-# bytes that moved as the loader's fixup lists.  Neither the compiler
+# A program is linked SIX times -- once at the placeholder addresses
+# lib/gemapp.scm gives it, once with its near region a page higher, once
+# with its far region a bank higher, and three times with its code and
+# its far variables moved apart -- and tools/mkg4a.py takes the bytes that
+# moved as the loader's fixup lists.  Neither the compiler
 # nor the linker emits relocations for a program that is placed at load
 # time, so they are derived rather than declared; see the comment at the
 # top of tools/mkg4a.py.
@@ -174,9 +175,28 @@ $(B)/$(NAME)-far.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
 	    --memories-expression "(app-layout #x1000 #x030000 $(BSS) $(BITS))"
 
-$(NAME).g4a: $(B)/$(NAME).elf $(B)/$(NAME)-near.elf $(B)/$(NAME)-far.elf
+# ...and three more, so that a small program can be PACKED: the code a
+# bank down and a page up, the far variables a page up, each with the
+# other where it was.  mkg4a then writes .G4A format 5, which gem4xe 0.9.2
+# and later place at page granularity -- a 4 KB accessory takes 4 KB of
+# far memory rather than two banks.  A program too big to pack is written
+# as before.  (Delete these and the --pack below for a file an older
+# gem4xe can load: format 5 is refused there.)
+$(B)/$(NAME)-cdown.elf: $(OBJS) lib/gemapp.scm
+	$(LD) $(LDOPT) -o $@ \
+	    --memories-expression "(app-layout-v #x1000 #x010000 #x030000 $(BSS) $(BITS) 1 1)"
+$(B)/$(NAME)-cpage.elf: $(OBJS) lib/gemapp.scm
+	$(LD) $(LDOPT) -o $@ \
+	    --memories-expression "(app-layout-v #x1000 #x020100 #x030000 $(BSS) $(BITS) 1 1)"
+$(B)/$(NAME)-vpage.elf: $(OBJS) lib/gemapp.scm
+	$(LD) $(LDOPT) -o $@ \
+	    --memories-expression "(app-layout-v #x1000 #x020000 #x030100 $(BSS) $(BITS) 1 1)"
+
+$(NAME).g4a: $(B)/$(NAME).elf $(B)/$(NAME)-near.elf $(B)/$(NAME)-far.elf \
+	    $(B)/$(NAME)-cdown.elf $(B)/$(NAME)-cpage.elf $(B)/$(NAME)-vpage.elf
 	python3 tools/mkg4a.py $(B)/$(NAME).elf $(B)/$(NAME)-near.elf \
-	    $(B)/$(NAME)-far.elf $@ --syms $(B)/$(NAME).sym
+	    $(B)/$(NAME)-far.elf $@ --syms $(B)/$(NAME).sym \
+	    --pack $(B)/$(NAME)-cdown.elf $(B)/$(NAME)-cpage.elf $(B)/$(NAME)-vpage.elf
 
 clean:
 	rm -rf build $(NAME).g4a

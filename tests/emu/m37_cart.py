@@ -329,7 +329,7 @@ def small_machines():
 
       192K     the loader refuses before gem4xe starts: no RAM where its
                far heap would begin (src/cart.s)
-      the heap cut to three banks, through the bridge, after the probe
+      the heap cut to two banks, through the bridge, after the probe
                and before the shell runs: gem4xe starts and the desktop
                does not fit (src/gem.c exit_desk).  Altirra offers no size
                between 192K and 960K, so the gate makes one."""
@@ -374,6 +374,21 @@ def small_machines():
               f"{b.peek16(syms['far_blocks'])} far blocks")
         check(runs >= 1 and b.peek(CARTSTEP) == STEP_RUN,
               "m37k960: the desktop never ran on 960K")
+        # ...and in how little: since phase 80 a small program is packed
+        # (.G4A format 5), its code and its variables at pages of shared
+        # banks, where each had taken two whole banks.  The whole boot --
+        # the system, the desktop's cached file, four accessories and
+        # modules, the desktop -- measured 184 KB in three banks; it was
+        # nineteen before phase 79 and twelve after it.
+        from farheap import far_heap
+        h = far_heap(b, syms)
+        top = max(a + n for a, n, _ in h.blocks)
+        used = sum(n for _, n, _ in h.blocks)
+        print(f"    the far heap: {len(h.blocks)} blocks, {used:,} bytes, "
+              f"up to ${top:06X}")
+        check(top <= (fm[1] + 3) << 16,
+              f"m37k960: the boot reaches ${top:06X}, past three banks from "
+              f"${fm[1]:02X}: small programs are not sharing banks")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37k960.png"))
     finally:
         emu.stop()
@@ -393,9 +408,9 @@ def small_machines():
         emu.stop()
 
     # the heap cut to three banks: gem4xe's own words
-    want = [words["EXIT_NOFAR"], "192 " + words["EXIT_FARKB"],
+    want = [words["EXIT_NOFAR"], "128 " + words["EXIT_FARKB"],
             words["EXIT_ANYKEY"]]
-    print("  the far heap cut to three banks: gem4xe says why")
+    print("  the far heap cut to two banks: gem4xe says why")
     emu = launch(tag="m37small", memsize="1088K", rapidus=False, cpu816=15,
                  extra_args=["--cart", CAR_SYS])
     b = emu.bridge
@@ -408,9 +423,10 @@ def small_machines():
         first = b.peek(fm + 1)
         check(b.peek16(syms["sh_runs"]) == 0 and b.peek(fm + 3),
               "m37small: the probe had not run, or the shell already had")
-        b.poke(fm + 2, first + 2)               # last_bank
-        b.poke(fm + 3, 3)                       # banks
-        b.memload(fm + 4, (3 << 16).to_bytes(4, "little"))   # bytes
+        # two banks: since phase 80 the whole boot fits in three
+        b.poke(fm + 2, first + 1)               # last_bank
+        b.poke(fm + 3, 2)                       # banks
+        b.memload(fm + 4, (2 << 16).to_bytes(4, "little"))   # bytes
         text = wait_for(b, want[-1])
         print(f"    the screen: {text!r}")
         for w in want:

@@ -68,6 +68,8 @@ typedef struct {
     uint8_t  link_bank;     /* link's map translates: addr - link + base */
     uint16_t fixups;        /* patched bytes, all four lists */
     uint16_t pool_mark;     /* what app_free() winds back to */
+    uint32_t vars_addr;     /* a packed program's far variables (format 5), */
+    uint8_t  vars_link;     /* and the bank they were linked in; 0 if none */
     uint16_t owner;         /* whose its far blocks are: app_free frees them
                              * (src/sys/farmem.c, phase 79) */
 } APP;
@@ -92,6 +94,8 @@ extern uint16_t pool_refused;
  * now that an accessory is loaded before the first program. */
 extern uint16_t app_near;                          /* bytes left          */
 extern uint32_t app_far;           /* its far image: large-data globals   */
+extern uint32_t app_vars;          /* ...a packed one's far variables (v5) */
+extern uint8_t  app_vlink;         /* ...and the bank they were linked in  */
 
 int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app);
 int16_t app_exec(const APP *app);

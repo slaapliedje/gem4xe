@@ -45,12 +45,15 @@ NEAR_SIZE = 0x100 + 2048 + 256
 def g4a_header(path):
     """The .g4a header the loader reads (src/sys/app.c, tools/mkg4a.py)."""
     with open(path, "rb") as f:
-        d = f.read(20)
-    assert d[:4] == b"G4A\x03", d[:4]
+        d = f.read(48)
+    # 5 since phase 80: a small program is PACKED, its code and its far
+    # variables placed apart at page granularity; 3 is whole banks
+    assert d[:4] in (b"G4A\x03", b"G4A\x05"), d[:4]
     near_base, near_size, far_off = struct.unpack("<HHH", d[4:10])
     far_size, = struct.unpack("<I", d[10:14])
-    return dict(near_base=near_base, near_size=near_size, far_off=far_off,
-                far_size=far_size, far_bank=d[14], far_banks=d[15])
+    return dict(fmt=d[3], near_base=near_base, near_size=near_size,
+                far_off=far_off, far_size=far_size, far_bank=d[14],
+                far_banks=1 if d[3] == 5 else d[15])
 
 
 class TestTheObjectLayoutIsTheSTs(unittest.TestCase):
@@ -272,8 +275,8 @@ class TestBuildsFromACopy(unittest.TestCase):
         # what the kit's Makefile asked for, and what the loader needs
         self.assertEqual(h["near_size"], NEAR_SIZE)
         self.assertEqual(h["near_base"], 0x1000)
-        self.assertEqual(h["far_banks"], 1, "one bank, as the loader takes")
-        self.assertTrue(0 < h["far_size"] < 0x10000, h["far_size"])
+        self.assertEqual(h["fmt"], 5, "a small program is packed (phase 80)")
+        self.assertTrue(0 < h["far_size"] < 0xD500, h["far_size"])
 
     def test_it_builds_a_desk_accessory(self):
         """An accessory is built exactly like a program -- what makes it

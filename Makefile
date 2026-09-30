@@ -556,9 +556,32 @@ build/$(1)-near.elf: $(2) src/app/gemapp.scm
 build/$(1)-far.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-n #x1000 #x030000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
-build/$(1).g4a build/$(1).sym $(7): build/$(1).elf build/$(1)-near.elf build/$(1)-far.elf tools/mkg4a.py
+# ...and three more, for a program small enough to be PACKED (phase 80):
+# the code moved down a bank and up a page, and the far variables up a
+# page, each with the other left where it was -- so that mkg4a can tell a
+# reference to the code from one to the variables, and the loader can put
+# each at any page of any bank (.G4A format 5).  A program that does not
+# fit is written as format 3 or 4, whole banks, as before.
+build/$(1)-cdown.elf: $(2) src/app/gemapp.scm
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x010000 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+build/$(1)-cpage.elf: $(2) src/app/gemapp.scm
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x020100 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+build/$(1)-vpage.elf: $(2) src/app/gemapp.scm
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x020000 (+ #x020100 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+# ...and one more that nothing builds but tests/host/test_pack.py: the
+# program linked where a loader might PUT it, code and variables apart at
+# odd pages, for the format 5 fixups to be checked against byte for byte.
+build/$(1)-at.elf: $(2) src/app/gemapp.scm
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	    --stack-size $(5) --memories-expression "(app-layout-v #x1300 #x050300 #x0a0600 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+build/$(1).g4a build/$(1).sym $(7): build/$(1).elf build/$(1)-near.elf build/$(1)-far.elf \
+	    build/$(1)-cdown.elf build/$(1)-cpage.elf build/$(1)-vpage.elf tools/mkg4a.py
 	python3 tools/mkg4a.py build/$(1).elf build/$(1)-near.elf build/$(1)-far.elf \
-	        build/$(1).g4a --syms build/$(1).sym $(6)
+	        build/$(1).g4a --syms build/$(1).sym \
+	        --pack build/$(1)-cdown.elf build/$(1)-cpage.elf build/$(1)-vpage.elf $(6)
 endef
 
 build/app/%.o: src/app/%.s

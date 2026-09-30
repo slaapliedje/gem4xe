@@ -31,13 +31,13 @@ WHAT IT CHECKS, and why each one would otherwise be silent:
   arithmetic on a far array would do -- sums differently rather than
   crashing.  The gate computes the same sum in Python.
 
-  AND THE PROGRAM'S FAR REGION IS TWO BANKS.  Its variables are in the
-  bank above its code, and the loader allocates whole banks from a count
-  in the .G4A header.  That count is taken from the linker's map and not
-  from the image, because a far bss carries no bytes: sizing it from the
-  image would have given the program one bank and left its variables in
-  memory the far heap goes on to hand somebody else, with nothing failing
-  at the time (tools/mkg4a.py, far_span).
+  AND THE HEADER COVERS THE VARIABLES.  Packed since phase 80, the
+  variables are placed on their own, as much as the .G4A header says.
+  That size is taken from the linker's map and not from the image,
+  because a far bss carries no bytes: sizing it from the image would have
+  left the variables in memory the far heap goes on to hand somebody
+  else, with nothing failing at the time (tools/mkg4a.py, vars_span).
+  Before phase 80 it was a count of whole banks, the same fact.
 """
 import os
 import struct
@@ -89,9 +89,20 @@ def main(argv):
     syms = symfile.load(SYMS)
     bsym = symfile.load(BIG_SYM)
     link_near, near_size, far_banks = header(BIG)
-    check(far_banks == 2,
-          f"M29.PRG's header asks for {far_banks} far bank(s), expected 2 -- "
-          f"its variables are in the bank above its code")
+    # PACKED since phase 80 (.G4A format 5): the variables are placed on
+    # their own, and the header says how much of them there is.  That size
+    # must come from the linker's map, not the image -- a far bss carries
+    # no bytes -- or the loader would give them too little and the far
+    # heap would hand the rest to somebody else.  So: the whole extent the
+    # map places, from the variables' base.
+    import mkg4a
+    from m17_desktop import g4a
+    h = g4a(BIG)
+    vbase = h["vars_link"] << 16
+    want = mkg4a.vars_span(BIG[:-4] + ".map", vbase) - vbase
+    check(h["fmt"] == 5 and h["vars_size"] == want and want > 0,
+          f"M29.PRG's header gives its far variables {h.get('vars_size')} "
+          f"bytes (format {h['fmt']}); the map places {want}")
 
     emu = launch(tag="m29", memsize="1088K", extra_args=["--disk", DISK])
     b = emu.bridge
@@ -130,7 +141,7 @@ def main(argv):
                for n in ("m29_ran", "m29_zeroed", "m29_seedok", "m29_sum",
                          "m29_first", "m29_last", "m29_step", "m29_alert", "m29_wfar", "m29_wnear")}
         print(f"  M29.PRG ran {tt} frames after B; its near region is at "
-              f"${near:04X}, {far_banks} far banks")
+              f"${near:04X}, packed")
 
         step = b.peek16(big["m29_step"])
         check(b.peek16(big["m29_ran"]) == 1,

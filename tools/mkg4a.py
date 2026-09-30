@@ -77,6 +77,9 @@ from mkxex import read_elf
 
 MAGIC_V3 = b"G4A\x03"      # far fixups u16
 MAGIC_V4 = b"G4A\x04"      # far fixups three bytes
+MAGIC_V5 = b"G4A\x05"      # packed: code and far variables placed apart
+HDR_V5 = 48
+PACK_LIMIT = 0xD500         # a packed program's code stays under the $D5 page
 # What formats 3 and 4 promise the loader: the call gates' COP signatures
 # (src/sys/abi.h, src/app/gemabi.s).
 GATES = {"vdi_call": 0x56, "aes_call": 0x41, "dos_call": 0x44}
@@ -183,16 +186,246 @@ def diff(base_img, base_mask, moved_img, moved_mask, what):
     return out
 
 
+def vars_span(mapfile, vbase):
+    """[vbase, end) of the far VARIABLES, from the linker's list file: they
+    carry no bytes, so only the map says how far they reach."""
+    end = vbase
+    try:
+        f = open(mapfile)
+    except OSError:
+        return end
+    with f:
+        for ln in f:
+            m = re.match(r"^(far|zfar\d*)\s+([0-9a-f]{6})-([0-9a-f]{6})\s", ln)
+            if m and int(m.group(2), 16) >= vbase:
+                end = max(end, int(m.group(3), 16) + 1)
+    return end
+
+
+def packable(pack, base_elf, b_syms, near_img, near_mask, far_img, far_mask,
+             nb, near_size, fb, fe, far_size, far_banks,
+             near_hi, far_hi, near_bank, far_bank):
+    """The fixup lists of a PACKED program (.G4A format 5), or a SystemExit
+    saying why it cannot be one.
+
+    Three more links (the Makefile's g4a): the code down a bank, the code
+    up a page, the far variables up a page, the rest left where it was in
+    each.  The bytes that move under the first are references to the CODE
+    by bank; the bank shift of the two together (the far link) moved those
+    and the references to the VARIABLES, so the variables' bank list is the
+    difference.  The two page links give each region's page list.  A
+    program packs when its code is one extent under the $D5 page and its
+    variables fit one bank: then the loader can put each at any page of any
+    bank, and several small programs share one."""
+    cd_elf, cp_elf, vp_elf = pack
+    c_segs, c_syms = read_elf_all(cd_elf)
+    p_segs, p_syms = read_elf_all(cp_elf)
+    v_segs, v_syms = read_elf_all(vp_elf)
+    if fe - fb > PACK_LIMIT or (fb & 0xFFFF):
+        raise SystemExit(f"the code is {fe - fb} bytes, over the ${PACK_LIMIT:04X} "
+                         f"a packed program may have below the $D5 page")
+    vbase = (fb & ~0xFFFF) + 0x10000        # one code bank: the variables next
+    vend = vars_span(base_elf[:-4] + ".map", vbase)
+    if far_banks > 2 or vend - vbase > 0x10000:
+        raise SystemExit("the far variables do not fit one bank")
+    for segs, what, code_at in ((c_segs, "code-down", fb - 0x10000),
+                                (p_segs, "code-page", fb + 0x100),
+                                (v_segs, "vars-page", fb)):
+        cb = min(a for a, d, _ in segs if a >= 0x10000 and len(d))
+        if cb != code_at:
+            raise SystemExit(f"the {what} link put the code at ${cb:06X}, "
+                             f"not ${code_at:06X}")
+    cn, cnm = image(c_segs, nb, nb + near_size)
+    cf, cfm = image(c_segs, fb - 0x10000, fe - 0x10000)
+    pn, pnm = image(p_segs, nb, nb + near_size)
+    pf, pfm = image(p_segs, fb + 0x100, fe + 0x100)
+    vn, vnm = image(v_segs, nb, nb + near_size)
+    vf, vfm = image(v_segs, fb, fe)
+    # base = code-down + 1 bank: diff from the moved link TO the base
+    near_cbank = diff(cn, cnm, near_img, near_mask, "near part, code bank")
+    far_cbank = diff(cf, cfm, far_img, far_mask, "far part, code bank")
+    near_cpage = diff(near_img, near_mask, pn, pnm, "near part, code page")
+    far_cpage = diff(far_img, far_mask, pf, pfm, "far part, code page")
+    near_vpage = diff(near_img, near_mask, vn, vnm, "near part, vars page")
+    far_vpage = diff(far_img, far_mask, vf, vfm, "far part, vars page")
+    if not set(near_cbank) <= set(near_bank) or not set(far_cbank) <= set(far_bank):
+        raise SystemExit("a code bank fixup the whole-region shift did not see")
+    near_vbank = sorted(set(near_bank) - set(near_cbank))
+    far_vbank = sorted(set(far_bank) - set(far_cbank))
+    if vend == vbase and (near_vbank or far_vbank or near_vpage or far_vpage):
+        raise SystemExit("references to far variables, and none are placed")
+    lists = [near_hi, near_cbank, near_cpage, near_vbank, near_vpage,
+             far_hi, far_cbank, far_cpage, far_vbank, far_vpage]
+    for part in (lists[:5], lists[5:]):
+        seen = set()
+        for lst in part:
+            if seen & set(lst):
+                raise SystemExit("a byte moved under two shifts")
+            seen |= set(lst)
+    return dict(lists=lists, vbase=vbase, vsize=vend - vbase)
+
+
+# FORMAT 5's LISTS.  Seven per part, the near part's then the code's:
+#   0 near page      a near address's high byte       + the near page delta
+#   1 code long      a 24-bit code address: its middle byte at the offset
+#                    + the code page delta, its bank byte after it + bank
+#   2 code page      a 16-bit code address's high byte
+#   3 code bank      a bank byte on its own
+#   4 vars long, 5 vars page, 6 vars bank    the same for the variables
+# A 24-bit address has a page fixup and a bank fixup side by side, and
+# most of a program's are that; one entry for the pair instead of one in
+# each list is what keeps a packed file no bigger than format 3 was (a
+# DOS 2 floppy has no sectors to spare, docs/phase57.md).  Each list is a
+# u16 count and then its offsets, rising, as deltas: a byte 1..255, or 0
+# and the u16 offset itself.
+V5_LISTS = 7
+
+
+def v5_split(page, bank):
+    """(long, page only, bank only) from a region's page and bank lists."""
+    bank = set(bank)
+    longs = [o for o in page if o + 1 in bank]
+    ls = set(longs)
+    return (longs, [o for o in page if o not in ls],
+            sorted(bank - {o + 1 for o in longs}))
+
+
+def v5_encode(offsets):
+    out = bytearray(struct.pack("<H", len(offsets)))
+    prev = 0
+    for o in sorted(offsets):
+        d = o - prev
+        if 1 <= d <= 255:
+            out.append(d)
+        else:
+            out += b"\0" + struct.pack("<H", o)
+        prev = o
+    return bytes(out)
+
+
+def read_v5(blob):
+    """A format 5 file, read the way src/sys/app.c app_load_v5 reads it:
+    the header's fields, the near and code images, and the fourteen lists
+    of offsets.  tests/host/test_pack.py and test_g4a.py use this, so the
+    reading is written once on the host."""
+    assert blob[:4] == MAGIC_V5, blob[:4]
+    (link_near, near_size, code_off, code_size, code_link, vars_link, entry,
+     vars_off, _z, vars_size) = struct.unpack("<HHHIBBIHHI", blob[4:28])
+    at = HDR_V5
+    near = blob[at:at + near_size]
+    at += near_size
+    code = blob[at:at + code_size]
+    at += code_size
+    lists = []
+    for _ in range(2 * V5_LISTS):
+        n, = struct.unpack("<H", blob[at:at + 2])
+        at += 2
+        lst, prev = [], 0
+        for _ in range(n):
+            d = blob[at]
+            at += 1
+            if d:
+                prev += d
+            else:
+                prev, = struct.unpack("<H", blob[at:at + 2])
+                at += 2
+            lst.append(prev)
+        lists.append(lst)
+    if at != len(blob):
+        raise SystemExit(f"{len(blob) - at} bytes past the lists")
+    return dict(link_near=link_near, near_size=near_size, code_off=code_off,
+                code_size=code_size, code_link=code_link, vars_link=vars_link,
+                entry=entry, vars_off=vars_off, vars_size=vars_size,
+                near=near, code=code, lists=lists)
+
+
+def apply_v5(f, near_at, code_at, vars_at):
+    """The near part and the code as app_load_v5 leaves them for those
+    three places: (near, code), patched."""
+    near, code = bytearray(f["near"]), bytearray(f["code"])
+    dn = ((near_at - f["link_near"]) >> 8) & 0xFF
+    dcb = ((code_at >> 16) - f["code_link"]) & 0xFF
+    dcp = (((code_at & 0xFFFF) - f["code_off"]) >> 8) & 0xFF
+    dvb = ((vars_at >> 16) - f["vars_link"]) & 0xFF
+    dvp = (((vars_at & 0xFFFF) - f["vars_off"]) >> 8) & 0xFF
+    adds = [(dn, None), (dcp, dcb), (dcp, None), (dcb, None),
+            (dvp, dvb), (dvp, None), (dvb, None)]
+    for l, lst in enumerate(f["lists"]):
+        part = near if l < V5_LISTS else code
+        first, second = adds[l % V5_LISTS]
+        for o in lst:
+            part[o] = (part[o] + first) & 0xFF
+            if second is not None:
+                part[o + 1] = (part[o + 1] + second) & 0xFF
+    return bytes(near), bytes(code)
+
+
+def write_v5(out, packed, nb, near_size, fb, far_size, entry,
+             near_img, far_img, b_syms, syms_out, c_out, c_name):
+    """Format 5 (src/sys/app.c reads it):
+
+      0  'G4A' 5
+      4  u16 near_base, u16 near_size
+      8  u16 code_off, u32 code_size       the image: code, constants, ifar
+     14  u8  code_bank, u8 vars_bank       where each was linked
+     16  u32 entry
+     20  u16 vars_off, u16 0, u32 vars_size   no bytes: the crt makes them
+     28  20 bytes of 0
+     48  near bytes, code bytes, then the fourteen lists (V5_LISTS above)
+    """
+    (n_np, n_cb, n_cp, n_vb, n_vp, f_np, f_cb, f_cp, f_vb, f_vp) = packed["lists"]
+    lists = []
+    for np_, cp, cb, vp, vb in ((n_np, n_cp, n_cb, n_vp, n_vb),
+                                (f_np, f_cp, f_cb, f_vp, f_vb)):
+        lists += [np_, *v5_split(cp, cb), *v5_split(vp, vb)]
+    vb, vs = packed["vbase"], packed["vsize"]
+    hdr = MAGIC_V5 + struct.pack("<HHHIBBIHHI", nb, near_size, fb & 0xFFFF,
+                                 far_size, fb >> 16, vb >> 16, entry,
+                                 vb & 0xFFFF, 0, vs)
+    hdr += bytes(20)
+    assert len(hdr) == HDR_V5, len(hdr)
+    body = near_img + far_img + b"".join(v5_encode(l) for l in lists)
+    blob = hdr + body
+    # read it back and patch it for where it was linked: nothing may move
+    f = read_v5(blob)
+    if apply_v5(f, nb, fb, vb) != (near_img, far_img):
+        raise SystemExit("format 5 does not read back as it was written")
+    with open(out, "wb") as fh:
+        fh.write(blob)
+    if syms_out:
+        with open(syms_out, "w") as fh:
+            for name, val in sorted(b_syms.items(), key=lambda kv: kv[1]):
+                fh.write(f"{name} {val:06X}\n")
+    if c_out:
+        with open(c_out, "w") as fh:
+            fh.write(f"/* Generated by tools/mkg4a.py from {out} -- do not edit. */\n")
+            fh.write("#include <stdint.h>\n")
+            fh.write("#include \"portab.h\"\n")
+            fh.write(f"const uint32_t {c_name}_len = {len(blob)}UL;\n")
+            fh.write(f"const uint8_t FAR {c_name}[{len(blob)}] = {{\n")
+            for o in range(0, len(blob), 16):
+                fh.write("    " + ",".join(f"{b}" for b in blob[o:o + 16]) + ",\n")
+            fh.write("};\n")
+    print(f"{out}: PACKED, near ${nb:04X}+{near_size}, code ${fb:06X}+{far_size}, "
+          f"far variables ${vb:06X}+{vs}, fixups "
+          + "/".join(str(len(l)) for l in lists) + f", {len(blob)} bytes")
+    return 0
+
+
 def main(argv):
     if len(argv) < 4:
         raise SystemExit(__doc__)
     base_elf, near_elf, far_elf, out = argv[:4]
     syms_out = c_out = c_name = None
+    pack = None
     i = 4
     while i < len(argv):
         if argv[i] == "--syms":
             syms_out = argv[i + 1]
             i += 2
+        elif argv[i] == "--pack":
+            pack = argv[i + 1:i + 4]
+            i += 4
         elif argv[i] == "--c-array":
             c_out, c_name = argv[i + 1], argv[i + 2]
             i += 3
@@ -255,6 +488,19 @@ def main(argv):
             raise SystemExit(f"{name} is {got.hex(' ')}, not COP #${sig:02X}: "
                              f"the program was linked with an older kit's "
                              f"gemabi.s -- rebuild its objects with this kit")
+
+    # PACKED, when it can be: format 5 (phase 80).  The rest is v3 or v4.
+    packed = None
+    if pack:
+        try:
+            packed = packable(pack, base_elf, b_syms, near_img, near_mask,
+                              far_img, far_mask, nb, near_size, fb, fe, far_size,
+                              far_banks, near_hi, far_hi, near_bank, far_bank)
+        except SystemExit as why:
+            print(f"{out}: not packed -- {why}")
+    if packed:
+        return write_v5(out, packed, nb, near_size, fb, far_size, entry,
+                        near_img, far_img, b_syms, syms_out, c_out, c_name)
 
     # v3 unless the far image needs more room than its offsets have. Every
     # program in this tree but GACS's shell is v3.

@@ -34,6 +34,7 @@ import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import mkg4a                                # noqa: E402
 CALYPSI = os.environ.get("CALYPSI",
                          os.path.expanduser("~/dev/toolchains/calypsi-65816"))
 
@@ -41,6 +42,18 @@ CALYPSI = os.environ.get("CALYPSI",
 def build(target):
     subprocess.run(["make", target], cwd=ROOT, check=True,
                    stdout=subprocess.DEVNULL)
+
+
+def whole_banks(name):
+    """The program as format 3 or 4 -- whole banks, as before phase 80 --
+    made from the same three links without --pack: what nothing in the
+    tree is built as any more, and what an older gem4xe loads."""
+    b = os.path.join(ROOT, "build", name)
+    out = b + "-v3.g4a"
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "mkg4a.py"),
+                    b + ".elf", b + "-near.elf", b + "-far.elf", out],
+                   cwd=ROOT, check=True, capture_output=True)
+    return out
 
 
 def unpack(path):
@@ -86,9 +99,11 @@ class G4AFormat(unittest.TestCase):
             raise unittest.SkipTest("Calypsi not installed")
 
     def relocate_and_compare(self, name):
-        """Apply the bank fixups and check against the far-shifted link."""
+        """Apply the bank fixups and check against the far-shifted link --
+        of the program as format 3 or 4 (whole_banks): a packed one is
+        tests/host/test_pack.py's."""
         build(f"build/{name}.g4a")
-        g = unpack(os.path.join(ROOT, "build", f"{name}.g4a"))
+        g = unpack(whole_banks(name))
         far = bytearray(g["far"])
         _n_hi, _n_bank, f_hi, f_bank = g["lists"]
         for o in f_bank:                      # a bank moves it by exactly 1
@@ -149,45 +164,73 @@ class G4AFormat(unittest.TestCase):
                         "no fixup past 64K -- this program is not testing "
                         "what it exists to test")
 
-    def test_every_shipped_app_is_v3(self):
-        """The wide format costs the existing programs nothing.
-
-        They are on floppies with sectors to spare rather than to waste
-        (the DOS 2 product disk holds GEM, the desktop and its resource in
-        707 sectors of 253 bytes), and a far fixup list that grew by half
-        for no reason would come out of that.
-        """
-        for name in ("desktop", "calc", "clock", "clockacc", "m11_app",
-                     "m28_acc", "m29_big"):
+    def test_every_shipped_app_is_packed_and_no_bigger(self):
+        """Every program that ships but QED is format 5 since phase 80 --
+        and no bigger for it than as format 3.  They are on floppies with
+        sectors to spare rather than to waste (the DOS 2 product disk
+        holds GEM, the desktop and its resource), and format 5's first
+        version, with a list per kind and a u16 an entry, made the desktop
+        6.8 KB bigger and did not fit (docs/phase80.md)."""
+        for name in ("desktop", "calc", "clock", "clockacc", "cpanelacc",
+                     "calcacc", "general", "color", "g4bench", "m11_app"):
             with self.subTest(app=name):
                 build(f"build/{name}.g4a")
-                g = unpack(os.path.join(ROOT, "build", f"{name}.g4a"))
-                self.assertEqual(g["ver"], 3)
+                path = os.path.join(ROOT, "build", f"{name}.g4a")
+                with open(path, "rb") as f:
+                    self.assertEqual(f.read(4)[3], 5, f"{name} is not packed")
+                v5, v3 = os.path.getsize(path), os.path.getsize(whole_banks(name))
+                self.assertLessEqual(v5, v3, f"{name}: {v5} bytes packed, "
+                                             f"{v3} as whole banks")
 
     def test_fixup_offsets_are_inside_the_image(self):
         """app_load bounds-checks these; a packer that emitted one outside
         would turn a load into APP_E_FIXUP rather than a running program."""
-        for name in ("m29_big", "m31_huge", "desktop"):
+        for name in ("m29_big", "m31_huge"):
             with self.subTest(app=name):
                 build(f"build/{name}.g4a")
-                g = unpack(os.path.join(ROOT, "build", f"{name}.g4a"))
+                g = unpack(whole_banks(name) if name == "m29_big"
+                           else os.path.join(ROOT, "build", f"{name}.g4a"))
                 n_hi, n_bank, f_hi, f_bank = g["lists"]
                 for o in n_hi + n_bank:
                     self.assertLess(o, len(g["near"]))
                 for o in f_hi + f_bank:
                     self.assertLess(o, len(g["far"]))
+        for name in ("desktop", "m29_big"):     # format 5: the long ones
+            with self.subTest(app=name, fmt=5):  # patch a byte after, too
+                build(f"build/{name}.g4a")
+                f = mkg4a.read_v5(open(os.path.join(ROOT, "build",
+                                                    f"{name}.g4a"), "rb").read())
+                for l, lst in enumerate(f["lists"]):
+                    size = len(f["near"]) if l < mkg4a.V5_LISTS else len(f["code"])
+                    extra = 1 if l % mkg4a.V5_LISTS in (1, 4) else 0
+                    for o in lst:
+                        self.assertLess(o + extra, size, f"list {l}")
 
     def test_no_byte_is_in_two_lists(self):
         """A byte that is both a page fixup and a bank fixup is address
         arithmetic the loader cannot undo; mkg4a refuses to emit one, and
         this is that refusal checked from the outside."""
-        for name in ("m29_big", "m31_huge", "desktop"):
+        for name in ("m29_big", "m31_huge"):
             with self.subTest(app=name):
                 build(f"build/{name}.g4a")
                 n_hi, n_bank, f_hi, f_bank = unpack(
-                    os.path.join(ROOT, "build", f"{name}.g4a"))["lists"]
+                    whole_banks(name) if name == "m29_big"
+                    else os.path.join(ROOT, "build", f"{name}.g4a"))["lists"]
                 self.assertEqual(set(n_hi) & set(n_bank), set())
                 self.assertEqual(set(f_hi) & set(f_bank), set())
+        for name in ("desktop", "m29_big"):
+            with self.subTest(app=name, fmt=5):
+                build(f"build/{name}.g4a")
+                f = mkg4a.read_v5(open(os.path.join(ROOT, "build",
+                                                    f"{name}.g4a"), "rb").read())
+                for part in (f["lists"][:mkg4a.V5_LISTS],
+                             f["lists"][mkg4a.V5_LISTS:]):
+                    seen = set()
+                    for k, lst in enumerate(part):
+                        touched = set(lst) | ({o + 1 for o in lst}
+                                              if k in (1, 4) else set())
+                        self.assertEqual(seen & touched, set(), f"list {k}")
+                        seen |= touched
 
 
 if __name__ == "__main__":

@@ -107,23 +107,36 @@ def rsc_imlen(path):
     return rssize - imdata
 
 
-def header(path):
-    """The G4A header's link addresses and far banks (src/sys/app.c
-    app_load).  Either format, 3 or 4: they differ only in how wide a far
-    fixup offset is, which is past everything read here."""
+def g4a(path):
+    """The G4A header (src/sys/app.c app_load, tools/mkg4a.py), any format:
+    3 and 4 place the far region whole, in banks; 5 is PACKED -- code and
+    far variables placed apart, each at a page (phase 80)."""
     with open(path, "rb") as f:
-        d = f.read(20)
-    assert d[:3] == b"G4A" and d[3] in (3, 4), d[:4]
+        d = f.read(48)
+    assert d[:3] == b"G4A" and d[3] in (3, 4, 5), d[:4]
     link_near, near_size = struct.unpack("<HH", d[4:8])
-    return link_near, near_size, d[15]
+    h = dict(fmt=d[3], link_near=link_near, near_size=near_size,
+             code_size=struct.unpack("<I", d[10:14])[0], code_link=d[14])
+    if d[3] == 5:
+        h.update(vars_link=d[15], vars_size=struct.unpack("<I", d[24:28])[0],
+                 far_banks=0)
+    else:
+        h.update(far_banks=d[15])
+    return h
+
+
+def header(path):
+    """(link_near, near_size, far_banks) -- far_banks 0 for a packed one."""
+    h = g4a(path)
+    return h["link_near"], h["near_size"], h["far_banks"]
 
 
 def link_bank(path):
-    """The bank the far image was LINKED at (byte 14): a far link address L
-    relocates to ((base >> 16) + (L >> 16) - link_bank) << 16 | (L & 0xFFFF).
-    Only a large-data program needs it -- that is where its globals are."""
-    with open(path, "rb") as f:
-        return f.read(16)[14]
+    """The bank the far image -- the code -- was LINKED at (byte 14): a far
+    link address L relocates to ((base >> 16) + (L >> 16) - link_bank) <<
+    16 | (L & 0xFFFF).  Only a large-data program needs it -- that is where
+    its globals are, or in a packed one's variables (vars_link)."""
+    return g4a(path)["code_link"]
 
 
 def desk_large():
@@ -159,6 +172,11 @@ def desk_g(b, syms):
     link_near, _, _ = header(DESKTOP)
     if not desk_large():
         return b.peek16(syms["app_near"]) + g_link - link_near
+    h = g4a(DESKTOP)
+    if h["fmt"] == 5:                   # packed: G is with the variables
+        d = b.memdump(syms["app_vars"], 3)
+        base = d[0] | (d[1] << 8) | (d[2] << 16)
+        return base + (g_link - (h["vars_link"] << 16))
     d = b.memdump(syms["app_far"], 3)
     base = d[0] | (d[1] << 8) | (d[2] << 16)
     return (base + (((g_link >> 16) - link_bank(DESKTOP)) << 16)
@@ -184,18 +202,30 @@ def desk_places(heap):
     Returns the keywords Desktop() wants, so the gates that build the
     model share one copy of this instead of each its own.
     """
-    link_near, near_size, far_banks = header(DESKTOP)
+    g = g4a(DESKTOP)
+    link_near, near_size = g["link_near"], g["near_size"]
     h = copy.deepcopy(heap)
     h.owner = 0
     h.read_file(os.path.getsize(DESKTOP))       # the shell's, kept
     h.owner = 0xFE                              # the desktop's
-    far_base = h.alloc_banks(far_banks) << 16
+    if g["fmt"] == 5:
+        # PACKED: the code under the $D5 page, then the variables in one
+        # bank (src/sys/app.c app_load_v5).  G is a variable, so the model
+        # is handed the variables' place as its base and their link bank
+        # as the bank to count from -- the arithmetic Desktop() does is
+        # then exactly the loader's.
+        h.alloc_page(g["code_size"], 0xD500)
+        far_base = h.alloc_page(g["vars_size"], 0x10000)
+        bank_from = g["vars_link"]
+    else:
+        far_base = h.alloc_banks(g["far_banks"]) << 16
+        bank_from = link_bank(DESKTOP)
     large = desk_large()
     rlen = rsc_rssize(DESK_RSC) if large else rsc_imlen(DESK_RSC)
     rsc = h.alloc(rlen) if rlen else 0
     return dict(link_near=link_near, near_size=near_size,
                 far_base=far_base if large else None,
-                link_bank=link_bank(DESKTOP),
+                link_bank=bank_from,
                 rsc_far=rsc if large else None,
                 imbase=rsc if (not large and rlen) else None,
                 dos_brk=h)

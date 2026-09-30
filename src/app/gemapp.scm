@@ -125,8 +125,13 @@
                (list 'memory (string->symbol name)
                      (list 'address (cons base (+ base #xd4ff)))
                      '(section farcode switch cfar libcode code ifar))
+               ;; to the end of ITS bank, not base + $FFFF: a link that
+               ;; moves the code up a page (mkg4a's page fixups, phase 80)
+               ;; would otherwise run this memory into the next bank's
                (list 'memory (string->symbol (string-append name "h"))
-                     (list 'address (cons (+ base #xd600) (+ base #xffff)))
+                     (list 'address (cons (+ base #xd600)
+                                          (+ (* (quotient base #x10000) #x10000)
+                                             #xffff)))
                      '(section farcode switch cfar libcode code ifar)))))
          (upto n))))
 
@@ -135,7 +140,15 @@
 (define (app-layout near far bss bits)
   (app-layout-n near far bss bits 1 1))
 
+;;; The far variables right above the code, as they have always been.
 (define (app-layout-n near far bss bits cbanks fbanks)
+  (app-layout-v near far (+ far (* cbanks #x10000)) bss bits cbanks fbanks))
+
+;;; ...or wherever `vars` says: tools/mkg4a.py links a program with its
+;;; code and its far variables moved APART -- the code down a bank, either
+;;; up a page -- to find which bytes refer to which, so that the loader can
+;;; place each where there is room (a .G4A of format 5, phase 80).
+(define (app-layout-v near far vars bss bits cbanks fbanks)
   (append
   (list
     (list 'memory 'AppDP
@@ -179,7 +192,7 @@
     ;; both memories and the linker decides.
     )
   (app-far-code far cbanks)
-  (app-far-bss (+ far (* cbanks #x10000)) fbanks)
+  (app-far-bss vars fbanks)
   (list
     '(block stack (size #x0100))
     '(block heap  (size #x0000))
