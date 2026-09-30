@@ -77,6 +77,8 @@
 
 extern void _sys_exit(void);
 extern uint16_t _exit_msg;           /* src/crt_atari.s: a line for the way out */
+extern uint16_t _exit_msg2;          /* ...a second, 0 if none */
+extern uint16_t _exit_wait;          /* ...a prompt, and wait for a key: 0 if not */
 
 /* The pointing device.  An ST mouse on the joystick port is what a GEM
  * machine has; the quadrature is counted from the timer interrupt
@@ -89,9 +91,6 @@ extern uint16_t _exit_msg;           /* src/crt_atari.s: a line for the way out 
  * choice to make (src/antic/antic.h). */
 #define AN_INK    0x00
 #define AN_PAPER  0x0E
-
-static const char no_vbxe[] =
-    "gem4xe: VIDEO=VBXE, and no VBXE in this machine\x9b";
 
 /* A refusal in LANG.RSC's words: the line, EOL-terminated, in bank $00
  * where _sys_exit can reach it after the far memory is nobody's. */
@@ -107,6 +106,55 @@ static void exit_say(WORD n)
     exit_line[i] = (char)0x9B;
     exit_line[i + 1] = '\0';
     _exit_msg = (uint16_t)exit_line;
+}
+
+/* THE DESKTOP NEVER STARTED, and gem4xe is about to leave: say why.  It
+ * used to leave in silence -- and on the cartridge, whose DOSVEC is the
+ * OS's cold start (src/cart.s), leaving IS a cold start, which boots the
+ * cartridge again: a loading screen, a white one, and round again, which
+ * is what an Altirra 65C816 with 960K showed a 0.9.1 tester.  So the
+ * reason is printed, with the memory when that was it, and on a machine
+ * with no DOS to go back to (DOSVEC still the cold start) crt_atari.s
+ * waits for a key before it goes (phase 78). */
+static WORD exit_at;                    /* where the next line goes */
+
+/* A line into exit_line after the ones already there -- the three share
+ * the one buffer, since bank $00 has no room for three -- cut to fit. */
+static uint16_t exit_add(const char *pre, const char *s)
+{
+    char *at = exit_line + exit_at, *end = exit_line + sizeof exit_line - 2;
+    char *p = at;
+
+    while (pre && *pre && p < end)
+        *p++ = *pre++;
+    while (*s && p < end)
+        *p++ = *s++;
+    *p++ = (char)0x9B;
+    exit_at = (WORD)(p - exit_line);
+    return (uint16_t)at;
+}
+
+static void exit_desk(WORD rc)
+{
+    char num[8];
+    WORD i = 0;
+    uint16_t kb = (uint16_t)(farmem.bytes >> 10), d;
+
+    exit_at = 0;
+    _exit_msg = exit_add(0, lang_str(rc == APP_E_FAR || rc == APP_E_POOL ? LS_EXIT_NOFAR
+                                   : rc == APP_E_FILE ? LS_EXIT_NOFILE
+                                                      : LS_EXIT_NODESK));
+    if (rc == APP_E_FAR) {
+        for (d = 10000; d > 1 && kb < d; d /= 10)   /* no leading zeros */
+            ;
+        for (; d; d /= 10)
+            num[i++] = (char)('0' + (kb / d) % 10);
+        num[i++] = ' ';
+        num[i] = '\0';
+        _exit_msg2 = exit_add(num, lang_str(LS_EXIT_FARKB));
+    }
+    if (*(volatile uint16_t *)0x000A == 0xE477)     /* DOSVEC: no DOS */
+        _exit_wait = exit_add(0, lang_str(LS_EXIT_ANYKEY));
 }
 
 TASK void main(void)
@@ -138,7 +186,7 @@ TASK void main(void)
     else if (video == CFG_VIDEO_VBXE && !vbxe_detect()) {
         irq_remove();
         rapidus_restore();
-        _exit_msg = (uint16_t)no_vbxe;
+        exit_say(LS_EXIT_NOVBXE);
         _sys_exit();
     }
     boot_video(video);
@@ -221,6 +269,8 @@ TASK void main(void)
     MARK(13); lang_font();      /* SYSTEM.FNT, now there is a device for it */
     fs_start();
     MARK(14); sh_main();
+    if (sh_runs == 0 && sh_lastrc < 0)
+        exit_desk(sh_lastrc);
 
     /* The way back, in the reverse of the way in: interrupts off and the
      * ROM in, the screen off, the accelerator's windows written back and

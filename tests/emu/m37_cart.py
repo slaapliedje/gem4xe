@@ -300,6 +300,64 @@ def overlay():
     print(f"  the floppy afterwards: {', '.join(sorted(on))}")
 
 
+def os_screen(b):
+    """The OS's text screen, as text: SAVMSC's 960 bytes, internal code."""
+    raw = bytes(b.memdump(b.peek16(0x58), 960))
+    rows = []
+    for r in range(24):
+        line = ""
+        for c in raw[r * 40:(r + 1) * 40]:
+            c &= 0x7F
+            ch = c + 32 if c < 64 else (c - 64 if c < 96 else c)
+            line += chr(ch) if 32 <= ch < 127 else " "
+        rows.append(line.rstrip())
+    return " ".join(r.strip() for r in rows if r.strip())
+
+
+def too_small():
+    """A 65C816 with too little memory for the desktop: Altirra's own
+    65C816 with its 960K of high memory, which is what a 0.9.1 tester
+    turned on.  The desktop's load failed, gem4xe left without a word, and
+    on the cartridge leaving is a cold start (src/cart.s) -- so it booted
+    the cartridge again: a loading screen, a white one, and round, for
+    ever.  Now gem4xe says why and, with no DOS to go back to, WAITS
+    (src/gem.c exit_desk, src/crt_atari.s).  Both halves are checked: the
+    words on the OS's screen, and that the machine is still there ten
+    seconds later rather than booting again -- then that a key does start
+    it again."""
+    import langrsc
+    words = dict(langrsc.STRINGS)
+    want = [words["EXIT_NOFAR"], words["EXIT_FARKB"], words["EXIT_ANYKEY"]]
+    print("  a 65C816 with 960K, no accelerator:")
+    emu = launch(tag="m37small", memsize="1088K", rapidus=False, cpu816=15,
+                 extra_args=["--cart", CAR_SYS])
+    b = emu.bridge
+    try:
+        text = ""
+        for _ in range(100):                    # 1.79 MHz: minutes, not seconds
+            b.frames(150)
+            text = os_screen(b)
+            if want[-1] in text:
+                break
+        print(f"    the screen: {text!r}")
+        for w in want:
+            check(w in text, f"m37small: {w!r} is not on the screen")
+        b.frames(500)
+        step = b.peek(CARTSTEP)
+        check(step == STEP_RUN and want[0] in os_screen(b),
+              f"m37small: ten seconds on, CARTSTEP {step} and the words "
+              f"{'still there' if want[0] in os_screen(b) else 'gone'}: it "
+              f"did not wait")
+        b.key("SPACE")
+        b.frames(300)
+        step = b.peek(CARTSTEP)
+        check(step < STEP_RUN or want[0] not in os_screen(b),
+              f"m37small: a key and it is still waiting (CARTSTEP {step})")
+        b.screenshot(os.path.join(ROOT, "build", "shots", "m37small.png"))
+    finally:
+        emu.stop()
+
+
 def whole_system(floppy=False):
     """THE CARTRIDGE THE REQUEST ASKED FOR: one file, put in a slot, and
     the desktop comes up with nothing typed and nothing else to find.
@@ -509,6 +567,7 @@ def main():
     overlay()
     whole_system()
     whole_system(floppy=True)
+    too_small()
 
     print(f"\ngem4xe-m37: {'PASS' if not problems else 'FAIL'} -- a "
           f"cartridge, {len(problems)} problem(s)")

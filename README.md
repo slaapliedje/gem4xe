@@ -18,9 +18,15 @@ the whole system on a read-only `D1:` of its own. No DOS, no disk, nothing
 typed — which is what the other media all needed first (`docs/cartridge.md`).
 With a DOS floppy in drive 1 as well, it saves to the floppy (`docs/phase51.md`).
 
+**In Altirra**, give it the machine it needs: a Rapidus (System → Devices),
+or System → CPU → 65C816 with **4 MB** of high memory, and a VBXE if you
+want the 640-pixel screen. On 960K or less the desktop does not fit yet,
+and gem4xe says so and waits for a key (`docs/phase78.md`); on a plain
+6502 the cartridge says it needs a 65C816.
+
 **A 65C816 with linear RAM is required.** VBXE is not: one `GEM.COM` carries
 both display drivers and chooses at start-up, so a machine without a VBXE gets
-320×168 on ANTIC mode F instead — `make test-m26` boots the shipped binary three
+320×192 on ANTIC mode F instead — `make test-m26` boots the shipped binary three
 ways to prove it. The 6502 path is still deferred.
 
 The desktop first came up on a real board on 2026-09-13 — a 130XE with a
@@ -96,7 +102,7 @@ full-screen repaints.
 | `make test-m21` | PASS | a loadable font: the system font inverted so every glyph differs, read as `SYSTEM.FNT` at start-up off one disk and absent from another, with `vqt_name`, `vst_font` and GDOS's `vst_load_fonts`/`vst_unload_fonts` answering for the right face either way |
 | `make test-m22` | PASS | two programs that are not tests: a calculator driven at its keypad and a clock left to tick, both through the shell loop |
 | `make test-m23` | PASS | a program opened from a folder and used — the path a person took that eight gates had not |
-| `make test-m24` | PASS | the ANTIC surface: mode F at 320×168 in the region the VBXE's MEMAC window would have had, 53,760/53,760 pixels against `tools/anticref.py`, two colours and no palette hardcoded |
+| `make test-m24` | PASS | the ANTIC surface: mode F at 320×192 in the region the VBXE's MEMAC window would have had, 61,440/61,440 pixels against `tools/anticref.py`, two colours and no palette hardcoded |
 | `make test-m25` | PASS | the VDI **and the AES object library** on that surface — the same `src/vdi/vdi.c` the VBXE build links, on Atari's condensed 6×6 face, with an OUTLINED dialog and its DEFAULT button drawn by `ob_draw`: 53,760/53,760 pixels against `tools/vdiref.py` and `tools/aesref.py` themselves, run on the ANTIC device with one argument changed; and the geometry `gsx_start` derived, checked by doing the AES's own arithmetic rather than by comparing numbers somebody wrote down |
 | `make test-m26` | PASS | **one binary, two screens**: the shipped `GEM.COM` booted three ways with nothing typed — with a VBXE, without one, and with `VIDEO=ANTIC` in `GEM4XE.CFG` against a VBXE that works — checking which device the VDI ended on, what the AES laid out for, what the file parsed to, and the desk itself **pixel for pixel against `tools/deskref.py` run on the ANTIC device** — the same desktop model `test-boot` compares the VBXE desks against |
 | `make test-m27` | PASS | **two contexts taking turns on one engine stack** — the turns in the order they were asked for, and a context that recurses six frames and yields from the deepest one finding every local intact on the way back out, which is the whole claim the design rests on: a parked extent goes back to the same addresses. Prints what a park cost: 90 bytes at the deepest |

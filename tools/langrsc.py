@@ -96,6 +96,15 @@ STRINGS = [
     ("EXIT_NOCOPY", "gem4xe: no RAM under the OS ROM"),
     ("EXIT_NOVEC", "gem4xe: the vectors did not take"),
     ("EXIT_NOIRQ", "gem4xe: no interrupt vectors installed"),
+    ("EXIT_NOVBXE", "gem4xe: VIDEO=VBXE, but no VBXE found"),
+    # the desktop never started (src/gem.c, exit_desk): which reason, the
+    # memory it found when that was the reason, and -- on a cartridge,
+    # where leaving is a cold start that would wipe the screen -- a wait
+    ("EXIT_NOFAR", "gem4xe: the desktop needs more memory"),
+    ("EXIT_FARKB", "KB of memory above bank $00"),
+    ("EXIT_NOFILE", "gem4xe: DESKTOP.PRG is not on the disk"),
+    ("EXIT_NODESK", "gem4xe: the desktop could not be loaded"),
+    ("EXIT_ANYKEY", "Press a key to start again"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and

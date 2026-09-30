@@ -38,6 +38,7 @@
 
               .extern __program_start, _fl_ok
               .public _atari_entry, _sys_exit, _exit_msg, _exit_dosvec
+              .public _exit_msg2, _exit_wait
               .public ae_sp, ae_pokmsk  ; for the CIO trampoline, src/sys/cio.s
 
 #define NMIEN  0xD40E                 /* ANTIC: VBI / DLI enable */
@@ -46,6 +47,7 @@
 #define DOSVEC 0x000A                 /* DOS's own re-entry point */
 #define ICCOM  0x0342                 /* IOCB #0: command */
 #define ICBAL  0x0344                 /*          buffer address */
+#define CH     0x02FC                 /* the OS: the last key, $FF for none */
 #define ICBLL  0x0348                 /*          buffer length */
 #define ICAX1  0x034A                 /*          aux 1: open mode */
 #define ICAX2  0x034B
@@ -132,21 +134,39 @@ _sys_exit:
 ;;; A last word, if the program left one: the reopen has just cleared the
 ;;; screen, so a message printed before this point would not be read.
 ;;; _exit_msg is the bank-$00 address of an EOL-terminated line, or 0.
-              lda     _exit_msg
-              ora     _exit_msg+1
-              beq     ae_out
+;;; ...then a second, then -- when there is no DOS to go back to -- a
+;;; prompt and a wait.  On the cartridge DOSVEC is the OS's cold start:
+;;; leaving is a reboot that clears this screen before anybody could read
+;;; it, and boots the cartridge into the same failure again (src/gem.c,
+;;; exit_desk).  The three words are side by side, so one loop.
+              ldx     #0
+ae_lines:     stx     ae_i
+              lda     _exit_msg,x
+              sta     ICBAL
+              lda     _exit_msg+1,x
+              sta     ICBAL+1
+              ora     ICBAL
+              beq     ae_skip
               ldx     #0
               lda     #CIO_PUTREC
               sta     ICCOM
-              lda     _exit_msg
-              sta     ICBAL
-              lda     _exit_msg+1
-              sta     ICBAL+1
               lda     #0xff
               sta     ICBLL
-              lda     #0
-              sta     ICBLL+1
+              stx     ICBLL+1
               jsr     CIOV
+ae_skip:      ldx     ae_i
+              inx
+              inx
+              cpx     #6
+              bne     ae_lines
+              lda     _exit_wait
+              ora     _exit_wait+1
+              beq     ae_out
+              ldx     #0xff
+              stx     CH              ; the OS's last key: none
+ae_key:       cpx     CH
+              beq     ae_key          ; until a key arrives
+              stx     CH
 ;;; Back to DOS.  A plain return goes to whatever loaded the program, and
 ;;; that is right for a DOS whose command processor is resident -- both
 ;;; SpartaDOSes, where the CP is waiting for its loader to return and a
@@ -167,4 +187,7 @@ ae_rts:       rts                     ; to DOS's own loader
 
 ae_edev:      .byte   "E:", 0x9b
 _exit_msg:    .word   0               ; set from C: a line to print on the way out
+_exit_msg2:   .word   0               ; ...a second, or 0, and a prompt and a
+_exit_wait:   .word   0               ; wait -- the three side by side (ae_lines)
 _exit_dosvec: .byte   0               ; set from C: leave through DOSVEC
+ae_i:         .byte   0               ; the loop's place across CIOV

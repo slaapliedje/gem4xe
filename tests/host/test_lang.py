@@ -87,7 +87,10 @@ class Resource(unittest.TestCase):
                     self.assertLessEqual(len(s), langrsc.BOOT_LABEL, name)
             elif name.startswith("EXIT_"):
                 self.assertNotIn("\x9b", s, name)
-                self.assertLessEqual(len(s), 40, name)
+                # EXIT_FARKB has the kilobytes put in front of it, up to
+                # five digits and a space (src/gem.c, exit_desk)
+                self.assertLessEqual(len(s) + (6 if name == "EXIT_FARKB" else 0),
+                                     40, name)
             else:
                 self.assertRegex(s, r"^\[[0-3]\]\[.+\]\[.+\]$", name)
 
