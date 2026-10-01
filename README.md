@@ -9,7 +9,7 @@ the Caldera-GPL Digital Research sources by way of
 with its application kit: [QED](https://github.com/slaapliedje/qed-gem4xe),
 the ST text editor, is one.
 
-Current version **0.9.4** — `VERSION` at the top of the tree.
+Current version **0.11** — `VERSION` at the top of the tree.
 
 The desktop opens, copies, moves, renames and deletes, runs programs and
 comes back, prints, and remembers its layout; there are desk accessories

@@ -2,7 +2,7 @@
 
 # gem4xe — how to try it
 
-**Version 0.9.4** — build as the source tree has it (a release's page names its date and commit here)
+**Version 0.11** — build as the source tree has it (a release's page names its date and commit here)
 
 GEM on an Atari XL/XE: the VDI, the AES and a desktop, at 640 x 240 in
 16 colours on VBXE's HR overlay, running native on a 65C816.  It is a
