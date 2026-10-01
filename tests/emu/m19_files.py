@@ -16,7 +16,9 @@ keyboard through two operations that change what is on the disk:
   whose OK renames it (Frename) -- the desktop's rename;
 
   Options -> Save desktop writes the window that is open, its place and
-  its path, to DESKTOP.INF, and Options -> Read .INF file reads it
+  its path, to the file GEM4XE.CFG names -- this disk's says
+  DESKINF=D1:\\LAYOUT.INF, after comments that put it past the first
+  read (phase 90) -- and Options -> Read .INF file reads it
   straight back -- the windows closed and opened again from the file,
   which is the half of remembering that a power cycle uses.  The gate
   reads the file off the image as well;
@@ -83,7 +85,17 @@ DISK = os.path.abspath(os.path.join(ROOT, "build", "m19-run.atr"))
 # private_config).  The gate still checks the emulator's log against it
 # rather than trusting the arrangement.
 CONFIG_DIR = config_dir_for("m19")
-INF_NAME = "DESKTOP.INF"                    # what Save desktop writes
+INF_NAME = "LAYOUT.INF"                     # what Save desktop writes: the
+# GEM4XE.CFG put on this disk names it (src/desk/deskwin.c inf_name), with
+# the key past the first 128 bytes, spaces round its '=', the desktop's
+# D1: for A:, and a comment after it -- each a way the reading could go
+# wrong.  The system skips the key it does not know (src/sys/config.h).
+CFG_TEXT = ("# gem4xe boot options, for test-m19\r\n"
+            "; nothing here changes the screen or the mouse: the defaults\r\n"
+            "# stand, and only the desktop's own key below is read by it\r\n"
+            "VIDEO=AUTO\r\n"
+            "  DESKINF = D1:\\LAYOUT.INF   ; where Save desktop writes\r\n"
+            "MOUSE=AUTO\r\n").encode("latin-1")
 NEWDIR = "NEWDIR"                           # the folder the gate makes
 KILLDIR = "SUB"                             # ...and the tree it deletes
 # What Show info renames, and to what.  A FILE: renaming a folder is
@@ -324,6 +336,7 @@ def model(mark, brk, pointer, drvmap):
     pl = desk_places(brk)
     a.dos_brk = copy.deepcopy(pl.pop("dos_brk"))
     a.dos_dirs = listing(DISK)
+    a.dos_text["A:\\GEM4XE.CFG"] = CFG_TEXT
     # A folder SpartaDOS X has just made measures 0 in its parent's
     # entry -- measured here, against the 23 (one entry) the host's own
     # mkdir writes -- and the window's information line counts it, so
@@ -342,6 +355,11 @@ def fresh_disk():
     of it dropped, so the run starts from the fixture as built.  Returns
     where the run's writes will land."""
     shutil.copyfile(SRC_DISK, DISK)
+    img = atr.ATRImage.load(DISK)
+    # HIDDEN, so that the root's window lists what it always has: the
+    # gate's rubber band and clicks are laid out on that listing
+    atr.open_fs(img).add_file("GEM4XE.CFG", CFG_TEXT, hidden=True)
+    img.save(DISK)
     with open(DISK, "rb") as f:
         sha = hashlib.sha256(f.read()).hexdigest()
     state = os.path.join(CONFIG_DIR, "disk_state", sha)

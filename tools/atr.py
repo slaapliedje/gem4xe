@@ -759,7 +759,9 @@ class Sdfs:
     def _stamp(self, ent, stamp):
         ent.day, ent.month, ent.year, ent.hour, ent.minute, ent.second = stamp
 
-    def add_file(self, path, data, stamp=SDFS_STAMP):
+    def add_file(self, path, data, stamp=SDFS_STAMP, hidden=False):
+        """`hidden`: SpartaDOS's hidden bit (status $02), which GEMDOS
+        reports as FA_HIDDEN and a desktop window does not list."""
         parts = self.split(path)
         name, ext = self.check_name(parts[-1])
         dmap = self._dir_map(parts[:-1])
@@ -769,6 +771,8 @@ class Sdfs:
         first = self._write_new(bits, data)
         e = SdfsEntry.blank()
         e.status, e.map, e.size, e.name, e.ext = SdfsEntry.IN_USE, first, len(data), name, ext
+        if hidden:
+            e.status |= 0x02
         self._stamp(e, stamp)
         self._put_entry(bits, dmap, e)
         self._write_bitmap(bits)

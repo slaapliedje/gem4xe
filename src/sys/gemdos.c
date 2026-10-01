@@ -273,11 +273,29 @@ static gd_work_t *gw;
 static LONG gd_name(LONG path)
 {
     LONG d;
+    WORD k;
 
     far_strget(gw->in, (uint32_t)path, GD_PATHMAX);
     d = gd_full(gw->in, gw->full);
     if (d < 0)
         return d;
+    /* A BARE NAME -- no drive, no backslash -- while no program has set
+     * a directory on the drive is the DOS's own: its current directory,
+     * which is where GEM.COM was started and GEM4XE.CFG was read (src/sys/
+     * config.h).  That is the AES's rule for a resource already
+     * (gd_cioname, below), and since phase 90 it is GEMDOS's: the desktop
+     * runs in that state, and keeps DESKTOP.INF beside GEM4XE.CFG by
+     * naming it bare (src/desk/deskwin.c).  gw->full keeps the root's
+     * spelling, which is all GEMDOS can say of a directory it was never
+     * told; Dgetpath still answers "" for it. */
+    if (!gd_dirset[gd_drive]) {
+        for (k = 0; gw->in[k] && gw->in[k] != ':' && gw->in[k] != '\\'; k++)
+            ;
+        if (!gw->in[k]) {
+            dos_cioname(gw->in, gw->cio);
+            return 0;
+        }
+    }
     return gd_cio(gw->full, gw->cio);
 }
 

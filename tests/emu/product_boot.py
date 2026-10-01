@@ -77,6 +77,7 @@ the screen.
 """
 import copy
 import os
+import re
 import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -162,6 +163,34 @@ def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False):
     a.psystem = psystem                 # the DOS's command processor, or not
     d.main()
     return v, a, d
+
+
+def inf_max_bytes():
+    """The longest DESKTOP.INF src/desk/deskwin.c's inf_write can write,
+    from the C's own sizes: its fixed lines, and every program, drive
+    icon and window slot full, each string at its buffer's length less
+    the NUL.  The line formats are inf_write's, written out here."""
+    src = open(os.path.join(ROOT, "src", "desk", "deskwin.c")).read()
+    hdr = open(os.path.join(ROOT, "src", "desk", "desk.h")).read()
+
+    def const(text, name):
+        m = re.search(rf"#define\s+{name}\s+\(?(\w+)(?:\s*\+\s*(\d+))?\)?", text)
+        v = m.group(1)
+        v = const(hdr, v) if not v.isdigit() else int(v)
+        return v + int(m.group(2) or 0)
+
+    n_apps, extlen = const(src, "N_APPS"), const(src, "APP_EXTLEN")
+    n_drv, label = const(src, "N_DRVICONS"), const(hdr, "LABEL_LEN")
+    n_win, zpath = const(hdr, "NUM_WNODES"), const(hdr, "LEN_ZPATH")
+    n_scr = const(hdr, "N_SCREENS")
+    hex2 = 3                                    # put_hex2: " XX"
+    size = 2 + hex2 + 2                         # "#R 02\r\n"
+    size += 2 + 5 * hex2 + 2                    # "#E", five bytes
+    size += 2 + 2 * n_scr * hex2 + 2            # "#Q", a pair a screen
+    size += n_apps * (3 + (extlen - 1) + 2 + (zpath - 1) + 3)   # "#G ext@ path@"
+    size += n_drv * (15 + 1 + 1 + (label - 1) + 5)              # "#M 00 00 0n FF L label@ @"
+    size += n_win * (2 + 7 * hex2 + (zpath - 1) + 3)            # "#W", seven, path@
+    return size
 
 
 def far_probes(far, chunk):
@@ -371,17 +400,19 @@ def one(name, progname, how, batches, cart, keep, check):
         #
         # WHAT IT GUARDS NOW is the one thing a person really can write to
         # this disk: DESKTOP.INF, when they arrange the desktop and choose
-        # Options -> Save desktop.  Its size is bounded, not guessed --
-        # inf_write builds it in the shell buffer (src/desk/deskwin.c) and
-        # SIZE_SHELBUF is 4192 bytes, which is 17 sectors of 253, plus one
-        # for the directory entry.  TWENTY, with the rest of the margin
-        # given back, because a number with a reason stops being a
-        # conversation every two hundred bytes.
-        INF_SECTORS = 20
+        # Options -> Save desktop.  Its size is bounded, not guessed.  It
+        # was bounded by the shell buffer it is built in (SIZE_SHELBUF,
+        # 4192 bytes: twenty sectors) until phase 90, when the system's
+        # growth took the disk under that; the tighter bound is what
+        # inf_write can actually write (inf_max_bytes, from the C's own
+        # sizes), in this DOS's sectors, plus one for the directory entry.
+        # DUP.SYS stays: it is what Quit returns to, above.
+        inf_max = inf_max_bytes()
+        INF_SECTORS = -(-inf_max // fs.data_bytes) + 1
         check(fs.free_count() >= INF_SECTORS,
               f"{name}: {fs.free_count()} sectors free -- under the floor of "
               f"{INF_SECTORS}, which is the most DESKTOP.INF can take "
-              f"(SIZE_SHELBUF 4192) and a directory entry")
+              f"({inf_max} bytes) and a directory entry")
 
     if cart == "":
         print(f"  not booted: no SDX cartridge fixture ([spartados].sdx_cart "

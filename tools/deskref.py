@@ -1472,17 +1472,77 @@ class Desktop:
             ws.path = ""
         self.inf_write()
 
+    CFG_CHUNK = 128
+
+    @staticmethod
+    def cfg_deskinf(line):
+        """deskwin.c cfg_deskinf: a GEM4XE.CFG line's DESKINF path, or None."""
+        t = line.lstrip(" \t")
+        if t[:7].upper() != "DESKINF":
+            return None
+        t = t[7:].lstrip(" \t")
+        if not t.startswith("="):
+            return None
+        t = t[1:].lstrip(" \t")
+        out = ""
+        if len(t) > 2 and t[0].upper() == "D" and "1" <= t[1] <= "9" and t[2] == ":":
+            out = chr(ord("A") + ord(t[1]) - ord("1"))
+            t = t[2:]
+        for c in t:
+            if c in " \t;#" or len(out) >= LEN_ZPATH - 1:
+                break
+            out += c.upper()
+        return out or None
+
     def inf_name(self):
-        """The file the layout lives in, on the drive the desktop was
-        started from (deskwin.c inf_name)."""
-        io, _ = self.call(DGETDRV)
-        return f"{chr(ord('A') + io[0])}:\\{INF_NAME}"
+        """deskwin.c inf_name: (the layout's file, whether GEM4XE.CFG
+        named it).  The CFG is read in CFG_CHUNK pieces until DESKINF is
+        found or the file ends; its bytes are the model's only when the
+        gate handed them over (a.dos_text, by the full name GEMDOS
+        resolves it to), and otherwise it names none."""
+        self.a.mem[STACK_STRING] = Text("GEM4XE.CFG")
+        path = self.a.dos_full("GEM4XE.CFG")
+        fd = self.gemdos_long(FOPEN, STACK_STRING, 0)
+        val = None
+        if fd >= 0:
+            text = self.a.dos_text.get(path, b"")
+            lines = text.replace(b"\x9b", b"\n").replace(b"\r", b"\n")
+            # where in the file the line naming DESKINF ENDS: the read
+            # that brings that byte in is the last one made
+            stop, at = None, 0
+            for ln in lines.split(b"\n"):
+                at += len(ln)
+                v = self.cfg_deskinf(ln.decode("latin-1"))
+                if v and at < len(text):
+                    val, stop = v, at
+                    break
+                if v:                           # the last line, unended
+                    val = v
+                at += 1
+            buf = 0x00FFFC00
+            while True:
+                got = self.gemdos(FREAD, (fd, self.CFG_CHUNK, 0, buf & 0xFFFF, buf >> 16))
+                if got <= 0:
+                    break
+                f = self.a.dos_files.get(fd)
+                if stop is not None and f and f["at"] > stop:
+                    break
+            self.gemdos(FCLOSE, (fd,))
+        if not val:
+            return INF_NAME, False
+        return val, True
 
     def inf_load(self):
         """The file into the shell buffer copy, FALSE when there is
-        none (deskwin.c inf_load)."""
-        self.a.mem[STACK_STRING] = Text(self.inf_name())
+        none (deskwin.c inf_load): the folder's, or GEM4XE.CFG's -- and
+        an older gem4xe's in the root when neither is there."""
+        name, named = self.inf_name()
+        self.a.mem[STACK_STRING] = Text(name)
         fd = self.gemdos_long(FOPEN, STACK_STRING, 0)
+        if fd < 0 and not named:               # an older gem4xe's, in the root
+            io, _ = self.call(DGETDRV)
+            self.a.mem[STACK_STRING] = Text(f"{chr(ord('A') + io[0])}:\\{INF_NAME}")
+            fd = self.gemdos_long(FOPEN, STACK_STRING, 0)
         if fd < 0:
             return False
         room = SIZE_SHELBUF - CPDATA_LEN - 1
@@ -1502,7 +1562,7 @@ class Desktop:
     def inf_store(self, n):
         """...and the buffer out to it; `n` is inf_write's length, so
         neither the NUL nor the bytes in front of the text go."""
-        self.a.mem[STACK_STRING] = Text(self.inf_name())
+        self.a.mem[STACK_STRING] = Text(self.inf_name()[0])
         fd = self.gemdos_long(FCREATE, STACK_STRING, 0)
         if fd < 0:
             return False

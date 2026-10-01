@@ -138,8 +138,19 @@ write to this disk, when they arrange the desktop and choose Options ->
 Save desktop.  Its size is BOUNDED rather than guessed -- `inf_write`
 builds the text in the shell buffer (`src/desk/deskwin.c`) and
 `SIZE_SHELBUF` is 4,192 bytes, 17 double-density sectors of 253, plus
-one for the directory entry.  **The floor is 20**, and the rest of the
-margin is given back.  Splitting the system across two floppies was the
+one for the directory entry.  **The floor was 20**, and the rest of the
+margin was given back.
+
+**Phase 90 tightened the bound rather than the disk.**  The 3D frame,
+the colour icons' cache and the layout's new place took the floppy to 16
+sectors free.  Dropping `DUP.SYS` would have given back 20, and was
+turned down for the reason it came back in the first place: it is what
+Quit returns to.  Instead the floor is what `inf_write` can actually
+write, not the buffer it writes into: its fixed lines, and every
+installed program, drive icon and window slot full to its buffer's length
+-- 1,070 bytes, five sectors and a directory entry.  **The floor is 6**,
+computed by the gate from the C's own sizes (`tests/emu/product_boot.py`,
+`inf_max_bytes`), so a field that grows moves it.  Splitting the system across two floppies was the
 other option on the table and is not needed here: the *product* already
 is split that way, and the desktop draws one icon per drive in GEMDOS's
 map, D1: to D8: (`src/desk/desktop.c`, `MAX_DRIVES` 8), so a machine

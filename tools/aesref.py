@@ -714,6 +714,14 @@ class AES:
         self.dos_dirs = {}
         self.dos_searches = {}
         self.dos_files = {}             # by handle, while they are open
+        # the DOS's own current directory, "A:\\GEM\\": where a name with
+        # no path goes until a program sets one (gemdos.c gd_cioname).
+        # None for the folder of the listing's DESKTOP.PRG, which is
+        # where the shell ran the desktop from
+        self.dos_home = None
+        # what the model knows of files' BYTES, by full path; anything
+        # else is a length only (the desktop reads GEM4XE.CFG, phase 90)
+        self.dos_text = {}
         # what a fresh directory's own entry says its length is: the gate
         # sets it from the filesystem it built the disk with (SDFS writes
         # the header entry, so 23), because a folder's size counts in the
@@ -5358,6 +5366,25 @@ class AES:
                 entries[i] = (e[0], e[1], e[2], e[3], f["size"])
                 return
 
+    def dos_full(self, path):
+        """A name as GEMDOS resolves it while no directory is set (gemdos.c
+        gd_name): with a drive, as it is; a BARE name -- no drive, no
+        backslash -- in the DOS's current directory (dos_home); any other
+        from the root, which is all GEMDOS knows of a directory it was
+        never told."""
+        if len(path) > 1 and path[1] == ":":
+            return path
+        if "\\" in path:
+            return "A:\\" + path.lstrip("\\")
+        home = self.dos_home
+        if home is None:
+            home = "A:\\"
+            for key, ents in self.dos_dirs.items():
+                if any(e[0].upper() == "DESKTOP.PRG" for e in ents):
+                    home = key
+                    break
+        return home + path
+
     def gemdos(self, fn, ints):
         """The file calls of src/sys/gemdos.c the desktop makes, on the
         listing the harness read off the disk (dos_dirs) and the far heap
@@ -5482,7 +5509,7 @@ class AES:
                     self.dos_dirs[now + key[len(was):]] = self.dos_dirs.pop(key)
             return 0
         if fn == 0x3D or fn == 0x3C:    # Fopen / Fcreate
-            path = self.mem[long_(0)].s
+            path = self.dos_full(self.mem[long_(0)].s)
             k = path.rfind("\\") + 1
             parent, name = path[:k], path[k:]
             entries = self.dos_dirs.get(parent)

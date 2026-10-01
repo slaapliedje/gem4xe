@@ -1732,17 +1732,104 @@ static char FAR *put_far(char FAR *d, const char FAR *s)
     return d;
 }
 
-/* The file the layout lives in, on the drive the desktop was started
- * from -- the donor's INF_FILE_NAME with the boot drive's letter put
- * into it (deskapp.c read_inf_file).  An absolute path, so that a
- * desktop which has been walking around a disk still writes it where
- * it will be found at the next boot. */
-static void inf_name(char *name)
+/* WHERE THE LAYOUT LIVES (phase 90).  The donor keeps DESKTOP.INF in
+ * the root of the boot drive (deskapp.c read_inf_file), and so did this
+ * desktop until phase 90.  Now it is beside GEM4XE.CFG -- in \GEM\ on
+ * the product media -- unless GEM4XE.CFG says otherwise:
+ *
+ *     DESKINF=D1:\GEM\DESKTOP.INF     ; or A:\..., \DIR\NAME, or NAME
+ *
+ * BY A NAME WITH NO PATH.  The system looks for GEM4XE.CFG as "D:GEM4XE.CFG",
+ * the DOS's current directory (src/sys/config.h); and GEMDOS hands a name
+ * with no path to the DOS as it is until a program sets a directory
+ * (src/sys/gemdos.c gd_cioname) -- so "GEM4XE.CFG" and "DESKTOP.INF" are
+ * the files beside the one the system read at boot.  The desktop sets a
+ * directory only in run_prog, on its way out to a program; when that
+ * fails, nothing was set.  GEM4XE.CFG is the system's file, read here for
+ * the one key the system skips, and only when the layout file is read or
+ * written: the first desktop after a boot, Save desktop, Read .INF file.
+ *
+ * A layout an older gem4xe saved in the root of the boot drive is still
+ * read, once, when there is none beside GEM4XE.CFG and it names none; the
+ * next Save desktop puts it in the new place. */
+#define CFG_NAME    "GEM4XE.CFG"
+#define CFG_KEY     "DESKINF"
+#define CFG_CHUNK   128
+static char cfg_buf[CFG_CHUNK];
+static char cfg_line[LEN_ZPATH + 16];
+
+static WORD up_char(WORD c)
 {
-    name[0] = (char)('A' + Dgetdrv());
-    name[1] = ':';
-    name[2] = '\\';
-    put_str(name + 3, INF_NAME);
+    if (c >= 'a' && c <= 'z')
+        c -= 32;
+    return c;
+}
+
+/* `line`, a GEM4XE.CFG line: the path after DESKINF= into `name`, TRUE;
+ * FALSE for any other line.  Spaces either side of the '=', the value to
+ * the next space, ';' or '#'.  Every character a WORD (B21, tools/ccbug). */
+static WORD cfg_deskinf(const char *line, char *name)
+{
+    WORD i = 0, j, k, c;
+
+    while (line[i] == ' ' || line[i] == '\t')
+        i++;
+    for (k = 0; CFG_KEY[k]; k++, i++)
+        if (up_char((WORD)(uint8_t)line[i]) != (WORD)(uint8_t)CFG_KEY[k])
+            return FALSE;
+    while (line[i] == ' ' || line[i] == '\t')
+        i++;
+    if (line[i] != '=')
+        return FALSE;
+    i++;
+    while (line[i] == ' ' || line[i] == '\t')
+        i++;
+    j = 0;
+    /* D1: to D9: are the desktop's names for A: to I: (phase 73) */
+    if (up_char((WORD)(uint8_t)line[i]) == 'D' && line[i + 1] >= '1'
+        && line[i + 1] <= '9' && line[i + 2] == ':') {
+        name[j++] = (char)('A' + line[i + 1] - '1');
+        i += 2;
+    }
+    for (; j < LEN_ZPATH - 1; i++) {
+        c = (WORD)(uint8_t)line[i];
+        if (!c || c == ' ' || c == '\t' || c == ';' || c == '#')
+            break;
+        name[j++] = (char)up_char(c);
+    }
+    name[j] = 0;
+    return (WORD)(j > 0);
+}
+
+/* The layout's file: GEM4XE.CFG's DESKINF, or DESKTOP.INF beside it.
+ * TRUE when GEM4XE.CFG named it. */
+static WORD inf_name(char *name)
+{
+    LONG fd, got;
+    WORD i, n = 0, found = FALSE;
+
+    fd = Fopen(CFG_NAME, 0);
+    if (fd >= 0) {
+        while (!found && (got = Fread((WORD)fd, (LONG)CFG_CHUNK, cfg_buf)) > 0)
+            for (i = 0; i < (WORD)got && !found; i++) {
+                WORD c = (WORD)(uint8_t)cfg_buf[i];
+                if (c == '\r' || c == '\n' || c == 0x9B) {
+                    cfg_line[n] = 0;
+                    found = cfg_deskinf(cfg_line, name);
+                    n = 0;
+                } else if (n < (WORD)sizeof cfg_line - 1) {
+                    cfg_line[n++] = (char)c;
+                }
+            }
+        if (!found && n) {                      /* a last line with no end */
+            cfg_line[n] = 0;
+            found = cfg_deskinf(cfg_line, name);
+        }
+        Fclose((WORD)fd);
+    }
+    if (!found)
+        put_str(name, INF_NAME);
+    return found;
 }
 
 /* The INF text from the slots; its length with the NUL. */
@@ -1835,12 +1922,25 @@ static WORD inf_len(WORD len)
  * what is there is not INF text. */
 static WORD inf_load(void)
 {
-    char name[LEN_ZFNAME + 4];
+    char name[LEN_ZPATH];
     char FAR *buf = G.g_shelbuf + CPDATA_LEN;
     LONG fd, got;
 
-    inf_name(name);
-    fd = Fopen(name, 0);
+    if (!inf_name(name)) {
+        fd = Fopen(name, 0);
+        if (fd < 0) {                           /* an older gem4xe's, in the
+                                                 * boot drive's root: read
+                                                 * once, saved beside
+                                                 * GEM4XE.CFG next time */
+            name[0] = (char)('A' + Dgetdrv());
+            name[1] = ':';
+            name[2] = '\\';
+            put_str(name + 3, INF_NAME);
+            fd = Fopen(name, 0);
+        }
+    } else {
+        fd = Fopen(name, 0);
+    }
     if (fd < 0)
         return FALSE;
     got = Fread((WORD)fd, (LONG)(SIZE_SHELBUF - CPDATA_LEN - 1), buf);
@@ -1856,7 +1956,7 @@ static WORD inf_load(void)
  * on the disk is the text a person could read. */
 static WORD inf_store(WORD len)
 {
-    char name[LEN_ZFNAME + 4];
+    char name[LEN_ZPATH];
     LONG fd, put, n = (LONG)inf_len(len);
 
     inf_name(name);
