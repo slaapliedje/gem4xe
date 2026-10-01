@@ -857,6 +857,7 @@ class AES:
         self.vcall(V_STRING, (0, 0), (1, 0))
         if v.contrl4 == 0:
             return None
+        self.gl_kmods = v.intout[1]
         return v.intout[0]
 
     def gsx_tblt(self, font, x, y, nc):
@@ -1487,6 +1488,7 @@ class AES:
         self.ev_dclick(3, True)
         self.tp_mode, self.tp_n, self.tp_max = TP_OFF, 0, 0
         self.tp_mark, self.tp_out, self.tp_key = 0, [], None
+        self.gl_kmods = self.ev_kmods = 0
 
     def ev_dclick(self, rate, setit):
         if setit:
@@ -1633,13 +1635,16 @@ class AES:
         straight to the VDI (src/aes/event.c says why)."""
         if self.tp_mode == TP_PLAY:
             k, self.tp_key = self.tp_key, None
+            if k is not None:
+                self.ev_kmods = self.kstate
             return k
         k = self.gsx_getkey()
         if k is None:
             return None
+        self.ev_kmods = self.gl_kmods
         self.tp_gap()
         self.tp_rec(APPEVNT_KEYBOARD,
-                    (k & 0xFFFF) | ((self.kstate & 0xFFFF) << 16))
+                    (k & 0xFFFF) | (((self.kstate | self.ev_kmods) & 0xFFFF) << 16))
         return k
 
     def ap_trecord(self, num):
@@ -1858,10 +1863,10 @@ class AES:
             v.buttons = step[1]
         elif kind == "key":
             # ("key", altirra_name, gem_code[, shift, ctrl])
-            v.keys.append(step[2])
             shift = len(step) > 3 and step[3]
             ctrl = len(step) > 4 and step[4]
             v.key_mods = (2 if shift else 0) | (4 if ctrl else 0)
+            v.keys.append((step[2], v.key_mods))
         else:
             raise ValueError(f"unknown plan step {step!r}")
         v.input_poll(tick=True)
@@ -1992,6 +1997,8 @@ class AES:
     def ev_multi(self, flags, pmo1, pmo2, tmcount, buparm, rets, mebuff=None):
         what = self.ev_wait(flags, pmo1, pmo2, tmcount, buparm, rets, mebuff)
         self.ev_rets(rets)
+        if what & MU_KEYBD:         # the key's own, not what is held now
+            self.kstate = rets[3] = self.kstate | self.ev_kmods
         return what
 
     def ev_wait_ticks(self, ticks):

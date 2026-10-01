@@ -671,6 +671,11 @@ void ev_fq(void)
  * one or put one back.  ev_fq's drain still calls gsx_getkey directly:
  * throwing keys away is not an event worth recording, and a playback
  * that had to survive a drain would be recording its own replay. */
+/* The modifier state the key ev_getkey last took was pressed with --
+ * what ev_multi reports beside it, since the live state ev_rets reads
+ * has lost CONTROL by then whenever the key was only tapped. */
+static WORD ev_kmods;
+
 static WORD ev_getkey(WORD *pkey)
 {
     if (tp_mode == TP_PLAY) {
@@ -678,13 +683,15 @@ static WORD ev_getkey(WORD *pkey)
             return FALSE;
         *pkey = tp_key;
         tp_key = 0;
+        ev_kmods = kstate;          /* what the tape filed with it */
         return TRUE;
     }
     if (!gsx_getkey(pkey))
         return FALSE;
+    ev_kmods = gl_kmods;
     tp_gap();
     tp_rec(APPEVNT_KEYBOARD, (uint32_t)(UWORD)*pkey
-                             | ((uint32_t)(UWORD)kstate << 16));
+                             | ((uint32_t)(UWORD)(kstate | ev_kmods) << 16));
     return TRUE;
 }
 
@@ -935,6 +942,8 @@ WORD ev_multi(WORD flags, const MOBLK *pmo1, const MOBLK *pmo2,
 
     what = ev_wait(flags, pmo1, pmo2, tmcount, buparm, mebuff, prets);
     ev_rets(prets);
+    if (what & MU_KEYBD)            /* the key's own, not what is held now */
+        prets[3] = kstate = (WORD)(kstate | ev_kmods);
     return what;
 }
 

@@ -101,7 +101,22 @@ def B(s):
     return ("button", s)
 
 
+# The ST's scan code for each key the Atari shares with it, by Altirra's
+# key name: what src/vdi/vdi.c's kb_st puts in a key word's high byte
+# since phase 84.  K() adds it to a character, so a plan still says
+# K("C", 0x63) and means the key word an ST program gets, 0x2E63.
+ST_SCAN = dict(zip("QWERTYUIOP", range(0x10, 0x1A)))
+ST_SCAN.update(zip("ASDFGHJKL", range(0x1E, 0x27)))
+ST_SCAN.update(zip("ZXCVBNM", range(0x2C, 0x33)))
+ST_SCAN.update(zip("1234567890", range(0x02, 0x0C)))
+ST_SCAN.update(MINUS=0x0C, EQUALS=0x0D, SEMICOLON=0x27, COMMA=0x33,
+               PERIOD=0x34, SLASH=0x35, SPACE=0x39, PLUS=0x4E, ASTERISK=0x66,
+               LESS=0x60, GREATER=0x60)
+
+
 def K(name, code, shift=False, ctrl=False):
+    if 0 < code < 0x100 and name in ST_SCAN:
+        code |= ST_SCAN[name] << 8
     return ("key", name, code, shift, ctrl)
 
 
@@ -214,6 +229,18 @@ CASES = [
       3: [F(2), K("MINUS", ARROW_UP, ctrl=True)],
       4: [F(2), K("EQUALS", ARROW_DOWN, ctrl=True)],
       5: [F(5), K("B", 0x62)]}),
+
+    # A key carries the ST's scan code, and evnt_multi reports the SHIFT
+    # and CONTROL it was pressed with, not what is held when it returns:
+    # a Ctrl-N is up long before the program asks, and cflib's menu
+    # shortcuts need both the scan code and K_CTRL (phase 84).  Tapped
+    # rather than held is QED's gate's to show: the call answers the frame
+    # the key lands, while CONTROL is still down on both sides.
+    ("evnt_multi(MU_KEYBD): Ctrl-N is ^N with K_CTRL, scan codes", dialog,
+     [draw(), multi(MU_KEYBD), multi(MU_KEYBD), multi(MU_KEYBD)],
+     {1: [F(3), K("N", 0x0E, ctrl=True)],
+      2: [F(2), K("N", 0x4E, shift=True)],
+      3: [F(2), K("1", 0x31)]}),
 
     # The ST's Help and Undo on this keyboard: the 1200XL's F1 and F2,
     # and the HELP key every XL/XE has (src/vdi/vdi.c, kb_translate).

@@ -620,10 +620,10 @@ static WORD hndl_button(WORD clicks, WORD mx, WORD my, WORD kstate)
 /* -- the keyboard ------------------------------------------------------- */
 
 /* The menu's shortcuts, the TOS desktop's own letters.  A Control+letter
- * arrives as its control code in the low byte and no scan code -- ^O is
- * 0x000F (src/vdi/vdi.c, kb_translate) -- where the TAB and RETURN keys
- * carry scan codes, so ^I is not TAB and ^M is not RETURN.  The item
- * text says the shortcut (tools/deskrsc.py MENU). */
+ * arrives as its control code in the low byte and the letter's scan code
+ * in the high one -- ^O is 0x180F (src/vdi/vdi.c, kb_translate) -- so ^I
+ * is not TAB and ^M is not RETURN, whose scan codes are their own.  The
+ * item text says the shortcut (tools/deskrsc.py MENU). */
 static const struct {
     WORD code, title, item;
 } menu_keys[] = {
@@ -647,6 +647,11 @@ static const struct {
 #define KEY_RIGHT  0x4D00
 #define KEY_ESC    0x011B
 #define KEY_DELETE 0x537F
+/* The three keys whose characters are also Control-letters' ($0D is
+ * Ctrl-M, $09 Ctrl-I, $08 Ctrl-H): their scan codes tell them apart. */
+#define KEY_RETURN 0x1C0D
+#define KEY_TAB    0x0F09
+#define KEY_BACKSP 0x0E08
 
 /* One item of the menu, as if it had been chosen: the title shown
  * selected while it runs, as a mouse choice leaves it, and nothing at
@@ -685,17 +690,21 @@ static void key_arrow(WORD action)
  * top window's directory again; DELETE is File -> Delete. */
 static WORD hndl_kbd(WORD key, WORD kstate)
 {
-    WORD low = (WORD)(key & 0xFF), scan = (WORD)((key >> 8) & 0xFF), i, obj;
+    WORD low = (WORD)(key & 0xFF), i, obj;
     WORD page = (WORD)((kstate & 3) != 0);
     WNODE *pw;
 
-    if (scan == 0 && low >= 1 && low <= 26) {
+    /* A Control-letter is its control character with the LETTER's scan
+     * code, as on the ST, since keys carry the ST's (phase 84); only
+     * RETURN, TAB and BACKSPACE share a character with one. */
+    if (low >= 1 && low <= 26 && (UWORD)key != KEY_RETURN
+        && (UWORD)key != KEY_TAB && (UWORD)key != KEY_BACKSP) {
         for (i = 0; i < N_MENU_KEYS; i++)
             if (menu_keys[i].code == low)
                 return key_menu(menu_keys[i].title, menu_keys[i].item);
         return FALSE;
     }
-    if (scan == 0 && low >= '1' && low <= '9') {
+    if (low >= '1' && low <= '9') {
         obj = obj_get_obid((WORD)('A' + low - '1'));
         if (obj) {
             act_select(DESKWH, DROOT, obj);

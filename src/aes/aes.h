@@ -518,6 +518,7 @@ WORD gsx_vex(WORD op, VDI_VEC fn);
 WORD gsx_mouse(WORD *px, WORD *py);
 WORD gsx_kstate(void);
 WORD gsx_getkey(WORD *pkey);
+extern WORD gl_kmods;          /* the last key's own SHIFT and CONTROL */
 
 /* ---- the graphics library: grlib.c (gemgrlib.c) ------------------------ */
 WORD gr_stilldn(WORD out, WORD x, WORD y, WORD w, WORD h);

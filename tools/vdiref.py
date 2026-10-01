@@ -1443,8 +1443,10 @@ class VDI:
             self.contrl4 = 1
         elif op == V_STRING:
             # one key per call; contrl[4] = 0 says there was none
+            # and intout[1] the SHIFT and CONTROL the key was pressed
+            # with (src/vdi/vdi.c, phase 84)
             if self.keys:
-                self.intout[0] = self.keys.pop(0)
+                self.intout[0], self.intout[1] = self.keys.pop(0)
                 self.contrl4 = 1
         elif op == VQ_KEY_S:
             self.intout[0] = self.key_mods

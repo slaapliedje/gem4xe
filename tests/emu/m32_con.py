@@ -282,7 +282,7 @@ def main(argv):
         want(0, 0, "Cconis with no key")
         want(1, 0, "Crawio(0xFF) with no key")
         want(2, ord("k"), "Cconin's ASCII")
-        want(3, 0, "Cconin's high word (no scan code for a letter)")
+        want(3, 0x25, "Cconin's high word (K's ST scan code, phase 84)")
         check(line[1] == 3 and line[2:5] == b"hey",
               f"Cconrs gave {line[1]} bytes {line[2:5]!r}, not 3 b'hey'")
         want(5, ord("z"), "Cnecin")

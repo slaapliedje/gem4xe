@@ -2282,8 +2282,30 @@ static void vdi_vqin_mode(void)
 
 #define KB_QLEN 8
 static WORD    kb_q[KB_QLEN];
+static uint8_t kb_m[KB_QLEN];   /* each key's own SHIFT and CONTROL, as
+                                 * vq_key_s reports them (2 and 4) */
 static uint8_t kb_head, kb_tail;
 static uint8_t kb_caps;
+
+/* The ST's scan code for each key this keyboard shares with it, by the
+ * Atari's key code (KBCODE's low six bits); 0 where the ST has no such
+ * key.  A GEM program matches a key by its scan code as often as by its
+ * character -- cflib's menu shortcuts (^N and the like) do nothing else,
+ * and a scan code of zero matched none of them (docs/phase84.md).  The
+ * Atari's + and * are the ST's keypad ones; < and > share the ST's one
+ * ISO key.  The keys the switch below names keep their own codes.  FAR,
+ * in cfar beside the fill patterns: bank $00's near region has no 64
+ * bytes to spare (tests/host/test_memory.py). */
+static const uint8_t FAR kb_st[64] = {
+    0x26, 0x24, 0x27, 0x00, 0x00, 0x25, 0x4E, 0x66,   /* L J ; F1 F2 K + *   */
+    0x18, 0x00, 0x19, 0x16, 0x1C, 0x17, 0x0C, 0x0D,   /* O . P U RET I - =   */
+    0x2F, 0x00, 0x2E, 0x00, 0x00, 0x30, 0x2D, 0x2C,   /* V HELP C F3 F4 B X Z*/
+    0x05, 0x00, 0x04, 0x07, 0x01, 0x06, 0x03, 0x02,   /* 4 . 3 6 ESC 5 2 1   */
+    0x33, 0x39, 0x34, 0x31, 0x00, 0x32, 0x35, 0x00,   /* , SPC . N . M / INV */
+    0x13, 0x00, 0x12, 0x15, 0x0F, 0x14, 0x11, 0x10,   /* R . E Y TAB T W Q   */
+    0x0A, 0x00, 0x0B, 0x08, 0x0E, 0x09, 0x60, 0x60,   /* 9 . 0 7 BS 8 < >    */
+    0x21, 0x23, 0x20, 0x00, 0x00, 0x22, 0x1F, 0x1E    /* F H D . CAPS G S A  */
+};
 
 static void kb_init(void)
 {
@@ -2345,7 +2367,9 @@ static WORD kb_translate(uint8_t code)
     case 0xFE: return 0x537F;                   /* ctrl-backspace: delete */
     case 0x82: kb_caps ^= 1; return 0;          /* CAPS toggles */
     case 0x83: kb_caps = 1;  return 0;          /* shift-CAPS: on */
-    default:   return (a >= 0x80) ? 0 : a;      /* plain ASCII, no scan code */
+    default:                                    /* the character, and the
+                                                 * ST's scan code for the key */
+        return (a >= 0x80) ? 0 : (WORD)(((WORD)kb_st[(WORD)(code & 0x3F)] << 8) | a);
     }
 }
 
@@ -2355,6 +2379,7 @@ static void kb_queue(uint8_t code)
     uint8_t next = (uint8_t)((kb_tail + 1) & (KB_QLEN - 1));
     if (k && next != kb_head) {
         kb_q[kb_tail] = k;
+        kb_m[kb_tail] = (uint8_t)(((code & 0x40) ? 2 : 0) | ((code & 0x80) ? 4 : 0));
         kb_tail = next;
     }
 }
@@ -2406,7 +2431,11 @@ static void vdi_vq_key_s(void)
  *
  * gem4xe's string-device convention: ONE key per call, delivered as a GEM key
  * code (scan code in the high byte, ASCII in the low) in intout[0], so the
- * AES gets the value evnt_keybd hands out without a second translation. */
+ * AES gets the value evnt_keybd hands out without a second translation --
+ * and in intout[1] the SHIFT and CONTROL that key was pressed with, as
+ * vq_key_s would have said then.  vq_key_s itself sees CONTROL only while
+ * the key is still down, and a Ctrl-N tapped is up before the program
+ * asks (docs/phase84.md). */
 static void vdi_v_string(void)
 {
     vdi_key_poll();
@@ -2415,6 +2444,7 @@ static void vdi_v_string(void)
         return;
     }
     intout[0] = kb_q[kb_head];
+    intout[1] = kb_m[kb_head];
     kb_head = (uint8_t)((kb_head + 1) & (KB_QLEN - 1));
     contrl[4] = 1;
 }

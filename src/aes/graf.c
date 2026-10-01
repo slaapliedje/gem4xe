@@ -576,6 +576,11 @@ WORD gsx_kstate(void)
     return intout[0];
 }
 
+/* The SHIFT and CONTROL the last key gsx_getkey took was pressed with
+ * (vq_key_s's bits): this driver's v_string answers them in intout[1]
+ * (src/vdi/vdi.c). */
+WORD gl_kmods;
+
 /* One key from the VDI's queue, or FALSE if none is waiting (v_string in
  * sample mode returns at most one key per call on this driver). */
 WORD gsx_getkey(WORD *pkey)
@@ -588,6 +593,7 @@ WORD gsx_getkey(WORD *pkey)
     if (contrl[4] == 0)
         return FALSE;
     *pkey = intout[0];
+    gl_kmods = intout[1];
     return TRUE;
 }
 
