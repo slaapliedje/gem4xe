@@ -29,24 +29,27 @@ HOW = "run `make readme`, which writes the numbers back"
 
 class Readme(unittest.TestCase):
     def setUp(self):
-        self.doc = readme.read(readme.README)
+        # the gate table is docs/gates.md's since phase 91; the pictures
+        # are still the front page's
+        self.doc = readme.read(readme.GATES)
+        self.front = readme.read(readme.README)
 
     def test_the_facts_are_current(self):
         """The host suite's size, the version, and how many compiler
         defects tools/ccbug knows about -- all three of which the tree
-        can answer for itself."""
-        for what, found, want, _fix in readme.facts(self.doc):
+        can answer for itself -- on whichever page states each."""
+        for path, what, found, want, _fix in readme.all_facts():
             self.assertEqual(found, want,
-                             f"README.md: {what} says {found}, the tree says "
-                             f"{want} -- {HOW}")
+                             f"{os.path.relpath(path, ROOT)}: {what} says "
+                             f"{found}, the tree says {want} -- {HOW}")
 
     def test_it_states_facts_at_all(self):
         """Each is found by matching the sentence that carries it, so an
         edit that rewords one would leave the check above passing by
         having nothing left to compare.  It has to find all three."""
         self.assertEqual(
-            len(readme.facts(self.doc)), 3,
-            "README.md no longer states its version, host-suite count and "
+            len(readme.all_facts()), 3,
+            "the pages no longer state the version, host-suite count and "
             "compiler-defect count in the shape tools/readme.py looks for, "
             "so one of them is unchecked again -- teach the tool the wording")
 
@@ -85,7 +88,7 @@ class Readme(unittest.TestCase):
         shots = readme.tour_shots()
         if shots is None:
             self.skipTest("docs/shots/MANIFEST is absent: run `make shots`")
-        stale = [s for s in readme.readme_shots(self.doc) if s not in shots]
+        stale = [s for s in readme.readme_shots(self.front) if s not in shots]
         self.assertEqual(stale, [],
                          f"README.md shows pictures `make shots` does not "
                          f"write: {stale}")

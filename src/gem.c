@@ -13,7 +13,7 @@
  * and this file is where the choice is made -- the only place it is made,
  * which is why `vdev` is set here and not by the VDI finding out for
  * itself.  A machine with a VBXE gets 640x240 in sixteen colours; one
- * without gets ANTIC mode F, 320x168 in two, on Atari's condensed face.
+ * without gets ANTIC mode F, 320x192 in two, on Atari's condensed face.
  * GEM4XE.CFG overrides either way (src/sys/config.h): VIDEO=ANTIC is the
  * safe mode for a monitor that will not lock to the VBXE's output, and
  * it is a plain text file precisely because that machine has no screen

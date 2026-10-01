@@ -36,6 +36,13 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 README = os.path.join(ROOT, "README.md")
+# Since phase 91 the facts are on three pages: the version on the front
+# page, the gate table and the host suite's size in docs/gates.md, the
+# compiler's defect count in docs/developing.md.  facts() reads each page
+# for whatever it states, so a fact is checked where it lives.
+GATES = os.path.join(ROOT, "docs", "gates.md")
+DEVELOPING = os.path.join(ROOT, "docs", "developing.md")
+PAGES = (README, GATES, DEVELOPING)
 MAKEFILE = os.path.join(ROOT, "Makefile")
 VERSION = os.path.join(ROOT, "VERSION")
 SHOTS = os.path.join(ROOT, "docs", "shots")
@@ -190,9 +197,22 @@ def facts(doc):
     return out
 
 
-def problems(doc):
-    """What a person has to fix, because no tool should invent it."""
+def all_facts():
+    """(path, what, found, wanted, fix) for every page's facts."""
     out = []
+    for path in PAGES:
+        for what, found, want, fix in facts(read(path)):
+            out.append((path, what, found, want, fix))
+    return out
+
+
+def problems(doc, readme_doc=None):
+    """What a person has to fix, because no tool should invent it.  `doc`
+    is the page with the gate table (docs/gates.md); `readme_doc` the one
+    with the pictures, the front page."""
+    out = []
+    if readme_doc is None:
+        readme_doc = doc
 
     mentioned = table_mentions(doc)
     for g in gates_in_make_test():
@@ -217,7 +237,7 @@ def problems(doc):
         return out
 
     written = set(shots)
-    for s in readme_shots(doc):
+    for s in readme_shots(readme_doc):
         if s not in written:
             out.append(f"the README shows docs/shots/{s}, which `make shots` "
                        f"does not write -- the tour renumbered")
@@ -240,24 +260,27 @@ def main(argv):
     if not (a.write or a.check):
         ap.error("say --check or --write")
 
-    doc = read(README)
-    stale = [f for f in facts(doc) if f[1] != f[2]]
-    hard = problems(doc)
+    stale = [f for f in all_facts() if f[2] != f[3]]
+    hard = problems(read(GATES), read(README))
 
-    for what, found, want, _fix in stale:
-        print(f"  {what}: the README says {found}, the tree says {want}")
+    for path, what, found, want, _fix in stale:
+        print(f"  {what}: {os.path.relpath(path, ROOT)} says {found}, "
+              f"the tree says {want}")
     for p in hard:
         print(f"  {p}")
 
     if a.write:
-        for _what, _found, _want, fix in stale:
-            doc = fix(doc)
-        if stale:
-            with open(README, "w") as f:
-                f.write(doc)
-            print(f"README.md: {len(stale)} fact(s) put back")
-        else:
-            print("README.md: the facts were already right")
+        for path in PAGES:
+            doc = read(path)
+            mine = [f for f in stale if f[0] == path]
+            for _p, _what, _found, _want, fix in mine:
+                doc = fix(doc)
+            if mine:
+                with open(path, "w") as f:
+                    f.write(doc)
+                print(f"{os.path.relpath(path, ROOT)}: {len(mine)} fact(s) put back")
+        if not stale:
+            print("the facts were already right")
         if hard:
             print(f"\n{len(hard)} thing(s) above need a person: this writes "
                   f"numbers, never prose.")

@@ -99,7 +99,7 @@ WORD ap_read(WORD ap_id, WORD length, uint32_t buf)
  * -- 0, 1, 2 are the ST's, 4, 6, 7 the TT's -- and gem4xe is not any of
  * them.  Its VBXE surface is 512, 640 or 672 pixels across in sixteen
  * colours, whichever GEM4XE.CFG's SCREENW asked for, and its fallback is
- * 320x168 in two.  Those are the VBXE's own resolutions and the point of
+ * 320x192 in two.  Those are the VBXE's own resolutions and the point of
  * offering them is not to pretend they are somebody else's.
  *
  * So -1, which is not a screen.  It was ST Low for one commit, chosen
@@ -147,14 +147,16 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
     case AI_SYSTEM:
         *out1 = AI_REZ_NONE;            /* not an Atari screen: see above */
         *out2 = (WORD)(1 << gl_nplanes);  /* 16 on VBXE, 2 on ANTIC */
-        *out3 = 0;                      /* colour icons: G_CICON draws its
-                                         * MONO form (objc.c) */
-        /* The extended resource format IS read: rs_load parses the
-         * NEW_FORMAT_RSC extension, the colour-icon table and every
-         * CICONBLK (rsrc.c).  Two limits the caller should know and
-         * which the other words already say: the colour forms are placed
-         * and not drawn, which is what out3's 0 means, and a resource
-         * that has to load FAR is refused if it is new-format. */
+        /* Colour icons: drawn in colour where there are colours to draw
+         * them in -- a G_CICON's 4-plane form, on the 16-colour screen
+         * (objc.c, phase 86) -- and in their mono form on the two-colour
+         * one, which is what a 0 tells a program there.  This said 0
+         * everywhere until phase 91, two phases after it stopped being
+         * true. */
+        *out3 = (WORD)(gl_nplanes == 4);
+        /* The extended resource format is read, near or far: rs_load
+         * parses the NEW_FORMAT_RSC extension, the colour-icon table and
+         * every CICONBLK (rsrc.c; far since phase 87). */
         *out4 = 1;
         break;
 

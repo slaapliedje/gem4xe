@@ -1123,8 +1123,9 @@ WORD rsrc_load(const char *name)
     addr_in[0] = (LONG)(uint32_t)(const char FAR *)name;
 #ifdef __CALYPSI_DATA_MODEL_LARGE__
     /* This program holds 32-bit pointers, so it can take a resource in far
-     * memory: int_in[0] bit 0 says so, and the AES goes far only when the
-     * file will not fit the pool AND this is set (docs/far-trees.md).  The
+     * memory: int_in[0] bit 0 says so, and the AES then puts the resource
+     * far whatever its size (src/aes/rsrc.c rs_load; docs/far-trees.md,
+     * phase 87 for colour icons).  The
      * small-data build below passes no int_in at all, and aes_entry zeroes
      * them, so it can never ask by accident -- and a 16-bit program handed
      * a far resource would have its pointers truncated with no error. */

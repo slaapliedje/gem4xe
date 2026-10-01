@@ -2162,7 +2162,16 @@ readme:
 # committed rather than built every time; tests/host/test_opcodes.py
 # checks the VDI half against the dispatcher without needing it.
 served:
-	python3 tools/opcodes.py --md tools/sdk/served.md
+	python3 tools/opcodes.py --md docs/api.md
+
+# The user guide: the release page's template, filled from what needs no
+# build (tools/mkdist.py guide).  Committed; tests/host/test_dist.py
+# regenerates it and fails when it is stale.
+guide:
+	python3 tools/mkdist.py --guide docs/guide.md
+
+# Every generated page at once, before a commit that changes what they say.
+docs: served guide readme
 
 # The desktop timed on each screen: open a window, move it, full it, put
 # it back -- ms from the input to the desktop's last call, and with
@@ -2191,4 +2200,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean

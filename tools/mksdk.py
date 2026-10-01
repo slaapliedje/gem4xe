@@ -79,7 +79,7 @@ MANIFEST = [
     # from the dispatchers by `make served`.  include/gem.h is 1,255 lines
     # of declarations and DECLARED IS NOT SERVED, which is the question a
     # porter has.
-    ("doc/served.md",       "tools/sdk/served.md"),
+    ("doc/served.md",       "docs/api.md"),
     # The harness gem4xe's own gates are built on: a machine with the
     # right boards and a socket to drive it through.  Stdlib only.  A
     # third party had no way to test but to watch a screen, and a person

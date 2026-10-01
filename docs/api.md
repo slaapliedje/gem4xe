@@ -172,3 +172,131 @@ is the distinction this exists for.
 A `v_nop` here is a DECISION, not a gap: DRI's own shipping
 driver nopped ten opcodes.  A call to one returns cleanly and
 draws nothing, which is what an application expects of it.
+
+## wind_get and wind_set fields
+
+**14 answered by wind_get, 9 taken by wind_set**, out of the fields EmuTOS's `aesdefs.h` and the kit's `gem.h` name.  From the `case` labels of `wm_get` and `wm_set` (`src/aes/wind.c`).  A field a call does not take makes it return 0, which is failure.
+
+| field | name | wind_get | wind_set |
+|---|---|---|---|
+| 1 | `WF_KIND` | -- | -- |
+| 2 | `WF_NAME` | -- | yes |
+| 3 | `WF_INFO` | -- | yes |
+| 4 | `WF_WORKXYWH` | yes | -- |
+| 5 | `WF_CURRXYWH` | yes | yes |
+| 6 | `WF_PREVXYWH` | yes | -- |
+| 7 | `WF_FULLXYWH` | yes | -- |
+| 8 | `WF_HSLIDE` | yes | yes |
+| 9 | `WF_VSLIDE` | yes | yes |
+| 10 | `WF_TOP` | yes | yes |
+| 11 | `WF_FIRSTXYWH` | yes | -- |
+| 12 | `WF_NEXTXYWH` | yes | -- |
+| 14 | `WF_NEWDESK` | -- | yes |
+| 15 | `WF_HSLSIZ` | yes | yes |
+| 16 | `WF_VSLSIZ` | yes | yes |
+| 17 | `WF_SCREEN` | yes | -- |
+| 18 | `WF_COLOR` | -- | -- |
+| 19 | `WF_DCOLOR` | -- | -- |
+| 20 | `WF_OWNER` | yes | -- |
+| 25 | `WF_BOTTOM` | yes | -- |
+
+## appl_getinfo subjects
+
+**16 subjects answered.**  From `ap_getinfo`'s `case` labels (`src/aes/appl.c`); a subject it does not know answers FALSE, as an AES should.  64 and up are gem4xe's own.
+
+| subject | name | |
+|---|---|---|
+| 0 | `AI_LARGEFONT` | answered |
+| 1 | `AI_SMALLFONT` | answered |
+| 2 | `AI_SYSTEM` | answered |
+| 3 | `AI_LANGUAGE` | answered |
+| 4 | `AI_PROCESS` | answered |
+| 5 | `AI_PCGEM` | answered |
+| 6 | `AI_INQUIRE` | answered |
+| 7 | `AI_WDIALOG` | answered |
+| 8 | `AI_MOUSE` | answered |
+| 9 | `AI_MENU` | answered |
+| 10 | `AI_SHELL` | answered |
+| 11 | `AI_WINDOW` | answered |
+| 12 | `AI_MESSAGE` | answered |
+| 13 | `AI_OBJECT` | answered |
+| 14 | `AI_FORM` | answered |
+| 64 | `AI_CPX` | answered |
+
+## objc_sysvar settings
+
+From `ob_sysvar`'s two switches (`src/aes/objc.c`).  100 and up are gem4xe's own.
+
+| which | name | inquire | set |
+|---|---|---|---|
+| 1 | `LK3DIND` | yes | yes |
+| 2 | `LK3DACT` | yes | yes |
+| 3 | `INDBUTCOL` | yes | yes |
+| 4 | `ACTBUTCOL` | yes | yes |
+| 5 | `BACKGRCOL` | yes | yes |
+| 6 | `AD3DVALUE` | yes | -- |
+| 100 | `G4_3DLOOK` | yes | yes |
+| 101 | `G4_DESKICON` | yes | yes |
+
+## GEMDOS functions
+
+**52 of the 54 EmuTOS implements, and 2 more.**  From the `case` labels of `gd_nopath` and `gemdos_call` (`src/sys/gemdos.c`), against the function table in EmuTOS's `bdos/bdosmain.c`.  There is no BIOS or XBIOS: a program reaches the machine through the VDI, the AES and GEMDOS only (`src/sys/abi.c`).
+
+| function | name | |
+|---|---|---|
+| 0x00 | `Pterm0` | served |
+| 0x01 | `Cconin` | served |
+| 0x02 | `Cconout` | served |
+| 0x03 | `Cauxin` | served |
+| 0x04 | `Cauxout` | served |
+| 0x05 | `Cprnout` | served |
+| 0x06 | `Crawio` | served |
+| 0x07 | `Crawcin` | served |
+| 0x08 | `Cnecin` | served |
+| 0x09 | `Cconws` | served |
+| 0x0A | `Cconrs` | served |
+| 0x0B | `Cconis` | served |
+| 0x0E | `Dsetdrv` | served |
+| 0x10 | `Cconos` | served |
+| 0x11 | `Cprnos` | served |
+| 0x12 | `Cauxis` | served |
+| 0x13 | `Cauxos` | served |
+| 0x14 | `Maddalt (EmuTOS's name)` | **not served** |
+| 0x15 | `Srealloc (EmuTOS's name)` | **not served** |
+| 0x19 | `Dgetdrv` | served |
+| 0x1A | `Fsetdta` | served |
+| 0x20 | `Super` | served |
+| 0x2A | `Tgetdate` | served |
+| 0x2B | `Tsetdate` | served |
+| 0x2C | `Tgettime` | served |
+| 0x2D | `Tsettime` | served |
+| 0x2F | `Fgetdta` | served |
+| 0x30 | `Sversion` | served |
+| 0x31 | `Ptermres` | served |
+| 0x36 | `Dfree` | served |
+| 0x39 | `Dcreate` | served |
+| 0x3A | `Ddelete` | served |
+| 0x3B | `Dsetpath` | served |
+| 0x3C | `Fcreate` | served |
+| 0x3D | `Fopen` | served |
+| 0x3E | `Fclose` | served |
+| 0x3F | `Fread` | served |
+| 0x40 | `Fwrite` | served |
+| 0x41 | `Fdelete` | served |
+| 0x42 | `Fseek` | served |
+| 0x43 | `Fattrib` | served |
+| 0x44 | `Mxalloc` | served |
+| 0x45 | `Fdup` | served |
+| 0x46 | `Fforce` | served |
+| 0x47 | `Dgetpath` | served |
+| 0x48 | `Malloc` | served |
+| 0x49 | `Mfree` | served |
+| 0x4A | `Mshrink` | served |
+| 0x4B | `Pexec` | served |
+| 0x4C | `Pterm` | served |
+| 0x4E | `Fsfirst` | served |
+| 0x4F | `Fsnext` | served |
+| 0x56 | `Frename` | served |
+| 0x57 | `Fdatime` | served |
+| 0x155 | `Tgettimeofday` | served -- **not in EmuTOS** |
+| 0x1F0 | `Psystem` | served -- **not in EmuTOS** |

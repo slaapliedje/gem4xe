@@ -165,8 +165,9 @@ time:
   types and ends, and the structs an ST resource or binding names --
   `CICONBLK`, `MENU`, `PARMBLK`, `USERBLK` -- each with a line in `gem.h`
   saying what this AES does with it, which is not always what the ST's
-  does (`G_CICON` draws its mono form; `G_USERDEF` draws nothing yet;
-  `menu_popup` is not served).
+  does (`G_USERDEF` draws nothing yet, for one).  `doc/served.md` lists
+  every opcode, window field and GEMDOS call the system answers, read
+  from its dispatchers.
 - **`evnt_multi` has the ST's shape**: twenty-three arguments, the two
   mouse rectangles flat.  `evnt_multi_moblk` is the same call with the
   rectangles as `MOBLK`s, for a program written here; the AES sees no
@@ -340,24 +341,25 @@ to far memory and hands the pool back what they took -- but only when
 keeps its bits in bank `$00` and costs its whole `rsh_rssize`.
 
 
-`rsrc_load` reads the whole `.RSC` into the application pool in one
-piece -- `rsh_rssize` bytes -- fixes it up in place, then moves any icon
-bitmaps to far memory and hands the pool back what they took -- when the
-image block is the last thing in the file, which is how RCS lays one out
-and not how every tool does; a file with tables above `rsh_imdata` keeps
-its bits in the pool and costs its whole `rsh_rssize`.  So a
-resource has to fit the pool beside everything else resident, and the
-`OBJECT` trees in it cannot go far: the AES reads them in place.  That is
-the limit a large ST program meets first; measure a resource's
-`rsh_rssize` against the pool before anything else.
+**Where it goes depends on how the program is built.**  A program built
+`DATAMODEL=large` holds 32-bit pointers, so `rsrc_load` puts its
+resource in **far memory**, whatever its size, and the application pool
+is not touched: that is how QED loads a 33 KB resource.  A small-data
+program's 16-bit pointers cannot reach far memory, so its `.RSC` is read
+into the pool in one piece -- `rsh_rssize` bytes -- and fixed up there;
+icon bitmaps then move far and the pool gets back what they took, when
+the image block is the last thing in the file (a file with tables above
+`rsh_imdata` keeps them, and costs its whole `rsh_rssize`).  So for a
+small-data program the resource has to fit the pool beside everything
+else resident.  Measure its `rsh_rssize` against the pool first, or build
+the program large.
 
-**New-format resources -- the ones with colour icons -- load.**  The
-extension past `rsh_rssize` is streamed to far memory and never sits in
-the pool; what comes back near is one 50-byte record per icon, the mono
-`ICONBLK` every `CICONBLK` begins with.  A `G_CICON` draws that mono
-form for now.  Its colour planes are kept far beside it, for the day the
-object library draws them: on this 16-colour surface that is the natural
-thing to do, and it is not done yet.
+**Colour icons load and are drawn.**  A new-format resource's colour
+icons are kept in far memory, each with a 56-byte record in the pool.  On
+the 16-colour screen a `G_CICON` is drawn in its 4-plane form, up to
+32 x 32, and in its own selected form when it has one; on the two-colour
+screen, and at any larger size, it draws its mono form.  Only the
+4-plane form is used: a resource's 8-plane forms are skipped.
 
 ## Your memory
 

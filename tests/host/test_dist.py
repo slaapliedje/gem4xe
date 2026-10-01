@@ -348,3 +348,17 @@ class TestDistribution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GuideIsCurrent(unittest.TestCase):
+    """docs/guide.md is the release page's template filled from what needs
+    no build (tools/mkdist.py guide), so the repository's user guide and
+    the download's README are one text.  Regenerated here, compared whole:
+    an edit to the template, the menu's items, a disk's or a file's
+    description that is not followed by `make guide` fails."""
+
+    def test_regenerated_equals_committed(self):
+        with open(os.path.join(ROOT, "docs", "guide.md")) as f:
+            have = f.read()
+        self.assertEqual(have, mkdist.guide(),
+                         "docs/guide.md is stale: run `make guide`")

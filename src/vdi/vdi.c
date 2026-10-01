@@ -2050,8 +2050,10 @@ static void vdi_vswr_mode(void)
 }
 
 /* vro_cpyfm -- opaque raster copy.  The AES uses this for icons and for the
- * menu/alert screen save-restore (bb_save / bb_restore), always in mode 3
- * (S_ONLY, replace), which is the only mode implemented here.
+ * menu/alert screen save-restore (bb_save / bb_restore) in mode 3 (S_ONLY,
+ * replace), and for a colour icon's image in mode 7 (S_OR_D, phase 86).
+ * Those two are what is implemented; the other fourteen modes copy as a
+ * replace.
  *
  * FORMS.  Each MFDB names a raster form: fd_addr 0 is the screen (the VDI's
  * own convention), anything else is a VRAM address whose rows are

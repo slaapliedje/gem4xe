@@ -9,7 +9,7 @@
  *                        so every primitive compiles a BLIT LIST and the
  *                        CPU touches pixels only where the blitter
  *                        genuinely cannot help;
- *   src/vdi/dev_antic.c  320x168, 1bpp, plain motherboard RAM the
+ *   src/vdi/dev_antic.c  320x192, 1bpp, plain motherboard RAM the
  *                        accelerator writes at full speed, so every
  *                        primitive writes BYTES and there is nothing to
  *                        flush.

@@ -365,11 +365,12 @@ def main(argv):
         # value Getrez can answer names an Atari screen -- 0/1/2 the ST's,
         # 4/6/7 the TT's -- and gem4xe's are the VBXE's own (512, 640 or
         # 672 across).  The fact a caller wants is the next word: sixteen
-        # colours on this device.  Then no colour icons (G_CICON draws its
-        # mono form) and yes to the extended resource format.
+        # colours on this device.  Then colour icons, which this
+        # sixteen-colour screen draws in colour (phase 86; the answer said
+        # 0 until phase 91), and yes to the extended resource format.
         print(f"  appl_getinfo(AES_SYSTEM) -> {sysw}")
-        check(sysw == [1, -1, 16, 0, 1],
-              f"appl_getinfo(AES_SYSTEM) answered {sysw}, not [1, -1, 16, 0, 1] "
+        check(sysw == [1, -1, 16, 1, 1],
+              f"appl_getinfo(AES_SYSTEM) answered {sysw}, not [1, -1, 16, 1, 1] "
               f"-- -1 is 'not a screen Getrez names', and 16 is this device's "
               f"real colour count")
         # The language: this disk carries no LANG.RSC, so the built-in

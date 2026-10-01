@@ -110,7 +110,7 @@ class Opcodes(unittest.TestCase):
 
 
 class ServedReference(unittest.TestCase):
-    """tools/sdk/served.md, which the kit ships so a porter can ask "will
+    """docs/api.md, which the kit ships as doc/served.md so a porter can ask "will
     menu_popup work" without reading 1,255 lines of header.
 
     It is GENERATED and COMMITTED, because the AES half of it needs
@@ -123,13 +123,14 @@ class ServedReference(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        path = os.path.join(ROOT, "tools", "sdk", "served.md")
+        path = os.path.join(ROOT, "docs", "api.md")
         if not os.path.exists(path):
-            raise unittest.SkipTest("tools/sdk/served.md not generated "
+            raise unittest.SkipTest("docs/api.md not generated "
                                     "(make served)")
         with open(path, errors="replace") as f:
             cls.doc = f.read()
-        cls.vdi = cls.doc[cls.doc.index("## VDI"):]
+        k = cls.doc.index("## VDI")
+        cls.vdi = cls.doc[k:cls.doc.find("\n## ", k + 1)]
 
     def test_every_vdi_opcode_the_dispatcher_has_is_in_it(self):
         rows = {int(m.group(1)) for m in
@@ -162,3 +163,30 @@ class ServedReference(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ApiIsCurrent(unittest.TestCase):
+    """docs/api.md is what tools/opcodes.py writes TODAY: every table in
+    it -- AES, VDI, window fields, appl_getinfo, objc_sysvar, GEMDOS --
+    regenerated from the C and compared whole.  The AES names come from
+    EmuTOS, so without a donor tree this is skipped and the VDI half above
+    still runs.  It fails the day a case is added or taken away and the
+    page is not rewritten: `make served` puts it right."""
+
+    def test_regenerated_equals_committed(self):
+        import tempfile
+        if not os.path.isdir(os.path.expanduser("~/dev/emutos/include")):
+            raise unittest.SkipTest("no EmuTOS tree for the AES's names")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "api.md")
+            r = subprocess.run([sys.executable,
+                                os.path.join(ROOT, "tools", "opcodes.py"),
+                                "--md", out], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            with open(out) as f:
+                fresh = f.read()
+        with open(os.path.join(ROOT, "docs", "api.md")) as f:
+            have = f.read()
+        self.assertEqual(have, fresh,
+                         "docs/api.md is not what the dispatchers say now: "
+                         "run `make served`")

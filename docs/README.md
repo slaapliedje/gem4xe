@@ -8,6 +8,11 @@ are how it got there.
 
 Read in order if you want the argument; jump if you want an answer.
 
+**The guides**, which say what is true now rather than how it came to
+be: [how to try it](guide.md), [developing](developing.md), [what the
+system serves](api.md), [where it differs from an ST](differences.md), and
+[every gate and the history](gates.md).
+
 ## The phases
 
 | | |
@@ -109,6 +114,7 @@ Read in order if you want the argument; jump if you want an answer.
 | [phase88.md](phase88.md) | **The 3D look on the windows.** Behind phase 85's switch: TOS 4's frame from EmuTOS -- raised closer, fuller, sizer, arrows and elevators, set in two pixels, all drawn on an untopped window too, a bar only where it has a gadget -- on grey grounds (gem4xe's choice; a stock Falcon's are white). Gadgets stay pressed in while held. Switching the look with windows open keeps each frame and sends its owner a WM_SIZED, so the desktop lays its icons out again. `make test-m8` [14] and [15], each made to fail first. |
 | [phase89.md](phase89.md) | **gem4xe's own colour icons, kept between programs.** A 5.25" diskette, a CF card, a cartridge, a folder, a page and a bin, drawn for the 640x240 screen's tall pixels in tools/a8icons.py and shipped as DESKICON.RSC (a Falcon's copied over it still works). The first desktop after a boot loads it; the AES keeps the copy (objc_sysvar G4_DESKICON, far_keep) and every later desktop takes it. A selected colour icon's label in a window was white on white, in the target and the model both. `test-boot`, `test-m18`, `test-m4`, tests/host/test_a8icons.py. |
 | [phase90.md](phase90.md) | **DESKTOP.INF beside GEM4XE.CFG.** The layout moves from the boot drive's root to the folder GEM.COM was started from (`\GEM\` on the product media), or wherever GEM4XE.CFG's new DESKINF= says; an older root layout is read once and saved in the new place. GEMDOS now hands a bare name to the DOS's current directory until a program sets one, as the AES already did for resources. `make test-m19` saves through a DESKINF line. |
+| [phase91.md](phase91.md) | **The documentation, and keeping it true.** Guides in `docs/` -- how to try it (the release page's own text), developing, what the system serves, where it differs from an ST and EmuTOS, the gates -- and a front page that points at them. What can be generated is, and a test regenerates it; what cannot names only what exists, and a test checks that. Writing them found five stale statements, among them `appl_getinfo` denying colour icons it draws and a screen size two phases out of date. |
 
 | [rapidus-cache.md](rapidus-cache.md) | **The question a gate here cannot answer.** The Rapidus's 4 KB cache is on its SDRAM only -- banks `$08`-`$EF` -- and bank `$00` and the SRAM banks `$01`-`$07` are not behind it, so `blkmove.s`'s self-modified MVN stub is safe where it sits. Altirra mentions the cache in exactly one comment and models none of it, so any test of coherence written here would be green whatever the hardware does. The larger finding: gem4xe writes a program's relocated code into the far heap and jumps to it, the heap reaches `$074DB8` with the desktop alone, and SDRAM starts 45,640 bytes later -- so a big application's code is already write-then-executed in cached memory, and only the real board can say whether that is safe. Two experiments for it, and the `$FF0082` D7 escape hatch. `test-boot` prints the headroom now. |
 
