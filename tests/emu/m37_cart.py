@@ -448,13 +448,20 @@ def small_machines():
     b = emu.bridge
     try:
         fm = syms["farmem"]
-        for _ in range(400):                    # until farmem_probe has run
-            b.frames(10)
-            if b.peek(fm + 3):
-                break
+        waited = 0
+        for _ in range(1200):                   # until farmem_probe has run:
+            b.frames(10)                        # near 4,000 frames on this
+            waited += 10                        # 1.79 MHz machine since phase
+            if b.peek(fm + 3):                  # 81, past the 4,000 this
+                break                           # waited for until then
+        runs0, banks0 = b.peek16(syms["sh_runs"]), b.peek(fm + 3)
+        print(f"    the far probe ran by frame {waited}: {banks0} banks, "
+              f"the shell has run {runs0} program(s)")
         first = b.peek(fm + 1)
-        check(b.peek16(syms["sh_runs"]) == 0 and b.peek(fm + 3),
-              "m37small: the probe had not run, or the shell already had")
+        check(runs0 == 0 and banks0,
+              f"m37small: at frame {waited} the probe had found {banks0} "
+              f"banks and the shell had run {runs0} -- the poke needs 0 runs "
+              f"and a probe that has run (a flake seen twice on 2026-09-30)")
         # two banks: since phase 80 the whole boot fits in three
         b.poke(fm + 2, first + 1)               # last_bank
         b.poke(fm + 3, 2)                       # banks
