@@ -57,6 +57,7 @@ ADJ3DSTD = 2
 SV_INQUIRE, SV_SET = 0, 1
 LK3DIND, LK3DACT, INDBUTCOL, ACTBUTCOL, BACKGRCOL, AD3DVALUE = 1, 2, 3, 4, 5, 6
 G4_3DLOOK = 100
+G4_DESKICON = 101          # the desktop's kept colour icons (objc.c)
 COMP16 = (BLACK, WHITE, 13, 15, 14, 10, 12, 11, LBLACK, LWHITE, 5, 7, 6, 2, 4, 3)
 IP_HOLLOW, IP_4PATT, IP_SOLID = 0, 4, 7
 IBM, SMALL = 3, 5
@@ -937,7 +938,7 @@ class AES:
         """graf.c gsx_cblt: w x h chunky pixels at `addr`, ORed over the
         screen through vro_cpyfm (S_OR_D).  The image is put where the
         target has it, in the bank-$00 memory the device model reads."""
-        self.v.dev.cpu[addr:addr + len(image)] = image
+        self.v.dev.put_cpu(addr, image)
         self.gsx_moff()
         src = vdiref.VramForm(addr, w, h, w // 16, 4)
         self.vcall(VRO_CPYFM, (0, 0, w - 1, h - 1, dx, dy, dx + w - 1, dy + h - 1),
@@ -1118,6 +1119,8 @@ class AES:
 
     # -- the 3D look (src/aes/objc.c) ------------------------------------
     gl_3d = 0
+    gl_dicon = 0        # the kept icon block (G4_DESKICON), 0 for none
+    dicon_kinds = None  # ...and what deskref put in it, for the next desktop
     indtxtmove, indcolchange, acttxtmove, actcolchange = 0, 1, 1, 0
 
     def ob_3dinit(self):
@@ -1165,6 +1168,18 @@ class AES:
         """-> (ret, out1, out2), objc.c's ob_sysvar."""
         ncol = 1 << self.gl_nplanes
         if mode == SV_SET:
+            if which == G4_DESKICON:
+                # the desktop's icons kept (objc.c): a Malloc block, made
+                # the system's; one kept before it given back
+                addr = ((in1 & 0xFFFF) << 16) | (in2 & 0xFFFF)
+                if addr == self.gl_dicon:
+                    return 1, 0, 0
+                if addr and not self.dos_brk.keep(addr - 4):
+                    return 0, 0, 0
+                if self.gl_dicon:
+                    self.dos_brk.free(self.gl_dicon - 4)
+                self.gl_dicon = addr
+                return 1, 0, 0
             if which == G4_3DLOOK:
                 if self.gl_3d != (1 if in1 else 0):
                     self.gl_3d = 1 if in1 else 0
@@ -1188,6 +1203,8 @@ class AES:
         if mode != SV_INQUIRE:
             return 0, 0, 0
         d = self.gl_3d
+        if which == G4_DESKICON:
+            return 1, (self.gl_dicon >> 16) & 0xFFFF, self.gl_dicon & 0xFFFF
         if which == G4_3DLOOK:
             return 1, d, 0
         if which == LK3DIND:
@@ -1312,12 +1329,14 @@ class AES:
             pi = Rect(ib.icon.x + t.x, ib.icon.y + t.y, ib.icon.w, ib.icon.h)
             pl = Rect(ib.text.x + t.x, ib.text.y + t.y, ib.text.w, ib.text.h)
             label = self.mem[ib.ptext].s
+            # the label's ground is its own question: a selected colour
+            # icon's label swaps its colours, so its ground is fg
+            lbg = fg if (col and (state & SELECTED)) else bg
             if not ((state & WHITEBAK) and bg == WHITE):
                 self.gsx_blt(mask, 0, 0, pi.x, pi.y, pi.w, pi.h,
                              MD_TRANS, bg, fg)
-                if label:
-                    self.gr_rect(fg if (col and (state & SELECTED)) else bg,
-                                 IP_SOLID, pl)
+            if label and not ((state & WHITEBAK) and lbg == WHITE):
+                self.gr_rect(lbg, IP_SOLID, pl)
             if col:
                 self.gsx_cblt(blob[:nimg], col, pi.x, pi.y, pi.w, pi.h)
                 if state & SELECTED:

@@ -108,7 +108,8 @@ class RIconblk(_Item):
 class RCicon(_Item):
     """A CICONBLK: an ICONBLK's worth of geometry, the mono mask and bits
     (raw rows, not image items -- they live in the extension), a text of
-    up to eleven characters, and colour forms as (planes, data, mask)."""
+    up to twelve characters, and colour forms as (planes, data, mask) or
+    (planes, data, mask, selected data, selected mask)."""
     def __init__(self, mask, data, text, char, xchar, ychar, xicon, yicon,
                  wicon, hicon, xtext, ytext, wtext, htext, forms):
         (self.mask, self.data, self.text, self.char, self.xchar, self.ychar,
@@ -124,8 +125,9 @@ class RCicon(_Item):
     @property
     def size(self):                     # the whole CICONBLK on disk
         return (CICON_HDR + 2 * self.mono + CICON_TEXT
-                + sum(CICON_FORM + self.mono * planes + self.mono
-                      for planes, _, _ in self.forms))
+                + sum((CICON_FORM + self.mono * f[0] + self.mono)
+                      + (self.mono * f[0] + self.mono if len(f) > 3 else 0)
+                      for f in self.forms))
 
 
 class RTed(_Item):
@@ -290,12 +292,18 @@ class Rsc:
         """A colour icon.  Its index is what a G_CICON object's spec holds
         in the file; the loader makes that the address of the near record.
         `forms`: (planes, data, mask) triples, data being planes * mono
-        bytes, mask one plane's worth."""
+        bytes, mask one plane's worth -- or, with a SELECTED form,
+        (planes, data, mask, selected data, selected mask).  Twelve
+        characters of text is the most, and has no 0 after it in the
+        file, as the Falcon's are written."""
         mono = (wicon // 8) * hicon
         assert len(mask) == len(data) == mono, (len(mask), len(data), mono)
-        assert len(text) < CICON_TEXT, text
-        for planes, d, m in forms:
+        assert len(text) <= CICON_TEXT, text
+        for f in forms:
+            planes, d, m = f[:3]
             assert len(d) == planes * mono and len(m) == mono, (planes, len(d), len(m))
+            if len(f) > 3:
+                assert len(f[3]) == planes * mono and len(f[4]) == mono, (planes, len(f[3]), len(f[4]))
         it = RCicon(mask, data, text, char, xchar, ychar, xicon, yicon,
                     wicon, hicon, xtext, ytext, wtext, htext, forms)
         self.cicons.append(it)
@@ -486,15 +494,16 @@ class Rsc:
                 p += it.mono
                 out[p:p + CICON_TEXT] = it.text.encode("latin-1").ljust(CICON_TEXT, b"\0")
                 p += CICON_TEXT
-                for k, (planes, d, m) in enumerate(it.forms):
-                    more = 1 if k + 1 < len(it.forms) else 0
+                for k, f in enumerate(it.forms):
+                    planes, d, m = f[:3]
+                    sel = 1 if len(f) > 3 else 0        # a pointer the loader
+                    more = 1 if k + 1 < len(it.forms) else 0    # tests for 0
                     out[p:p + CICON_FORM] = struct.pack(
-                        e + "hIIIII", planes, 0, 0, 0, 0, more)
+                        e + "hIIIII", planes, 0, 0, sel, sel, more)
                     p += CICON_FORM
-                    out[p:p + len(d)] = d
-                    p += len(d)
-                    out[p:p + len(m)] = m
-                    p += len(m)
+                    for blob in f[1:]:          # image, mask, and the
+                        out[p:p + len(blob)] = blob     # selected pair
+                        p += len(blob)
                 assert p == it.off + it.size, (p, it.off, it.size)
         return bytes(out)
 
@@ -563,14 +572,19 @@ class Rsc:
             data = cibase + (it.off + CICON_HDR - self.size)
             mask = data + it.mono
             # the first 4-plane form, if the icon is small enough to be
-            # drawn in colour: its image, past the form's header (and no
-            # selected form: this model writes none)
-            col4 = 0
+            # drawn in colour: its image, past the form's header, and its
+            # selected image after the image's mask, if it has one
+            col4 = sel4 = 0
             fo = it.off + CICON_HDR + 2 * it.mono + CICON_TEXT
-            for planes, _, _ in it.forms:
+            for f in it.forms:
+                planes = f[0]
                 if planes == 4 and not col4 and it.mono <= CICON_BYTES:
                     col4 = cibase + (fo + CICON_FORM - self.size)
+                    if len(f) > 3:
+                        sel4 = col4 + 5 * it.mono
                 fo += CICON_FORM + it.mono * planes + it.mono
+                if len(f) > 3:
+                    fo += it.mono * planes + it.mono
             ib = Iconblk(mask, data, a + ICONBLK_SIZE, it.char, it.xchar, it.ychar,
                          Rect(it.xicon, it.yicon, it.wicon, it.hicon),
                          Rect(it.xtext, it.ytext, it.wtext, it.htext))
@@ -580,7 +594,7 @@ class Rsc:
             mem[mask] = it.mask
             near += ib.pack()
             near += it.text.encode("latin-1").ljust(CICON_NTEXT, b"\0")
-            near += struct.pack("<II", col4, 0)
+            near += struct.pack("<II", col4, sel4)
         self.ci_near = (hb, bytes(near))
         objs = []
         for o in self.objects:

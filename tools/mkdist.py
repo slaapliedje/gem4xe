@@ -138,6 +138,7 @@ SYSTEM = [
     ("desktop.g4a", "DESKTOP.PRG"),
     ("desktop.rsc", "DESKTOP.RSC"),
     ("prefs.rsc", "PREFS.RSC"),
+    ("deskicon.rsc", "DESKICON.RSC"),
     ("lang.rsc", "LANG.RSC"),
     ("816.com", "816.COM"),
     ("gem4xe.cfg", "GEM4XE.CFG"),
@@ -167,6 +168,8 @@ WHAT_IT_IS = {
     "DESKTOP.PRG": "the desktop, which is an application like any other",
     "DESKTOP.RSC": "its resource -- the menu, the dialogs, the icons",
     "PREFS.RSC": "the Set preferences chooser, loaded only while it is open",
+    "DESKICON.RSC": "the desktop's colour icons; a Falcon's own copied over "
+                    "it works too",
     "LANG.RSC": "what the system says, so a translation is a file",
     "816.COM": "puts a Rapidus into 65C816 mode by hand, if the loader "
                "somehow does not",

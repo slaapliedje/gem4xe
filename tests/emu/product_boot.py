@@ -91,7 +91,7 @@ from m4_aes import PRELUDE, SHOTDIR         # noqa: E402
 from m7_form import F                       # noqa: E402
 from m14_sparta import screen               # noqa: E402
 from langrsc import STRINGS as LANG, BOOT_LABEL  # noqa: E402  the boot screen's words
-from m17_desktop import (header, listing, menu, rsc_imlen,  # noqa: E402
+from m17_desktop import (header, listing, menu, rsc_imlen, deskicon_for,  # noqa: E402
                          desk_places,
                          DESKTOP, DESK_RSC, DESK_SYM, SHOT)
 
@@ -158,7 +158,7 @@ def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False):
         return [F(3), SHOT, *menu(d, FILEMENU, QUITITEM, False)[1:]]
 
     d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
-                g_link, drvmap, [first_wait], **pl)
+                g_link, drvmap, [first_wait], deskicon=deskicon_for(dirs), **pl)
     a.psystem = psystem                 # the DOS's command processor, or not
     d.main()
     return v, a, d

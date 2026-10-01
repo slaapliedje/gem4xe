@@ -231,6 +231,18 @@ def desk_places(heap):
                 dos_brk=h)
 
 
+def deskicon_for(dirs):
+    """DESKICON.RSC's bytes when the listing has one beside DESKTOP.RSC --
+    where the desktop's rsrc_load finds it (desktop.c, desk_cicons) --
+    and None when it does not.  The disks carry the build's own file."""
+    for ents in dirs.values():
+        names = {e[0].upper() for e in ents}
+        if "DESKTOP.RSC" in names and "DESKICON.RSC" in names:
+            with open(os.path.join(ROOT, "build", "deskicon.rsc"), "rb") as f:
+                return f.read()
+    return None
+
+
 def listing(disk):
     """The image's directories as the target's Fsfirst/Fsnext report
     them (src/sys/gemdos.c gd_next over SDX's raw entries): {path: [(name,

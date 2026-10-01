@@ -60,8 +60,13 @@ from m11_abi import app_calls, UNRECORDED_AES   # noqa: E402
 from m12_file import Runner                 # noqa: E402
 from m13_alert import ALLOC                 # noqa: E402
 from m14_sparta import DISK as M14_DISK, boot, screen   # noqa: E402
+# test-m17's disk with DESKICON.RSC on it: the first desktop loads the
+# colour icons and the AES keeps them; the second takes them as they are
+# (desktop.c desk_cicons, phase 89)
+DISK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                    "build", "m18-boot.atr")
 from m16_shell import SHELL, poll           # noqa: E402
-from m17_desktop import (DISK, DESKTOP, DESK_RSC, rsc_imlen, desk_places,  # noqa: E402
+from m17_desktop import (DESKTOP, DESK_RSC, rsc_imlen, desk_places, deskicon_for,  # noqa: E402
                          DESK_SYM, SYMS, SHOT, PROBE, DRVBYT,
                          GCLICK, header, listing, menu)
 from demo_aes import path                   # noqa: E402
@@ -168,19 +173,24 @@ def model(mark, brk, pointer, drvmap):
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
 
+    icons = deskicon_for(a.dos_dirs)
     model_desk(v, a)
     a.dos_brk = copy.deepcopy(arena)
     d1 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_before(memo), **pl)
+                 inputs_before(memo), deskicon=icons, **pl)
     d1.main()
+    # what outlives the desktop: the colour icons it handed the AES, the
+    # system's now (far_keep), and so in every heap after this one
+    kept = [blk for blk in a.dos_brk.blocks if blk[2] == 0 and blk not in arena.blocks]
     # M11.PRG: counted, not replayed
     m11 = program_calls(a)
     model_desk(v, a)
     a.dos_brk = copy.deepcopy(arena)
+    a.dos_brk.blocks = sorted(a.dos_brk.blocks + kept)
     d2 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_after(memo), **pl)
+                 inputs_after(memo), deskicon=icons, **pl)
     d2.main()
-    return v, a, want, d1, d2, memo, m11
+    return v, a, want, d1, d2, memo, m11, kept
 
 
 def main(argv):
@@ -253,7 +263,10 @@ def main(argv):
               f"DOS kind {kind}, drive map {drvmap:#04x}")
 
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))
-        ref_v, ref_a, want, d1, d2, memo, m11 = model(mark, brk, pointer, drvmap)
+        ref_v, ref_a, want, d1, d2, memo, m11, kept = model(mark, brk, pointer, drvmap)
+        check(bool(kept) and d1.g_cicon and d2.g_cicon == d1.g_cicon,
+              f"the colour icons: kept {kept}, the desktops' g_cicon "
+              f"${d1.g_cicon:06X} and ${d2.g_cicon:06X}")
         check(d1.G == d2.G, f"the desktops' G differ: ${d1.G:04X}, ${d2.G:04X}")
         print(f"  the model's desktop: {len(d1.script)} calls, waits at {d1.waits}, "
               f"near ${d1.near:04X}, G ${d1.G:04X}, arena ${d1.dta:06X}; "
@@ -519,7 +532,7 @@ def main(argv):
         print(f"after:  pool ${mark2:04X}, {room2} free; far heap {heap_text(brk2)}")
         check((mark2, room2) == (mark, room),
               f"the pool after: mark ${mark2:04X}, {room2} free; was ${mark:04X}, {room}")
-        diff = heap_then(brk, brk2, desk_len)
+        diff = heap_then(brk, brk2, desk_len, kept)
         check(diff is None, f"the far heap after the desktop: {diff}")
         lw = low_water(b)
         used, size = stk_hi + 1 - lw, stk_hi - stk_lo + 1

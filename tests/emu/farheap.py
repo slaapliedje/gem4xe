@@ -20,7 +20,7 @@ def far_heap(b, syms):
     return farref.Heap.from_table(fm[1], fm[2], ents)
 
 
-def heap_then(before, after, desk_len):
+def heap_then(before, after, desk_len, kept=()):
     """None if `after` is `before` with the desktop's file added -- what
     a desktop run leaves: the shell keeps the file, and everything the
     desktop took is freed with its owner (src/sys/app.c app_free) -- or
@@ -28,6 +28,8 @@ def heap_then(before, after, desk_len):
     number."""
     want = copy.deepcopy(before)
     want.read_file(desk_len)
+    # and what the AES kept of the desktop's (G4_DESKICON): the system's
+    want.blocks = sorted(want.blocks + list(kept))
     # lengths as the allocator counts them, to the next four: the file's
     # block is its exact length, which a gate may have rounded
     w = [(a, farref.up4(n)) for a, n, _ in want.blocks]

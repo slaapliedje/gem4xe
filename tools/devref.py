@@ -102,6 +102,10 @@ class Vbxe:
         self.sv = None                  # (bx, y, nb, nr, bytes) under the cursor
         # the program's bank $00: where a form that is not in VRAM lives
         self.cpu = bytearray(0x10000)
+        # ...and the banks above it, each made when a form is first put
+        # there: the desktop's colour icons are in far memory (phase 89),
+        # and a far block never crosses a bank (src/sys/farmem.c)
+        self.far = {}
         self.clear()
 
     # -- colours ---------------------------------------------------------
@@ -246,7 +250,15 @@ class Vbxe:
         the program's bank $00 when it is not."""
         if a & self.TAG:
             return self.s.mem, a & ~self.TAG
+        if a >= 0x10000:
+            return self.far.setdefault(a >> 16, bytearray(0x10000)), a & 0xFFFF
         return self.cpu, a
+
+    def put_cpu(self, a, data):
+        """Bytes into the program's memory, near or far, where a form at
+        `a` will be read from."""
+        m, o = self._space(a)
+        m[o:o + len(data)] = data
 
     def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
         """A rectangle moved between forms, in PIXELS, already clipped.

@@ -455,6 +455,22 @@ uint16_t far_free(uint32_t addr)
     return 1;
 }
 
+/* The block at addr becomes the system's: its owner's exit leaves it,
+ * and only far_free gives it back.  The desktop's colour icons, kept
+ * across its restarts (objc_sysvar G4_DESKICON, phase 89). */
+uint16_t far_keep(uint32_t addr)
+{
+    uint16_t i = fb_find(addr);
+    uint32_t at;
+
+    if (i == 0xFFFF || i == 0)
+        return 0;
+    at = FB(i).at;
+    at &= FB_ADDR;
+    FB(i).at = at;
+    return 1;
+}
+
 void far_free_owner(uint8_t owner)
 {
     uint16_t i = 1;

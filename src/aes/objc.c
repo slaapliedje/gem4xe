@@ -18,6 +18,7 @@
 #include "../vdi/vdi.h"
 #include "../sys/zwin.h"
 #include "../sys/farmem.h"      /* far_get/far_strget/far_strput, below */
+#include "../sys/gemdos.h"      /* gd_keep, for G4_DESKICON */
 
 /* GEM's scratch strings for formatting and editing a field (the D structure
  * in the donor).  A field longer than MAX_LEN-1 is out of contract. */
@@ -385,6 +386,9 @@ void ob_format(WORD just, char *raw, const char *tmpl, char *fmt)
  * colour does not.  The ground is light grey where there are more than
  * eight pens, white on the two-colour ANTIC screen. */
 WORD gl_3d;
+/* The desktop's kept colour icons (G4_DESKICON), 0 for none: direct page,
+ * because LoRAM is at its reserve. */
+static TINY uint32_t gl_dicon;
 /* The grounds, by the 3D kind's two bits (flags >> 9): 1 an indicator's,
  * 2 an activator's, 3 a background's.  A TABLE, read by index, because
  * cc65816 5.18.2 gets a value chosen in branches wrong in just_draw: at
@@ -705,7 +709,7 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
             CICON_NEAR cn;
             ICONBLK *ib = &cn.ib;
             GRECT pi, pl;
-            WORD fg, bg, ch;
+            WORD fg, bg, ch, lbg;
             const char FAR *label;
             uint32_t col = 0, mask;
 
@@ -738,17 +742,18 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
             r_set(&pl, (WORD)(ib->ib_xtext + t.g_x), (WORD)(ib->ib_ytext + t.g_y),
                   ib->ib_wtext, ib->ib_htext);
 
-            /* WHITEBAK over a white background leaves what is there */
-            if (!((state & WHITEBAK) && bg == WHITE)) {
+            /* WHITEBAK over a white background leaves what is there.
+             * The LABEL's ground is asked about on its own: a selected
+             * colour icon's label is drawn in the swapped colours (below),
+             * so its ground is fg -- black on a white window, which the
+             * test on bg alone skipped, and the label went white on white
+             * (phase 89). */
+            lbg = (col && (state & SELECTED)) ? fg : bg;
+            if (!((state & WHITEBAK) && bg == WHITE))
                 gsx_blt(mask, 0, 0, pi.g_x, pi.g_y, pi.g_w, pi.g_h,
                         MD_TRANS, bg, fg);
-                if (label && *label) {
-                    if (col && (state & SELECTED))
-                        gr_rect(fg, IP_SOLID, &pl);
-                    else
-                        gr_rect(bg, IP_SOLID, &pl);
-                }
-            }
+            if (label && *label && !((state & WHITEBAK) && lbg == WHITE))
+                gr_rect(lbg, IP_SOLID, &pl);
             if (col) {
                 gsx_cblt(col, pi.g_x, pi.g_y, pi.g_w, pi.g_h);
                 if (state & SELECTED) {         /* the label's colours */
@@ -1337,6 +1342,22 @@ WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
 
     if (mode == SV_SET) {
         switch (which) {
+        case G4_DESKICON: {
+            /* The desktop's icons, copied out of DESKICON.RSC into a block
+             * of its own: kept, so the next desktop -- after every program
+             * -- takes them as they are instead of reading the file again.
+             * The block becomes the system's (gd_keep); one kept before
+             * it is given back. */
+            uint32_t a = ((uint32_t)(UWORD)in1 << 16) | (UWORD)in2;
+            if (a == gl_dicon)
+                return 1;
+            if (a && !gd_keep((int32_t)a))
+                return 0;               /* not a Malloc block: refused */
+            if (gl_dicon)
+                gd_unkeep((int32_t)gl_dicon);
+            gl_dicon = a;
+            return 1;
+        }
         case G4_3DLOOK:
             if (gl_3d != (WORD)(in1 != 0)) {
                 gl_3d = (WORD)(in1 != 0);
@@ -1368,6 +1389,10 @@ WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
         return 0;
     *out1 = *out2 = 0;
     switch (which) {
+    case G4_DESKICON:
+        *out1 = (WORD)(UWORD)(gl_dicon >> 16);
+        *out2 = (WORD)(UWORD)gl_dicon;
+        return 1;
     case G4_3DLOOK:
         *out1 = gl_3d;
         break;

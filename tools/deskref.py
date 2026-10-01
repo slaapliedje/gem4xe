@@ -35,14 +35,16 @@ registered at their G addresses, so the model's Fsfirst, wind_set and
 icon drawer read what the target's would.
 """
 import os
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import aesref                               # noqa: E402
 import vdiref                               # noqa: E402
 import deskrsc                              # noqa: E402
-from aesref import (Obj, Text, Iconblk, Rect,  # noqa: E402
-                    G_BOX, G_IBOX, G_ICON, G_STRING, NONE, NORMAL, SELECTED, WHITEBAK,
+from aesref import (Obj, Text, Iconblk, CiconNear, Rect, chunky,  # noqa: E402
+                    SV_INQUIRE, SV_SET, G4_DESKICON,
+                    G_BOX, G_IBOX, G_ICON, G_CICON, G_STRING, NONE, NORMAL, SELECTED, WHITEBAK,
                     NIL, ROOT, MAX_DEPTH, ARROW, HOURGLASS, M_OFF, M_ON,
                     DISABLED, EDITABLE, FA_RDONLY, FRENAME, FATTRIB,
                     BEG_UPDATE, END_UPDATE, MU_KEYBD, MU_BUTTON, MU_MESAG,
@@ -346,6 +348,87 @@ class NeedsInput(Exception):
     """The desktop is in a wait the gate gave no input for."""
 
 
+# ---- DESKICON.RSC (desktop.c, desk_cicons; phase 87, kept since 89) -------
+OBJC_SYSVAR = 1048
+N_IB = 6
+CI_NAMES = ("HARDDISK", "FLOPPYDISK", "TRASHCAN", "FOLDER", "PROGRAMFILE",
+            "TEXTFILE")
+CI_BYTES = 128                          # one plane of a 32 x 32 form
+DCICON_SIZE = 56                        # desk.h DCICON: ICONBLK, text, col4, sel4
+CI_SIZE = DCICON_SIZE + 2 * CI_BYTES + 2 * 5 * CI_BYTES
+
+
+class Dcicon:
+    """One icon of a DESKICON.RSC as the desktop copies it: the ICONBLK's
+    fields, the mono bits and mask, and the 4-plane image and selected
+    image (ST plane order, as in the file) with their masks."""
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def deskicon_kinds(data):
+    """The six kinds desk_cicons takes from a DESKICON.RSC, by its walk:
+    tree 0's children in order, the first G_CICON of each kind by label
+    (spaces dropped, upper case), with a 32 x 32 4-plane form.  None for a
+    kind the file does not have.  Parsed as src/aes/rsrc.c rs_cicons
+    steps the file, so a Falcon's works the same as gem4xe's own."""
+    be16 = lambda o: struct.unpack(">H", data[o:o + 2])[0]
+    be32 = lambda o: struct.unpack(">I", data[o:o + 4])[0]
+    size = be16(34)
+    tab = be32(size + 4)
+    icons, at = [], tab
+    while be32(at) != 0xFFFFFFFF:
+        at += 4
+    n = (at - tab) // 4
+    at += 4
+    for _ in range(n):
+        ib = data[at:at + 34]
+        (char, xchar, ychar, xi, yi, wi, hi, xt, yt, wt, ht) = struct.unpack(">11h", ib[12:34])
+        num = be32(at + 34)
+        b = (wi // 16) * hi * 2
+        at += 38
+        mono, mask = data[at:at + b], data[at + b:at + 2 * b]
+        at += 2 * b
+        text = data[at:at + 12].split(b"\0")[0].decode("latin-1")
+        at += 12
+        col = sel = None
+        for _ in range(num):
+            planes = be16(at)
+            has_sel = be32(at + 10)
+            img = at + 22
+            if planes == 4 and col is None and b <= CI_BYTES:
+                col = (data[img:img + 4 * b], data[img + 4 * b:img + 5 * b])
+                if has_sel:
+                    s0 = img + 5 * b
+                    sel = (data[s0:s0 + 4 * b], data[s0 + 4 * b:s0 + 5 * b])
+            at = img + b * planes + b
+            if has_sel:
+                at += b * planes + b
+        icons.append(Dcicon(char=char & 0xFFFF, xchar=xchar, ychar=ychar,
+                            icon=Rect(xi, yi, wi, hi), text=Rect(xt, yt, wt, ht),
+                            label=text, mono=mono, mask=mask, col=col, sel=sel))
+    # tree 0's children: the objects whose type is G_CICON name an icon
+    trindex = be16(18)
+    obj0 = be32(trindex)
+    head = be16(obj0 + 2)
+    kinds = [None] * N_IB
+    order = []
+    o = head
+    while o not in (0xFFFF, 0) and o < 0x8000:
+        oa = obj0 + 24 * o
+        if (be16(oa + 6) & 0xFF) == G_CICON:
+            order.append(icons[be32(oa + 12)])
+        o = be16(oa)
+    for k, want in enumerate(CI_NAMES):
+        for ic in order:
+            name = "".join(ch for ch in ic.label.upper() if ch != " ")
+            if (ic.col and ic.icon.w == 32 and ic.icon.h == 32
+                    and name == want):
+                kinds[k] = ic
+                break
+    return kinds
+
+
 class Desktop:
     """desktop.c against the model.  `inputs` is a list of step producers,
     one per wait that blocks for input (evnt_multi with MU_BUTTON with
@@ -356,8 +439,12 @@ class Desktop:
 
     def __init__(self, v, a, mark, link_near, near_size, g_link, drvmap, inputs,
                  imbase=None, far_base=None, link_bank=2, rsc_far=None,
-                 dos_brk=None):
+                 dos_brk=None, deskicon=None):
         self.v, self.a = v, a
+        # DESKICON.RSC's bytes when the disk carries one (desk_cicons)
+        self.deskicon = deskicon
+        self.g_cicon = 0
+        self.cicons = [None] * N_IB     # (Dcicon, its block's addresses)
         self.near = (mark + 0xFF) & ~0xFF
         if far_base is None:
             # SMALL DATA: app_load's pool_alloc(near_size, 0x100) holds the
@@ -635,11 +722,20 @@ class Desktop:
         self.istext[obid - WOBS_START] = False
         o = self.screen[obid]
         o.ob_state, o.ob_flags, o.ob_type = NORMAL, NONE, G_ICON
-        src = self.a.mem[self.a_iblist + which * ICONBLK_SIZE]
         addr = self.info_addr(obid)
-        ib = Iconblk(src.pmask, src.pdata, src.ptext, src.char, src.xchar,
-                     src.ychar, Rect(src.icon.x, src.icon.y, src.icon.w, src.icon.h),
-                     Rect(src.text.x, src.text.y, src.text.w, src.text.h))
+        kc = self.cicons[which] if self.g_cicon else None
+        if kc:                                  # DESKICON.RSC's, in colour
+            ic, pdata, pmask, col4, sel4 = kc
+            o.ob_type = G_CICON
+            ib = CiconNear(pmask, pdata, 0, ic.char, ic.xchar, ic.ychar,
+                           Rect(ic.icon.x, ic.icon.y, ic.icon.w, ic.icon.h),
+                           Rect(ic.text.x, ic.text.y, ic.text.w, ic.text.h),
+                           col4, sel4)
+        else:
+            src = self.a.mem[self.a_iblist + which * ICONBLK_SIZE]
+            ib = Iconblk(src.pmask, src.pdata, src.ptext, src.char, src.xchar,
+                         src.ychar, Rect(src.icon.x, src.icon.y, src.icon.w, src.icon.h),
+                         Rect(src.text.x, src.text.y, src.text.w, src.text.h))
         o.ob_spec = addr
         ib.icon.x = (self.wicon - ib.icon.w) // 2
         ib.text.y = ib.icon.h
@@ -1532,7 +1628,7 @@ class Desktop:
         objnum = self.screen[DROOT].ob_head
         while objnum >= WOBS_START:
             o = self.screen[objnum]
-            if o.ob_type == G_ICON and self.icon_letter(objnum) == drive:
+            if o.ob_type in (G_ICON, G_CICON) and self.icon_letter(objnum) == drive:
                 return objnum
             objnum = o.ob_next
         return 0
@@ -2442,9 +2538,7 @@ class Desktop:
         self.a_iblist = self.rsrc_gaddr(R_ICONBLK, 0)
         self.fline = self.rsrc_gaddr(R_STRING, STFLINE)
         self.fmark = self.rsrc_gaddr(R_STRING, STFMARK)
-        # desktop.c desk_cicons: DESKICON.RSC, which no gate disk carries,
-        # so the target's rsrc_load answers 0 and nothing more is called
-        self.call(RSRC_LOAD)
+        self.desk_cicons()
         self.set_version()
         for item in NOT_YET:
             self.call(MENU_IENABLE, (item, 0), tree=self.a_menu)
@@ -2501,6 +2595,57 @@ class Desktop:
         self.call(APPL_EXIT)
         return 0
 
+    def desk_cicons(self):
+        """desktop.c desk_cicons: an earlier desktop's icons, kept by the
+        AES; or DESKICON.RSC, loaded far into the nested slot (two far
+        blocks, the resource and its colour extension, as rs_load takes
+        them), its six kinds copied into a Malloc block, the slot freed,
+        and the block handed to the AES to keep."""
+        a = self.a
+        io, _ = self.call(OBJC_SYSVAR, (SV_INQUIRE, G4_DESKICON, 0, 0))
+        self.g_cicon = (io[1] << 16) | io[2]
+        if self.g_cicon:
+            self.cicons = list(a.dicon_kinds)
+            return
+        if self.deskicon is None:
+            self.call(RSRC_LOAD)        # not on this disk: rsrc_load says 0
+            return
+        data = self.deskicon
+        self.call(RSRC_LOAD)
+        size = struct.unpack(">H", data[34:36])[0]
+        true_len = struct.unpack(">I", data[size:size + 4])[0]
+        h = a.dos_brk
+        base = h.alloc(size)                    # rs_load, far
+        ext = h.alloc(true_len - size)          # rs_cicons
+        self.call(RSRC_GADDR, (R_TREE, 0))
+        blk = self.gemdos_long(MALLOC, N_IB * CI_SIZE)
+        kinds = deskicon_kinds(data)
+        if blk > 0:
+            self.g_cicon = blk
+            p = blk + N_IB * DCICON_SIZE
+            for k, ic in enumerate(kinds):
+                if ic is None:
+                    continue
+                pdata, pmask = p, p + CI_BYTES
+                col4 = p + 2 * CI_BYTES
+                p = col4 + 5 * CI_BYTES
+                sel4 = 0
+                a.mem[pdata] = bytes(ic.mono)
+                a.mem[pmask] = bytes(ic.mask)
+                a.mem[col4] = chunky(ic.col[0], 4, 32) + bytes(ic.col[1])
+                if ic.sel:
+                    sel4 = p
+                    p += 5 * CI_BYTES
+                    a.mem[sel4] = chunky(ic.sel[0], 4, 32) + bytes(ic.sel[1])
+                self.cicons[k] = (ic, pdata, pmask, col4, sel4)
+        h.free(ext)
+        h.free(base)
+        self.call(RSRC_FREE)
+        if self.g_cicon:
+            a.dicon_kinds = list(self.cicons)
+            self.call(OBJC_SYSVAR, (SV_SET, G4_DESKICON, self.g_cicon >> 16,
+                                    self.g_cicon & 0xFFFF))
+
     # -- G, as the target lays it out ----------------------------------------
     def globes(self):
         """G packed as desk.h declares it: what a dump of the target's G
@@ -2529,11 +2674,15 @@ class Desktop:
         for i, (ib, label) in enumerate(zip(self.info, self.labels)):
             if self.istext[i]:
                 out += self.lines[i].pack() + bytes(SCREENINFO_SIZE - LEN_FNODE)
+            elif isinstance(ib, CiconNear):     # the record, then col4, sel4
+                out += (Iconblk.pack(ib) + label.pack()
+                        + bytes(SCREENINFO_SIZE - ICONBLK_SIZE - LABEL_LEN - 8)
+                        + dw(ib.col4) + dw(ib.sel4))
             else:
                 out += ((ib.pack() if ib else bytes(ICONBLK_SIZE))
                         + label.pack()
                         + bytes(SCREENINFO_SIZE - ICONBLK_SIZE - LABEL_LEN))
-        out += dw(0)                    # g_cicon: no DESKICON.RSC here
+        out += dw(self.g_cicon)         # g_cicon: the kept block, or 0
         assert len(out) == GLOBES_SIZE, len(out)
         return out
 

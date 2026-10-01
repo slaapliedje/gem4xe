@@ -114,6 +114,15 @@ class Heap:
         del self.blocks[i]
         return 1
 
+    def keep(self, addr):
+        """far_keep: the block at addr becomes the system's (owner 0)."""
+        i = self._find(addr)
+        if not i:
+            return 0
+        a, n, _ = self.blocks[i]
+        self.blocks[i] = (a, n, 0)
+        return 1
+
     def free_owner(self, owner):
         if owner:
             self.blocks = [self.blocks[0]] + [b for b in self.blocks[1:]

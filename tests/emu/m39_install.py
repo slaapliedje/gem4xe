@@ -13,9 +13,9 @@ docs/phase61.md) -- so this is also the gate for that.
                                      the same -- the desktop that came back
                                      read the install out of DESKTOP.INF
                                      in the shell buffer
-    GEM4XE.CFG dropped on DESKTOP.PRG, both in \\GEM\\
+    CLOCK.RSC dropped on DESKTOP.PRG, both in \\GEM\\
                                      the shell asked to run DESKTOP.PRG with
-                                     A:\\GEM\\GEM4XE.CFG
+                                     A:\\GEM\\CLOCK.RSC
 
 What is checked is what the desktop ASKED the shell for -- the program
 and the tail in the shell's own buffers (src/aes/shel.c sh_cmd_far,
@@ -104,7 +104,9 @@ def main():
         calc_quit(t, b, syms)
 
         t.dclick(t.item("GEM"))                 # fulled already
-        src, dst = t.item("GEM4XE.CFG"), t.item("DESKTOP.PRG")
+        # a file the window shows without scrolling: GEM4XE.CFG went below
+        # its last row when DESKICON.RSC joined \GEM\ (phase 89)
+        src, dst = t.item("CLOCK.RSC"), t.item("DESKTOP.PRG")
         runs = b.peek16(syms["sh_runs"])
         t.go(src)
         t.run([B(1), F(4)] + path(src, dst, speed=4) + [F(4), B(0), F(4)])
@@ -114,7 +116,7 @@ def main():
             b.frames(10)
         cmd3, tail3 = asked(b, syms)
         check(cmd3.endswith("\\GEM\\DESKTOP.PRG")
-              and tail3 == "A:\\GEM\\GEM4XE.CFG",
+              and tail3 == "A:\\GEM\\CLOCK.RSC",
               f"a file dropped on a program runs it with the file "
               f"(asked for {cmd3!r}, tail {tail3!r})")
     finally:

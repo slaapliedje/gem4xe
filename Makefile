@@ -777,6 +777,12 @@ tools/deskicons.py: tools/iconconv.py
 # with a resource built for 0.1, and the desktop gates found it a phase
 # later, when the model (which reads VERSION) had every tree two bytes
 # from where the stale file put it (docs/phase38.md).
+# The desktop's colour icons (phase 89): gem4xe's own, drawn in
+# tools/a8icons.py.  Shipped as GEM>DESKICON.RSC where there is room --
+# every disk but the DOS 2 floppy -- and replaceable by a Falcon's.
+build/deskicon.rsc: tools/deskiconrsc.py tools/a8icons.py tools/rsc.py tools/aesref.py
+	python3 tools/deskiconrsc.py $@
+
 build/desktop.rsc build/deskrsc.h build/prefs.rsc: tools/deskrsc.py tools/rsc.py tools/aesref.py tools/deskicons.py VERSION
 	@mkdir -p build
 	python3 tools/deskrsc.py build/desktop.rsc build/deskrsc.h build/prefs.rsc
@@ -1353,6 +1359,7 @@ SP_LAYOUT = --name "GEM>GEM.COM" --boot "CD >GEM|GEM" --mkdir GEM \
 	    --add build/desktop.g4a "GEM>DESKTOP.PRG" \
 	    --add build/desktop.rsc "GEM>DESKTOP.RSC" \
 	    --add build/prefs.rsc "GEM>PREFS.RSC" \
+	    --add build/deskicon.rsc "GEM>DESKICON.RSC" \
 	    --add build/lang.rsc "GEM>LANG.RSC" \
 	    --add build/816.com "GEM>816.COM" \
 	    --add build/gem4xe.cfg "GEM>GEM4XE.CFG"
@@ -1370,7 +1377,7 @@ SP_APPS   = --mkdir APPS \
 	    --add build/color.rsc "GEM>COLOR.RSC" \
 	    --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
 	    --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
-SP_DEPS   = build/gem.xex build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a build/general.g4a build/general.rsc tools/mkspdisk.py tools/atr.py
+SP_DEPS   = build/gem.xex build/deskicon.rsc build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a build/general.g4a build/general.rsc tools/mkspdisk.py tools/atr.py
 
 build/gem-shots.atr: $(SP_DEPS)
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
@@ -1399,7 +1406,7 @@ build/m36-boot.atr: $(SP_DEPS) build/general.cfg
 # D1: and D2: before any DOS runs.  No SIDE.SYS, no driver on the card.
 # tools/apt.py writes the table, tests/host/test_apt.py checks it against
 # the rules Altirra's own parser applies, and test-cf boots it.
-build/gem-cf.img: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/hello_app.g4a build/g4bench.g4a \
+build/gem-cf.img: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc build/hello_app.g4a build/g4bench.g4a \
                   build/lang.rsc build/gem4xe.cfg build/816.com $(APP_DEPS) $(ACCP_DEPS) tools/mkcf.py tools/apt.py tools/atr.py \
                   $(QED_IF_BUILT)
 	@rm -f $@
@@ -1431,7 +1438,7 @@ build/gem-sd.img: build/gem-cf.img build/gemdiag.com
 # machine rather than on the disk, so the disk is gem4xe's to give away
 # where gem-boot.atr is not.  Needs no fixture to build; test-boot boots
 # it when [spartados].sdx_cart names a cartridge.
-build/gem-sdx.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc \
+build/gem-sdx.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc \
                    build/lang.rsc build/gem4xe.cfg build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py
 	@rm -f $@
 	python3 tools/mkfloppy.py $@
@@ -1709,7 +1716,7 @@ DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-q
              build/gem4xe-sys.car
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
-             build/prefs.rsc build/g4bench.g4a $(QED_FILES) \
+             build/prefs.rsc build/deskicon.rsc build/g4bench.g4a $(QED_FILES) \
              $(APP_DEPS) $(ACCP_DEPS)
 
 dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
@@ -1962,8 +1969,17 @@ test-m22: build/m22-boot.atr build/calc.sym build/clock.sym
 # A program run from the desktop and the desktop's windows back after it
 # (phase 14, milestone 6): two runs of the desktop against the model, with
 # M11.PRG between them.
-test-m18: build/m17-boot.atr build/desktop.g4a build/desktop.sym
+test-m18: build/m18-boot.atr build/desktop.g4a build/desktop.sym
 	python3 tests/emu/m18_launch.py
+
+# ...and its disk: test-m17's with DESKICON.RSC beside DESKTOP.RSC, so the
+# second desktop takes the colour icons the first one kept (phase 89).
+build/m18-boot.atr: build/m17-boot.atr build/deskicon.rsc tools/atr.py
+	@rm -f $@
+	python3 -c "import sys; sys.path.insert(0, 'tools'); import atr; \
+	img = atr.ATRImage.load('build/m17-boot.atr'); fs = atr.open_fs(img); \
+	fs.add_file('DESKICON.RSC', open('build/deskicon.rsc', 'rb').read()); \
+	img.save('$@')"
 
 # An accessory opened from a folder and used: the real desktop at the
 # mouse, a folder, and a program that waits for the mouse itself.

@@ -51,7 +51,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import symfile                              # noqa: E402
-from aesref import W_FULLER, OBJ_SIZE, G_ICON   # noqa: E402
+from aesref import W_FULLER, OBJ_SIZE, G_ICON, G_CICON   # noqa: E402
 from deskref import g_offset, DROOT, WOBS_START   # noqa: E402
 from deskrsc import (THEBAR, THEACTIVE, THEDROPS,           # noqa: E402
                      DESKMENU, FILEMENU, VIEWMENU,
@@ -281,7 +281,10 @@ class Tour:
                 continue
             for i in children(self.b, tree, top):
                 o = obj(self.b, tree, i)
-                text = (cstring(self.b, o["spec"] + 34) if o["type"] & 0xFF == G_ICON
+                # an icon's label, mono or colour (the same SCREENINFO,
+                # desk.h); otherwise a text view's line
+                text = (cstring(self.b, o["spec"] + 34)
+                        if o["type"] & 0xFF in (G_ICON, G_CICON)
                         else cstring(self.b, o["spec"], 48))
                 seen.append(text.strip())
                 if text.strip().startswith(name):

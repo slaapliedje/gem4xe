@@ -60,6 +60,7 @@ uint32_t far_alloc_page(uint32_t bytes, uint32_t limit);
 uint16_t far_alloc_banks(uint16_t n);   /* n whole banks from the top: the
                                          * first bank's number, 0 on failure */
 uint16_t far_free(uint32_t addr);       /* 1 if addr was a block */
+uint16_t far_keep(uint32_t addr);       /* ...and the system's from now on */
 void     far_free_owner(uint8_t owner); /* every block of one owner */
 uint16_t far_shrink(uint32_t addr, uint32_t bytes);  /* smaller, in place */
 uint32_t far_size(uint32_t addr);       /* a block's length, 0 if none */

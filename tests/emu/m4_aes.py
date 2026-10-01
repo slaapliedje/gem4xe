@@ -28,7 +28,7 @@ from vdiref import V_OPNWK, V_CLRWK, WORK_IN    # noqa: E402
 from aesref import (Obj, Layout, Text, NIL, G_BOX, G_IBOX, G_BUTTON,   # noqa: E402
                     G_STRING, G_TEXT, G_BOXTEXT, G_FTEXT, G_FBOXTEXT, G_IMAGE,
                     G_BOXCHAR, G_TITLE, G_ICON, G_CICON, Rect, LASTOB, DEFAULT,
-                    SELECTABLE, EXIT, NORMAL,
+                    SELECTABLE, EXIT, NORMAL, WHITEBAK,
                     EDITABLE, INDIRECT, SELECTED, DISABLED, SHADOWED, OUTLINED,
                     CHECKED, CROSSED, HIDETREE, TE_LEFT, TE_RIGHT, TE_CNTR,
                     EDINIT, EDCHAR, EDEND, BACKSPACE, DELETE, ESCAPE,
@@ -184,7 +184,12 @@ def cicons(L):
     16-colour screen -- the mask in the background colour, the image ORed
     over it (phase 86); the second has none, so it draws its mono form and
     swaps its colours when SELECTED, as a G_ICON does.  objc_change flips
-    both: the first to its own selected image, the second back."""
+    both: the first to its own selected image, the second back.
+
+    The third is a desktop window's item: WHITEBAK, on a white box.
+    Selected, its label must come out black with white letters -- it came
+    out white on white, and this model drew it the same way, until phase
+    89 asked about the label's ground on its own."""
     n = 4 * 12
     col = (ICON_ROWS + ICON_MASK + bytes(b ^ 0xFF for b in ICON_ROWS)
            + bytes(n), ICON_MASK)
@@ -194,10 +199,15 @@ def cicons(L):
                   icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8), wb=4, hl=12)
     cn2 = L.cicon(ICON_MASK, ICON_ROWS, "MONO", char=0x1000, xchar=0, ychar=0,
                   icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8), wb=4, hl=12)
+    cn3 = L.cicon(ICON_MASK, ICON_ROWS, "WINDOW", col=col, sel=sel,
+                  char=0x1000, xchar=0, ychar=0,
+                  icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8), wb=4, hl=12)
     return [
-        Obj(NIL,  1,   2, G_BOX,   0,      0, 0x00021153,  80, 40, 400, 120),
+        Obj(NIL,  1,   3, G_BOX,   0,      0, 0x00021153,  80, 40, 400, 120),
         Obj(2,  NIL, NIL, G_CICON, 0,      0,        cn1,  40, 20,  64,  24),
-        Obj(0,  NIL, NIL, G_CICON, LASTOB, SELECTED, cn2, 200, 20,  64,  24),
+        Obj(3,  NIL, NIL, G_CICON, 0,      SELECTED, cn2, 200, 20,  64,  24),
+        Obj(0,    4,   4, G_BOX,   0,      0, 0x00001170, 290, 10, 100,  60),
+        Obj(3,  NIL, NIL, G_CICON, LASTOB, WHITEBAK, cn3,  18, 12,  64,  24),
     ]
 
 
@@ -267,9 +277,9 @@ CASES = [
     ("icons: mask, image, character and label; one selected", icons,
      [draw()] + [find(x, y) for x, y in [(140, 70), (300, 70), (90, 45)]]
      + [change(1, SELECTED), change(2, NORMAL)]),
-    ("colour icons: a 4-plane form in colour, and a mono one", cicons,
+    ("colour icons: a 4-plane form in colour, a mono one, a window's", cicons,
      [draw()] + [find(x, y) for x, y in [(140, 70), (300, 70)]]
-     + [change(1, SELECTED), change(2, NORMAL)]),
+     + [change(1, SELECTED), change(2, NORMAL), change(4, WHITEBAK | SELECTED)]),
     ("form: templates, justification, image", form,
      [draw()] + [find(x, y) for x, y in [(150, 60), (200, 88), (430, 65), (310, 25)]]),
     ("objc_change: select, deselect, disable, no redraw", dialog,

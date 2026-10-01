@@ -223,6 +223,10 @@ void gemdos_chdir(const char *path);
 /* A name the AES opens, resolved through GEMDOS's current
  * directory when there is one (src/sys/gemdos.c). */
 void gd_cioname(const char *name, char *cio);
+/* A program's Malloc block made the system's, so it outlives the
+ * program; and given back (objc_sysvar G4_DESKICON, src/aes/objc.c). */
+int16_t gd_keep(int32_t a);
+void gd_unkeep(int32_t a);
 
 extern uint16_t gemdos_calls;   /* calls made */
 extern uint16_t gemdos_bad;     /* of which EINVFN */

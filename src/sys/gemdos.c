@@ -1404,6 +1404,21 @@ static LONG gd_mfree(LONG a)
     return 0;
 }
 
+/* A block Malloc gave a program, kept past its exit: the system's from
+ * now on (far_keep), until gd_unkeep.  1 if `a` was a Malloc block.  The
+ * AES's objc_sysvar(G4_DESKICON) is the one caller (src/aes/objc.c). */
+WORD gd_keep(LONG a)
+{
+    uint32_t h = gd_block(a);
+
+    return (WORD)(h && far_keep(h));
+}
+
+void gd_unkeep(LONG a)
+{
+    (void)gd_mfree(a);
+}
+
 /* Mshrink: smaller only, as on the ST (EGSBF for bigger). */
 static LONG gd_mshrink(LONG a, LONG n)
 {

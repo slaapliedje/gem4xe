@@ -237,6 +237,10 @@ typedef struct {
 #define AD3DVALUE   6           /* extra pixels each side for the 3D effect */
 #define G4_3DLOOK   100         /* gem4xe's own: the 3D look, 1 on, 0 off --
                                  * set by the control panel, read by anyone */
+#define G4_DESKICON 101         /* gem4xe's own: the desktop's colour icons,
+                                 * kept across its restarts -- a Malloc
+                                 * block's address, high word then low; 0
+                                 * for none (src/desk/desktop.c) */
 
 /* ob_flags: the 3D kinds (AES 3.40), drawn only with the 3D look on */
 #define FL3DIND     0x0200      /* an indicator: a radio or toggle button */

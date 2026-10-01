@@ -768,6 +768,12 @@ static WORD hndl_msg(void)
  * into one far block of its own, and the slot is given back.  rsrc_load
  * has turned their images chunky already (src/aes/rsrc.c, rs_chunky).
  *
+ * ...AND THEN KEPT (phase 89).  The desktop starts again after every
+ * program, and reading the file each time cost seconds from a floppy.  So
+ * the block is handed to the AES (objc_sysvar G4_DESKICON), which makes
+ * it the system's, and every later desktop asks for it first.  A new
+ * DESKICON.RSC is seen at the next boot.
+ *
  * BY NAME, not by place: "HARD DISK", "  trash can", "text    file" --
  * the Falcon's labels, spaces and case aside, the first of each kind
  * wins.  A NEWDESK.INF names its icons by number instead; reading one is
@@ -821,7 +827,12 @@ static void desk_cicons(void)
     LONG a;
     uint8_t FAR *p;
 
-    G.g_cicon = 0;
+    WORD hi = 0, lo = 0;
+
+    objc_sysvar(SV_INQUIRE, G4_DESKICON, 0, 0, &hi, &lo);
+    G.g_cicon = (DCICON FAR *)(((LONG)(UWORD)hi << 16) | (UWORD)lo);
+    if (G.g_cicon)
+        return;                         /* an earlier desktop's, kept */
     if (!rsrc_load("DESKICON.RSC"))
         return;
     rsrc_gaddr(R_TREE, 0, (void **)&t);
@@ -860,6 +871,10 @@ static void desk_cicons(void)
         }
     }
     rsrc_free();                        /* the nested one: PREFS.RSC's slot */
+    if (G.g_cicon) {                    /* for the next desktop, too */
+        LONG k = (LONG)G.g_cicon;
+        objc_sysvar(SV_SET, G4_DESKICON, (WORD)(k >> 16), (WORD)k, &hi, &lo);
+    }
 }
 
 /* The AES's version, from global[0] as the ST has it (0x0140 is 1.40),

@@ -48,6 +48,8 @@ SYSTEM = [("build/gem.xex", "GEM>GEM.COM"),
           ("build/desktop.rsc", "GEM>DESKTOP.RSC"),
           # the chooser, loaded only while Set preferences is open
           ("build/prefs.rsc", "GEM>PREFS.RSC"),
+          # the colour icons, gem4xe's own (tools/a8icons.py)
+          ("build/deskicon.rsc", "GEM>DESKICON.RSC"),
           ("build/lang.rsc", "GEM>LANG.RSC"),
           ("build/gem4xe.cfg", "GEM>GEM4XE.CFG"),
           # the escape hatch the page promises "on the disk": switches a
