@@ -261,7 +261,8 @@ here can hold SHIFT down through a mouse click, which is the same block
 that has kept the SHIFT-drag move ungated since phase 18.
 
 **The desktop remembers** (`docs/phase25.md`). `Save desktop` writes the
-window layout to `DESKTOP.INF` on the boot drive and `Read .INF file`
+window layout to `DESKTOP.INF` -- on the boot drive then, beside
+`GEM4XE.CFG` or where its `DESKINF=` says since phase 90 -- and `Read .INF file`
 reads it back, closing what is open first; at start-up the desktop looks
 in the shell buffer, then the file, then its built-in default — which is
 the donor's order, and the difference between surviving a program and

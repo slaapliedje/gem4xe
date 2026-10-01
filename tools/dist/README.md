@@ -157,6 +157,45 @@ Translations are read from `LANG.RSC` and an alphabet from a `.FNT`
 beside it, so what the system says is on the disk rather than in the
 program.
 
+## Where your settings are
+
+All of them are plain files next to the system, in `\GEM\` on the card
+and the SpartaDOS X floppy, and on D1: itself on the DOS 2 floppy and
+the cartridge, which have no folders.
+
+- **`DESKTOP.INF`** is the desktop's layout: the windows, the view and
+  sort, the background, installed programs and drive icons.
+  *Options -> Save desktop* writes it, beside `GEM4XE.CFG`, and the
+  desktop reads it when the machine starts.  Nothing is saved
+  automatically.
+
+  To keep it somewhere else, add a line to `GEM4XE.CFG`:
+
+      DESKINF=D1:\MYSTUFF\DESKTOP.INF
+
+  `D1:` and `A:` both mean the first drive.  A name with no path,
+  `DESKINF=MINE.INF`, is beside `GEM4XE.CFG`; `\DIR\NAME` is from the
+  root of the drive the system started from.  The line is read whenever
+  the layout is saved or read, so a change applies at the next Save
+  desktop.
+
+  **Coming from 0.9.4 or earlier?**  Those kept the layout in the root of
+  the boot drive, `D1:\DESKTOP.INF`.  It is still read, once, when there
+  is none beside `GEM4XE.CFG` and `GEM4XE.CFG` names none; the next Save
+  desktop writes it in the new place, and the old file can then be
+  deleted.
+
+- **`GEM4XE.CFG`** is what the system needs before there is a screen:
+  the display, the mouse, the clock, the printer, and `DESKINF`.  It is
+  plain text, so a DOS editor can change it when the screen cannot.
+  Every setting is in the shipped file, commented out, with what it does.
+
+- **`DESKICON.RSC`** is the desktop's colour icons.  A Falcon's
+  `DESKICON.RSC`, from your own Falcon disk, can be copied over it; the
+  icons are read once per boot, so the new ones appear the next time the
+  machine starts.  With no `DESKICON.RSC` at all -- the DOS 2 floppy has
+  no room for one -- the desktop draws its black-and-white icons.
+
 ## What is not there yet
 
 These are in the menu and **disabled** — the desktop puts them up
