@@ -133,6 +133,10 @@ typedef struct {
     uint16_t stride;
     WORD     w, h;
     WORD     screen;
+    WORD     or_op;     /* a source to OR over the destination rather than
+                         * replace it: vro_cpyfm's S_OR_D, which is how the
+                         * AES lays a colour icon over its mask.  Only a
+                         * 4-bit device honours it; the others replace. */
 } RFORM;
 
 /* ---- the table --------------------------------------------------------

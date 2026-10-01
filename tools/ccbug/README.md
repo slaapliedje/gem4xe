@@ -1197,6 +1197,24 @@ two stores of the same byte on two ways out of a branchy test — do the
 store once, first, and compare bytes as words (rule 16) in a helper that
 returns a word (`sdx_usable`).
 
+**A SECOND FORM, WITH NO IMMEDIATE TO SEE (phase 87).**  The desktop's
+`ci_named`, which matches DESKICON.RSC's labels, folded a `char` to upper
+case:
+
+    if (c >= 'a' && c <= 'z')
+        c = (char)(c - 32);         /* ...ends sep #32 / sta 1,s */
+    if (c != want[j])               /* the join: lda dp:_Dp+4 / sta dp:_Dp+8 */
+
+The folding path fell into the join 8 bits wide, and the join's first
+job was to copy a far pointer's low word -- which it did a byte at a
+time.  Every instruction there decodes the same in either width, so
+`joins()` had nothing to flag; what came out wrong was the data.  Only
+the one label already in capitals, `HARD DISK`, ever matched.
+`mscan.mixed()` asks the wider question -- any instruction whose effect
+depends on the accumulator's width, at a point both widths reach -- and
+`mscan_b21m.s` is that listing beside the fixed one, which must stay
+silent.  The fix was the same rule: every character a `WORD`.
+
 ## B22 — a far array indexed by a byte cast, in a loop
 
     for (i = 0; i < n; i++) {

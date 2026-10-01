@@ -179,21 +179,25 @@ def icons(L):
 
 
 def cicons(L):
-    """G_CICON: a colour icon draws its mono form.  All objc_draw reads of
-    a CICONBLK is the ICONBLK it begins with (rsrc_load points the spec at
-    a near copy of exactly that), so here the spec IS an ICONBLK.  One
-    SELECTED, and objc_change on it swaps the icon's colours rather than
-    XORing, as for G_ICON (gr_gicon)."""
-    ib1 = L.iconblk(ICON_MASK, ICON_ROWS, "COLOUR", char=ord('C'), xchar=12,
-                    ychar=2, icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8),
-                    wb=4, hl=12)
-    ib2 = L.iconblk(ICON_MASK, ICON_ROWS, "MONO", char=0, xchar=0, ychar=0,
-                    icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8),
-                    wb=4, hl=12)
+    """G_CICON as rsrc_load leaves one: a CICON_NEAR (src/aes/aes.h).  The
+    first has a 4-plane form and a selected one, drawn in colour on this
+    16-colour screen -- the mask in the background colour, the image ORed
+    over it (phase 86); the second has none, so it draws its mono form and
+    swaps its colours when SELECTED, as a G_ICON does.  objc_change flips
+    both: the first to its own selected image, the second back."""
+    n = 4 * 12
+    col = (ICON_ROWS + ICON_MASK + bytes(b ^ 0xFF for b in ICON_ROWS)
+           + bytes(n), ICON_MASK)
+    sel = (bytes(n) + ICON_ROWS + ICON_MASK + ICON_ROWS, ICON_MASK)
+    cn1 = L.cicon(ICON_MASK, ICON_ROWS, "COLOUR", col=col, sel=sel,
+                  char=ord('C') | 0x1000, xchar=12, ychar=2,
+                  icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8), wb=4, hl=12)
+    cn2 = L.cicon(ICON_MASK, ICON_ROWS, "MONO", char=0x1000, xchar=0, ychar=0,
+                  icon=Rect(0, 0, 32, 12), text=Rect(0, 14, 64, 8), wb=4, hl=12)
     return [
-        Obj(NIL,  1,   2, G_BOX,   0,      0, 0x00021100,  80, 40, 400, 120),
-        Obj(2,  NIL, NIL, G_CICON, 0,      0,        ib1,  40, 20,  64,  24),
-        Obj(0,  NIL, NIL, G_CICON, LASTOB, SELECTED, ib2, 200, 20,  64,  24),
+        Obj(NIL,  1,   2, G_BOX,   0,      0, 0x00021153,  80, 40, 400, 120),
+        Obj(2,  NIL, NIL, G_CICON, 0,      0,        cn1,  40, 20,  64,  24),
+        Obj(0,  NIL, NIL, G_CICON, LASTOB, SELECTED, cn2, 200, 20,  64,  24),
     ]
 
 
@@ -263,7 +267,7 @@ CASES = [
     ("icons: mask, image, character and label; one selected", icons,
      [draw()] + [find(x, y) for x, y in [(140, 70), (300, 70), (90, 45)]]
      + [change(1, SELECTED), change(2, NORMAL)]),
-    ("colour icons draw their mono form; one selected", cicons,
+    ("colour icons: a 4-plane form in colour, and a mono one", cicons,
      [draw()] + [find(x, y) for x, y in [(140, 70), (300, 70)]]
      + [change(1, SELECTED), change(2, NORMAL)]),
     ("form: templates, justification, image", form,

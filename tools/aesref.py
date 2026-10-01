@@ -50,6 +50,7 @@ WHITEBAK = 0x40
 
 NIL, ROOT, MAX_DEPTH, MAX_LEN = -1, 0, 8, 81
 WHITE, BLACK, LWHITE, LBLACK = 0, 1, 8, 9
+S_OR_D = 7                      # vro_cpyfm: source OR destination
 # the 3D look (src/aes/objc.c): flags, the growth, objc_sysvar's subjects
 FL3DIND, FL3DACT, FL3DBAK, FL3DMASK = 0x0200, 0x0400, 0x0600, 0x0600
 ADJ3DSTD = 2
@@ -247,6 +248,36 @@ class Iconblk:
                            self.text.x, self.text.y, self.text.w, self.text.h)
 
 
+class CiconNear(Iconblk):
+    """What a loaded G_CICON's ob_spec points at (src/aes/aes.h,
+    CICON_NEAR): the mono ICONBLK, fourteen bytes of text, then the far
+    addresses of the 4-plane form -- chunky image then one-plane mask --
+    and of the selected form, 0 for none.  56 bytes."""
+    def __init__(self, pmask, pdata, ptext, char, xchar, ychar, icon, text,
+                 col4=0, sel4=0):
+        super().__init__(pmask, pdata, ptext, char, xchar, ychar, icon, text)
+        self.col4, self.sel4 = col4, sel4
+
+    def pack(self):
+        return super().pack() + bytes(14) + struct.pack("<II", self.col4, self.sel4)
+
+
+def chunky(planes, wb, h):
+    """A 4-plane form in the ST's plane order to chunky nibbles, left pixel
+    high, plane 0 the lowest bit (src/aes/rsrc.c, rs_chunky)."""
+    n = wb * h
+    out = bytearray(wb * 4 * h)
+    for r in range(h):
+        for x in range(wb * 8):
+            v = 0
+            for p in range(4):
+                if planes[p * n + r * wb + (x >> 3)] & (0x80 >> (x & 7)):
+                    v |= 1 << p
+            i = r * wb * 4 + (x >> 1)
+            out[i] |= v if (x & 1) else (v << 4)
+    return bytes(out)
+
+
 class Layout:
     """Lays a tree and its ob_spec targets out at fixed addresses.
 
@@ -312,6 +343,29 @@ class Layout:
         text = text or Rect(0, hl, wb * 8, 8)
         ib = Iconblk(pmask, pdata, ptext, char, xchar, ychar, icon, text)
         return self._put(ib, ib.pack())
+
+    def cicon(self, mask, data, label, col=None, sel=None, char=0, xchar=0,
+              ychar=0, icon=None, text=None, wb=4, hl=32):
+        """A loaded G_CICON's record (CiconNear): the mono icon as iconblk
+        lays it out, and the colour forms as rsrc_load leaves them --
+        `col` and `sel` are (planes, mask): four planes in the ST's order
+        and a one-plane mask, laid out here as the chunky image and the
+        mask after it."""
+        pmask = self._put(bytes(mask), bytes(mask))
+        pdata = self._put(bytes(data), bytes(data))
+        ptext = self.text(label)
+        icon = icon or Rect(0, 0, wb * 8, hl)
+        text = text or Rect(0, hl, wb * 8, 8)
+
+        def form(f):
+            if f is None:
+                return 0
+            planes, m = f
+            blob = chunky(planes, wb, hl) + bytes(m)
+            return self._put(blob, blob)
+        cn = CiconNear(pmask, pdata, ptext, char, xchar, ychar, icon, text,
+                       form(col), form(sel))
+        return self._put(cn, cn.pack())
 
     def raw(self, b):
         """Bytes at an address of their own -- an EVNTREC array for the
@@ -879,6 +933,17 @@ class AES:
         n = min(n, cdiv(w, self.gl_wchar)) if cdiv(h, self.gl_hchar) else 0
         return w, h, n
 
+    def gsx_cblt(self, image, addr, dx, dy, w, h):
+        """graf.c gsx_cblt: w x h chunky pixels at `addr`, ORed over the
+        screen through vro_cpyfm (S_OR_D).  The image is put where the
+        target has it, in the bank-$00 memory the device model reads."""
+        self.v.dev.cpu[addr:addr + len(image)] = image
+        self.gsx_moff()
+        src = vdiref.VramForm(addr, w, h, w // 16, 4)
+        self.vcall(VRO_CPYFM, (0, 0, w - 1, h - 1, dx, dy, dx + w - 1, dy + h - 1),
+                   (S_OR_D,), (src, None))
+        self.gsx_mon()
+
     def gsx_blt(self, form, sx, sy, dx, dy, w, h, rule, fg, bg):
         """form is the raw 1-plane bits at fd_addr; fd_wdwidth = (w/8)/2."""
         self.gsx_moff()
@@ -1230,18 +1295,34 @@ class AES:
             # CICONBLK begins with (src/aes/rsrc.c, rs_cicons)
             ib = self.mem[spec]
             fg, bg, ch = (ib.char >> 12) & 15, (ib.char >> 8) & 15, ib.char & 0xFF
-            if state & SELECTED:
+            col = 0
+            if (typ == G_CICON and self.gl_nplanes == 4
+                    and isinstance(ib, CiconNear) and ib.col4):
+                col = ib.sel4 if (state & SELECTED) and ib.sel4 else ib.col4
+            nimg = (ib.icon.w // 8) * ib.icon.h * 4
+            if col:
+                blob = self.mem[col]
+                mask = blob[nimg:]
+            else:
+                mask = self.mem[ib.pmask]
+            if not col and (state & SELECTED):
                 fg, bg = bg, fg
             pi = Rect(ib.icon.x + t.x, ib.icon.y + t.y, ib.icon.w, ib.icon.h)
             pl = Rect(ib.text.x + t.x, ib.text.y + t.y, ib.text.w, ib.text.h)
             label = self.mem[ib.ptext].s
             if not ((state & WHITEBAK) and bg == WHITE):
-                self.gsx_blt(self.mem[ib.pmask], 0, 0, pi.x, pi.y, pi.w, pi.h,
+                self.gsx_blt(mask, 0, 0, pi.x, pi.y, pi.w, pi.h,
                              MD_TRANS, bg, fg)
                 if label:
-                    self.gr_rect(bg, IP_SOLID, pl)
-            self.gsx_blt(self.mem[ib.pdata], 0, 0, pi.x, pi.y, pi.w, pi.h,
-                         MD_TRANS, fg, bg)
+                    self.gr_rect(fg if (col and (state & SELECTED)) else bg,
+                                 IP_SOLID, pl)
+            if col:
+                self.gsx_cblt(blob[:nimg], col, pi.x, pi.y, pi.w, pi.h)
+                if state & SELECTED:
+                    fg, bg = bg, fg
+            else:
+                self.gsx_blt(self.mem[ib.pdata], 0, 0, pi.x, pi.y, pi.w, pi.h,
+                             MD_TRANS, fg, bg)
             self.gsx_attr(True, MD_TRANS, fg)
             if ch:
                 self.intin = [ch]

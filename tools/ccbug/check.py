@@ -269,6 +269,12 @@ def main():
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b23.s")
     fixtures["B23 mscan finds the read below the stack"] = (
         len(list(_mscan.stack_zero(_fix))), 1)
+    # ...and B21's other form, which joins() cannot see: no immediate in
+    # the join, a pointer moved a byte at a time.  The desktop's first
+    # ci_named, and the fixed one beside it that must stay silent.
+    _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b21m.s")
+    fixtures["B21 mscan finds a join reached in both widths"] = (
+        len(_mscan.mixed(_fix)), 1)
     # ...and B12's: the compiler's own -O1 assembly, one wrong-bit shift
     # and an unsigned control beside it that must stay silent.
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b12.s")

@@ -2100,6 +2100,7 @@ static void rform_of(WORD mfdb_lo, RFORM *f)
     f->w      = m->fd_w;
     f->h      = m->fd_h;
     f->screen = 0;
+    f->or_op  = 0;
 }
 
 /* Clip a rectangle to a form's bounds.  Returns 0 if nothing is left. */
@@ -2129,6 +2130,8 @@ static void vdi_vro_cpyfm(void)
         return;
     rform_of(contrl[7], &src);
     rform_of(contrl[9], &dst);
+    src.or_op = (WORD)(intin[0] == 7);  /* S_OR_D; the other twelve modes
+                                         * are a replace, as they were */
     {
         WORD cx1 = dx1, cy1 = dy1;
         WORD cx2 = (WORD)(dx1 + w - 1), cy2 = (WORD)(dy1 + h - 1);

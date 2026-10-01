@@ -30,12 +30,15 @@ from aesref import (Obj, Text, Ted, Bitblk, Iconblk, Rect, G_BOX, G_IBOX,
 
 # The colour-icon extension a new-format resource carries past rsh_rssize
 # (EmuTOS aes/gemrslib.c), and what rs_load brings NEAR of it: one
-# CICON_NEAR record per icon -- the ICONBLK, twelve bytes of text and a far
-# address for the colour forms (src/aes/rsrc.c).
+# CICON_NEAR record per icon -- the ICONBLK, fourteen bytes of text (the
+# file's twelve and two 0s), and the far addresses of the 4-plane form and
+# its selected form, 0 for none (src/aes/aes.h, src/aes/rsrc.c).
 CICON_HDR = 38          # on disk: an ICONBLK and a LONG count of forms
 CICON_FORM = 22         # on disk: one CICON header
-CICON_TEXT = 12
-CICON_NEAR = 50
+CICON_TEXT = 12         # on disk
+CICON_NTEXT = 14        # in the near record
+CICON_BYTES = 128       # the biggest form drawn in colour: one 32x32 plane
+CICON_NEAR = 56
 
 HDR_SIZE = 36
 OBJ_SIZE, TED_SIZE, BITBLK_SIZE, ICONBLK_SIZE = 24, 28, 14, 34
@@ -559,18 +562,25 @@ class Rsc:
             a = hb + CICON_NEAR * i
             data = cibase + (it.off + CICON_HDR - self.size)
             mask = data + it.mono
-            forms = (cibase + (it.off + CICON_HDR + 2 * it.mono + CICON_TEXT - self.size)
-                     if it.forms else 0)
+            # the first 4-plane form, if the icon is small enough to be
+            # drawn in colour: its image, past the form's header (and no
+            # selected form: this model writes none)
+            col4 = 0
+            fo = it.off + CICON_HDR + 2 * it.mono + CICON_TEXT
+            for planes, _, _ in it.forms:
+                if planes == 4 and not col4 and it.mono <= CICON_BYTES:
+                    col4 = cibase + (fo + CICON_FORM - self.size)
+                fo += CICON_FORM + it.mono * planes + it.mono
             ib = Iconblk(mask, data, a + ICONBLK_SIZE, it.char, it.xchar, it.ychar,
                          Rect(it.xicon, it.yicon, it.wicon, it.hicon),
                          Rect(it.xtext, it.ytext, it.wtext, it.htext))
             mem[a] = ib
-            mem[a + ICONBLK_SIZE] = Text(it.text, CICON_TEXT)
+            mem[a + ICONBLK_SIZE] = Text(it.text, CICON_NTEXT)
             mem[data] = it.data
             mem[mask] = it.mask
             near += ib.pack()
-            near += it.text.encode("latin-1").ljust(CICON_TEXT, b"\0")
-            near += struct.pack("<I", forms)
+            near += it.text.encode("latin-1").ljust(CICON_NTEXT, b"\0")
+            near += struct.pack("<II", col4, 0)
         self.ci_near = (hb, bytes(near))
         objs = []
         for o in self.objects:

@@ -755,6 +755,113 @@ static WORD hndl_msg(void)
     }
 }
 
+/* ---- colour icons --------------------------------------------------------
+ *
+ * DESKICON.RSC, the Falcon desktop's icon file, beside DESKTOP.RSC: one
+ * tree of G_CICONs, each named by its label.  Where it is there, the
+ * desktop draws its six kinds of icon in colour (phase 87) -- and where
+ * it is not, as it always has.
+ *
+ * TAKEN, NOT KEPT.  The AES gives a program two resource slots, and the
+ * desktop needs the second for PREFS.RSC (Set preferences and the rest,
+ * deskfun.c), so the file is loaded, the icons the desktop uses are copied
+ * into one far block of its own, and the slot is given back.  rsrc_load
+ * has turned their images chunky already (src/aes/rsrc.c, rs_chunky).
+ *
+ * BY NAME, not by place: "HARD DISK", "  trash can", "text    file" --
+ * the Falcon's labels, spaces and case aside, the first of each kind
+ * wins.  A NEWDESK.INF names its icons by number instead; reading one is
+ * for later. */
+static const char *const ci_names[N_IB] = {
+    "HARDDISK", "FLOPPYDISK", "TRASHCAN", "FOLDER", "PROGRAMFILE", "TEXTFILE"
+};
+
+#define CI_BYTES 128                    /* one plane of a 32 x 32 form */
+#define CI_SIZE  (sizeof(DCICON) + 2 * CI_BYTES + 2 * 5 * CI_BYTES)
+
+/* What `a` names, spaces dropped and letters upper case, against `want`.
+ * Every character a WORD: as a char, the path that folds the case reached
+ * the compare with an 8-bit accumulator and every lower-case label missed
+ * (B21, tools/ccbug). */
+static WORD ci_named(const char FAR *a, const char *want)
+{
+    WORD i, j = 0, c;
+
+    for (i = 0; i < 32; i++) {
+        c = (WORD)(uint8_t)a[i];
+        if (!c)
+            break;
+        if (c == ' ')
+            continue;
+        if (c >= 'a' && c <= 'z')
+            c -= 32;
+        if (c != (WORD)(uint8_t)want[j])
+            return 0;
+        j++;
+    }
+    return (WORD)(want[j] == 0);
+}
+
+/* n bytes, far to far, a byte through a local each time (B18). */
+static void ci_copy(uint8_t FAR *d, const uint8_t FAR *s, WORD n)
+{
+    WORD i;
+    uint8_t v;
+
+    for (i = 0; i < n; i++) {
+        v = s[i];
+        d[i] = v;
+    }
+}
+
+static void desk_cicons(void)
+{
+    OBJECT *t = 0;
+    WORD k, o;
+    LONG a;
+    uint8_t FAR *p;
+
+    G.g_cicon = 0;
+    if (!rsrc_load("DESKICON.RSC"))
+        return;
+    rsrc_gaddr(R_TREE, 0, (void **)&t);
+    a = t ? Malloc((LONG)(N_IB * CI_SIZE)) : 0;
+    if (a > 0) {
+        G.g_cicon = (DCICON FAR *)a;
+        p = (uint8_t FAR *)(a + N_IB * (LONG)sizeof(DCICON));
+        for (k = 0; k < N_IB; k++)
+            G.g_cicon[k].col4 = 0;
+        for (k = 0; k < N_IB; k++) {
+            for (o = t[0].ob_head; o > 0; o = t[o].ob_next) {
+                DCICON FAR *src = (DCICON FAR *)t[o].ob_spec.index;
+                DCICON FAR *d = &G.g_cicon[k];
+                if ((t[o].ob_type & 0xFF) != G_CICON || !src->col4
+                    || src->ib.ib_wicon != 32 || src->ib.ib_hicon != 32
+                    || !ci_named((const char FAR *)src->ib.ib_ptext, ci_names[k]))
+                    continue;
+                ci_copy((uint8_t FAR *)d, (const uint8_t FAR *)src, (WORD)sizeof(DCICON));
+                ci_copy(p, (const uint8_t FAR *)src->ib.ib_pdata, CI_BYTES);
+                d->ib.ib_pdata = (LONG)p;
+                p += CI_BYTES;
+                ci_copy(p, (const uint8_t FAR *)src->ib.ib_pmask, CI_BYTES);
+                d->ib.ib_pmask = (LONG)p;
+                p += CI_BYTES;
+                ci_copy(p, (const uint8_t FAR *)src->col4, 5 * CI_BYTES);
+                d->col4 = (LONG)p;
+                p += 5 * CI_BYTES;
+                d->sel4 = 0;
+                if (src->sel4) {
+                    ci_copy(p, (const uint8_t FAR *)src->sel4, 5 * CI_BYTES);
+                    d->sel4 = (LONG)p;
+                    p += 5 * CI_BYTES;
+                }
+                break;
+            }
+        }
+    }
+    rsrc_free();                        /* the nested one: PREFS.RSC's slot */
+}
+
 /* The AES's version, from global[0] as the ST has it (0x0140 is 1.40),
  * written over the resource's "0.00". */
 static void set_version(void)
@@ -796,6 +903,7 @@ int main(void)
     rsrc_gaddr(R_ICONBLK, 0, (void **)&G.a_iblist);
     rsrc_gaddr(R_STRING, STFLINE, (void **)&G.g_fline);
     rsrc_gaddr(R_STRING, STFMARK, (void **)&G.g_fmark);
+    desk_cicons();
     set_version();
     for (i = 0; i < N_NOT_YET; i++)
         menu_ienable(G.a_menu, not_yet[i], 0);

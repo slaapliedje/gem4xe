@@ -154,7 +154,8 @@ WORD obj_get_obid(WORD drive)
 
     for (objnum = G.g_screen[DROOT].ob_head; objnum >= WOBS_START;
          objnum = G.g_screen[objnum].ob_next) {
-        if (G.g_screen[objnum].ob_type == G_ICON && icon_letter(objnum) == drive)
+        if ((G.g_screen[objnum].ob_type == G_ICON || G.g_screen[objnum].ob_type == G_CICON)
+            && icon_letter(objnum) == drive)
             return objnum;
     }
     return 0;
@@ -204,7 +205,15 @@ WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
     si = obj_info(obid);
     obj_clear(si);
     pic = &si->i.blk;
-    *pic = G.a_iblist[which];
+    if (G.g_cicon && G.g_cicon[which].col4) {
+        /* DESKICON.RSC's (desktop.c, desk_cicons): drawn in colour */
+        *pic = G.g_cicon[which].ib;
+        si->i.col4 = G.g_cicon[which].col4;
+        si->i.sel4 = G.g_cicon[which].sel4;
+        pob->ob_type = G_CICON;
+    } else {
+        *pic = G.a_iblist[which];
+    }
     pob->ob_spec.index = (LONG)(uint32_t)pic;
     pic->ib_xicon = (WORD)((G.g_wicon - pic->ib_wicon) / 2);
     pic->ib_ytext = pic->ib_hicon;

@@ -299,7 +299,7 @@ def rsrc_cases(r, check, b, keep):
           f"{room} bytes of pool left")
     # rsh_rssize is the classic part; a new-format file runs on past it with
     # the colour-icon extension, which rs_load streams to far memory.  What
-    # the pool keeps of that is one 50-byte record per icon, after the file,
+    # the pool keeps of that is one 56-byte record per icon, after the file,
     # word-aligned (src/aes/rsrc.c, CICON_NEAR).
     check(size == R.size, f"rsh_rssize {size} != tools/rsc.py's {R.size}")
     check(len(rsc_bytes) == R.file_len,

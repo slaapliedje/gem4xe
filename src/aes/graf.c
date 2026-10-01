@@ -769,27 +769,59 @@ void gr_gtext(WORD just, WORD font, const char FAR *ptext, const GRECT *pt)
 /* Copy a w x h block of a 1-plane form at saddr to the screen at (dx,dy).
  * fg == -1 means an opaque copy (vro_cpyfm, rule is the raster op);
  * otherwise a transparent one in fg/bg (vrt_cpyfm, rule is the write mode). */
+/* A colour icon's image: w x h chunky pixels at a far address, ORed over
+ * what is there (vro_cpyfm, S_OR_D) -- the mask has been laid down in the
+ * background colour first, so white inside it takes the image's pens and
+ * the screen outside it is left alone. */
+static MFDB bl_src, bl_dst;             /* gsx_cblt's and gsx_blt's */
+
+void gsx_cblt(uint32_t saddr, WORD dx, WORD dy, WORD w, WORD h)
+{
+    MFDB *src = &bl_src, *dst = &bl_dst;
+
+    src->fd_addr = saddr;
+    src->fd_w = w;
+    src->fd_h = h;
+    src->fd_wdwidth = (WORD)(w / 16);
+    src->fd_stand = 0;
+    src->fd_nplanes = 4;
+    dst->fd_addr = 0;                    /* the screen */
+
+    gsx_moff();
+    ptsin[0] = 0;  ptsin[1] = 0;
+    ptsin[2] = (WORD)(w - 1);  ptsin[3] = (WORD)(h - 1);
+    ptsin[4] = dx;  ptsin[5] = dy;
+    ptsin[6] = (WORD)(dx + w - 1);  ptsin[7] = (WORD)(dy + h - 1);
+    contrl[7] = (WORD)(uint16_t)src;
+    contrl[8] = 0;
+    contrl[9] = (WORD)(uint16_t)dst;
+    contrl[10] = 0;
+    intin[0] = S_OR_D;
+    gsx_call(VRO_CPYFM, 4, 1);
+    gsx_mon();
+}
+
 void gsx_blt(uint32_t saddr, WORD sx, WORD sy, WORD dx, WORD dy, WORD w, WORD h,
              WORD rule, WORD fg, WORD bg)
 {
-    static MFDB src, dst;
+    MFDB *src = &bl_src, *dst = &bl_dst;
 
-    src.fd_addr = saddr;
-    src.fd_w = (WORD)((w / 8) * 8);
-    src.fd_h = h;
-    src.fd_wdwidth = (WORD)((w / 8) / 2);
-    src.fd_stand = 0;
-    src.fd_nplanes = 1;
-    dst.fd_addr = 0;                    /* the screen */
+    src->fd_addr = saddr;
+    src->fd_w = (WORD)((w / 8) * 8);
+    src->fd_h = h;
+    src->fd_wdwidth = (WORD)((w / 8) / 2);
+    src->fd_stand = 0;
+    src->fd_nplanes = 1;
+    dst->fd_addr = 0;                    /* the screen */
 
     gsx_moff();
     ptsin[0] = sx;  ptsin[1] = sy;
     ptsin[2] = (WORD)(sx + w - 1);  ptsin[3] = (WORD)(sy + h - 1);
     ptsin[4] = dx;  ptsin[5] = dy;
     ptsin[6] = (WORD)(dx + w - 1);  ptsin[7] = (WORD)(dy + h - 1);
-    contrl[7] = (WORD)(uint16_t)&src;
+    contrl[7] = (WORD)(uint16_t)src;
     contrl[8] = 0;
-    contrl[9] = (WORD)(uint16_t)&dst;
+    contrl[9] = (WORD)(uint16_t)dst;
     contrl[10] = 0;
     intin[0] = rule;
     if (fg == -1) {

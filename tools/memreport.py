@@ -90,7 +90,7 @@ def rsc_pool(path):
     h = struct.unpack(">18H", d[:36])
     vrsn, imdata, nbb, nimages, rssize = h[0], h[7], h[14], h[16], h[17]
     # A new-format resource keeps its colour icons past rssize; rs_load
-    # streams that to far memory and brings ONE 50-byte mono header per
+    # streams that to far memory and brings ONE 56-byte record per
     # icon back into the pool, after rs_imfar's wind-back (src/aes/rsrc.c,
     # CICON_NEAR).  Count the icons the way the loader does: the table at
     # the offset the extension array names, up to its -1.
@@ -100,7 +100,7 @@ def rsc_pool(path):
         if tab not in (0, 0xFFFFFFFF) and tab < len(d):
             while struct.unpack(">i", d[tab + 4 * near_icons:tab + 4 * near_icons + 4])[0] != -1:
                 near_icons += 1
-    hdrs = 50 * near_icons
+    hdrs = 56 * near_icons
     # rs_imfar moves the image block only when it is the TAIL of the file:
     # nothing the header places may end above rsh_imdata, or winding the
     # pool back over the bits would take it too (HypView's does that).

@@ -451,7 +451,7 @@ class VDI:
         x2 = min(x2, w - 1); y2 = min(y2, h - 1)
         return (x1, y1, x2, y2) if (x1 <= x2 and y1 <= y2) else None
 
-    def _cpyfm(self, pts, src=None, dst=None):
+    def _cpyfm(self, pts, src=None, dst=None, orop=False):
         """Mirrors vdi_vro_cpyfm(), including the alignment fast/slow split.
 
         The VBXE blitter has no shifter, so 4bpp pixels can only be moved
@@ -494,7 +494,10 @@ class VDI:
         dy1 += cy1 - sy1
         sx1, sy1 = cx1, cy1
         w, h = cx2 - cx1 + 1, cy2 - cy1 + 1
-        self.dev.copy(sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h)
+        if orop and src is not None:
+            self.dev.copy(sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=True)
+        else:
+            self.dev.copy(sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h)
 
     def _vrt_cpyfm(self, pts, ints, form):
         """Mirrors vdi_vrt_cpyfm(): a 1-plane source expanded into colours.
@@ -1207,10 +1210,13 @@ class VDI:
         elif op == VR_RECFL:
             self._recfl(pts)
         elif op == VRO_CPYFM:
+            # S_OR_D (7) ORs a memory source over the destination; every
+            # other mode replaces (vdi.c, rform's or_op)
+            orop = bool(ints) and ints[0] == 7
             if form:
-                self._cpyfm(pts, form[0], form[1])
+                self._cpyfm(pts, form[0], form[1], orop)
             else:
-                self._cpyfm(pts)
+                self._cpyfm(pts, orop=orop)
         elif op == V_LOCATOR:
             if pts:
                 self.ptr_x = max(0, min(pts[0], self.dev.w - 1))

@@ -1251,6 +1251,12 @@ static void span_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
  * written. */
 #define ROW_CHUNK 24      /* on the stack, as ANTIC's is: LoRAM has no room */
 
+/* Set around a copy_rows that ORs its source over the destination, nibble
+ * by nibble, rather than replacing it (vro_cpyfm's S_OR_D: a colour icon,
+ * src/aes/graf.c gsx_cblt).  A file-scope byte and not a parameter, so the
+ * dozen places that move screen rectangles stay as they are. */
+static TINY uint8_t cr_or;      /* direct page: LoRAM is at its reserve */
+
 static void copy_rows(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
                       uint32_t db, uint16_t ds, WORD dx1, WORD dy1,
                       WORD w, WORD h)
@@ -1277,6 +1283,30 @@ static void copy_rows(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
             sn = (uint16_t)((UWORD)((sx & 1) + n + 1) >> 1);
             dn = (uint16_t)((UWORD)((dx & 1) + n + 1) >> 1);
             span_io(sr + (UWORD)((UWORD)sx >> 1), row_src, sn, 0);
+            if (cr_or) {
+                /* every destination byte read, each source nibble ORed
+                 * into its place: the source's own parity and the
+                 * destination's, a pixel at a time -- an icon is 32 */
+                UWORD s = (UWORD)(sx & 1), d = (UWORD)(dx & 1), k;
+
+                span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, dn, 0);
+                for (k = 0; k < (UWORD)n; k++, s++, d++) {
+                    uint8_t v = row_src[s >> 1];
+                    uint8_t *p = &row_dst[d >> 1];
+
+                    if (s & 1)
+                        v = (uint8_t)(v & 0x0F);
+                    else
+                        v = (uint8_t)(v >> 4);
+                    if (d & 1)
+                        *p = (uint8_t)(*p | v);
+                    else
+                        *p = (uint8_t)(*p | (uint8_t)(v << 4));
+                }
+                span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, dn, 1);
+                done = (WORD)(done + n);
+                continue;
+            }
             if (dx & 1)
                 span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, 1, 0);
             if ((dx + n) & 1)
@@ -1323,6 +1353,12 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
     uint32_t sb = src->base, db = dst->base;
     WORD l, r, mw;
 
+    if (src->or_op && !src->screen) {   /* S_OR_D from memory: by rows */
+        cr_or = 1;
+        copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, w, h);
+        cr_or = 0;
+        return;
+    }
     if (!(sb & db & VR_FORM_TAG) || ((sx1 ^ dx1) & 1)) {
         copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, w, h);
         return;

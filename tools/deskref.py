@@ -130,7 +130,8 @@ INF_E1_VIEWTEXT = 0x80
 INF_E1_SORTMASK = 0x60
 INF_E5_NOSORT = 0x80
 INF_E5_NOSIZE = 0x10
-SCREENINFO_SIZE = LEN_FNODE             # the union: ICONBLK + label is 47
+SCREENINFO_SIZE = 56                    # the union: ICONBLK, label, a pad
+                                        # and two colour-form LONGs (phase 87)
 OBJ_SIZE = aesref.OBJ_SIZE
 RESULT_INTOUT = vdiref.RESULT_INTOUT
 # the structs deskwin.c keeps, sized as cc65816 lays them out (no padding)
@@ -197,7 +198,8 @@ GLOBES = [("a_menu", PTR), ("a_info", PTR), ("a_mkdir", PTR),
           ("g_wlist", NUM_WNODES * WNODE_SIZE),
           ("g_patcol", N_SCREENS * 2 * 2),
           ("g_screen", NUM_SOBS * OBJ_SIZE),
-          ("g_screeninfo", NUM_ITEMS * SCREENINFO_SIZE)]
+          ("g_screeninfo", NUM_ITEMS * SCREENINFO_SIZE),
+          ("g_cicon", 4)]
 GLOBES_SIZE = sum(n for _, n in GLOBES)
 
 
@@ -2440,6 +2442,9 @@ class Desktop:
         self.a_iblist = self.rsrc_gaddr(R_ICONBLK, 0)
         self.fline = self.rsrc_gaddr(R_STRING, STFLINE)
         self.fmark = self.rsrc_gaddr(R_STRING, STFMARK)
+        # desktop.c desk_cicons: DESKICON.RSC, which no gate disk carries,
+        # so the target's rsrc_load answers 0 and nothing more is called
+        self.call(RSRC_LOAD)
         self.set_version()
         for item in NOT_YET:
             self.call(MENU_IENABLE, (item, 0), tree=self.a_menu)
@@ -2523,11 +2528,12 @@ class Desktop:
         out += b"".join(o.pack() for o in self.screen)
         for i, (ib, label) in enumerate(zip(self.info, self.labels)):
             if self.istext[i]:
-                out += self.lines[i].pack()
+                out += self.lines[i].pack() + bytes(SCREENINFO_SIZE - LEN_FNODE)
             else:
                 out += ((ib.pack() if ib else bytes(ICONBLK_SIZE))
                         + label.pack()
                         + bytes(SCREENINFO_SIZE - ICONBLK_SIZE - LABEL_LEN))
+        out += dw(0)                    # g_cicon: no DESKICON.RSC here
         assert len(out) == GLOBES_SIZE, len(out)
         return out
 

@@ -169,9 +169,25 @@ typedef union {
     struct {
         ICONBLK blk;
         char    label[LABEL_LEN];
+        char    pad;                /* col4 at 48, where the AES reads it */
+        LONG    col4, sel4;         /* a colour icon's forms (DCICON), 0
+                                     * for a mono one: the AES's CICON_NEAR
+                                     * has its own in the same places, so
+                                     * one G_CICON object reads either */
     } i;
     char line[LEN_FNODE];
 } SCREENINFO;
+
+/* A colour icon the desktop took from DESKICON.RSC (desktop.c,
+ * desk_cicons): its mono ICONBLK, then -- 14 bytes on, as the AES's
+ * CICON_NEAR has them -- its 4-plane image and selected image, each
+ * chunky and followed by its mask, all in the desktop's own far block. */
+#define N_IB        6               /* IB_HARD .. IB_DOCU */
+typedef struct {
+    ICONBLK ib;
+    char    text[14];
+    LONG    col4, sel4;
+} DCICON;
 
 typedef struct {
     OBJECT  *a_menu;                    /* ADMENU */
@@ -229,6 +245,8 @@ typedef struct {
     UWORD    g_patcol[N_SCREENS][2];    /* [screen][0] desk, [1] window */
     OBJECT     g_screen[NUM_SOBS];
     SCREENINFO g_screeninfo[NUM_ITEMS]; /* by obid - WOBS_START */
+    DCICON FAR *g_cicon;                /* N_IB of them from DESKICON.RSC,
+                                         * or 0: the mono icons (phase 87) */
 } GLOBES;
 
 extern GLOBES G;

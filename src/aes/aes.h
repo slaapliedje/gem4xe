@@ -367,6 +367,23 @@ typedef struct {
     WORD ib_xtext, ib_ytext, ib_wtext, ib_htext;
 } ICONBLK;
 
+/* What a loaded G_CICON's ob_spec points at (src/aes/rsrc.c, rs_cicons):
+ * the mono ICONBLK first, so anything that reads it as one is right; its
+ * text; and the 4-plane colour form, if the file has one, already turned
+ * into this screen's chunky pixels -- col4 is the image, w*h/2 bytes, with
+ * its one-plane mask straight after it, and sel4 the same for the
+ * selected form, or 0. */
+#define CICON_FTEXT 12                  /* the text in the FILE's CICONBLK */
+#define CICON_TEXT  14                  /* ...and room here: the desktop's
+                                         * icon record puts a 13-byte label
+                                         * in the same place (desk.h) */
+typedef struct {
+    ICONBLK  ib;
+    char     text[CICON_TEXT];
+    uint32_t col4;                      /* far, or 0: draw the mono form */
+    uint32_t sel4;                      /* far, or 0: no selected form */
+} CICON_NEAR;                           /* 56 bytes */
+
 /* The .RSC header (EmuTOS include/rsdefs.h): 36 bytes, offsets from the
  * start of the file.  On disk every word is big-endian; rsrc_load swaps
  * the header and the tables, never the strings or the image data. */
@@ -380,9 +397,9 @@ typedef struct {
 } RSHDR;
 /* rsh_vrsn's bit for the colour-icon extension.  It IS carried: rs_load
  * parses the extension array, the colour-icon table and every CICONBLK
- * (rsrc.c).  What is not done with it is DRAWING -- a G_CICON draws its
- * mono form (objc.c) -- and a resource that has to load FAR is refused
- * if it is new-format.  appl_getinfo says exactly that: AES_SYSTEM's
+ * (rsrc.c), and a G_CICON draws its 4-plane form where it has one on a
+ * 16-colour screen (objc.c, since phase 86) -- but a resource that has to
+ * load FAR is still refused if it is new-format.  appl_getinfo says exactly that: AES_SYSTEM's
  * fourth word is 1 for the format and its third is 0 for the icons.
  * (This comment used to read "not carried", from before rs_cicons.) */
 #define NEW_FORMAT_RSC 0x0004
@@ -512,6 +529,7 @@ void gsx_gclip(GRECT *pt);
 WORD gsx_chkclip(const GRECT *pt);
 void gsx_cline(WORD x1, WORD y1, WORD x2, WORD y2);
 void gsx_tblt(WORD font, WORD x, WORD y, WORD nc);
+void gsx_cblt(uint32_t saddr, WORD dx, WORD dy, WORD w, WORD h);
 void gsx_blt(uint32_t saddr, WORD sx, WORD sy, WORD dx, WORD dy, WORD w, WORD h,
              WORD rule, WORD fg, WORD bg);
 void bb_fill(WORD mode, WORD fis, WORD patt, WORD x, WORD y, WORD w, WORD h);

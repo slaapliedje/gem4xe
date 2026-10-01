@@ -248,7 +248,7 @@ class Vbxe:
             return self.s.mem, a & ~self.TAG
         return self.cpu, a
 
-    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h):
+    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
         """A rectangle moved between forms, in PIXELS, already clipped.
 
         What each pixel ends up as, not how the driver gets it there: the
@@ -259,7 +259,7 @@ class Vbxe:
         """
         sm, sa = self._space(sb)
         dm, da = self._space(db)
-        if (sm is dm is self.s.mem and ((sx1 ^ dx1) & 1) == 0
+        if (not orop and sm is dm is self.s.mem and ((sx1 ^ dx1) & 1) == 0
                 and (sx1 & 1) == 0 and (w & 1) == 0):
             self.s.move(sa + sy1 * ss + (sx1 >> 1), ss,
                         da + dy1 * ds + (dx1 >> 1), ds, w >> 1, h)
@@ -280,7 +280,11 @@ class Vbxe:
             for i in range(w):
                 sx = (sx1 + w - 1 - i) if dx1 > sx1 else (sx1 + i)
                 dx = (dx1 + w - 1 - i) if dx1 > sx1 else (dx1 + i)
-                put(dx, dy, get(sx, sy))
+                v = get(sx, sy)
+                if orop:                # S_OR_D: the destination's own bits too
+                    a = da + dy * ds + (dx >> 1)
+                    v |= (dm[a] & 0x0F) if (dx & 1) else (dm[a] >> 4)
+                put(dx, dy, v)
 
     # -- the cursor ------------------------------------------------------
     # The VDI owns WHERE the pointer is and whether it is shown; the
@@ -457,7 +461,7 @@ class Antic:
         bit = 0x80 >> (x & 7)
         buf[a] = (buf[a] | bit) if value else (buf[a] & ~bit & 0xFF)
 
-    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h):
+    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
         """Mirrors dev_copy_form(): screen to screen is the window
         manager's move and the surface has a byte path for it; anything
         involving a form goes pixel by pixel, in the direction that stops
@@ -634,7 +638,7 @@ class Printer:
         bit = 0x80 >> (x & 7)
         buf[a] = (buf[a] | bit) if value else (buf[a] & ~bit & 0xFF)
 
-    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h):
+    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
         if sb < FAR_BASE and db < FAR_BASE:
             self.a.copy(sx1, sy1, dx1, dy1, w, h)
             return

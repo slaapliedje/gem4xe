@@ -688,47 +688,77 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
              * both transparent, then the character and the label.  Every
              * rectangle in the ICONBLK is relative to the object.
              *
-             * A COLOUR ICON DRAWS ITS MONO FORM.  A CICONBLK begins with a
-             * plain ICONBLK -- the donor relies on that too (gemoblib.c
-             * falls G_CICON through to gr_gicon) -- and rsrc_load leaves a
-             * G_CICON's ob_spec pointing at a near copy of that ICONBLK
-             * whose bits are in far memory (src/aes/rsrc.c, rs_cicons).
-             * The colour planes are kept far beside it for the day this
-             * case selects them: on a 16-colour surface that is the
-             * natural thing to draw, and it is not drawn yet. */
-            ICONBLK ib;
-            far_get((uint8_t *)&ib, spec, sizeof ib);   /* not a struct copy: B11 */
+             * A COLOUR ICON (phase 86): rsrc_load leaves a G_CICON's
+             * ob_spec pointing at a CICON_NEAR (aes.h) -- the mono ICONBLK
+             * first, then where its 4-plane form is, already chunky.  The
+             * mask goes down in the background colour, the colour image
+             * is ORed over it (gsx_cblt), as EmuTOS's gr_colourblit does.
+             * A form with no selected image of its own is not darkened
+             * when selected, as EmuTOS's is; only its label changes. */
+            CICON_NEAR cn;
+            ICONBLK *ib = &cn.ib;
             GRECT pi, pl;
-            WORD fg = (ib.ib_char >> 12) & 0x0F;
-            WORD bg = (ib.ib_char >> 8) & 0x0F;
-            WORD ch = ib.ib_char & 0xFF;
-            const char FAR *label = (const char FAR *)SPEC_PTR(ib.ib_ptext);
+            WORD fg, bg, ch;
+            const char FAR *label;
+            uint32_t col = 0, mask;
 
-            if (state & SELECTED) {     /* selected: the colours change places */
+            if (type == G_CICON)                /* a CICON_NEAR (aes.h) */
+                far_get((uint8_t *)&cn, spec, sizeof cn);   /* not a struct copy: B11 */
+            else
+                far_get((uint8_t *)ib, spec, sizeof(ICONBLK));
+            fg = (ib->ib_char >> 12) & 0x0F;
+            bg = (ib->ib_char >> 8) & 0x0F;
+            ch = ib->ib_char & 0xFF;
+            label = (const char FAR *)SPEC_PTR(ib->ib_ptext);
+            /* THE COLOUR FORM, on a 16-colour screen, when the file has a
+             * 4-plane one (rsrc.c turned it chunky at load): its own
+             * selected form when it has one.  Otherwise the mono form, the
+             * colours swapped for SELECTED, as for G_ICON. */
+            if (type == G_CICON && gl_nplanes == 4 && cn.col4) {
+                col = cn.col4;
+                if ((state & SELECTED) && cn.sel4)
+                    col = cn.sel4;
+            }
+            mask = col ? col + (uint32_t)(ib->ib_wicon / 8) * ib->ib_hicon * 4
+                       : ib->ib_pmask;
+            if (!col && (state & SELECTED)) {
                 WORD tmp = fg;
                 fg = bg;
                 bg = tmp;
             }
-            r_set(&pi, (WORD)(ib.ib_xicon + t.g_x), (WORD)(ib.ib_yicon + t.g_y),
-                  ib.ib_wicon, ib.ib_hicon);
-            r_set(&pl, (WORD)(ib.ib_xtext + t.g_x), (WORD)(ib.ib_ytext + t.g_y),
-                  ib.ib_wtext, ib.ib_htext);
+            r_set(&pi, (WORD)(ib->ib_xicon + t.g_x), (WORD)(ib->ib_yicon + t.g_y),
+                  ib->ib_wicon, ib->ib_hicon);
+            r_set(&pl, (WORD)(ib->ib_xtext + t.g_x), (WORD)(ib->ib_ytext + t.g_y),
+                  ib->ib_wtext, ib->ib_htext);
 
             /* WHITEBAK over a white background leaves what is there */
             if (!((state & WHITEBAK) && bg == WHITE)) {
-                gsx_blt(ib.ib_pmask, 0, 0, pi.g_x, pi.g_y, pi.g_w, pi.g_h,
+                gsx_blt(mask, 0, 0, pi.g_x, pi.g_y, pi.g_w, pi.g_h,
                         MD_TRANS, bg, fg);
-                if (label && *label)
-                    gr_rect(bg, IP_SOLID, &pl);
+                if (label && *label) {
+                    if (col && (state & SELECTED))
+                        gr_rect(fg, IP_SOLID, &pl);
+                    else
+                        gr_rect(bg, IP_SOLID, &pl);
+                }
             }
-            gsx_blt(ib.ib_pdata, 0, 0, pi.g_x, pi.g_y, pi.g_w, pi.g_h,
-                    MD_TRANS, fg, bg);
+            if (col) {
+                gsx_cblt(col, pi.g_x, pi.g_y, pi.g_w, pi.g_h);
+                if (state & SELECTED) {         /* the label's colours */
+                    WORD tmp = fg;
+                    fg = bg;
+                    bg = tmp;
+                }
+            } else {
+                gsx_blt(ib->ib_pdata, 0, 0, pi.g_x, pi.g_y, pi.g_w, pi.g_h,
+                        MD_TRANS, fg, bg);
+            }
 
             gsx_attr(TRUE, MD_TRANS, fg);
             if (ch) {
                 intin[0] = ch;
-                gsx_tblt(SMALL, (WORD)(pi.g_x + ib.ib_xchar),
-                         (WORD)(pi.g_y + ib.ib_ychar), 1);
+                gsx_tblt(SMALL, (WORD)(pi.g_x + ib->ib_xchar),
+                         (WORD)(pi.g_y + ib->ib_ychar), 1);
             }
             if (label)
                 gr_gtext(TE_CNTR, SMALL, label, &pl);

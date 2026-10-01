@@ -465,14 +465,12 @@ static void rs_imfar(uint8_t *mem, uint16_t im_off, uint16_t size)
  * taken AFTER rs_imfar has wound the pool back, so they sit where the
  * mono images were and cost nothing extra when there were images to
  * move.  Like the image bits, the far block is app_free's to reclaim. */
-#define CICON_TEXT  12
-typedef struct {
-    ICONBLK  ib;
-    char     text[CICON_TEXT];
-    uint32_t cicons;                    /* far: the first CICON, or 0 */
-} CICON_NEAR;                           /* 50 bytes, and even */
+/* CICON_NEAR is in aes.h, where objc.c reads it. */
 
 #define CICON_MAX   256                 /* a table longer than this is not one */
+#define CICON_BYTES 128                 /* one plane of the biggest colour form
+                                         * drawn, 32 x 32; a bigger one draws
+                                         * its mono form */
 
 uint32_t rs_cibase;                     /* where the extension went, 0 if none */
 uint16_t rs_cisize;
@@ -497,6 +495,35 @@ static void rs_farback(WORD slot)
     }
 }
 
+/* A 4-plane form in the ST's plane order -- each plane's rows whole, one
+ * after the other -- turned in place into this screen's chunky pixels: a
+ * nibble a pixel, the left one high, plane 0 its lowest bit.  The plane
+ * bits ARE the hardware pen, because the VDI keeps the ST's pen order in
+ * hardware (src/vdi/dev_vbxe.c, map_col), so nothing is looked up.  Through
+ * two pool scratch buffers of `bytes` * 4, the caller's. */
+static void rs_chunky(uint32_t far, uint16_t wb, uint16_t h,
+                      uint8_t *planes, uint8_t *out)
+{
+    uint16_t bytes = (uint16_t)(wb * h), r, x, p;
+
+    far_get(planes, far, (uint16_t)(bytes * 4));
+    for (r = 0; r < h; r++) {
+        uint8_t *o = out + r * (wb * 4);
+        for (x = 0; x < (uint16_t)(wb * 8); x++) {
+            uint8_t v = 0, m = (uint8_t)(0x80 >> (x & 7));
+            uint16_t at = (uint16_t)(r * wb + (x >> 3));
+            for (p = 0; p < 4; p++)
+                if (planes[p * bytes + at] & m)
+                    v = (uint8_t)(v | (1 << p));
+            if (x & 1)
+                o[x >> 1] = (uint8_t)(o[x >> 1] | v);
+            else
+                o[x >> 1] = (uint8_t)(v << 4);
+        }
+    }
+    far_put(far, out, (uint16_t)(bytes * 4));
+}
+
 static uint32_t rd_long(uint32_t far)   /* a 68000 LONG, from far memory */
 {
     uint8_t b[4];
@@ -507,7 +534,7 @@ static uint32_t rd_long(uint32_t far)   /* a 68000 LONG, from far memory */
 
 /* `fd` is positioned just past the rsh_rssize bytes already in `h`.
  * 1 on success; 0 and nothing of the pool kept on any failure. */
-static WORD rs_cicons(int16_t fd, RSHDR *h, uint16_t size)
+static WORD rs_cicons(int16_t fd, const RSHDR *h, uint32_t rbase, uint16_t size)
 {
     uint8_t ext[8], st;
     uint16_t got, n, i, mark, slice, k, bytes;
@@ -584,28 +611,61 @@ static WORD rs_cicons(int16_t fd, RSHDR *h, uint16_t size)
         at += bytes;                    /* ...the mono mask... */
         c->ib.ib_pmask = at;
         at += bytes;                    /* ...the text, copied near... */
-        far_get((uint8_t *)c->text, at, CICON_TEXT);
-        c->text[CICON_TEXT - 1] = 0;
+        far_get((uint8_t *)c->text, at, CICON_FTEXT);
+        c->text[CICON_FTEXT] = 0;       /* twelve characters and no 0 is */
+        c->text[CICON_FTEXT + 1] = 0;   /* how the Falcon's are written */
         c->ib.ib_ptext = (uint16_t)c->text;
-        at += CICON_TEXT;               /* ...and the colour forms */
-        c->cicons = num ? at : 0;
+        at += CICON_FTEXT;              /* ...and the colour forms */
+        c->col4 = 0;
+        c->sel4 = 0;
         for (k = 0; k < num; k++) {     /* step over each: planes is the
                                          * high word of the first LONG */
             uint16_t planes = (uint16_t)(rd_long(at) >> 16);
             uint32_t sel = rd_long(at + 10);
+            if (planes == 4 && !c->col4 && bytes <= CICON_BYTES) {
+                c->col4 = at + 22;      /* image, then its mask */
+                if (sel)
+                    c->sel4 = at + 22 + (uint32_t)bytes * 5;
+            }
             at += 22 + (uint32_t)bytes * planes + bytes;
             if (sel)
                 at += (uint32_t)bytes * planes + bytes;
         }
     }
 
-    /* the objects: an index becomes the near record's address */
+    /* the 4-plane images to chunky, once, here rather than at every draw
+     * -- EmuTOS transforms them at load too (gemrslib.c) */
+    {
+        uint16_t m2 = pool_mark();
+        uint8_t *pl = pool_alloc(CICON_BYTES * 4, 2);
+        uint8_t *ch = pool_alloc(CICON_BYTES * 4, 2);
+        if (!pl || !ch) {
+            pool_release(m2);
+            return 0;
+        }
+        for (i = 0; i < n; i++) {
+            CICON_NEAR *c = &near[i];
+            uint16_t wb = (uint16_t)(c->ib.ib_wicon / 8);
+            if (c->col4)
+                rs_chunky(c->col4, wb, (uint16_t)c->ib.ib_hicon, pl, ch);
+            if (c->sel4)
+                rs_chunky(c->sel4, wb, (uint16_t)c->ib.ib_hicon, pl, ch);
+        }
+        pool_release(m2);
+    }
+
+    /* the objects: an index becomes the near record's address -- through
+     * the far accessors, since the resource itself may be in the pool or,
+     * since phase 87, in far memory (rs_load) */
     for (i = 0; i < h->rsh_nobs; i++) {
-        OBJECT *obj = addr_of(h, (uint32_t)(uint16_t)h, R_OBJECT, i);
-        if ((obj->ob_type & 0xFF) == G_CICON) {
-            if (obj->ob_spec >= n)
+        uint32_t oa = addr_at(h, rbase, R_OBJECT, i), spec;
+        uint8_t ty[2];
+        far_get(ty, oa + 6, 2);
+        if (ty[0] == G_CICON) {
+            spec = rd_native(oa + 12);
+            if (spec >= n)
                 return 0;
-            obj->ob_spec = (uint16_t)&near[obj->ob_spec];
+            wr_native(oa + 12, (uint32_t)(uint16_t)&near[spec]);
         }
     }
     rs_cibase = base;
@@ -663,10 +723,13 @@ WORD rs_load(const char *name, WORD wants_far)
      * the desktop did not fit, and qed had to replace the desktop rather
      * than launch beside it.
      *
-     * Colour icons stay pool-only, as they were: rs_fixit's new-format
-     * path has not been taught far addresses. */
+     * A new-format resource -- one with colour icons -- goes far too
+     * since phase 87: rs_cicons reaches its objects through far
+     * addresses, and only its small near records come into the pool.
+     * The desktop's DESKICON.RSC is 10.6 KB before its icons, more than
+     * a launched program's share of the pool. */
     mark = pool_mark();
-    gofar = wants_far && !(hdr.rsh_vrsn & NEW_FORMAT_RSC);
+    gofar = wants_far;
     mem = gofar ? NULL : pool_alloc(size, 2);
     if (mem) {
         base = (uint32_t)(uint16_t)mem;
@@ -724,12 +787,14 @@ WORD rs_load(const char *name, WORD wants_far)
     }
     rs_fixit(base);
     ok = 1;
-    if (!far) {
+    if (!far)
         rs_imfar(mem, hdr.rsh_imdata, size);
-        /* the colour icons, if the file has the extension for them: the
-         * fd is still positioned just past the rsh_rssize bytes */
-        if (hdr.rsh_vrsn & NEW_FORMAT_RSC)
-            ok = rs_cicons(fd, (RSHDR *)mem, size);
+    /* the colour icons, if the file has the extension for them: the fd
+     * is still positioned just past the rsh_rssize bytes */
+    if (hdr.rsh_vrsn & NEW_FORMAT_RSC) {
+        RSHDR nh;
+        hdr_get(base, &nh);             /* native, as rs_fixit left it */
+        ok = rs_cicons(fd, &nh, base, size);
     }
     cio_close(fd);
     if (!ok) {                      /* refused whole: nothing half-loaded */

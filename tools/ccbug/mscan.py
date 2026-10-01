@@ -35,7 +35,8 @@ crosses a branch; it will not invent one.
     python3 tools/ccbug/mscan.py --build       # the BUILD's own assembly: make mscan
 
 --build runs a second check as well, joins() below: B21, an immediate
-reached in a width its encoding contradicts.
+reached in a width its encoding contradicts -- and mixed(), any
+width-dependent instruction that both widths reach.
 """
 import os
 import re
@@ -220,9 +221,8 @@ def _mbits(operand):
     return bool(v & 0x20)
 
 
-def joins(path):
-    """[(function, line, text, widths)] for every accumulator immediate
-    that some path reaches in a width its encoding contradicts."""
+def _reach(path):
+    """(items, the set of widths that can reach each, its function)."""
     items = _lines(path)
     at = {}
     for i, (lab, _, _) in enumerate(items):
@@ -307,7 +307,13 @@ def joins(path):
         if op in ("rtl", "rts", "rti"):
             continue
         push(i + 1, ws)
+    return items, inw, func_of
 
+
+def joins(path):
+    """[(function, line, text, widths)] for every accumulator immediate
+    that some path reaches in a width its encoding contradicts."""
+    items, inw, func_of = _reach(path)
     hits = []
     for i, (lab, text, n) in enumerate(items):
         if not text:
@@ -319,6 +325,33 @@ def joins(path):
         wrong = inw[i] - {enc}
         if wrong:
             hits.append((func_of[i], n, text.strip(), sorted(inw[i])))
+    return hits
+
+
+# B21 WITHOUT AN IMMEDIATE.  joins() looks only at encodings, so it never
+# saw desktop.c's ci_named (phase 87): the path that folded a letter's case
+# ended `sep #32 / sta 1,s` and fell into a join assembled for 16 bits that
+# opened `lda dp:_Dp+4 / sta dp:_Dp+8` -- a far pointer's low word, moved a
+# byte at a time.  Every instruction there decodes the same in either
+# width; it is the DATA that comes out wrong.  So: any instruction whose
+# effect depends on the accumulator's width, where both widths arrive.
+M_DATA = re.compile(r"^\s+(lda|sta|adc|sbc|cmp|and|ora|eor|bit|stz|inc|dec|"
+                    r"asl|lsr|rol|ror|tsb|trb|pha|pla|xba)\b", re.I)
+
+
+def mixed(path):
+    """[(function, line, text)]: the first width-dependent instruction
+    after each point that both widths reach."""
+    items, inw, func_of = _reach(path)
+    hits = []
+    seen = False
+    for i, (lab, text, n) in enumerate(items):
+        if not text or inw[i] != {N, W}:
+            seen = False
+            continue
+        if M_DATA.match(text) and not M_IMM.match(text) and not seen:
+            hits.append((func_of[i], n, text.strip()))
+            seen = True
     return hits
 
 
@@ -420,6 +453,10 @@ def build_scan():
             print(f"{rel}:{n}: {func}: `{text}` is reached with the "
                   f"accumulator {' and '.join(w + '-bit' for w in ws)} wide")
             widths += 1
+        for func, n, text in mixed(f):
+            print(f"{rel}:{n}: {func}: `{text}` is reached with the "
+                  f"accumulator both 8 and 16 bits wide (B21)")
+            widths += 1
         for func, n, text in stack_zero(f):
             print(f"{rel}:{n}: {func}: `{text}` reads below the stack (B23)")
             zeros += 1
@@ -428,7 +465,7 @@ def build_scan():
                   f"{k}-bit field (B12): shift an unsigned copy")
             shifts += 1
     print(f"mscan: {len(files)} object(s) of the build scanned; {calls} "
-          f"call(s) reached narrow, {widths} immediate(s) reached in the "
+          f"call(s) reached narrow, {widths} join(s) reached in the "
           f"wrong width, {zeros} read(s) below the stack, {shifts} signed "
           f"shift(s) from the wrong bit")
     return 1 if calls or widths or zeros or shifts else 0
