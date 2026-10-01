@@ -539,7 +539,7 @@ def info_tree(r):
                  NORMAL, r.string("OK"), ch(16), ch(ABOUT_H - 2), ch(8), ch(1)))
     assert len(objs) == NOBS_INFO, (len(objs), NOBS_INFO)
     assert objs[DEVERSN][6].s == "0.00"
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def mkdir_tree(r):
@@ -560,7 +560,7 @@ def mkdir_tree(r):
          r.string("Cancel"), ch(18), ch(5), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS_MKD, (len(objs), NOBS_MKD)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def delete_tree(r):
@@ -584,7 +584,7 @@ def delete_tree(r):
          r.string("Cancel"), ch(19), ch(6), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS_CDEL, (len(objs), NOBS_CDEL)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def finfo_tree(r):
@@ -629,7 +629,7 @@ def finfo_tree(r):
     ]
     assert len(objs) == NOBS_FINF, (len(objs), NOBS_FINF)
     assert objs[FIOK][3] == G_BUTTON and objs[FICNCL][3] == G_BUTTON
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def pref_tree(r):
@@ -697,7 +697,7 @@ def pref_tree(r):
     objs.append((ROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB,
                  NORMAL, r.string("Cancel"), ch(26), ch(17), ch(9), ch(1)))
     assert len(objs) == NOBS_PREF, (len(objs), NOBS_PREF)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def cmd_tree(r):
@@ -718,7 +718,7 @@ def cmd_tree(r):
          r.string("Cancel"), ch(CMD_W // 2 + 1), ch(5), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS_CMD, (len(objs), NOBS_CMD)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def app_tree(r):
@@ -744,7 +744,7 @@ def app_tree(r):
          r.string("Cancel"), ch(2 * third + 1), ch(7), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS_APP, (len(objs), NOBS_APP)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def drive_tree(r):
@@ -768,7 +768,7 @@ def drive_tree(r):
          r.string("OK"), ch((DRV_W - 9) // 2), ch(10), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS_DRV, (len(objs), NOBS_DRV)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def mask_tree(r):
@@ -787,7 +787,7 @@ def mask_tree(r):
          r.string("Cancel"), ch(MSK_W - 13), ch(5), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS_MASK, (len(objs), NOBS_MASK)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def conflict_tree(r):
@@ -811,7 +811,7 @@ def conflict_tree(r):
          r.string("Stop"), ch(24), ch(7), ch(8), ch(1)),
     ]
     assert len(objs) == NOBS_NC, (len(objs), NOBS_NC)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 def icon_tree(r):

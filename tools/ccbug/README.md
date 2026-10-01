@@ -1251,3 +1251,40 @@ The shape to write instead: the row as a number -- `row = code >> 6`,
 three rows, `idx + (row << 6)`.  And `mscan --build` now reports any
 operand at `0,s` in the build's own assembly, which nothing right can
 produce; `mscan_b23.s` is the reproducer's listing, kept to prove it can.
+
+## B24 — a value chosen in branches is stored in one slot and read from another
+
+    icol = d3 == FL3DACT ? actbutcol : indbutcol;   /* in just_draw */
+
+At `-O1` and `-O2` each branch stores the chosen value at `1,s`, and the
+join loads `icol` from `10,s` -- a different local -- and stores that:
+
+            jsl     long:`?L1569`       ; A = indbutcol
+            sta     1,s
+            bra     `?L798`
+    `?L797`:
+            jsl     long:`?L1568`       ; A = actbutcol
+            sta     1,s
+    `?L798`:    lda     10,s            ; not 1,s
+            sta     46,s                ; icol
+
+The same with `if`/`else` in place of `?:`, with WORD variables in place
+of bytes, with constants (`d3 == FL3DACT ? FL3DACT : FL3DIND`), and
+with `--no-interprocedural-cross-jump`; and when the choice was moved
+into a small function, the compiler inlined it and made the same join.
+The values are right; only the join reads the wrong slot.  Seen in
+`src/aes/objc.c`'s `just_draw`, the AES's largest function (a frame of
+some 70 bytes); the ternaries that were already in it compile right,
+and a simple pick elsewhere is right too, so what decides it is not yet
+known.  **No minimal case yet.**
+
+FOUND BY: the 3D look (phase 85).  test-m4's 3D dialog drew its
+buttons white and its ground yellow -- whatever happened to be in the
+other slot -- while the model drew them grey.  The title strip, which
+reads `backgrcol` with no choice, was grey on both.
+
+The shape to write instead: a TABLE read by index -- `col3d[d3 >> 9]`
+-- which has no join.  A scan for `sta 1,s` reaching a join that loads
+some other slot finds these, but finds legitimate code too (a value
+parked at `1,s` and compared on the next line), so it is not in
+`mscan` yet: the shape has to be pinned first.

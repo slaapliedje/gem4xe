@@ -105,7 +105,8 @@ CPXOPENT = "Open"
 CPX_W = 20           # title_txt is 18 and the frame wants a little
 
 DC_W, DC_STEP = 4, 5            # five numbered boxes, the donor's shape
-MN_W, MN_STEP = 8, 8            # named, so they touch and read as one strip
+MN_W, MN_STEP = 7, 8            # a cell apart: with the 3D look each
+                                # grows two pixels a side (src/aes/objc.c)
 MN_NAMES = ("Instant", "Fast", "Normal", "Slow")
 GROUP_X = 4                     # both groups under their own label, not
                                 # one of them two characters to its left
@@ -120,7 +121,8 @@ def cpanel_tree(r):
         (CPDCLBL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(TITLE),
          ch((W - len(TITLE)) // 2), ch(1), ch(len(TITLE)), ch(1)),
         (CPDCBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(DCLBL),
-         ch(GROUP_X), ch(3), ch(len(DCLBL)), ch(1)),
+         ch(GROUP_X), ch(3, -3), ch(len(DCLBL)), ch(1)),   # up 3: room
+                                # for the 3D look's edge on the row below
         (CPTSTLBL, CPDC0, CPDC0 + N_DC - 1, G_IBOX, NONE, NORMAL, 0x00000000,
          ch(GROUP_X), ch(4), ch((N_DC - 1) * DC_STEP + DC_W), ch(1)),
     ]
@@ -136,7 +138,7 @@ def cpanel_tree(r):
     objs.append((CPMNLBL, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
                  r.string(TEST), ch(11), ch(6), ch(len(TEST) + 3), ch(1)))
     objs.append((CPMNBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(MNLBL),
-                 ch(GROUP_X), ch(8), ch(len(MNLBL)), ch(1)))
+                 ch(GROUP_X), ch(8, -3), ch(len(MNLBL)), ch(1)))
     objs.append((CPXLBL, CPMN0, CPMN0 + N_MN - 1, G_IBOX, NONE, NORMAL,
                  0x00000000,
                  ch(GROUP_X), ch(9),
@@ -167,7 +169,8 @@ def cpanel_tree(r):
     objs.append((CPROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB,
                  NORMAL, r.string("Cancel"), ch(22), ch(22), ch(9), ch(1)))
     assert len(objs) == NOBS_CPANEL, (len(objs), NOBS_CPANEL)
-    return r.tree(objs)
+    # the extensions are a LIST: its rows stay flat in the 3D look
+    return r.tree(objs, look3d=True, flat=range(CPX0, CPX0 + N_CPX))
 
 
 INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTITLE", CPTITLE),

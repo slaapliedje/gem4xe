@@ -45,7 +45,7 @@ WORD foreign;               /* Y after a COP that is not gem4xe's: m11_cop.s */
 WORD sv_ad3d, sv_ad3d1, sv_ad3d2;   /* AD3DVALUE: return, and the two values */
 WORD sv_lk3d, sv_lk3d1, sv_lk3d2;   /* LK3DIND: the same */
 WORD sv_col1;                       /* INDBUTCOL's colour */
-WORD sv_set;                        /* a SV_SET: must be refused */
+WORD sv_set;                        /* a SV_SET of a pen that is not there: refused */
 WORD sv_junk;                       /* a `which` that is not one of the six */
 /* appl_find's answers, kept out of results[] for the same reason: what
  * they must be is fixed by the contract, not computed by a model. */
@@ -181,7 +181,7 @@ int main(void)
     sv_ad3d = objc_sysvar(SV_INQUIRE, AD3DVALUE, 0, 0, &sv_ad3d1, &sv_ad3d2);
     sv_lk3d = objc_sysvar(SV_INQUIRE, LK3DIND, 0, 0, &sv_lk3d1, &sv_lk3d2);
     objc_sysvar(SV_INQUIRE, INDBUTCOL, 0, 0, &sv_col1, &k);
-    sv_set  = objc_sysvar(SV_SET, INDBUTCOL, 1, 0, &k, &k);
+    sv_set  = objc_sysvar(SV_SET, INDBUTCOL, 99, 0, &k, &k);  /* no pen 99 */
     sv_junk = objc_sysvar(SV_INQUIRE, 99, 0, 0, &k, &k);
 
     /* appl_find (opcode 13): the process list, searched by name.  The

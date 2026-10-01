@@ -134,7 +134,7 @@ def build():
          r.string("Cancel"), ch(23), ch(20), ch(9), ch(1)),
     ]
     assert len(objs) == NOBS, (len(objs), NOBS)
-    r.tree(objs)
+    r.tree(objs, look3d=True)
     return r
 
 

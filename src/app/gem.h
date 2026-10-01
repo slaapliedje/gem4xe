@@ -223,9 +223,10 @@ typedef struct {
 #define G_LBLACK    9
 
 /* objc_sysvar: what a program is told about 3D object rendering.  The
- * Compendium's names (6.121).  gem4xe draws no 3D objects, so the
- * inquiry answers zero throughout and setting is refused -- see
- * ob_sysvar in objc.c for why zero is the TRUE answer and not a stub. */
+ * Compendium's names (6.121).  gem4xe draws 3D objects when its 3D look is
+ * switched on (the control panel's GENERAL module, or G4_3DLOOK below)
+ * and flat, as an AES before 3.40 did, when it is off -- the default --
+ * and the answers say which (src/aes/objc.c, ob_sysvar). */
 #define SV_INQUIRE  0
 #define SV_SET      1
 #define LK3DIND     1           /* indicator: does its text move, its colour change */
@@ -234,6 +235,14 @@ typedef struct {
 #define ACTBUTCOL   4           /* an activator's */
 #define BACKGRCOL   5           /* a background object's */
 #define AD3DVALUE   6           /* extra pixels each side for the 3D effect */
+#define G4_3DLOOK   100         /* gem4xe's own: the 3D look, 1 on, 0 off --
+                                 * set by the control panel, read by anyone */
+
+/* ob_flags: the 3D kinds (AES 3.40), drawn only with the 3D look on */
+#define FL3DIND     0x0200      /* an indicator: a radio or toggle button */
+#define FL3DACT     0x0400      /* an activator: an EXIT button */
+#define FL3DBAK     0x0600      /* a background: a dialog's box */
+#define FL3DMASK    0x0600
 #define G_LRED     10
 #define G_LGREEN   11
 #define G_LBLUE    12

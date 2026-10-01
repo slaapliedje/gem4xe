@@ -808,6 +808,14 @@ static void run_script(void)
                 c4 = 2;
                 break;
             }
+            case 48: {                      /* objc_sysvar: mode, which, in1, in2 */
+                WORD o1 = 0, o2 = 0;
+                intout[0] = ob_sysvar(intin[0], intin[1], intin[2], intin[3], &o1, &o2);
+                intout[1] = o1;
+                intout[2] = o2;
+                c4 = 3;
+                break;
+            }
             case 47:                        /* objc_change */
                 clip.g_x = ptsin[0]; clip.g_y = ptsin[1];
                 clip.g_w = ptsin[2]; clip.g_h = ptsin[3];

@@ -84,7 +84,7 @@ def calc_tree(r):
                  ch(KX + 2 * (KW + GAP) + GAP), ch(KY + 4 * (KH + GAP)),
                  ch(KW * 2), ch(KH)))
     assert len(objs) == NOBS_CALC, (len(objs), NOBS_CALC)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 INDICES = [("ADCALC", ADCALC), ("CROOT", CROOT), ("CTITLE", CTITLE),

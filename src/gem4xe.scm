@@ -298,7 +298,15 @@
     ;; that does not exist -- which is the guard firing before it even
     ;; looks.  A low-water mark measures what has happened, not what is
     ;; reserved.
-    (block stack   (size #x0800))
+    ;;
+    ;; 2,080 since phase 85: at 2,048 test-m32's Pexec had 1,039 bytes
+    ;; left, fifteen over the guard, and the 3D look's few bytes more in
+    ;; the AES took it under -- every Pexec ENSMEM again.  Thirty-two of
+    ;; LoRAM's spare bytes, which is all its 256-byte reserve allows
+    ;; (tests/host/test_memory.py): the margin is some forty bytes, and
+    ;; the next frame that grows under a Pexec wants a real answer --
+    ;; less engine stack per call, not more stack.
+    (block stack   (size #x0820))
     (block heap    (size #x0000))   ;; nothing here calls malloc
     (base-address _DirectPageStart DirectPage 0))
 

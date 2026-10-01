@@ -50,6 +50,13 @@ WHITEBAK = 0x40
 
 NIL, ROOT, MAX_DEPTH, MAX_LEN = -1, 0, 8, 81
 WHITE, BLACK, LWHITE, LBLACK = 0, 1, 8, 9
+# the 3D look (src/aes/objc.c): flags, the growth, objc_sysvar's subjects
+FL3DIND, FL3DACT, FL3DBAK, FL3DMASK = 0x0200, 0x0400, 0x0600, 0x0600
+ADJ3DSTD = 2
+SV_INQUIRE, SV_SET = 0, 1
+LK3DIND, LK3DACT, INDBUTCOL, ACTBUTCOL, BACKGRCOL, AD3DVALUE = 1, 2, 3, 4, 5, 6
+G4_3DLOOK = 100
+COMP16 = (BLACK, WHITE, 13, 15, 14, 10, 12, 11, LBLACK, LWHITE, 5, 7, 6, 2, 4, 3)
 IP_HOLLOW, IP_4PATT, IP_SOLID = 0, 4, 7
 IBM, SMALL = 3, 5
 TE_LEFT, TE_RIGHT, TE_CNTR = 0, 1, 2
@@ -714,6 +721,7 @@ class AES:
         wpixel, hpixel = v.intout[3], v.intout[4]
         self.vcall(VQ_EXTND, (), (1,))
         self.gl_nplanes = v.intout[4]
+        self.ob_3dinit()
         self.vcall(VST_HEIGHT, (0, 0), ())
         (self.gl_wptschar, self.gl_hptschar,
          self.gl_wchar, self.gl_hchar) = v.ptsout[0:4]
@@ -1043,12 +1051,112 @@ class AES:
             ti += step
         return raw, ''.join(out)
 
+    # -- the 3D look (src/aes/objc.c) ------------------------------------
+    gl_3d = 0
+    indtxtmove, indcolchange, acttxtmove, actcolchange = 0, 1, 1, 0
+
+    def ob_3dinit(self):
+        c = WHITE if (1 << self.gl_nplanes) <= LWHITE else LWHITE
+        self.indbutcol = self.actbutcol = self.backgrcol = c
+
+    def xor_color(self, color):
+        if color < 0 or color >= (1 << self.gl_nplanes) or color >= 16:
+            return WHITE
+        if self.gl_nplanes == 1:
+            return BLACK if color == WHITE else WHITE
+        return COMP16[color]
+
+    def add_3d_effect(self, pt, obstate, th, color):
+        r = pt.copy()
+        if th > 0:
+            self.gr_inside(r, th)
+        x0, y0 = r.x, r.y
+        x1, y1 = r.x + r.w - 2, r.y + r.h - 2
+        self.gsx_attr(False, MD_REPLACE, BLACK if obstate & SELECTED else WHITE)
+        self.gsx_cline(x0, y0 + r.h - 2, x0, y0)
+        self.gsx_cline(x0, y0, x1, y0)
+        c = LWHITE if obstate & SELECTED else LBLACK
+        if c == color or (1 << self.gl_nplanes) <= c:
+            c = WHITE if obstate & SELECTED else BLACK
+        self.gsx_attr(False, MD_REPLACE, c)
+        self.gsx_cline(x0 + 1, y1 + 1, x1 + 1, y1 + 1)
+        self.gsx_cline(x1 + 1, y1 + 1, x1 + 1, y0 + 1)
+
+    def draw_3d_outline(self, pt):
+        l, tp = pt.x - 3, pt.y - 3
+        r, b = pt.x + pt.w + 2, pt.y + pt.h + 2
+        self.gsx_attr(False, MD_REPLACE, LBLACK)
+        for i in range(3):
+            self.gsx_cline(l + i, b - i, r - i, b - i)
+            self.gsx_cline(r - i, b - i, r - i, tp + i)
+        self.gsx_cline(l, b, l, tp)
+        self.gsx_cline(l, tp, r, tp)
+        self.gsx_attr(False, MD_REPLACE, WHITE)
+        for i in (1, 2):
+            self.gsx_cline(l + i, b - i, l + i, tp + i)
+            self.gsx_cline(l + i, tp + i, r - i, tp + i)
+
+    def ob_sysvar(self, mode, which, in1, in2):
+        """-> (ret, out1, out2), objc.c's ob_sysvar."""
+        ncol = 1 << self.gl_nplanes
+        if mode == SV_SET:
+            if which == G4_3DLOOK:
+                self.gl_3d = 1 if in1 else 0
+                return 1, 0, 0
+            if which == LK3DIND:
+                if in1 != -1: self.indtxtmove = in1 & 0xFF
+                if in2 != -1: self.indcolchange = in2 & 0xFF
+                return 1, 0, 0
+            if which == LK3DACT:
+                if in1 != -1: self.acttxtmove = in1 & 0xFF
+                if in2 != -1: self.actcolchange = in2 & 0xFF
+                return 1, 0, 0
+            if which in (INDBUTCOL, ACTBUTCOL, BACKGRCOL):
+                if in1 < 0 or in1 >= ncol:
+                    return 0, 0, 0
+                setattr(self, {INDBUTCOL: "indbutcol", ACTBUTCOL: "actbutcol",
+                               BACKGRCOL: "backgrcol"}[which], in1)
+                return 1, 0, 0
+            return 0, 0, 0
+        if mode != SV_INQUIRE:
+            return 0, 0, 0
+        d = self.gl_3d
+        if which == G4_3DLOOK:
+            return 1, d, 0
+        if which == LK3DIND:
+            return (1, self.indtxtmove, self.indcolchange) if d else (1, 0, 0)
+        if which == LK3DACT:
+            return (1, self.acttxtmove, self.actcolchange) if d else (1, 0, 0)
+        if which == AD3DVALUE:
+            return (1, ADJ3DSTD, ADJ3DSTD) if d else (1, 0, 0)
+        if which == INDBUTCOL:
+            return 1, self.indbutcol if d else WHITE, 0
+        if which == ACTBUTCOL:
+            return 1, self.actbutcol if d else WHITE, 0
+        if which == BACKGRCOL:
+            return 1, self.backgrcol if d else WHITE, 0
+        return 0, 0, 0
+
     def just_draw(self, obj, sx, sy):
         state, typ, flags, spec, th, ch = self.ob_sst(obj)
         o = self.tree[obj]
         if (flags & HIDETREE) or spec == 0xFFFFFFFF:
             return
         t = Rect(sx, sy, o.ob_width, o.ob_height)
+        d3 = (flags & FL3DMASK) if self.gl_3d else 0
+        # a background TEXT takes the ground only: no edge, no growth
+        edge3d = bool(d3) and not (d3 == FL3DBAK and typ in
+                                   (G_TEXT, G_FTEXT, G_BOXTEXT, G_FBOXTEXT))
+        movetext = changecol = eff_th = 0
+        eff = None
+        if edge3d:
+            self.gr_inside(t, -ADJ3DSTD)
+            if d3 == FL3DACT:
+                movetext, changecol = self.acttxtmove, self.actcolchange
+            else:
+                movetext, changecol = self.indtxtmove, self.indcolchange
+            eff = t.copy()
+            eff_th = th
         # Trivial reject against the clip
         c = t.copy()
         if state & OUTLINED:
@@ -1065,8 +1173,23 @@ class AES:
             if typ in (G_TEXT, G_BOXTEXT, G_FTEXT, G_FBOXTEXT):
                 ted = self.mem[spec]
                 bcol, tcol, tmode, ipat, icol = crack(ted.color)
+                if d3 and ipat == IP_HOLLOW and icol == WHITE:
+                    ipat, icol = IP_SOLID, self.backgrcol
+                    if tmode == MD_REPLACE:
+                        tmode = MD_TRANS
+                        if typ == G_TEXT:
+                            typ, tmpth, th = G_BOXTEXT, 0, 0
+                        elif typ == G_FTEXT:
+                            typ, tmpth, th = G_FBOXTEXT, 0, 0
             elif typ in (G_BOX, G_BOXCHAR, G_IBOX):
                 bcol, tcol, tmode, ipat, icol = crack(spec & 0xFFFF)
+                if d3 and typ != G_IBOX and ipat == IP_HOLLOW and icol == WHITE:
+                    ipat = IP_SOLID
+                    icol = (self.indbutcol if d3 == FL3DIND else
+                            self.actbutcol if d3 == FL3DACT else self.backgrcol)
+            if typ == G_BUTTON and d3:
+                bcol, ipat = BLACK, IP_SOLID
+                icol = self.actbutcol if d3 == FL3DACT else self.indbutcol
             if typ in (G_BOX, G_BOXCHAR, G_IBOX, G_BUTTON, G_BOXTEXT,
                        G_FBOXTEXT):
                 if th != 0:
@@ -1074,20 +1197,28 @@ class AES:
                     self.gr_box(t.x, t.y, t.w, t.h, th)
                 if typ != G_IBOX:
                     self.gr_inside(t, tmpth)
+                    if changecol and (state & SELECTED):
+                        if ipat == IP_HOLLOW:
+                            ipat, icol = IP_SOLID, BLACK
+                        else:
+                            icol = self.xor_color(icol)
                     self.gr_rect(icol, ipat, t)
                     self.gr_inside(t, -tmpth)
+            if changecol and (state & SELECTED):
+                tmode, tcol = MD_TRANS, self.xor_color(tcol)
         self.gsx_attr(True, tmode, tcol)
         # Text objects
         if typ in (G_FTEXT, G_FBOXTEXT):
             raw = self.mem[ted.ptext].s
             tmpl = self.mem[ted.ptmplt].s
             raw, fmt = self.ob_format(ted.just, raw, tmpl)   # a copy: te_ptext is untouched
-            self._gtext(ted.just, ted.font, fmt, t, tmpth)
+            self._gtext(ted.just, ted.font, fmt, t, tmpth, movetext, state)
         elif typ == G_BOXCHAR:
             text = chr(ch) if ch else ''
-            self._gtext(TE_CNTR, IBM, text, t, tmpth)
+            self._gtext(TE_CNTR, IBM, text, t, tmpth, movetext, state)
         elif typ in (G_TEXT, G_BOXTEXT):
-            self._gtext(ted.just, ted.font, self.mem[ted.ptext].s, t, tmpth)
+            self._gtext(ted.just, ted.font, self.mem[ted.ptext].s, t, tmpth,
+                        movetext, state)
         elif typ == G_IMAGE:
             bi = self.mem[spec]
             self.gsx_blt(self.mem[bi.pdata], bi.x, bi.y, t.x, t.y,
@@ -1121,14 +1252,20 @@ class AES:
         elif typ in (G_STRING, G_TITLE, G_BUTTON):
             n = self.expand_string(self.mem[spec].s)
             if n:
-                self.gsx_attr(True, MD_TRANS, BLACK)
+                self.gsx_attr(True, MD_TRANS,
+                              WHITE if (typ == G_BUTTON and changecol and
+                                        (state & SELECTED)) else BLACK)
                 y = t.y + cdiv(t.h - self.gl_hchar, 2)
                 x = t.x
                 if typ == G_BUTTON:
                     x += cdiv(t.w - n * self.gl_wchar, 2)
+                    if movetext and not (state & SELECTED):
+                        x, y = x - 1, y - 1
                 self.gsx_tblt(IBM, x, y, n)
         # Outline
-        if state & OUTLINED:
+        if (state & OUTLINED) and d3 == FL3DBAK:
+            self.draw_3d_outline(t)
+        elif state & OUTLINED:
             self.gsx_attr(False, MD_REPLACE, BLACK)
             self.gr_box(t.x - 3, t.y - 3, t.w + 6, t.h + 6, 1)
             self.gsx_attr(False, MD_REPLACE, WHITE)
@@ -1152,14 +1289,21 @@ class AES:
             self.gsx_cline(t.x, t.y, t.x + t.w - 1, t.y + t.h - 1)
             self.gsx_cline(t.x, t.y + t.h - 1, t.x + t.w - 1, t.y)
         if state & DISABLED:
-            self.gsx_fcolor(WHITE)
+            self.gsx_fcolor(self.backgrcol if d3 == FL3DBAK else WHITE)
             self.bb_fill(MD_TRANS, FIS_PATTERN, IP_4PATT, t.x, t.y, t.w, t.h)
-        if state & SELECTED:
+        if (state & SELECTED) and not edge3d:
             self.bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t.x, t.y, t.w, t.h)
+        if edge3d:
+            self.add_3d_effect(eff, state, eff_th, icol)
 
-    def _gtext(self, just, font, text, t, tmpth):
+    def _gtext(self, just, font, text, t, tmpth, movetext=0, state=0):
         c = t.copy()
         self.gr_inside(c, tmpth)
+        if movetext:
+            if state & SELECTED:
+                c.x += 1
+            else:
+                c.y -= 1
         self.gr_gtext(just, font, text, c)
 
     def everyobj(self, this, last, routine, sx, sy, maxdep):
@@ -1445,7 +1589,9 @@ class AES:
         x, y = self.ob_offset(obj)
         self.gsx_moff()
         th = th if th > 0 else 0
-        if typ not in (G_ICON, G_CICON, G_USERDEF) and ((newstate ^ state) & SELECTED):
+        if (typ not in (G_ICON, G_CICON, G_USERDEF)
+                and not (self.gl_3d and (flags & FL3DMASK))
+                and ((newstate ^ state) & SELECTED)):
             self.bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, x + th, y + th,
                          o.ob_width - 2 * th, o.ob_height - 2 * th)
             redraw = False
@@ -3540,7 +3686,7 @@ class AES:
             tree[obj].ob_spec = addr
             addr += t.size + (t.size & 1)
         tree[ROOT].ob_type = G_BOX
-        tree[ROOT].ob_flags = NONE          # LASTOB goes on the last button
+        tree[ROOT].ob_flags = FL3DBAK       # LASTOB goes on the last button
         tree[ROOT].ob_spec = 0x00011100     # the donor's DIALERT root
         tree[ROOT].ob_state = OUTLINED
         tree[1].ob_type = G_IMAGE
@@ -3594,7 +3740,7 @@ class AES:
                 self.ob_add(tree, ROOT, self.AL_MSGOFF + i)
             for i in range(numbut):
                 o = tree[self.AL_BUTOFF + i]
-                o.ob_flags = SELECTABLE | EXIT
+                o.ob_flags = SELECTABLE | EXIT | FL3DACT
                 o.ob_state = NORMAL
                 setxywh(self.AL_BUTOFF + i, bt)
                 bt.x += mlenbut + 2
@@ -4568,6 +4714,10 @@ class AES:
             self.ev_init()
             self.wm_init()
             self.mn_init()
+        elif n == 48:
+            # objc_sysvar: mode, which, in1, in2 -> ret, out1, out2
+            io[0:3] = self.ob_sysvar(ints[0], ints[1], ints[2], ints[3])
+            c4 = 3
         elif n == 10:
             # appl_init: the ap_id, which is 0 -- one process (abi.c)
             io[0] = 0

@@ -275,12 +275,13 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_OBJECT:
-        /* No 3D objects -- objc_sysvar says so too, and says it in the
-         * same words -- but objc_sysvar itself IS here, which is what
-         * cflib's obgframe.c reads this subject for.  1 is "MultiTOS
-         * v1.01's", which is the one gem4xe answers.  The system font is
-         * the only font an OBJECT can name: the AES never issues
+        /* 3D objects while the 3D look is on, and not while it is off --
+         * objc_sysvar says the same -- and objc_sysvar itself is here,
+         * which is what cflib's obgframe.c reads this subject for.  1 is
+         * "MultiTOS v1.01's", which is the one gem4xe answers.  The system
+         * font is the only font an OBJECT can name: the AES never issues
          * vst_font, so a TEDINFO cannot select a GDOS face. */
+        *out1 = gl_3d;
         *out2 = 1;
         break;
 

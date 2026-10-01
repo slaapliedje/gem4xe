@@ -54,7 +54,7 @@ def clock_tree(r):
          NORMAL, r.string("Quit"), ch((W - 8) // 2), ch(7), ch(8), ch(2)),
     ]
     assert len(objs) == NOBS_CLOCK, (len(objs), NOBS_CLOCK)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 INDICES = [("ADCLOCK", ADCLOCK), ("KROOT", KROOT), ("KTITLE", KTITLE),

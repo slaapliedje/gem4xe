@@ -49,8 +49,13 @@ N_MN = 4
  GNMNLBL, GNMNBOX,
  GNMN0, _M1, _M2, _M3,
  GNDTLBL, GNDATE, GNTMLBL, GNTIME,
- GNOK, GNCNCL) = range(21)
-NOBS_GENRL = 21
+ GNOK, GNCNCL,
+ GN3DLBL, GN3DBOX, GN3D0, _L1) = range(25)
+NOBS_GENRL = 25
+N_LOOK = 2
+LOOKLBL = "Look"
+LOOK_NAMES = ("Flat", "3D")
+LOOK_W, LOOK_STEP = 6, 7
 
 W, H = 38, 17
 TITLE = "General"
@@ -60,7 +65,7 @@ DTLBL = "Date"
 TMLBL = "Time"
 
 DC_W, DC_STEP = 4, 5
-MN_W, MN_STEP = 8, 8
+MN_W, MN_STEP = 7, 8            # a cell apart, for the 3D look's edges
 MN_NAMES = ("Instant", "Fast", "Normal", "Slow")
 GROUP_X = 3
 
@@ -75,12 +80,13 @@ RADIO = SELECTABLE | RBUTTON | TOUCHEXIT
 def general_tree(r):
     dtmpl = r.string(DATE_TMPL)
     objs = [
-        (NIL, GNTITLE, GNCNCL, G_BOX, NONE, OUTLINED, 0x00021100,
+        (NIL, GNTITLE, GN3DBOX, G_BOX, NONE, OUTLINED, 0x00021100,
          ch(0), ch(0), ch(W), ch(H)),
         (GNDCLBL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(TITLE),
          ch((W - len(TITLE)) // 2), ch(1), ch(len(TITLE)), ch(1)),
         (GNDCBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(DCLBL),
-         ch(GROUP_X), ch(3), ch(len(DCLBL)), ch(1)),
+         ch(GROUP_X), ch(3, -3), ch(len(DCLBL)), ch(1)),   # up 3: room
+                                # for the 3D look's edge on the row below
         (GNMNLBL, GNDC0, GNDC0 + N_DC - 1, G_IBOX, NONE, NORMAL, 0x00000000,
          ch(GROUP_X), ch(4), ch((N_DC - 1) * DC_STEP + DC_W), ch(1)),
     ]
@@ -89,7 +95,7 @@ def general_tree(r):
                      NIL, NIL, G_BUTTON, RADIO, NORMAL, r.string(str(i + 1)),
                      ch(i * DC_STEP), ch(0), ch(DC_W), ch(1)))
     objs.append((GNMNBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(MNLBL),
-                 ch(GROUP_X), ch(6), ch(len(MNLBL)), ch(1)))
+                 ch(GROUP_X), ch(6, -3), ch(len(MNLBL)), ch(1)))
     objs.append((GNDTLBL, GNMN0, GNMN0 + N_MN - 1, G_IBOX, NONE, NORMAL,
                  0x00000000,
                  ch(GROUP_X), ch(7), ch((N_MN - 1) * MN_STEP + MN_W), ch(1)))
@@ -109,15 +115,29 @@ def general_tree(r):
                  ch(GROUP_X + 24), ch(9), ch(len(TIME_TMPL)), ch(1)))
     objs.append((GNCNCL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT,
                  NORMAL, r.string("OK"), ch(8), ch(14), ch(9), ch(1)))
-    objs.append((GNROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB,
+    objs.append((GN3DLBL, NIL, NIL, G_BUTTON, SELECTABLE | EXIT,
                  NORMAL, r.string("Cancel"), ch(21), ch(14), ch(9), ch(1)))
+    # The 3D look (src/aes/objc.c): last in the array so every index
+    # above is what it always was.
+    objs.append((GN3DBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(LOOKLBL),
+                 ch(GROUP_X), ch(11), ch(len(LOOKLBL)), ch(1)))
+    objs.append((GNROOT, GN3D0, GN3D0 + N_LOOK - 1, G_IBOX, NONE, NORMAL,
+                 0x00000000, ch(GROUP_X + 6), ch(11),
+                 ch((N_LOOK - 1) * LOOK_STEP + LOOK_W), ch(1)))
+    for i in range(N_LOOK):
+        last = i == N_LOOK - 1
+        objs.append((GN3DBOX if last else GN3D0 + i + 1, NIL, NIL, G_BUTTON,
+                     RADIO | (LASTOB if last else 0), NORMAL,
+                     r.string(LOOK_NAMES[i]),
+                     ch(i * LOOK_STEP), ch(0), ch(LOOK_W), ch(1)))
     assert len(objs) == NOBS_GENRL, (len(objs), NOBS_GENRL)
-    return r.tree(objs)
+    return r.tree(objs, look3d=True)
 
 
 INDICES = [("ADGENRL", ADGENRL), ("GNROOT", GNROOT), ("GNTITLE", GNTITLE),
            ("GNDC0", GNDC0), ("GNMN0", GNMN0), ("GNDATE", GNDATE),
            ("GNTIME", GNTIME), ("GNOK", GNOK), ("GNCNCL", GNCNCL),
+           ("GN3D0", GN3D0), ("N_LOOK", N_LOOK),
            ("N_DC", N_DC), ("N_MN", N_MN), ("NOBS_GENRL", NOBS_GENRL)]
 
 

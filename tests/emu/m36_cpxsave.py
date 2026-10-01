@@ -24,7 +24,8 @@ WHAT HAPPENS AT BOOT, and it is three pieces meeting:
 and the module does the applying, because only it knows what its own
 sixty-four bytes mean.
 
-WHAT IT CHECKS.  gl_dcindex is 1 and the sub-menu delay is 400 ms.
+WHAT IT CHECKS.  gl_dcindex is 1, the sub-menu delay is 400 ms, and
+the 3D look is on (gl_3d, src/aes/objc.c).
 
 NEITHER IS A DEFAULT, which is the whole design of the fixture: the AES
 boots at rate 3 (src/aes/event.c, ev_init) and 200 ms (src/aes/menu.c,
@@ -50,8 +51,8 @@ SAVED = os.path.abspath(os.path.join(ROOT, "build", "m36-boot.atr"))
 PLAIN = os.path.abspath(os.path.join(ROOT, "build", "gem-shots.atr"))
 SYMS = symfile.load(os.path.join(ROOT, "build", "gem.sym"))
 
-WANT_RATE, WANT_MS = 1, 400          # tools/mkgencfg.py
-DEF_RATE, DEF_MS = 3, 200            # the AES's own, and not these
+WANT_RATE, WANT_MS, WANT_3D = 1, 400, 1   # tools/mkgencfg.py
+DEF_RATE, DEF_MS, DEF_3D = 3, 200, 0      # the AES's own, and not these
 
 problems = []
 
@@ -74,6 +75,7 @@ def boot(disk, tag):
         # AES keeps it as a LONG of milliseconds.
         return {
             "rate": b.peek16(SYMS["gl_dcindex"]),
+            "look": b.peek16(SYMS["gl_3d"]),
             "ncpx": b.peek16(SYMS["sh_ncpx"]),
             "bad":  b.peek16(SYMS["gem_bad"]),
             "fault": b.peek(SYMS["irq_fault"]),
@@ -84,28 +86,32 @@ def boot(disk, tag):
 
 def main():
     print("gem4xe-m36: a module's settings across a reboot")
-    for s in ("gl_dcindex", "sh_ncpx"):
+    for s in ("gl_dcindex", "sh_ncpx", "gl_3d"):
         if s not in SYMS:
             print(f"  FAIL: build/gem.sym has no {s}")
             return 1
 
     a = boot(SAVED, "m36")
     print(f"  with GENERAL.CFG:    {a['ncpx']} module(s), "
-          f"double-click rate {a['rate']}, {a['bad']} refused")
+          f"double-click rate {a['rate']}, look {a['look']}, {a['bad']} refused")
     check(a["ncpx"] >= 1, f"{a['ncpx']} modules loaded: GENERAL.CPX is not there")
     check(a["rate"] == WANT_RATE,
           f"the double-click rate is {a['rate']}, not the {WANT_RATE} that "
           f"was saved -- the settings were not put back at boot")
+    check(a["look"] == WANT_3D,
+          f"the look is {a['look']}, not the 3D look that was saved")
     check(a["bad"] == 0, f"{a['bad']} AES call(s) refused")
     check(a["fault"] == 0, f"irq_fault {a['fault']}")
 
     # ...and the control, without which "1" proves nothing.
     c = boot(PLAIN, "m36ctl")
     print(f"  without GENERAL.CFG: {c['ncpx']} module(s), "
-          f"double-click rate {c['rate']}")
+          f"double-click rate {c['rate']}, look {c['look']}")
     check(c["rate"] == DEF_RATE,
           f"with no saved file the rate is {c['rate']}, not the AES's "
           f"default {DEF_RATE} -- so the gate above proves nothing")
+    check(c["look"] == DEF_3D,
+          f"with no saved file the look is {c['look']}, not flat")
     check(a["rate"] != c["rate"],
           "the saved rate and the default are the same number, so this "
           "gate would pass on a machine that restored nothing")

@@ -176,6 +176,7 @@ void gsx_start(void)
     hpixel = intout[4];
     gsx_1code(VQ_EXTND, 1);
     gl_nplanes = intout[4];
+    ob_3dinit();                    /* the 3D look's ground, for this depth */
 
     /* The system font's cell.  vst_height reports (char w, char h, cell w,
      * cell h), where "char h" is the font's top: the baseline offset. */

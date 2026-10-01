@@ -34,7 +34,10 @@ from aesref import (Obj, Layout, Text, NIL, G_BOX, G_IBOX, G_BUTTON,   # noqa: E
                     EDINIT, EDCHAR, EDEND, BACKSPACE, DELETE, ESCAPE,
                     ARROW_LEFT, ARROW_RIGHT,
                     GSX_START, OBJC_DRAW, OBJC_FIND, OBJC_OFFSET, OBJC_EDIT,
-                    OBJC_CHANGE, OBJC_ADD, OBJC_DELETE, FORM_CENTER)
+                    OBJC_CHANGE, OBJC_ADD, OBJC_DELETE, FORM_CENTER,
+                    RBUTTON, FL3DIND, FL3DACT, FL3DBAK, SV_SET, SV_INQUIRE,
+                    G4_3DLOOK, AD3DVALUE, BACKGRCOL, INDBUTCOL, LK3DIND, LK3DACT)
+OBJC_SYSVAR = 1048
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "m3-boot.atr"))
 SYMS = os.path.join(ROOT, "build", "m3.sym")
@@ -194,6 +197,35 @@ def cicons(L):
     ]
 
 
+def dialog3d(L):
+    """The 3D kinds (AES 3.40) in one dialog: an OUTLINED background
+    with a title on it, two indicators of each sort (radio BUTTONs, one
+    selected, and a BOX toggle that is), a BOXTEXT indicator, and two
+    activators.  With the 3D look off the flags change nothing; with it
+    on, everything carrying one is drawn two pixels bigger, raised or
+    sunken, on the light grey ground (src/aes/objc.c)."""
+    return [
+        Obj(NIL,  1,   7, G_BOX,     FL3DBAK, OUTLINED, 0x00021100, 140, 50, 360, 140),
+        Obj(2,  NIL, NIL, G_TEXT,    FL3DBAK, 0,
+            L.ted("Options", "", "", just=TE_CNTR, color=0x1180), 16, 10, 328, 8),
+        Obj(3,  NIL, NIL, G_BUTTON,  SELECTABLE | RBUTTON | FL3DIND, SELECTED,
+            L.text("Fast"), 24, 34, 80, 16),
+        Obj(4,  NIL, NIL, G_BUTTON,  SELECTABLE | RBUTTON | FL3DIND, 0,
+            L.text("Slow"), 120, 34, 80, 16),
+        Obj(5,  NIL, NIL, G_BOX,     SELECTABLE | FL3DIND, SELECTED, 0x00011100, 232, 34, 16, 16),
+        Obj(6,  NIL, NIL, G_BOXTEXT, FL3DIND, 0,
+            L.ted("level", "", "", just=TE_CNTR, color=0x1180, thickness=1), 24, 62, 120, 16),
+        Obj(7,  NIL, NIL, G_BUTTON,  SELECTABLE | EXIT | DEFAULT | FL3DACT, 0,
+            L.text("OK"), 160, 106, 80, 20),
+        Obj(0,  NIL, NIL, G_BUTTON,  SELECTABLE | EXIT | FL3DACT | LASTOB, 0,
+            L.text("Cancel"), 256, 106, 80, 20),
+    ]
+
+
+def sysvar(mode, which, in1=0, in2=0):
+    return (OBJC_SYSVAR, (), (mode, which, in1, in2))
+
+
 def draw(start=0, depth=8, clip=FULL):
     return (OBJC_DRAW, clip, (start, depth))
 
@@ -256,6 +288,20 @@ CASES = [
      [draw(), edit(2, EDINIT, 0), edit(2, EDCHAR, 2, key('9')),
       edit(2, EDCHAR, 3, key('5')), edit(2, EDCHAR, 3, BACKSPACE),
       edit(2, EDCHAR, 2, key('1')), edit(2, EDEND, 3)]),
+    # The 3D look.  The switch is the AES's and outlives a case on the
+    # target, so each case sets it, and the last puts it back off.
+    ("3D look off: the 3D flags draw flat, and objc_sysvar says so", dialog3d,
+     [sysvar(SV_SET, G4_3DLOOK, 0), draw(),
+      sysvar(SV_INQUIRE, G4_3DLOOK), sysvar(SV_INQUIRE, AD3DVALUE),
+      sysvar(SV_INQUIRE, BACKGRCOL), sysvar(SV_INQUIRE, LK3DACT)]),
+    ("3D look on: raised, sunken, grey, and pressed", dialog3d,
+     [sysvar(SV_SET, G4_3DLOOK, 1),
+      sysvar(SV_INQUIRE, G4_3DLOOK), sysvar(SV_INQUIRE, AD3DVALUE),
+      sysvar(SV_INQUIRE, INDBUTCOL), sysvar(SV_INQUIRE, LK3DIND),
+      sysvar(SV_INQUIRE, LK3DACT), sysvar(SV_SET, BACKGRCOL, 99),
+      draw(), change(6, SELECTED), change(2, NORMAL), change(3, SELECTED),
+      change(4, NORMAL), change(5, DISABLED),
+      sysvar(SV_SET, G4_3DLOOK, 0)]),
     ("form_center then draw", dialog,
      [(FORM_CENTER,), draw(), find(320, 120), (OBJC_OFFSET, (), (2,))]),
     ("form_center of an outlined, shadowed root", nested,

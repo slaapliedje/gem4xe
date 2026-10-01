@@ -373,6 +373,116 @@ void ob_format(WORD just, char *raw, const char *tmpl, char *fmt)
     }
 }
 
+/* ---- the 3D look --------------------------------------------------------
+ *
+ * AES 3.40's raised buttons and grey dialogs, as EmuTOS draws them
+ * (gemoblib.c, CONF_WITH_3D_OBJECTS) -- the Falcon ROM's look.  Only an
+ * object that carries a 3D flag changes, and only while gl_3d is on:
+ * with it off every object draws exactly as it did before there was a
+ * 3D look, which is how an AES older than 3.40 treated the same flags.
+ * The defaults are EmuTOS's: an indicator's colour changes when it is
+ * selected and its text stays put; an activator's text moves and its
+ * colour does not.  The ground is light grey where there are more than
+ * eight pens, white on the two-colour ANTIC screen. */
+WORD gl_3d;
+/* The grounds, by the 3D kind's two bits (flags >> 9): 1 an indicator's,
+ * 2 an activator's, 3 a background's.  A TABLE, read by index, because
+ * cc65816 5.18.2 gets a value chosen in branches wrong in just_draw: at
+ * -O1 and -O2, with ?: or with if, bytes or words, inlined or not, the
+ * branches stored the colour in one stack slot and the join read it from
+ * another, and the buttons came out white and the dialog yellow
+ * (tools/ccbug B24).  An index has no join. */
+static WORD col3d[4] = { LWHITE, LWHITE, LWHITE, LWHITE };
+static const uint8_t FAR col3d_btn[4] = { 1, 1, 2, 1 };  /* a BUTTON: an
+                                 * activator's ground, or an indicator's */
+#define indbutcol col3d[1]
+#define actbutcol col3d[2]
+#define backgrcol col3d[3]
+static uint8_t indtxtmove = 0, indcolchange = 1;
+static uint8_t acttxtmove = 1, actcolchange = 0;
+
+void ob_3dinit(void)
+{
+    WORD c = LWHITE;
+
+    if (((WORD)1 << gl_nplanes) <= LWHITE)
+        c = WHITE;
+    col3d[1] = col3d[2] = col3d[3] = c;
+}
+
+
+
+/* The pen whose bits are the complement of `color`'s (EmuTOS's xor_color):
+ * what a colour-changing object is drawn in when it is selected. */
+static WORD xor_color(WORD color)
+{
+    static const uint8_t FAR comp16[16] = {     /* FAR: bank $00's near
+                                                 * region is full */
+        BLACK, WHITE, 13, 15, 14, 10, 12, 11,
+        LBLACK, LWHITE, 5, 7, 6, 2, 4, 3
+    };
+    if (color < 0 || color >= ((WORD)1 << gl_nplanes) || color >= 16)
+        return WHITE;
+    if (gl_nplanes == 1)
+        return (WORD)(color == WHITE);   /* white's complement is black */
+    return comp16[(WORD)(color & 15)];
+}
+
+/* A 3D object's raised (or, selected, sunken) edge: light along the top
+ * and left, dark along the bottom and right, inside an inward border. */
+static void add_3d_effect(const GRECT *pt, WORD obstate, WORD th, WORD color)
+{
+    GRECT r = *pt;
+    WORD x0, y0, x1, y1, c;
+
+    if (th > 0)
+        gr_inside(&r, th);
+    x0 = r.g_x;
+    y0 = r.g_y;
+    x1 = (WORD)(r.g_x + r.g_w - 2);
+    y1 = (WORD)(r.g_y + r.g_h - 2);
+    if (obstate & SELECTED)
+        gsx_attr(0, MD_REPLACE, BLACK);
+    else
+        gsx_attr(0, MD_REPLACE, WHITE);
+    gsx_cline(x0, (WORD)(y0 + r.g_h - 2), x0, y0);
+    gsx_cline(x0, y0, x1, y0);
+    if (obstate & SELECTED)
+        c = LWHITE;
+    else
+        c = LBLACK;
+    if (c == color || ((WORD)1 << gl_nplanes) <= c) {
+        if (obstate & SELECTED)
+            c = WHITE;
+        else
+            c = BLACK;
+    }
+    gsx_attr(0, MD_REPLACE, c);
+    gsx_cline((WORD)(x0 + 1), (WORD)(y1 + 1), (WORD)(x1 + 1), (WORD)(y1 + 1));
+    gsx_cline((WORD)(x1 + 1), (WORD)(y1 + 1), (WORD)(x1 + 1), (WORD)(y0 + 1));
+}
+
+/* An OUTLINED 3D background's frame: three grey lines along the bottom
+ * and right, a grey and two white along the top and left. */
+static void draw_3d_outline(const GRECT *pt)
+{
+    WORD i, l = (WORD)(pt->g_x - 3), tp = (WORD)(pt->g_y - 3);
+    WORD r = (WORD)(pt->g_x + pt->g_w + 2), b = (WORD)(pt->g_y + pt->g_h + 2);
+
+    gsx_attr(0, MD_REPLACE, LBLACK);
+    for (i = 0; i < 3; i++) {
+        gsx_cline((WORD)(l + i), (WORD)(b - i), (WORD)(r - i), (WORD)(b - i));
+        gsx_cline((WORD)(r - i), (WORD)(b - i), (WORD)(r - i), (WORD)(tp + i));
+    }
+    gsx_cline(l, b, l, tp);
+    gsx_cline(l, tp, r, tp);
+    gsx_attr(0, MD_REPLACE, WHITE);
+    for (i = 1; i < 3; i++) {
+        gsx_cline((WORD)(l + i), (WORD)(b - i), (WORD)(l + i), (WORD)(tp + i));
+        gsx_cline((WORD)(l + i), (WORD)(tp + i), (WORD)(r - i), (WORD)(tp + i));
+    }
+}
+
 /* ---- drawing one object ------------------------------------------------ */
 
 static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
@@ -384,6 +494,8 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
     char ch;
     GRECT t, c;
     TEDINFO ted;
+    WORD d3, edge3d, movetext = 0, changecol = 0, eff_th = 0;
+    GRECT eff;
 
     ch = ob_sst(tree, obj, &spec, &state, &type, &flags, &t, &th);
 
@@ -392,6 +504,43 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
 
     t.g_x = sx;
     t.g_y = sy;
+
+    /* a 3D object, with the look on, is drawn ADJ3DSTD bigger all round */
+    d3 = 0;
+    if (gl_3d)
+        d3 = (WORD)(flags & FL3DMASK);
+    /* A background TEXT takes the grey ground and nothing else: no edge
+     * and no growth, so a dialog's values read as print on the dialog
+     * rather than as a row of raised strips.  (EmuTOS gives it both;
+     * gem4xe's choice, docs/phase85.md.)  Statements, not an expression:
+     * B24, below. */
+    edge3d = 0;
+    if (d3)
+        edge3d = 1;
+    if (d3 == FL3DBAK) {
+        switch (type) {
+        case G_TEXT:
+        case G_FTEXT:
+        case G_BOXTEXT:
+        case G_FBOXTEXT:
+            edge3d = 0;
+            break;
+        default:
+            break;
+        }
+    }
+    if (edge3d) {
+        gr_inside(&t, -ADJ3DSTD);
+        if (d3 == FL3DACT) {
+            movetext = acttxtmove;
+            changecol = actcolchange;
+        } else {
+            movetext = indtxtmove;
+            changecol = indcolchange;
+        }
+        eff = t;
+        eff_th = th;
+    }
 
     /* Trivial reject on the full extent: outline, shadow and border. */
     if (gl_clip.g_w && gl_clip.g_h) {
@@ -421,6 +570,22 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
         case G_FBOXTEXT:
             far_get((uint8_t *)&ted, spec, sizeof ted);   /* not a struct copy: B11 */
             gr_crack((UWORD)ted.te_color, &bcol, &tcol, &ipat, &icol, &tmode);
+            /* a 3D text on a hollow white ground takes the 3D ground,
+             * and a plain TEXT becomes a borderless BOXTEXT to show it */
+            if (d3 && ipat == IP_HOLLOW && icol == WHITE) {
+                ipat = IP_SOLID;
+                icol = backgrcol;
+                if (tmode == MD_REPLACE) {
+                    tmode = MD_TRANS;
+                    if (type == G_TEXT) {
+                        type = G_BOXTEXT;
+                        tmpth = th = 0;
+                    } else if (type == G_FTEXT) {
+                        type = G_FBOXTEXT;
+                        tmpth = th = 0;
+                    }
+                }
+            }
             break;
         default:
             break;
@@ -433,12 +598,21 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
         case G_BOXCHAR:
         case G_IBOX:
             gr_crack((UWORD)spec, &bcol, &tcol, &ipat, &icol, &tmode);
+            if (d3 && type != G_IBOX && ipat == IP_HOLLOW && icol == WHITE) {
+                ipat = IP_SOLID;
+                icol = col3d[(WORD)(d3 >> 9) & 3];
+            }
             /* fall through */
         case G_BUTTON:
             if (type == G_BUTTON) {
                 bcol = BLACK;
-                ipat = IP_HOLLOW;
-                icol = WHITE;
+                if (d3) {
+                    ipat = IP_SOLID;
+                    icol = col3d[col3d_btn[(WORD)(d3 >> 9) & 3]];
+                } else {
+                    ipat = IP_HOLLOW;
+                    icol = WHITE;
+                }
             }
             /* fall through */
         case G_BOXTEXT:
@@ -449,6 +623,14 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
             }
             if (type != G_IBOX) {
                 gr_inside(&t, tmpth);
+                if (changecol && (state & SELECTED)) {
+                    if (ipat == IP_HOLLOW) {
+                        ipat = IP_SOLID;
+                        icol = BLACK;
+                    } else {
+                        icol = xor_color(icol);
+                    }
+                }
                 gr_rect(icol, ipat, &t);
                 gr_inside(&t, (WORD)-tmpth);
             }
@@ -457,6 +639,10 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
             break;
         }
 
+        if (changecol && (state & SELECTED)) {
+            tmode = MD_TRANS;
+            tcol = xor_color(tcol);
+        }
         gsx_attr(1, tmode, tcol);
 
         /* what is in the box */
@@ -480,6 +666,12 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
         case G_BOXTEXT:
             c = t;
             gr_inside(&c, tmpth);
+            if (movetext) {             /* up a pixel, down and right */
+                if (state & SELECTED)   /* when it is pressed */
+                    c.g_x++;
+                else
+                    c.g_y--;
+            }
             gr_gtext(ted.te_just, ted.te_font,
                      (const char FAR *)SPEC_PTR(ted.te_ptext), &c);
             break;
@@ -556,16 +748,26 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
     if (type == G_STRING || type == G_TITLE || type == G_BUTTON) {
         len = expand_string(intin, (const char FAR *)SPEC_PTR(spec));
         if (len) {
-            gsx_attr(1, MD_TRANS, BLACK);
+            tcol = BLACK;
+            if (type == G_BUTTON && changecol && (state & SELECTED))
+                tcol = WHITE;
+            gsx_attr(1, MD_TRANS, tcol);
             tmpx = t.g_x;
             tmpy = (WORD)(t.g_y + (t.g_h - gl_hchar) / 2);
-            if (type == G_BUTTON)
+            if (type == G_BUTTON) {
                 tmpx = (WORD)(tmpx + (t.g_w - len * gl_wchar) / 2);
+                if (movetext && !(state & SELECTED)) {
+                    tmpx--;
+                    tmpy--;
+                }
+            }
             gsx_tblt(IBM, tmpx, tmpy, len);
         }
     }
 
-    if (state & OUTLINED) {
+    if ((state & OUTLINED) && d3 == FL3DBAK) {
+        draw_3d_outline(&t);
+    } else if (state & OUTLINED) {
         gsx_attr(0, MD_REPLACE, BLACK);
         gr_box((WORD)(t.g_x - 3), (WORD)(t.g_y - 3),
                (WORD)(t.g_w + 6), (WORD)(t.g_h + 6), 1);
@@ -602,12 +804,19 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
     }
 
     if (state & DISABLED) {
-        gsx_fcolor(WHITE);
+        if (d3 == FL3DBAK)
+            gsx_fcolor(backgrcol);
+        else
+            gsx_fcolor(WHITE);
         bb_fill(MD_TRANS, FIS_PATTERN, IP_4PATT, t.g_x, t.g_y, t.g_w, t.g_h);
     }
 
-    if (state & SELECTED)
+    /* a 3D object shows SELECTED by its edge and colour, never by XOR */
+    if ((state & SELECTED) && !edge3d)
         bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t.g_x, t.g_y, t.g_w, t.g_h);
+
+    if (edge3d)
+        add_3d_effect(&eff, state, eff_th, icol);
 }
 
 /* ---- drawing a subtree -------------------------------------------------- */
@@ -717,6 +926,7 @@ void ob_change(OBJECT FAR *tree, WORD obj, UWORD new_state, WORD redraw)
      * is what makes a button flash.  Anything else redraws the object.
      * (Icons never XOR: they would redraw here once they are drawn.) */
     if (type != G_ICON && type != G_CICON && type != G_USERDEF &&
+        !(gl_3d && (flags & FL3DMASK)) &&
         ((new_state ^ (UWORD)curr_state) & SELECTED)) {
         bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, (WORD)(t.g_x + th), (WORD)(t.g_y + th),
                 (WORD)(t.g_w - 2 * th), (WORD)(t.g_h - 2 * th));
@@ -1067,52 +1277,83 @@ WORD objc_edit(OBJECT FAR *tree, WORD obj, WORD kchar, WORD *idx, WORD kind)
     return ob_edit(tree, obj, kchar, idx, kind);
 }
 
-/* objc_sysvar -- what a program is told about 3D object rendering.
+/* objc_sysvar -- what a program is told about 3D object rendering, and
+ * what the control panel sets.
  *
- * THERE ARE NO 3D OBJECTS HERE, and this call is how a program finds
- * that out without guessing.  The AES draws an object the flat way the
- * ST's own did before AES 3.40: no raised border, no text that shifts
- * when a button is pressed, no colour that changes under it.
+ * WITH THE 3D LOOK OFF -- the default -- the answers are the flat AES's:
+ * nothing moves, nothing changes colour, the grounds are white, and
+ * AD3DVALUE is 0, because a system that draws no 3D edge needs no room
+ * for one; answering 2 would have every dialog laid out by it (cflib's
+ * obgframe.c does exactly that) reserve space that is never painted.
+ * With it ON they are EmuTOS's, AD3DVALUE 2.
  *
- * SO THE ANSWERS ARE ZERO, AND ZERO IS THE TRUE ANSWER rather than a
- * stub's.  The one that matters is AD3DVALUE, which asks how many extra
- * pixels an indicator or activator needs on each side to make room for
- * the 3D effect.  EmuTOS answers 2 (ADJ3DSTD) because it really does
- * draw a two-pixel border; a system that draws none needs none, and
- * answering 2 here would have every dialog reserve space for something
- * that is never painted.  cflib asks exactly this (obgframe.c, AD3DVAL)
- * and lays its objects out by the answer.
- *
- * SETTING IS REFUSED, all of it.  The Compendium says an application
- * should not be changing these anyway -- they are global, and for a CPX
- * or an accessory to set -- and here there is nothing behind them to
- * change.  0 is "unsuccessful", which is the documented way to say so.
- *
- * A program that wants to know whether this call exists at all asks
- * appl_getinfo, whose ap_gout1 is "3D objects supported" (0 here) and
- * ap_gout2 is "objc_sysvar present" (1).  The two answers agree: the
- * call is here, the effects are not.
+ * SETTING: the six standard ones change what the look draws, as on the
+ * ST -- they are global, and for a CPX or an accessory, not a program,
+ * to set (the Compendium).  G4_3DLOOK is gem4xe's own, and turns the
+ * look on and off; what is already on the screen keeps the look it was
+ * drawn in until it is drawn again.
  */
 WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
                WORD *out1, WORD *out2)
 {
-    (void)in1;
-    (void)in2;
+    WORD ncol = (WORD)((WORD)1 << gl_nplanes);
+
+    if (mode == SV_SET) {
+        switch (which) {
+        case G4_3DLOOK:
+            gl_3d = (WORD)(in1 != 0);
+            return 1;
+        case LK3DIND:
+            if (in1 != -1) indtxtmove = (uint8_t)in1;
+            if (in2 != -1) indcolchange = (uint8_t)in2;
+            return 1;
+        case LK3DACT:
+            if (in1 != -1) acttxtmove = (uint8_t)in1;
+            if (in2 != -1) actcolchange = (uint8_t)in2;
+            return 1;
+        case INDBUTCOL:
+        case ACTBUTCOL:
+        case BACKGRCOL:
+            if (in1 < 0 || in1 >= ncol)
+                return 0;
+            if (which == INDBUTCOL) indbutcol = in1;
+            else if (which == ACTBUTCOL) actbutcol = in1;
+            else backgrcol = in1;
+            return 1;
+        default:
+            return 0;
+        }
+    }
     if (mode != SV_INQUIRE)
-        return 0;                   /* nothing here is settable */
+        return 0;
     *out1 = *out2 = 0;
     switch (which) {
-    case LK3DIND:                   /* an indicator's text does not move, */
-    case LK3DACT:                   /* an activator's does not either,    */
-    case AD3DVALUE:                 /* and neither needs room to do it    */
+    case G4_3DLOOK:
+        *out1 = gl_3d;
         break;
-    case INDBUTCOL:                 /* the ground an object is drawn on */
+    case LK3DIND:
+        if (gl_3d) { *out1 = indtxtmove; *out2 = indcolchange; }
+        break;
+    case LK3DACT:
+        if (gl_3d) { *out1 = acttxtmove; *out2 = actcolchange; }
+        break;
+    case AD3DVALUE:
+        if (gl_3d) *out1 = *out2 = ADJ3DSTD;
+        break;
+    case INDBUTCOL:
+        *out1 = WHITE;
+        if (gl_3d) *out1 = indbutcol;
+        break;
     case ACTBUTCOL:
+        *out1 = WHITE;
+        if (gl_3d) *out1 = actbutcol;
+        break;
     case BACKGRCOL:
         *out1 = WHITE;
+        if (gl_3d) *out1 = backgrcol;
         break;
     default:
-        return 0;                   /* not one of the six */
+        return 0;
     }
     return 1;
 }

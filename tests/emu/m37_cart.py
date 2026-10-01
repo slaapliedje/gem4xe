@@ -448,6 +448,13 @@ def small_machines():
     b = emu.bridge
     try:
         fm = syms["farmem"]
+        # NOT BEFORE gem4xe HAS STARTED: until its crt zeroes its data,
+        # farmem is whatever the machine powered up with, and a nonzero
+        # byte there ended the wait below at frame 10 -- "155 banks, 8443
+        # runs", twice in eleven runs.  The AltirraOS case's wait.
+        while b.peek(CARTSTEP) != STEP_RUN and b.peek(CARTSTEP) < 30:
+            b.frames(50)
+        b.frames(250)                           # gem4xe's crt has zeroed its data
         waited = 0
         for _ in range(1200):                   # until farmem_probe has run:
             b.frames(10)                        # near 4,000 frames on this

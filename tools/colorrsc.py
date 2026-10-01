@@ -119,7 +119,7 @@ def color_tree(r):
     objs[CLCNCL] = (CLROOT, G_BUTTON, SELECTABLE | EXIT, NORMAL,
                     r.string("Cancel"), ch(27), ch(13), ch(8), ch(1))
     assert all(o is not None for o in objs)
-    return r.tree(build_tree(objs))
+    return r.tree(build_tree(objs), look3d=True)
 
 
 INDICES = [("ADCOLOR", ADCOLOR), ("CLROOT", CLROOT), ("CLSWBOX", CLSWBOX),

@@ -4,8 +4,9 @@
     tools/mkgencfg.py build/general.cfg
 
 The bytes are GENERAL.CPX's own (src/apps/general.c): a mark, the
-double-click rate, and which sub-menu delay.  NEITHER VALUE IS THE AES's
-DEFAULT -- the machine boots at rate 3 and delay 2 (200 ms) -- so a gate
+double-click rate, which sub-menu delay, and the look.  NO VALUE IS THE
+AES's DEFAULT -- the machine boots at rate 3, delay 2 (200 ms) and flat
+-- so a gate
 that reads them back has proved the file was found, read and applied,
 rather than that nothing happened.
 
@@ -19,6 +20,7 @@ import sys
 GN_MARK = 0x47          # 'G'
 RATE = 1                # evnt_dclick 0..4; the AES boots at 3
 DELAY = 3               # "Slow" (400 ms); the AES boots at 2 (200 ms)
+LOOK = 1                # the 3D look; the AES boots flat (0)
 LEN = 64                # CPXH_BUFLEN
 
 
@@ -30,9 +32,10 @@ def main(argv):
     buf[0] = GN_MARK
     buf[1] = RATE
     buf[2] = DELAY
+    buf[3] = LOOK
     with open(argv[1], "wb") as f:
         f.write(bytes(buf))
-    print(f"{argv[1]}: {LEN} bytes; rate {RATE}, delay {DELAY}")
+    print(f"{argv[1]}: {LEN} bytes; rate {RATE}, delay {DELAY}, look {LOOK}")
     return 0
 
 

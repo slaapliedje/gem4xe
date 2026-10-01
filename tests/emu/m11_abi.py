@@ -307,8 +307,8 @@ def main(argv):
               f"objc_sysvar(INDBUTCOL) answered colour {sv['sv_col1']}, not "
               f"white -- the ground an object is actually drawn on")
         check(sv["sv_set"] == 0,
-              "objc_sysvar(SV_SET) must be REFUSED: there is nothing behind "
-              "these settings to change")
+              "objc_sysvar(SV_SET, INDBUTCOL, 99) must be REFUSED: there is no "
+              "pen 99 (setting a real pen succeeds since the 3D look, phase 85)")
         check(sv["sv_junk"] == 0,
               "objc_sysvar with a `which` outside the six must answer 0")
 

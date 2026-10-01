@@ -140,6 +140,111 @@ class RObj(_Item):
             nxt, head, tail, typ, flags, state, spec, x, y, w, h)
 
 
+def flags3d(objs, flat=()):
+    """A dialog's 3D flags, by what each object is -- the rule EmuTOS
+    applies by hand to its own dialogs: the box is a BACKGROUND; an EXIT
+    button an ACTIVATOR; a selectable button or box an INDICATOR; and a
+    plain TEXT or FTEXT standing on the box a BACKGROUND too, which in
+    gem4xe takes the grey ground and no edge (src/aes/objc.c) -- a value
+    drawn in replace mode would otherwise be a white strip on the grey.  `flat` names objects to leave as
+    they are: a list's rows, which read as a list and not as buttons."""
+    A = aesref
+    on_root = set()
+    if objs and objs[0][1] != NIL:
+        c = objs[0][1]
+        while c not in (NIL, 0) and c > 0:
+            on_root.add(c)
+            c = objs[c][0]
+    out = []
+    for i, o in enumerate(objs):
+        o = list(o)
+        typ, flags = o[3] & 0xFF, o[4]
+        if flags & A.FL3DMASK or i in flat:
+            pass                                  # the tree said so itself
+        elif i == 0 and typ == A.G_BOX:
+            flags |= A.FL3DBAK
+        elif typ == A.G_BUTTON and flags & A.EXIT:
+            flags |= A.FL3DACT
+        elif typ in (A.G_BUTTON, A.G_BOX, A.G_BOXCHAR) and flags & A.SELECTABLE:
+            flags |= A.FL3DIND
+        elif typ in (A.G_TEXT, A.G_FTEXT) and i in on_root:
+            flags |= A.FL3DBAK
+        o[4] = flags
+        out.append(tuple(o))
+    return out
+
+
+def overlaps3d(objs, wchar=8, hchar=8):
+    """Where a dialog's 3D look draws one object over another.  A 3D
+    indicator or activator grows ADJ3DSTD pixels on every side (three
+    more when OUTLINED), so it must not reach any other visible object --
+    a label, another button grown the same way -- nor the dialog's own
+    edge.  Invisible group boxes (G_IBOX) and the objects an object sits
+    inside are not counted.  [(a, b, why)], empty when it fits; positions
+    in pixels for a wchar x hchar cell."""
+    A = aesref
+
+    def px(word, cell):
+        return (word & 0xFF) * cell + (((word >> 8) ^ 0x80) - 0x80)
+
+    n = len(objs)
+    par = [None] * n
+    for p in range(n):
+        c = objs[p][1]
+        while c not in (NIL, -1) and c >= 0 and c != p:
+            par[c] = p
+            c = objs[c][0]
+    absr = [None] * n
+
+    def ab(i):
+        if absr[i] is None:
+            o = objs[i]
+            x, y = px(o[7], wchar), px(o[8], hchar)
+            if par[i] is not None:
+                px0, py0 = ab(par[i])[:2]
+                x, y = x + px0, y + py0
+            absr[i] = (x, y, px(o[9], wchar), px(o[10], hchar))
+        return absr[i]
+
+    def ancestors(i):
+        out = set()
+        while par[i] is not None:
+            i = par[i]
+            out.add(i)
+        return out
+
+    def grown(i):
+        x, y, w, h = ab(i)
+        f = objs[i][4] & A.FL3DMASK
+        if f and f != A.FL3DBAK:
+            g = A.ADJ3DSTD + (3 if objs[i][5] & A.OUTLINED else 0)
+            return (x - g, y - g, w + 2 * g, h + 2 * g)
+        return (x, y, w, h)
+
+    bad = []
+    rx, ry, rw, rh = ab(0)
+    for i in range(1, n):
+        f = objs[i][4] & A.FL3DMASK
+        if not f or f == A.FL3DBAK:
+            continue
+        gx, gy, gw, gh = grown(i)
+        if gx < rx or gy < ry or gx + gw > rx + rw or gy + gh > ry + rh:
+            bad.append((i, 0, "past the dialog's edge"))
+        up = ancestors(i)
+        for s in range(1, n):
+            if s == i or s in up or i in ancestors(s):
+                continue
+            if objs[s][3] & 0xFF == A.G_IBOX:
+                continue
+            sf = objs[s][4] & A.FL3DMASK
+            if sf and sf != A.FL3DBAK and s < i:
+                continue                    # the pair is reported once
+            sx, sy, sw, sh = grown(s)
+            if gx < sx + sw and sx < gx + gw and gy < sy + sh and sy < gy + gh:
+                bad.append((i, s, "touches"))
+    return bad
+
+
 class Rsc:
     def __init__(self):
         self.strings, self.images, self.bitblks, self.iconblks = [], [], [], []
@@ -213,9 +318,15 @@ class Rsc:
         self.teds.append(it)
         return it
 
-    def tree(self, objs):
+    def tree(self, objs, look3d=False, flat=()):
         """objs: (next, head, tail, type, flags, state, spec, x, y, w, h)
-        with the rectangle words from ch() and spec an item or an int."""
+        with the rectangle words from ch() and spec an item or an int.
+
+        look3d: this tree is a DIALOG, and gets AES 3.40's 3D flags --
+        drawn only while the 3D look is on, ignored by a flat AES, so a
+        resource carrying them is right on both (src/aes/objc.c)."""
+        if look3d:
+            objs = flags3d(objs, flat)
         first = len(self.objects)
         for o in objs:
             self.objects.append(RObj(*o))

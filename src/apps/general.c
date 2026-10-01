@@ -51,6 +51,7 @@ static const LONG gn_ms[N_MN] = { 0L, 100L, 200L, 400L };
 /* Entry values, for Cancel. */
 static WORD dc0;
 static LONG ms0;
+static WORD look0;
 
 static WORD gn_index(LONG ms)
 {
@@ -185,11 +186,13 @@ static void gn_apply_clock(void)
  *
  * The 64 bytes in this module's own header, which the panel reaches
  * through XCPB and writes to a file beside the module (src/app/cpx.h).
- * Three bytes are used:
+ * Four bytes are used:
  *
  *   [0]  a mark, so an unsaved buffer of zeroes is not read as "rate 0"
  *   [1]  the double-click rate
  *   [2]  which sub-menu delay
+ *   [3]  the look: 0 flat, 1 3D (src/aes/objc.c) -- 0 in a buffer saved
+ *        before there was a choice, which is the flat look it had
  *
  * A MARK RATHER THAN A LENGTH, because a buffer that has never been
  * saved is all zeroes and every field in it is a legal value.  Without
@@ -197,6 +200,22 @@ static void gn_apply_clock(void)
  * saved would come up claiming the fastest double-click and no delay --
  * which is a setting nobody chose, arriving silently. */
 #define GN_MARK   0x47                  /* 'G' */
+
+/* The look, which the AES keeps: G4_3DLOOK is gem4xe's own objc_sysvar. */
+static WORD gn_look(void)
+{
+    WORD on = 0, d;
+
+    objc_sysvar(SV_INQUIRE, G4_3DLOOK, 0, 0, &on, &d);
+    return on;
+}
+
+static void gn_setlook(WORD on)
+{
+    WORD d;
+
+    objc_sysvar(SV_SET, G4_3DLOOK, on, 0, &d, &d);
+}
 
 static XCPB FAR *gn_xcpb;
 
@@ -216,9 +235,10 @@ static void gn_restore(void)
         evnt_dclick(dc, 1);
     if (mn >= 0 && mn < N_MN)
         gn_setdelay(gn_ms[mn]);
+    gn_setlook((WORD)(b[3] == 1));
 }
 
-static void gn_remember(WORD dc, WORD mn)
+static void gn_remember(WORD dc, WORD mn, WORD look)
 {
     char FAR *b;
 
@@ -228,6 +248,7 @@ static void gn_remember(WORD dc, WORD mn)
     b[0] = (char)GN_MARK;
     b[1] = (char)dc;
     b[2] = (char)mn;
+    b[3] = (char)look;
     gn_xcpb->CPX_Save((uint32_t)gn_xcpb);
 }
 
@@ -263,6 +284,9 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
     j = gn_index(ms0);
     for (i = 0; i < N_MN; i++)
         tree[GNMN0 + i].ob_state = (UWORD)(i == j ? SELECTED : NORMAL);
+    look0 = gn_look();
+    for (i = 0; i < N_LOOK; i++)
+        tree[GN3D0 + i].ob_state = (UWORD)(i == look0 ? SELECTED : NORMAL);
     tree[GNOK].ob_state = NORMAL;
     tree[GNCNCL].ob_state = NORMAL;
     gn_show();
@@ -281,21 +305,35 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
             evnt_dclick((WORD)(ob - GNDC0), 1);
         else if (ob >= GNMN0 && ob < GNMN0 + N_MN)
             gn_setdelay(gn_ms[ob - GNMN0]);
+        else if (ob >= GN3D0 && ob < GN3D0 + N_LOOK
+                 && (WORD)(ob - GN3D0) != gn_look()) {
+            /* the look, at once, and this dialog in it to show it */
+            gn_setlook((WORD)(ob - GN3D0));
+            objc_draw(tree, ROOT, MAX_DEPTH, x, y, w, h);
+        }
     }
 
     if (ob == GNOK) {
         gn_apply_clock();
-        gn_remember(evnt_dclick(0, 0), gn_index(ms_now()));
+        gn_remember(evnt_dclick(0, 0), gn_index(ms_now()), gn_look());
     }
     else {                              /* exactly what was there */
         evnt_dclick(dc0, 1);
         gn_setdelay(ms0);
+        gn_setlook(look0);
     }
 
     tree[GNOK].ob_state = NORMAL;
     tree[GNCNCL].ob_state = NORMAL;
     form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
-    form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
+    if (gn_look() != look0) {
+        /* everything on the screen was drawn in the other look: the
+         * whole desktop is redrawn, every window with it */
+        WORD dx, dy, dw, dh;
+        wind_get(0, WF_CURRXYWH, &dx, &dy, &dw, &dh);
+        form_dial(FMD_FINISH, 0, 0, 0, 0, dx, dy, dw, dh);
+    } else
+        form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
     /* pb->ret stays 0: A FORM CPX, and finished.  The dialog above ran
      * and has already closed, so there is nothing for the host to drive
      * -- a 1 here would leave the panel forwarding events to a module

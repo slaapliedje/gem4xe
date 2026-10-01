@@ -182,7 +182,7 @@ static void fm_build(OBJECT FAR *tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
         ob_add(tree, ROOT, (WORD)(MSGOFF + i));
     }
     for (i = 0, obj = tree + BUTOFF; i < numbut; i++, obj++) {
-        obj->ob_flags = SELECTABLE | EXIT;
+        obj->ob_flags = SELECTABLE | EXIT | FL3DACT;   /* the 3D look's */
         obj->ob_state = NORMAL;
         ob_setxywh(tree, (WORD)(BUTOFF + i), &bt);
         bt.g_x = (WORD)(bt.g_x + mlenbut + 2);
@@ -212,7 +212,9 @@ static OBJECT FAR *al_tree(void)
         tree[i].ob_state = NORMAL;
     }
     tree[ROOT].ob_type = G_BOX;
-    tree[ROOT].ob_flags = NONE;             /* LASTOB goes on the last button */
+    tree[ROOT].ob_flags = FL3DBAK;          /* LASTOB goes on the last button;
+                                             * FL3DBAK is drawn only with the
+                                             * 3D look on, as on the ST */
     tree[ROOT].ob_spec = 0x00011100UL;      /* the donor's DIALERT root:
                                              * no character, one pixel of
                                              * border, colour word 0x1100 */

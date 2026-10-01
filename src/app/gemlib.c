@@ -977,11 +977,12 @@ WORD objc_change(OBJECT *tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WOR
  * Four words in, three out, and NO TREE: the Compendium's binding
  * (6.121) and the AES's own table agree, 48 with 4/3/0.
  *
- * gem4xe draws no 3D objects, so an inquiry answers zero throughout and
- * a set is refused with 0.  That is the useful answer and not an empty
- * one: AD3DVALUE says how much room an object needs for its 3D border,
- * and a system that draws none needs none -- cflib lays its objects out
- * by exactly this. */
+ * With gem4xe's 3D look off -- the default -- an inquiry answers as a
+ * flat AES: nothing moves, the grounds are white, and AD3DVALUE is 0,
+ * since a system that draws no 3D border needs no room for one (cflib
+ * lays its objects out by exactly this).  With it on, EmuTOS's answers.
+ * G4_3DLOOK, gem4xe's own, reads and sets the look itself; the control
+ * panel's GENERAL module is what sets it. */
 WORD objc_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
                  WORD *out1, WORD *out2)
 {
