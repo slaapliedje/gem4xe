@@ -19,8 +19,11 @@
  * to scroll is not buried.  ct_arrow_repeat is that, called from
  * event.c's ct_poll while the window manager holds the mouse.
  *
- * As in the non-3D build of the donor, only the closer and the fuller
- * are drawn selected while the button is down.
+ * Flat, as in the non-3D build of the donor, only the closer and the
+ * fuller are drawn selected while the button is down.  With the 3D look
+ * (phase 88) every gadget is, as in the 3D build: pressed in while it is
+ * held -- an arrow until the button comes up (ct_arrow_stop), the mover,
+ * sizer and elevators for their drag -- and raised again after.
  */
 #include "aes.h"
 #include "proc.h"
@@ -39,7 +42,27 @@ static const WORD gl_wa[] = {
 /* the arrow being held */
 static WORD     ct_held;
 static WORD     ct_wh, ct_action;
+static TINY WORD ct_pressed;    /* the 3D arrow drawn pressed in, or 0;
+                                 * direct page: LoRAM is at its reserve */
 static uint32_t ct_tick;        /* when the first WM_ARROWED went */
+
+/* Clip to the top window wh, and draw its gadget in `state` there:
+ * the clip is whatever the last drawing left, and a 3D gadget draws
+ * ADJ3DSTD outside its own rectangle. */
+static void ct_clip(WORD wh)
+{
+    GRECT c;
+
+    w_getsize(WS_CURR, wh, &c);
+    rc_intersect(&gl_rfull, &c);
+    gsx_sclip(&c);
+}
+
+static void ct_show(WORD wh, WORD gadget, UWORD state)
+{
+    ct_clip(wh);
+    ob_change(gl_awind, gadget, state, TRUE);
+}
 
 static void ct_msgup(PROC *to, WORD message, WORD wh, WORD m1, WORD m2,
                      WORD m3, WORD m4)
@@ -67,7 +90,7 @@ void ct_arrow_repeat(void)
     if (!ct_held)
         return;
     if (!(button & 1)) {
-        ct_held = FALSE;
+        ct_arrow_stop();
         return;
     }
     if ((gl_ticks - ct_tick) < (uint32_t)gl_dclick)
@@ -78,6 +101,15 @@ void ct_arrow_repeat(void)
 void ct_arrow_stop(void)
 {
     ct_held = FALSE;
+    if (ct_pressed) {                   /* the arrow comes back up */
+        if (ct_wh == gl_wtop && (gl_win[ct_wh].w_flags & VF_ISOPEN)) {
+            w_bldactive(ct_wh);
+            ct_show(ct_wh, ct_pressed, NORMAL);
+        } else {
+            gl_awind[ct_pressed].ob_state = NORMAL;
+        }
+        ct_pressed = 0;
+    }
 }
 
 /* A press at (mx,my) on window wh's frame. */
@@ -114,6 +146,8 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
     switch (cpt) {
     case W_CLOSER:
     case W_FULLER:
+        if (gl_3d)
+            ct_clip(wh);                /* watchbox draws it pressed in */
         if (gr_watchbox(gl_awind, gadget, SELECTED, NORMAL)) {
             message = (cpt == W_CLOSER) ? WM_CLOSED : WM_FULLED;
             need_normal = TRUE;
@@ -123,14 +157,19 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
         if (kind & MOVER) {
             /* the window may go off the right and the bottom, but not
              * so far that its title is out of reach */
-            r_set(&f, 0, gl_hbox, gl_rscreen.g_w + w - gl_wbox - 6,
+            r_set(&f, 0, gl_hbox,
+                  (WORD)(gl_rscreen.g_w + w - gl_wbox - 6 - (gl_3d ? 2 * ADJ3DSTD : 0)),
                   MAX_COORDINATE);
+            if (gl_3d)
+                ct_show(wh, gadget, SELECTED);
             gr_dragbox(w, h, x, y, &f, &x, &y);
             message = WM_MOVED;
         }
         break;
     case W_SIZER:
         if (kind & SIZER) {
+            if (gl_3d)
+                ct_show(wh, gadget, SELECTED);
             /* the second rubber box is the work area, as an offset from
              * the frame; the minimum keeps every gadget drawable */
             w_getsize(WS_WORK, wh, &t);
@@ -165,17 +204,25 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
     case W_DNARROW:
     case W_LFARROW:
     case W_RTARROW:
+        if (gl_3d && gadget != W_HSLIDE && gadget != W_VSLIDE) {
+            ct_show(wh, gadget, SELECTED);
+            ct_pressed = gadget;        /* up again in ct_arrow_stop */
+        }
         handle_arrow_msg(wh, cpt);
         return;
     case W_HELEV:
     case W_VELEV:
         message = (cpt == W_HELEV) ? WM_HSLID : WM_VSLID;
+        if (gl_3d)
+            ct_show(wh, gadget, SELECTED);
         /* and cpt-1 is the elevator's bar */
         x = gr_slidebox(gl_awind, cpt - 1, cpt, (cpt == W_VELEV));
         break;
     }
 
-    if (need_normal)
+    if (gl_3d)
+        ct_show(wh, gadget, NORMAL);    /* whatever was pressed, back up */
+    else if (need_normal)
         ob_change(gl_awind, gadget, NORMAL, TRUE);
 
     ct_msgup(proc_app, message, wh, x, y, w, h);

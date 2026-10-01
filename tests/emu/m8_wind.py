@@ -51,8 +51,9 @@ from aesref import (Layout, MU_MESAG, MU_TIMER, MU_BUTTON, RETURN,  # noqa: E402
                     WIND_CLOSE, WIND_DELETE, WIND_GET, WIND_SET, WIND_FIND,
                     WIND_UPDATE, WIND_CALC, WIND_NEW, FORM_DO,
                     GRAF_RUBBOX, GRAF_DRAGBOX,
-                    GRAF_MBOX, GRAF_SLIDEBOX, GRAF_MKSTATE, GRAF_MOUSE)
-from m4_aes import dialog, draw, mem_diff, PRELUDE                  # noqa: E402
+                    GRAF_MBOX, GRAF_SLIDEBOX, GRAF_MKSTATE, GRAF_MOUSE,
+                    SV_SET, G4_3DLOOK, W_LFARROW)
+from m4_aes import dialog, draw, mem_diff, sysvar, PRELUDE          # noqa: E402
 from m7_form import (desk, F, M, B, K, multi, poke16, drive, compare,  # noqa: E402
                      NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS, SHOTDIR)
 
@@ -515,6 +516,80 @@ def case_form(L, s):
     return b
 
 
+# -- the 3D frame (phase 88) --------------------------------------------------
+# Every case that turns the look on turns it off again as its LAST record:
+# the target keeps gl_3d from case to case, and the model starts each one
+# flat.  The WM_SIZED that switch sends is never read -- the next case's
+# runner starts with an empty queue.
+
+def case_3d_frame(L, s):
+    """TOS 4's frame: wind_calc for every bar rule, a full window under a
+    smaller one -- an untopped 3D window still draws all its gadgets, and
+    a slider moved on it is redrawn at once -- and the look switched on
+    under open windows: each keeps its outer rectangle and its owner gets
+    a WM_SIZED of it."""
+    return [
+        sysvar(SV_SET, G4_3DLOOK, 1),
+        (WIND_CALC, (), (WC_WORK, ALL, 100, 50, 300, 150)),
+        (WIND_CALC, (), (WC_BORDER, ALL, 103, 75, 283, 110)),
+        (WIND_CALC, (), (WC_WORK, NAME | MOVER, 10, 20, 100, 60)),
+        (WIND_CALC, (), (WC_WORK, SIZER, 10, 20, 100, 60)),
+        (WIND_CALC, (), (WC_WORK, VSLIDE | SIZER, 10, 20, 100, 60)),
+        (WIND_CALC, (), (WC_WORK, HSLIDE | SIZER, 10, 20, 100, 60)),
+        (WIND_CALC, (), (WC_WORK, 0, 10, 20, 100, 60)),
+        create(ALL), wopen(1, 20, 20, 400, 170),
+        setaddr(1, WF_NAME, L.text("Raised")),
+        setaddr(1, WF_INFO, L.text("on grey grounds")),
+        wset(1, WF_VSLSIZ, 250), wset(1, WF_VSLIDE, 500),
+        wset(1, WF_HSLSIZ, 400), wset(1, WF_HSLIDE, 300),
+        create(NAME | MOVER | CLOSER | SIZER | VSLIDE),
+        wopen(2, 440, 60, 180, 120),
+        setaddr(2, WF_NAME, L.text("On top")),
+        get(1, WF_WXYWH), get(2, WF_WXYWH),
+        wset(1, WF_VSLIDE, 1000),               # untopped: redrawn at once
+    ] + mesag(2) + [
+        timeout(),
+        sysvar(SV_SET, G4_3DLOOK, 0),           # flat again under them:
+        get(1, WF_CXYWH), get(1, WF_WXYWH),     # the same frame, a new
+        get(2, WF_WXYWH),                       # work area,
+    ] + mesag(2) + [                            # and a WM_SIZED each
+        sysvar(SV_SET, G4_3DLOOK, 1),
+        get(1, WF_WXYWH),
+    ] + mesag(2) + [
+        timeout(),
+        sysvar(SV_SET, G4_3DLOOK, 0),
+    ]
+
+
+def case_3d_press(L, s):
+    """Pressed in while held, raised after: the closer let go outside it,
+    the elevator dragged, the sizer dragged, an arrow held and let go."""
+    b = Script()
+    b.op(sysvar(SV_SET, G4_3DLOOK, 1))
+    sliders(b)
+    closer = s.gadget(b, 1, W_CLOSER)
+    b.op(multi(MU_MESAG | MU_TIMER, ms=300),
+         F(3), M(*closer), B(1), F(2), M(600, 200), *RELEASE, F(14))
+    ve = s.gadget(b, 1, W_VELEV)
+    b.op(multi(MU_MESAG | MU_TIMER, ms=2000),
+         F(3), M(*ve), B(1), F(2), M(ve[0], ve[1] + 20), *RELEASE)
+    b.op(wset(1, WF_VSLIDE, s.message(b)[4]))
+    sizer = s.gadget(b, 1, W_SIZER)
+    b.op(multi(MU_MESAG | MU_TIMER, ms=2000),
+         F(3), M(*sizer), B(1), F(2), M(sizer[0] - 40, sizer[1] - 30), *RELEASE)
+    b.op(wset(1, WF_CXYWH, *s.message(b)[4:8]))
+    b.op(get(1, WF_WXYWH))
+    b.op(timeout())                         # smaller: it uncovered only desk
+    # the arrow LAST: nothing after it draws the frame again, so an arrow
+    # left pressed in is what the screen comparison sees
+    b.op(multi(MU_MESAG | MU_TIMER, ms=2000),
+         F(3), M(*s.gadget(b, 1, W_LFARROW)), B(1))     # pressed in: WA_LFLINE
+    b.op(multi(MU_BUTTON, 1, 1, 0), *RELEASE)   # and back up
+    b.op(timeout())
+    b.op(sysvar(SV_SET, G4_3DLOOK, 0))
+    return b
+
+
 def mouse(mode):
     """graf_mouse: the mode, then the 37 words a USER_DEF form would
     carry -- a script record holds them rather than a pointer."""
@@ -586,6 +661,8 @@ CASES = [
     ("form_do owns the screen; graf_rubbox and graf_dragbox", case_form),
     ("wind_new tidies up: the windows go and the screen is let go", case_new),
     ("appl_read: one message, in the order evnt_mesag would", case_read),
+    ("the 3D frame: TOS 4's bars, untopped gadgets, the look switched", case_3d_frame),
+    ("the 3D frame pressed: closer, elevator, sizer, then an arrow", case_3d_press),
 ]
 
 

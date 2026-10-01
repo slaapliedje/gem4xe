@@ -1,5 +1,5 @@
 /* wind.c -- the AES window manager (EmuTOS aes/gemwmlib.c + gemwrect.c,
- * single-tasking, no 3D objects, no per-window colours).
+ * single-tasking, no per-window colours; the 3D frame since phase 88).
  *
  * A window is a slot in gl_win[] and an object in W_TREE, the window
  * tree, whose root is the desktop: the open windows are the root's
@@ -574,9 +574,192 @@ static void w_bldhbar(UWORD kind, WORD istop, const WINDOW *pw,
     }
 }
 
+/* ---- the 3D frame (phase 88) ----------------------------------------------
+ *
+ * With the 3D look on, the frame is EmuTOS's CONF_WITH_3D_OBJECTS one,
+ * which is TOS 4's: the closer, fuller, sizer, arrows and elevators are
+ * activators, drawn ADJ3DSTD bigger all round and set in by as much, so
+ * a title bar or a scroll bar is a box two pixels taller or wider
+ * (W3_WBOX, W3_HBOX); the name is an activator too when there is one.
+ * Every gadget is drawn on an untopped window as well, as TOS 4 does.
+ * Which bars there are is TOS 4's rule: a bar only where it has a
+ * gadget, and a SIZER with neither makes a vertical one (wm_calc below
+ * says the same).
+ *
+ * THE GROUNDS ARE GREY, which is gem4xe's choice rather than TOS 4's
+ * default.  The Falcon AES gives every gadget the colour word 0x1101,
+ * and its 3D drawing greys only a hollow WHITE ground, so a stock Falcon
+ * window has white gadgets with raised edges; the grey ones in the
+ * Falcon pictures come from its window-colour settings.  gem4xe has no
+ * per-window colours (WF_COLOR), and grey is what the look's dialogs
+ * already are, so the activators get a white fill colour -- which
+ * objc_draw turns into the activator grey -- and the title, the info
+ * line and the bars the 3D ground (ob_3dground). */
+#define W3_WBOX ((WORD)(gl_wbox + 2 * ADJ3DSTD))
+#define W3_HBOX ((WORD)(gl_hbox + 2 * ADJ3DSTD))
+#define W3_ACTS ((1UL << W_CLOSER) | (1UL << W_FULLER) | (1UL << W_SIZER) | \
+                 (1UL << W_UPARROW) | (1UL << W_DNARROW) | (1UL << W_VELEV) | \
+                 (1UL << W_LFARROW) | (1UL << W_RTARROW) | (1UL << W_HELEV))
+#define W3_GROUND(spec, g) (((spec) & 0xFFFFFF00UL) | 0x70UL | (uint32_t)(g))
+
+static void w3_bldvbar(UWORD kind, const WINDOW *pw,
+                       WORD x, WORD y, WORD w, WORD h)
+{
+    WORD size, posn;
+
+    (void)w;
+    w_adjust(W_DATA, W_VBAR, x, y, W3_WBOX, h);
+    y = 0;
+    if (kind & UPARROW) {
+        w_adjust(W_VBAR, W_UPARROW, ADJ3DSTD, (WORD)(y + ADJ3DSTD), gl_wbox, gl_hbox);
+        y = (WORD)(y + W3_HBOX);
+        h = (WORD)(h - W3_HBOX);
+    }
+    if (kind & DNARROW) {
+        h = (WORD)(h - W3_HBOX);
+        w_adjust(W_VBAR, W_DNARROW, ADJ3DSTD, (WORD)(y + h + ADJ3DSTD - 1),
+                 gl_wbox, gl_hbox);
+    }
+    if (kind & VSLIDE) {
+        w_adjust(W_VBAR, W_VSLIDE, 0, y, W3_WBOX, h);
+        if (pw->w_vslsiz == -1) {
+            size = gl_hbox;
+        } else {
+            size = mul_div_round(h, pw->w_vslsiz, 1000);
+            if (size < gl_hbox)
+                size = gl_hbox;
+        }
+        posn = mul_div_round((WORD)(h - size), pw->w_vslide, 1000);
+        w_adjust(W_VSLIDE, W_VELEV, ADJ3DSTD, (WORD)(posn + ADJ3DSTD),
+                 gl_wbox, (WORD)(size - 2 * ADJ3DSTD - 1));
+    }
+}
+
+static void w3_bldhbar(UWORD kind, const WINDOW *pw,
+                       WORD x, WORD y, WORD w, WORD h)
+{
+    WORD size, posn;
+
+    (void)h;
+    w_adjust(W_DATA, W_HBAR, x, y, w, W3_HBOX);
+    x = 0;
+    if (kind & LFARROW) {
+        w_adjust(W_HBAR, W_LFARROW, (WORD)(x + ADJ3DSTD), ADJ3DSTD, gl_wbox, gl_hbox);
+        x = (WORD)(x + W3_WBOX);
+        w = (WORD)(w - W3_WBOX);
+    }
+    if (kind & RTARROW) {
+        w = (WORD)(w - W3_WBOX);
+        w_adjust(W_HBAR, W_RTARROW, (WORD)(x + w - 1 + ADJ3DSTD), ADJ3DSTD,
+                 gl_wbox, gl_hbox);
+    }
+    if (kind & HSLIDE) {
+        w_adjust(W_HBAR, W_HSLIDE, x, 0, w, W3_HBOX);
+        if (pw->w_hslsiz == -1) {
+            size = gl_wbox;
+        } else {
+            size = mul_div_round(w, pw->w_hslsiz, 1000);
+            if (size < gl_wbox)
+                size = gl_wbox;
+        }
+        posn = mul_div_round((WORD)(w - size), pw->w_hslide, 1000);
+        w_adjust(W_HSLIDE, W_HELEV, (WORD)(posn + ADJ3DSTD), ADJ3DSTD,
+                 (WORD)(size - 2 * ADJ3DSTD - 1), gl_hbox);
+    }
+}
+
+/* The 3D frame inside W_BOX, whose size is t's (EmuTOS w_bldactive). */
+static void w3_bldactive(const WINDOW *pw, WORD istop, WORD kind, GRECT t)
+{
+    WORD havevbar, havehbar, corner_x, corner_y, tempw, i, g;
+
+    if (kind & TGADGETS) {
+        w_adjust(W_BOX, W_TITLE, t.g_x, t.g_y, t.g_w, W3_HBOX);
+        tempw = t.g_w;
+        if (kind & CLOSER) {
+            w_adjust(W_TITLE, W_CLOSER, (WORD)(t.g_x + ADJ3DSTD),
+                     (WORD)(t.g_y + ADJ3DSTD), gl_wbox, gl_hbox);
+            t.g_x = (WORD)(t.g_x + W3_WBOX);
+            tempw = (WORD)(tempw - W3_WBOX);
+        }
+        if (kind & FULLER) {
+            tempw = (WORD)(tempw - W3_WBOX);
+            w_adjust(W_TITLE, W_FULLER, (WORD)(t.g_x + tempw + ADJ3DSTD),
+                     (WORD)(t.g_y + ADJ3DSTD), gl_wbox, gl_hbox);
+        }
+        if (kind & (NAME | MOVER)) {
+            /* a MOVER with no NAME still has a bar to drag, as on TOS 4 */
+            tempw = (WORD)(tempw - 2 * ADJ3DSTD);
+            w_adjust(W_TITLE, W_NAME, (WORD)(t.g_x + ADJ3DSTD),
+                     (WORD)(t.g_y + ADJ3DSTD), tempw, gl_hbox);
+            W_ACTIVE[W_NAME].ob_state = istop ? NORMAL : DISABLED;
+        }
+        t.g_x = 0;
+        t.g_y = (WORD)(t.g_y + W3_HBOX);
+        t.g_h = (WORD)(t.g_h - W3_HBOX);
+    }
+    if (kind & INFO) {
+        w_adjust(W_BOX, W_INFO, t.g_x, t.g_y, t.g_w, gl_hbox);
+        t.g_y = (WORD)(t.g_y + gl_hbox);
+        t.g_h = (WORD)(t.g_h - gl_hbox);
+    }
+    w_adjust(W_BOX, W_DATA, t.g_x, t.g_y, t.g_w, t.g_h);
+
+    havevbar = (WORD)((kind & VGADGETS) != 0);
+    havehbar = (WORD)((kind & HGADGETS) != 0);
+    corner_x = -1;
+    corner_y = 0;
+    if ((havehbar && havevbar) || (kind & SIZER)) {
+        corner_x = (WORD)(t.g_w - gl_wbox - ADJ3DSTD);
+        corner_y = (WORD)(t.g_h - gl_hbox - ADJ3DSTD);
+    }
+    if (!havevbar && !havehbar && (kind & SIZER))
+        havevbar = TRUE;
+
+    t.g_x = t.g_y = 1;
+    t.g_w = (WORD)(t.g_w - 2);
+    t.g_h = (WORD)(t.g_h - 2);
+    if (havevbar || (kind & SIZER))
+        t.g_w = (WORD)(t.g_w - (W3_WBOX - 1));
+    if (havehbar || (kind & SIZER))
+        t.g_h = (WORD)(t.g_h - (W3_HBOX - 1));
+    w_adjust(W_DATA, W_WORK, t.g_x, t.g_y, t.g_w, t.g_h);
+
+    if (havevbar) {
+        t.g_x = (WORD)(t.g_x + t.g_w);
+        w3_bldvbar((UWORD)kind, pw, t.g_x, 0, (WORD)(t.g_w + 2), (WORD)(t.g_h + 2));
+    }
+    if (havehbar) {
+        t.g_y = (WORD)(t.g_y + t.g_h);
+        w3_bldhbar((UWORD)kind, pw, 0, t.g_y, (WORD)(t.g_w + 2), (WORD)(t.g_h + 2));
+    }
+    if (corner_x >= 0) {
+        w_adjust(W_DATA, W_SIZER, corner_x, corner_y, gl_wbox, gl_hbox);
+        W_ACTIVE[W_SIZER].ob_spec &= 0x00ffffffUL;
+        if (kind & SIZER)
+            W_ACTIVE[W_SIZER].ob_spec |= 0x06000000UL;
+    }
+
+    /* the look: activators on a white fill, which objc_draw greys; the
+     * title, info line and bars on the 3D ground */
+    for (i = 0; i < NUM_ELEM; i++)
+        if ((W3_ACTS >> i) & 1) {
+            W_ACTIVE[i].ob_flags = FL3DACT;
+            W_ACTIVE[i].ob_spec &= 0xFFFFFFF0UL;
+        }
+    W_ACTIVE[W_NAME].ob_flags = (kind & NAME) ? FL3DACT : 0;
+    gl_aname.te_color = (kind & NAME) ? 0x1100 : 0x1170;
+    g = ob_3dground();
+    gl_ainfo.te_color = (WORD)(0x1170 | g);
+    W_ACTIVE[W_TITLE].ob_spec = W3_GROUND(W_ACTIVE[W_TITLE].ob_spec, g);
+    W_ACTIVE[W_VBAR].ob_spec = W3_GROUND(W_ACTIVE[W_VBAR].ob_spec, g);
+    W_ACTIVE[W_HBAR].ob_spec = W3_GROUND(W_ACTIVE[W_HBAR].ob_spec, g);
+}
+
 /* Lay W_ACTIVE out for window w_handle: the frame's parts, sized from
  * the window's current rectangle and its kind.  An untopped window gets
- * a disabled title and no arrows, slides or sizer. */
+ * a disabled title and no arrows, slides or sizer (flat; the 3D frame
+ * draws them all, w3_bldactive). */
 void w_bldactive(WORD w_handle)
 {
     WORD istop, kind;
@@ -591,6 +774,14 @@ void w_bldactive(WORD w_handle)
     istop = (gl_wtop == w_handle);
     kind = (WORD)pw->w_kind;
     w_nilit(NUM_ELEM, W_ACTIVE);
+    /* the colours and flags the last frame left, whichever look it had:
+     * every element but the two TEDINFOs, whose words are below */
+    for (tempw = 0; tempw < NUM_ELEM; tempw++) {
+        W_ACTIVE[tempw].ob_flags = 0;
+        if (tempw != W_NAME && tempw != W_INFO)
+            W_ACTIVE[tempw].ob_spec = gl_waspec[tempw];
+    }
+    gl_ainfo.te_color = UNTOPPED_COLOR;
 
     w_ptext(&gl_aname, pw->w_pname);
     w_ptext(&gl_ainfo, pw->w_pinfo);
@@ -603,6 +794,10 @@ void w_bldactive(WORD w_handle)
     W_ACTIVE[W_BOX].ob_width = t.g_w;
     W_ACTIVE[W_BOX].ob_height = t.g_h;
     t.g_x = t.g_y = 0;
+    if (gl_3d) {
+        w3_bldactive(pw, istop, kind, t);
+        return;
+    }
 
     /* the title bar */
     if (kind & (NAME | CLOSER | FULLER)) {
@@ -1264,8 +1459,9 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
         break;
     }
 
-    /* a slider of the top window is redrawn at once */
-    if (w_handle == gl_wtop && (which == W_HSLIDE || which == W_VSLIDE))
+    /* a slider is redrawn at once where it is drawn: on the top window,
+     * or on any window with the 3D frame, which draws them all */
+    if ((w_handle == gl_wtop || gl_3d) && (which == W_HSLIDE || which == W_VSLIDE))
         do_cpwalk = TRUE;
     if (do_cpwalk)
         w_cpwalk(w_handle, which, MAX_DEPTH, TRUE);
@@ -1347,14 +1543,33 @@ void wm_calc(WORD wtype, UWORD kind, WORD x, WORD y, WORD w, WORD h,
     WORD tb, bb, lb, rb;
 
     tb = bb = rb = lb = 1;
-    if (kind & (NAME | CLOSER | FULLER))
-        tb = (WORD)(tb + gl_hbox - 1);
-    if (kind & INFO)
-        tb = (WORD)(tb + gl_hbox - 1);
-    if (kind & (UPARROW | DNARROW | VSLIDE | SIZER))
-        rb = (WORD)(rb + gl_wbox - 1);
-    if (kind & (LFARROW | RTARROW | HSLIDE | SIZER))
-        bb = (WORD)(bb + gl_hbox - 1);
+    if (gl_3d) {                    /* w3_bldactive's frame, EmuTOS's sums */
+        UWORD v = kind & (VGADGETS | SIZER), hz = kind & (HGADGETS | SIZER);
+
+        if (kind & TGADGETS)
+            tb = (WORD)(tb + W3_HBOX - 1);
+        if (kind & INFO)
+            tb = (WORD)(tb + gl_hbox);
+        if (v && hz) {              /* the SIZER goes where a bar is */
+            v &= (UWORD)~SIZER;
+            hz &= (UWORD)~SIZER;
+            if (!v && !hz)
+                v = SIZER;
+        }
+        if (v)
+            rb = (WORD)(rb + W3_WBOX - 1);
+        if (hz)
+            bb = (WORD)(bb + W3_HBOX - 1);
+    } else {
+        if (kind & (NAME | CLOSER | FULLER))
+            tb = (WORD)(tb + gl_hbox - 1);
+        if (kind & INFO)
+            tb = (WORD)(tb + gl_hbox - 1);
+        if (kind & (UPARROW | DNARROW | VSLIDE | SIZER))
+            rb = (WORD)(rb + gl_wbox - 1);
+        if (kind & (LFARROW | RTARROW | HSLIDE | SIZER))
+            bb = (WORD)(bb + gl_hbox - 1);
+    }
     if (wtype == WC_BORDER) {
         lb = (WORD)-lb;  tb = (WORD)-tb;
         rb = (WORD)-rb;  bb = (WORD)-bb;
@@ -1363,4 +1578,29 @@ void wm_calc(WORD wtype, UWORD kind, WORD x, WORD y, WORD w, WORD h,
     *py = (WORD)(y + tb);
     *pw = (WORD)(w - lb - rb);
     *ph = (WORD)(h - tb - bb);
+}
+
+/* The look changed under the open windows (objc_sysvar, G4_3DLOOK): a
+ * frame is a different size in the other look, so each window keeps its
+ * outer rectangle and takes the work area that frame leaves, and its
+ * owner is told with a WM_SIZED of that same rectangle -- which is how a
+ * GEM program learns that its work area moved; the desktop lays its
+ * icons out again on one.  Drawing it all again is the caller's: General
+ * redraws the whole screen when its dialog closes (src/apps/general.c). */
+void w_look(void)
+{
+    WORD wh;
+    GRECT t;
+    WINDOW *pwin;
+
+    for (wh = W_TREE[ROOT].ob_head; wh != NIL && wh != ROOT;
+         wh = W_TREE[wh].ob_next) {
+        pwin = &gl_win[wh];
+        w_getsize(WS_CURR, wh, &t);
+        wm_calc(WC_WORK, pwin->w_kind, t.g_x, t.g_y, t.g_w, t.g_h,
+                &pwin->w_work.g_x, &pwin->w_work.g_y,
+                &pwin->w_work.g_w, &pwin->w_work.g_h);
+        ap_sendmsg(proc_app, WM_SIZED, wh, t.g_x, t.g_y, t.g_w, t.g_h);
+    }
+    w_setactive();
 }

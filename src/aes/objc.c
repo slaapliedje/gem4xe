@@ -410,6 +410,13 @@ void ob_3dinit(void)
     col3d[1] = col3d[2] = col3d[3] = c;
 }
 
+/* The ground a 3D window frame's title, info line and bars are filled
+ * with (src/aes/wind.c, w3_bldactive). */
+WORD ob_3dground(void)
+{
+    return backgrcol;
+}
+
 
 
 /* The pen whose bits are the complement of `color`'s (EmuTOS's xor_color):
@@ -1331,7 +1338,10 @@ WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
     if (mode == SV_SET) {
         switch (which) {
         case G4_3DLOOK:
-            gl_3d = (WORD)(in1 != 0);
+            if (gl_3d != (WORD)(in1 != 0)) {
+                gl_3d = (WORD)(in1 != 0);
+                w_look();               /* the open windows' frames, too */
+            }
             return 1;
         case LK3DIND:
             if (in1 != -1) indtxtmove = (uint8_t)in1;

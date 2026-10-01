@@ -289,6 +289,7 @@ typedef struct {
 
 extern WORD gl_3d;              /* the 3D look: 0 flat (the default), 1 on */
 void ob_3dinit(void);           /* its colours, for the screen there is */
+WORD ob_3dground(void);         /* a 3D window frame's ground (wind.c) */
 #define BLACK       1
 #define LWHITE      8
 #define LBLACK      9
@@ -761,6 +762,7 @@ extern WORD ml_ocnt;        /* form.c: fm_own's nesting depth */
 extern WORD wm_ucount;      /* wind.c: wind_update's */
 void wm_calc(WORD wtype, UWORD kind, WORD x, WORD y, WORD w, WORD h,
              WORD *px, WORD *py, WORD *pw, WORD *ph);
+void w_look(void);          /* the look changed: re-fit the open windows */
 
 /* ---- the resource library: rsrc.c (gemrslib.c) ------------------------
  * One resource loaded at a time, into the bank-$00 pool (src/sys/app.h). */

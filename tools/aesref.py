@@ -1166,7 +1166,9 @@ class AES:
         ncol = 1 << self.gl_nplanes
         if mode == SV_SET:
             if which == G4_3DLOOK:
-                self.gl_3d = 1 if in1 else 0
+                if self.gl_3d != (1 if in1 else 0):
+                    self.gl_3d = 1 if in1 else 0
+                    self.w_look()
                 return 1, 0, 0
             if which == LK3DIND:
                 if in1 != -1: self.indtxtmove = in1 & 0xFF
@@ -2768,6 +2770,123 @@ class AES:
             posn = mul_div_round(word(w - size), pw.w_hslide, 1000)
             self.w_adjust(W_HSLIDE, W_HELEV, posn, 0, size, self.gl_hbox)
 
+    # -- the 3D frame (src/aes/wind.c, w3_bldactive; phase 88)
+    def w3_bldvbar(self, kind, pw, x, y, w, h):
+        hb, wb = self.gl_hbox, self.gl_wbox
+        wb3, hb3 = wb + 2 * ADJ3DSTD, hb + 2 * ADJ3DSTD
+        self.w_adjust(W_DATA, W_VBAR, x, y, wb3, h)
+        y = 0
+        if kind & UPARROW:
+            self.w_adjust(W_VBAR, W_UPARROW, ADJ3DSTD, y + ADJ3DSTD, wb, hb)
+            y += hb3
+            h -= hb3
+        if kind & DNARROW:
+            h -= hb3
+            self.w_adjust(W_VBAR, W_DNARROW, ADJ3DSTD, y + h + ADJ3DSTD - 1, wb, hb)
+        if kind & VSLIDE:
+            self.w_adjust(W_VBAR, W_VSLIDE, 0, y, wb3, h)
+            if pw.w_vslsiz == -1:
+                size = hb
+            else:
+                size = max(mul_div_round(h, pw.w_vslsiz, 1000), hb)
+            posn = mul_div_round(word(h - size), pw.w_vslide, 1000)
+            self.w_adjust(W_VSLIDE, W_VELEV, ADJ3DSTD, posn + ADJ3DSTD, wb,
+                          size - 2 * ADJ3DSTD - 1)
+
+    def w3_bldhbar(self, kind, pw, x, y, w, h):
+        hb, wb = self.gl_hbox, self.gl_wbox
+        wb3, hb3 = wb + 2 * ADJ3DSTD, hb + 2 * ADJ3DSTD
+        self.w_adjust(W_DATA, W_HBAR, x, y, w, hb3)
+        x = 0
+        if kind & LFARROW:
+            self.w_adjust(W_HBAR, W_LFARROW, x + ADJ3DSTD, ADJ3DSTD, wb, hb)
+            x += wb3
+            w -= wb3
+        if kind & RTARROW:
+            w -= wb3
+            self.w_adjust(W_HBAR, W_RTARROW, x + w - 1 + ADJ3DSTD, ADJ3DSTD, wb, hb)
+        if kind & HSLIDE:
+            self.w_adjust(W_HBAR, W_HSLIDE, x, 0, w, hb3)
+            if pw.w_hslsiz == -1:
+                size = wb
+            else:
+                size = max(mul_div_round(w, pw.w_hslsiz, 1000), wb)
+            posn = mul_div_round(word(w - size), pw.w_hslide, 1000)
+            self.w_adjust(W_HSLIDE, W_HELEV, posn + ADJ3DSTD, ADJ3DSTD,
+                          size - 2 * ADJ3DSTD - 1, hb)
+
+    W3_ACTS = (W_CLOSER, W_FULLER, W_SIZER, W_UPARROW, W_DNARROW, W_VELEV,
+               W_LFARROW, W_RTARROW, W_HELEV)
+
+    def w3_bldactive(self, pw, istop, kind, t):
+        """The 3D frame inside W_BOX, whose size is t's: TOS 4's layout
+        (EmuTOS w_bldactive), on grey grounds (wind.c says why)."""
+        W = self.W_ACTIVE
+        hb, wb = self.gl_hbox, self.gl_wbox
+        wb3, hb3 = wb + 2 * ADJ3DSTD, hb + 2 * ADJ3DSTD
+        if kind & TGADGETS:
+            self.w_adjust(W_BOX, W_TITLE, t.x, t.y, t.w, hb3)
+            tempw = t.w
+            if kind & CLOSER:
+                self.w_adjust(W_TITLE, W_CLOSER, t.x + ADJ3DSTD, t.y + ADJ3DSTD, wb, hb)
+                t.x += wb3
+                tempw -= wb3
+            if kind & FULLER:
+                tempw -= wb3
+                self.w_adjust(W_TITLE, W_FULLER, t.x + tempw + ADJ3DSTD,
+                              t.y + ADJ3DSTD, wb, hb)
+            if kind & (NAME | MOVER):
+                tempw -= 2 * ADJ3DSTD
+                self.w_adjust(W_TITLE, W_NAME, t.x + ADJ3DSTD, t.y + ADJ3DSTD,
+                              tempw, hb)
+                W[W_NAME].ob_state = NORMAL if istop else DISABLED
+            t.x = 0
+            t.y += hb3
+            t.h -= hb3
+        if kind & INFO:
+            self.w_adjust(W_BOX, W_INFO, t.x, t.y, t.w, hb)
+            t.y += hb
+            t.h -= hb
+        self.w_adjust(W_BOX, W_DATA, t.x, t.y, t.w, t.h)
+
+        havevbar = bool(kind & VGADGETS)
+        havehbar = bool(kind & HGADGETS)
+        corner_x, corner_y = -1, 0
+        if (havehbar and havevbar) or (kind & SIZER):
+            corner_x = t.w - wb - ADJ3DSTD
+            corner_y = t.h - hb - ADJ3DSTD
+        if not havevbar and not havehbar and (kind & SIZER):
+            havevbar = True
+        t.x = t.y = 1
+        t.w -= 2
+        t.h -= 2
+        if havevbar or (kind & SIZER):
+            t.w -= wb3 - 1
+        if havehbar or (kind & SIZER):
+            t.h -= hb3 - 1
+        self.w_adjust(W_DATA, W_WORK, t.x, t.y, t.w, t.h)
+        if havevbar:
+            t.x += t.w
+            self.w3_bldvbar(kind, pw, t.x, 0, t.w + 2, t.h + 2)
+        if havehbar:
+            t.y += t.h
+            self.w3_bldhbar(kind, pw, 0, t.y, t.w + 2, t.h + 2)
+        if corner_x >= 0:
+            self.w_adjust(W_DATA, W_SIZER, corner_x, corner_y, wb, hb)
+            W[W_SIZER].ob_spec &= 0x00FFFFFF
+            if kind & SIZER:
+                W[W_SIZER].ob_spec |= 0x06000000
+
+        for i in self.W3_ACTS:
+            W[i].ob_flags = FL3DACT
+            W[i].ob_spec &= 0xFFFFFFF0
+        W[W_NAME].ob_flags = FL3DACT if kind & NAME else 0
+        self.gl_aname.color = 0x1100 if kind & NAME else 0x1170
+        g = self.backgrcol
+        self.gl_ainfo.color = 0x1170 | g
+        for i in (W_TITLE, W_VBAR, W_HBAR):
+            W[i].ob_spec = (W[i].ob_spec & 0xFFFFFF00) | 0x70 | g
+
     def w_bldactive(self, wh):
         """Lay W_ACTIVE out for window wh."""
         if wh == NIL:
@@ -2777,6 +2896,12 @@ class AES:
         kind = pw.w_kind
         W = self.W_ACTIVE
         self.w_nilit(W)
+        # whatever the last frame left, in either look
+        for i in range(NUM_ELEM):
+            W[i].ob_flags = 0
+            if i not in (W_NAME, W_INFO):
+                W[i].ob_spec = GL_WASPEC[i]
+        self.gl_ainfo.color = UNTOPPED_COLOR
         self.gl_aname.ptext = pw.w_pname
         self.gl_ainfo.ptext = pw.w_pinfo
         self.gl_aname.just = TE_CNTR
@@ -2785,6 +2910,9 @@ class AES:
         (W[W_BOX].ob_x, W[W_BOX].ob_y,
          W[W_BOX].ob_width, W[W_BOX].ob_height) = t.tuple()
         t.x = t.y = 0
+        if self.gl_3d:
+            self.w3_bldactive(pw, istop, kind, t)
+            return
 
         if kind & (NAME | CLOSER | FULLER):
             self.w_adjust(W_BOX, W_TITLE, t.x, t.y, t.w, self.gl_hbox)
@@ -3271,7 +3399,7 @@ class AES:
                 which = W_VSLIDE
         else:
             ret = 0
-        if wh == self.gl_wtop and which in (W_HSLIDE, W_VSLIDE):
+        if (wh == self.gl_wtop or self.gl_3d) and which in (W_HSLIDE, W_VSLIDE):
             do_cpwalk = True
         if do_cpwalk:
             self.w_cpwalk(wh, which, MAX_DEPTH, True)
@@ -3314,17 +3442,46 @@ class AES:
 
     def wm_calc(self, wtype, kind, x, y, w, h):
         tb = bb = lb = rb = 1
-        if kind & (NAME | CLOSER | FULLER):
-            tb += self.gl_hbox - 1
-        if kind & INFO:
-            tb += self.gl_hbox - 1
-        if kind & (UPARROW | DNARROW | VSLIDE | SIZER):
-            rb += self.gl_wbox - 1
-        if kind & (LFARROW | RTARROW | HSLIDE | SIZER):
-            bb += self.gl_hbox - 1
+        if self.gl_3d:
+            v, hz = kind & (VGADGETS | SIZER), kind & (HGADGETS | SIZER)
+            if kind & TGADGETS:
+                tb += self.gl_hbox + 2 * ADJ3DSTD - 1
+            if kind & INFO:
+                tb += self.gl_hbox
+            if v and hz:
+                v &= ~SIZER
+                hz &= ~SIZER
+                if not v and not hz:
+                    v = SIZER
+            if v:
+                rb += self.gl_wbox + 2 * ADJ3DSTD - 1
+            if hz:
+                bb += self.gl_hbox + 2 * ADJ3DSTD - 1
+        else:
+            if kind & (NAME | CLOSER | FULLER):
+                tb += self.gl_hbox - 1
+            if kind & INFO:
+                tb += self.gl_hbox - 1
+            if kind & (UPARROW | DNARROW | VSLIDE | SIZER):
+                rb += self.gl_wbox - 1
+            if kind & (LFARROW | RTARROW | HSLIDE | SIZER):
+                bb += self.gl_hbox - 1
         if wtype == WC_BORDER:
             lb, tb, rb, bb = -lb, -tb, -rb, -bb
         return word(x + lb), word(y + tb), word(w - lb - rb), word(h - tb - bb)
+
+    def w_look(self):
+        """The look changed under the open windows: each keeps its outer
+        rectangle, takes the work area that frame leaves, and its owner
+        gets a WM_SIZED of the same rectangle (wind.c, w_look)."""
+        wh = self.W_TREE[ROOT].ob_head
+        while wh not in (NIL, ROOT):
+            pw = self.gl_win[wh]
+            t = self.w_getsize(WS_CURR, wh)
+            pw.w_work = Rect(*self.wm_calc(WC_WORK, pw.w_kind, t.x, t.y, t.w, t.h))
+            self.ap_sendmsg(WM_SIZED, wh, t.x, t.y, t.w, t.h)
+            wh = self.W_TREE[wh].ob_next
+        self.w_setactive()
 
     # -- the message queue (event.c)
     def mq_put(self, msg):
@@ -3401,11 +3558,22 @@ class AES:
         self.ct_tick = self.gl_ticks
         self.wm_update(BEG_UPDATE)
 
+    def ct_clip(self, wh):
+        c = self.w_getsize(WS_CURR, wh)
+        rc_intersect(self.gl_rfull, c)
+        self.gsx_sclip(c)
+
+    def ct_show(self, wh, gadget, state):
+        """ctrl.c's: clip to the top window, draw its gadget in state.
+        self.tree must be W_ACTIVE."""
+        self.ct_clip(wh)
+        self.ob_change(gadget, state, True)
+
     def ct_arrow_repeat(self):
         if not self.ct_held:
             return
         if not (self.button & 1):
-            self.ct_held = False
+            self.ct_arrow_stop()
             return
         if self.gl_ticks - self.ct_tick < self.gl_dclick:
             return
@@ -3413,6 +3581,18 @@ class AES:
 
     def ct_arrow_stop(self):
         self.ct_held = False
+        if getattr(self, "ct_pressed", 0):     # the 3D arrow comes back up
+            wh = self.ct_wh
+            if wh == self.gl_wtop and (self.gl_win[wh].w_flags & VF_ISOPEN):
+                self.w_bldactive(wh)
+                saved, self.tree = self.tree, self.W_ACTIVE
+                try:
+                    self.ct_show(wh, self.ct_pressed, NORMAL)
+                finally:
+                    self.tree = saved
+            else:
+                self.W_ACTIVE[self.ct_pressed].ob_state = NORMAL
+            self.ct_pressed = 0
         self.ct_wh = self.ct_action = 0
         self.ct_tick = 0
 
@@ -3431,18 +3611,25 @@ class AES:
             x, y, w, h = t.x, t.y, t.w, t.h
             kind = pwin.w_kind
             if cpt in (W_CLOSER, W_FULLER):
+                if self.gl_3d:
+                    self.ct_clip(wh)
                 if self.gr_watchbox(gadget, SELECTED, NORMAL):
                     message = WM_CLOSED if cpt == W_CLOSER else WM_FULLED
                     need_normal = True
             elif cpt == W_NAME:
                 if kind & MOVER:
                     f = Rect(0, self.gl_hbox,
-                             self.gl_rscreen.w + w - self.gl_wbox - 6,
+                             self.gl_rscreen.w + w - self.gl_wbox - 6
+                             - (2 * ADJ3DSTD if self.gl_3d else 0),
                              MAX_COORDINATE)
+                    if self.gl_3d:
+                        self.ct_show(wh, gadget, SELECTED)
                     x, y = self.gr_dragbox(w, h, x, y, f)
                     message = WM_MOVED
             elif cpt == W_SIZER:
                 if kind & SIZER:
+                    if self.gl_3d:
+                        self.ct_show(wh, gadget, SELECTED)
                     t = self.w_getsize(WS_WORK, wh)
                     t.x -= x
                     t.y -= y
@@ -3465,12 +3652,19 @@ class AES:
                     else:
                         if not (my < elev_y):
                             cpt += 1
+                if self.gl_3d and gadget not in (W_HSLIDE, W_VSLIDE):
+                    self.ct_show(wh, gadget, SELECTED)
+                    self.ct_pressed = gadget
                 self.handle_arrow_msg(wh, cpt)
                 return
             elif cpt in (W_HELEV, W_VELEV):
                 message = WM_HSLID if cpt == W_HELEV else WM_VSLID
+                if self.gl_3d:
+                    self.ct_show(wh, gadget, SELECTED)
                 x = self.gr_slidebox(cpt - 1, cpt, cpt == W_VELEV)
-            if need_normal:
+            if self.gl_3d:
+                self.ct_show(wh, gadget, NORMAL)
+            elif need_normal:
                 self.ob_change(gadget, NORMAL, True)
         finally:
             self.tree = saved
