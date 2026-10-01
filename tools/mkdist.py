@@ -218,7 +218,8 @@ WHAT_IT_IS = {
                  "two pens, and only their brightness shows",
     "COLOR.RSC": "its dialog",
     "QED.PRG": "QED, THE TEXT EDITOR from the Atari ST, ported "
-               "(slaapliedje/qed-gem4xe): its own sources, unchanged.  "
+               "(slaapliedje/qed-gem4xe): its own sources, with three "
+               "small portability fixes the port says.  "
                "Open, edit and save text files.  It may be given away "
                "but NOT SOLD -- its author's terms, in QED.TXT",
     "QED.RSC": "its menus and dialogs, 33 KB, which gem4xe loads into far "
