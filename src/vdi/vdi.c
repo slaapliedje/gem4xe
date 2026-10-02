@@ -2744,6 +2744,25 @@ void vdi_input_poll(void)
         vdi_cursor_move();
     if (vec_motv)
         vec_motv();
+    /* What the vertical blank saw of the triggers since the last pass, in
+     * order: a press and release made while nothing polled are a click
+     * here, as an ST's keyboard processor would have sent them, and the
+     * AES counts them as one (phase 95).  Then the state as it is now,
+     * which also carries any change too recent for the ring. */
+    if (irq.how != IRQ_OFF) {
+        WORD now = ptr_seen.buttons, b;
+        while (irq_tq_head != irq_tq_tail) {
+            b = ptr_buttons_at(irq_tq[irq_tq_head]);
+            irq_tq_head = (uint8_t)((irq_tq_head + 1) & 3);
+            if (b >= 0 && b != last_buttons) {
+                last_buttons = b;
+                ptr_seen.buttons = b;
+                if (vec_butv)
+                    vec_butv();
+            }
+        }
+        ptr_seen.buttons = now;
+    }
     if (ptr_seen.buttons != last_buttons) {
         last_buttons = ptr_seen.buttons;
         if (vec_butv)

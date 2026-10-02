@@ -56,6 +56,7 @@ void irq_clock(uint32_t *sec, uint32_t *usec)
     *usec = (rem10 * us100) / 100;
 }
 volatile uint8_t  irq_kb[8], irq_kb_head, irq_kb_tail, irq_kb_count;
+volatile uint8_t  irq_tq[4], irq_tq_head, irq_tq_tail;
 volatile uint8_t  irq_fault;
 
 uint8_t     irq_ptr_on;
@@ -349,6 +350,10 @@ static void sources_on(void)
     irq_frames = irq_timer = 0;
     irq_qlo = irq_qhi = 0;
     irq_kb_head = irq_kb_tail = irq_kb_count = 0;
+    irq_tq_head = irq_tq_tail = 0;
+    /* the slot before the tail is "the last change": the triggers now */
+    irq_tq[3] = (uint8_t)(((*(volatile uint8_t *)0xD010 & 1)
+                           | ((*(volatile uint8_t *)0xD011 & 1) << 1)) ^ 3);
     irq_fault = 0;
     irq_prev_lo = irq_prev_hi = 0;
 

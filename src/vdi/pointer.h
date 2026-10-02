@@ -92,6 +92,11 @@ void ptr_setport(WORD port);    /* before ptr_init; the sampler follows */
 void ptr_init(ptr_kind kind, WORD x, WORD y);
 void ptr_poll(void);            /* refresh ptr_state from the hardware */
 void ptr_sample(void);          /* ptr_seen = ptr_state, torn reads retried */
+/* The buttons, had the triggers been `trig` (bit 0 TRIG0, bit 1 TRIG1,
+ * 1 = pressed) and every other line as it is now; -1 for a device whose
+ * buttons are not on the triggers.  What vdi_input_poll replays the
+ * vertical blank's trigger ring through (src/sys/irq.h, irq_tq). */
+WORD ptr_buttons_at(uint8_t trig);
 void ptr_warp(WORD x, WORD y);  /* force a position (vq_mouse / tests)  */
 
 /* Exposed for the device-layer tests, which drive synthetic quadrature rather

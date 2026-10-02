@@ -347,6 +347,24 @@ static void poll_xem1(void)
     pot_pending = 1;
 }
 
+WORD ptr_buttons_at(uint8_t trig)
+{
+    switch (ptr_state.kind) {
+    case PTR_ST_MOUSE:
+    case PTR_AMIGA_MOUSE:
+    case PTR_TRAKBALL:
+        return (WORD)(((trig >> ptr_port) & 1) | (ptr_state.buttons & 2));
+    case PTR_TABLET:
+        return (WORD)(trig & 3);
+    case PTR_XEM1:
+        if (!xem_found)
+            return -1;
+        return (WORD)(((trig >> xem_port) & 1) | (ptr_state.buttons & 6));
+    default:
+        return -1;                  /* the gates' host-driven kind among them */
+    }
+}
+
 void ptr_poll(void)
 {
     switch (ptr_state.kind) {

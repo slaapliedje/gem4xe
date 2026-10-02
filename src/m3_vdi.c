@@ -321,6 +321,18 @@ static uint8_t exit_req;
 extern const uint8_t FAR app_blob[];
 extern const uint32_t app_blob_len;
 
+/* Sys op 19's button vector: every state the input poll hands the VDI's
+ * button vector, in order, as the AES's ev_butv would see them. */
+static WORD butlog[8];
+static WORD butlog_n;
+
+static void butlog_v(void)
+{
+    if (butlog_n < 8)
+        butlog[butlog_n] = ptr_seen.buttons;
+    butlog_n++;
+}
+
 static void sys_op(WORD op)
 {
     WORD c4 = 6;
@@ -514,6 +526,29 @@ static void sys_op(WORD op)
         intout[7] = sc_clear();
         c4 = 8;
         break;
+    /* 19: the button log.  intin[0] 1 installs butlog_v as the VDI's
+     * button vector (vex_butv on the physical workstation, as the AES
+     * does) and empties the log; 0 reports it -- [6] the count, [7..14]
+     * the states -- and puts the old vector back. */
+    case 19: {
+        static uint32_t old;
+        WORD i;
+        uint32_t v = intin[0] ? (uint32_t)butlog_v : old;
+        contrl[0] = 125;            /* vex_butv */
+        contrl[6] = 1;
+        contrl[7] = (WORD)v;
+        contrl[8] = (WORD)(v >> 16);
+        vdi();
+        if (intin[0]) {
+            old = (uint32_t)(uint16_t)contrl[9] | ((uint32_t)(uint16_t)contrl[10] << 16);
+            butlog_n = 0;
+        }
+        intout[6] = butlog_n;
+        for (i = 0; i < 8; i++)
+            intout[7 + i] = butlog[i];
+        c4 = 15;
+        break;
+    }
     default:
         break;
     }

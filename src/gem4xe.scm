@@ -188,8 +188,12 @@
     ;; bytes each, which took LoRAM from 256 free to 248 and memreport
     ;; said so.  And again on 2026-09-18, up 16 more to $3760, for
     ;; WINDOW's w_owner -- one word per window, eight windows, so that
-    ;; wind_get(WF_OWNER) can answer who created it.  Each of those was
-    ;; memreport failing the build, which is the point of it.
+    ;; wind_get(WF_OWNER) can answer who created it.  And on 2026-10-02,
+    ;; up 6 more to $37E6, for the vertical blank's trigger ring (six bytes,
+    ;; src/sys/irq.h irq_tq: a click made while a program is busy, phase
+    ;; 95), which an interrupt handler writes and so cannot live in the
+    ;; banked window.  That leaves LoRAM at its floor.  Each of those was memreport failing the build, which
+    ;; is the point of it.
     ;; THIS IS THE ONLY BOUNDARY IN
     ;; BANK $00 THAT CAN BE MOVED SAFELY, and the reason is that Near
     ;; holds code and constants: what it needs is settled at LINK time, so
@@ -198,7 +202,7 @@
     ;; and both were tried first and caught by gates -- the application
     ;; pool by test-m28 (rs_load's peak; see the note below) and the stack
     ;; by test-m32 (GD_PEXEC_STACK; see the block at the end).
-    (memory LoRAM      (address (#x2100 . #x37df))
+    (memory LoRAM      (address (#x2100 . #x37e5))
             (section stack data zdata heap))
 
     ;; Near code: the entry stub, farload, the C startup, the CIO
@@ -206,7 +210,7 @@
     ;; it cannot be far) and every library routine that is not compiled
     ;; far -- plus all constant data.  There is no overflow memory: a link
     ;; that outgrows this memory fails rather than spilling somewhere slow.
-    (memory Near       (address (#x37e0 . #x3ffd))
+    (memory Near       (address (#x37e6 . #x3ffd))
             (section code libcode cdata idata data_init_table))
 
     ;; The library cstartup always emits a `reset` section -- a word pointing

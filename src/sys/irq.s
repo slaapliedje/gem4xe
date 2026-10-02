@@ -23,6 +23,7 @@
               .extern irq_kb, irq_kb_head, irq_kb_tail, irq_kb_count
               .extern irq_fault, irq_ptr_on, ptr_port, irq_plo, irq_phi, irq_qtab
               .extern irq_prev_lo, irq_prev_hi, irq_pend, irq_tmp
+              .extern irq_tq, irq_tq_head, irq_tq_tail
               .extern irq_cop                 ; src/sys/sei.s, then gem_cop
               .public _irq_vec_cop, _irq_vec_brk, _irq_vec_abort
               .public _irq_vec_nmi, _irq_vec_irq
@@ -32,6 +33,8 @@
 #define IRQST  0xD20E                 /* POKEY: read, 0 = pending */
 #define IRQEN  0xD20E                 /* POKEY: write */
 #define KBCODE 0xD209
+#define TRIG0  0xD010                 /* GTIA: bit 0, 0 = pressed */
+#define TRIG1  0xD011
 #define PORTA  0xD300
 #define POKMSK 0x0010                 /* OS shadow of IRQEN, kept consistent */
 
@@ -50,19 +53,64 @@ _irq_vec_irq:   jmp     long:irq_irq
 ;;; ---------------------------------------------------------------------------
 ;;; NMI -- the vertical blank.  NMIEN enables only the VBI, so there is
 ;;; nothing to distinguish; RESET on an XL/XE is a real reset, not an NMI.
+;;;
+;;; It also looks at the two joystick triggers, which carry every pointer's
+;;; left button and both of a tablet's, and puts a change on irq_tq for the
+;;; input poll to replay in order: a click made while a program is busy and
+;;; polling nothing is not lost (phase 95).  Fifty looks a second catch any
+;;; press a hand can make.  Its scratch byte is on the stack: the IRQ
+;;; handler's irq_tmp may be in use under it, and bank $00 has no other.
+;;;
+;;; Y IS SAVED although nothing here uses it: `sep #0x30` makes the index
+;;; registers eight bits wide, and that CLEARS the high bytes of X and Y.
+;;; The first version saved X only, and every vertical blank that landed
+;;; while the code under it held a 16-bit Y took the high byte away --
+;;; which code, the layout and the moment decided, and m3 failed at one
+;;; screen width of three, with the VDI's device record read through a
+;;; broken index (phase 95).  The IRQ handler below saves all three.
 ;;; ---------------------------------------------------------------------------
 irq_nmi:
-              rep     #0x20
+              rep     #0x30
               pha
+              phx
+              phy
               phb
-              sep     #0x20
+              sep     #0x30
               lda     #0
               pha
               plb                     ; DB = $00
               sta     NMIRES          ; drop the latch
               rep     #0x20
               inc     abs:irq_frames
+              sep     #0x20
+              lda     TRIG1
+              and     #1
+              asl     a
+              pha
+              lda     TRIG0
+              and     #1
+              ora     1,s
+              eor     #3              ; 1 = pressed
+              sta     1,s             ; ...kept on the stack
+              lda     abs:irq_tq_tail
+              dec     a
+              and     #3
+              tax                     ; the last change's slot
+              pla
+              cmp     abs:irq_tq,x
+              beq     irq_nmi_done    ; no change
+              ldx     abs:irq_tq_tail
+              sta     abs:irq_tq,x
+              inx
+              txa
+              and     #3
+              cmp     abs:irq_tq_head
+              beq     irq_nmi_done    ; full: the newest change is dropped
+              sta     abs:irq_tq_tail
+irq_nmi_done: rep     #0x30
               plb
+              ply
+              plx
               pla
               rti
 

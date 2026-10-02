@@ -24,7 +24,7 @@ call on the emulated Rapidus, from the 0.11 release build.
 
 | | | status |
 |---|---|---|
-| 7 | **A click made while a program is busy is lost**: queue the button's changes in the interrupt, as the ST does, rather than sampling it | |
+| 7 | **A click made while a program is busy is lost**: queue the button's changes in the interrupt, as the ST does, rather than sampling it | **done**, phase 95 |
 | 8 | **MyDOS 4.50: Quit and DOS commands stall** on the way back to MyDOS | |
 | 9 | **The Control Panel after a live look switch** shows General's buttons until it closes: the panel's dialog is not redrawn | |
 | 10 | **`wind_get` answers `WF_KIND`, `WF_NAME` and `WF_INFO`**, and **`wind_set(WF_BOTTOM)`** sends a window to the bottom (`docs/api.md`) | |

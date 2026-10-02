@@ -53,6 +53,7 @@ ROWCRS, COLCRS, SAVMSC = 0x0054, 0x0055, 0x0058
 
 # The sys ops src/m3_vdi.c understands, and the device numbers pointer.h gives.
 SYS_PTR, SYS_EXIT, SYS_WAIT, SYS_POLL = 3000, 3001, 3002, 3003
+SYS_BUTLOG = 3019
 PTR_TRAKBALL = 3
 
 # The two runs the shadow covers, and where the native vectors sit in them.
@@ -227,6 +228,39 @@ def main(argv):
         mouse = recs[3]
         x, y = mouse[2 + vdiref.RESULT_INTOUT], mouse[2 + vdiref.RESULT_INTOUT + 1]
         check("vq_mouse after one poll: (320, 110)", (x, y) == (320, 110), f"({x}, {y})")
+        check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
+
+        # -- a click while nothing polls (phase 95) --------------------------
+        # The trak-ball is still the pointer.  Its fire button is pressed and
+        # let go twice -- a double click -- while the target busy-waits and
+        # polls nothing; one poll afterwards must hand the button vector all
+        # four changes, in order, from the vertical blank's trigger ring.
+        # Before, the poll saw the button up, as it was, and nothing else.
+        print("a click while busy")
+        script = vdiref.encode([
+            (SYS_BUTLOG, (), (1,)),
+            (SYS_WAIT, (), (150,)),
+            (SYS_POLL, (), ()),
+            (SYS_BUTLOG, (), (0,)),
+        ])
+        run_script(b, sa, count_addr, script)
+        for _ in range(40):
+            if b.peek16(count_addr) == 1:       # the log is set; inside the wait
+                break
+            b.frames(1)
+        else:
+            check("target entered the wait", False)
+        b.frames(10)
+        for fire in (True, False, True, False):
+            b.joy(1, "centre", fire=fire)
+            b.frames(4)
+        check("wait finished and the script completed", wait_done(b))
+        n = b.peek16(count_addr)
+        recs = vdiref.decode(b.memdump(results_addr, n * vdiref.RESULT_WORDS * 2), n)
+        log = recs[3][2:2 + 15]
+        states = list(log[7:7 + min(log[6], 8)])
+        check("the poll replayed press, release, press, release",
+              states == [1, 0, 1, 0], f"{log[6]} change(s): {states}")
         check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
 
         # -- the way back ---------------------------------------------------

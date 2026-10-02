@@ -145,6 +145,17 @@ void irq_clock(uint32_t *sec, uint32_t *usec);
 extern volatile uint16_t irq_qlo, irq_qhi; /* the two axes' counters      */
 extern volatile uint8_t  irq_kb[8];        /* raw KBCODEs, a ring          */
 extern volatile uint8_t  irq_kb_head, irq_kb_tail, irq_kb_count;
+/* The two joystick triggers as the vertical blank saw them change -- bit 0
+ * TRIG0, bit 1 TRIG1, 1 = pressed -- a ring the input poll replays in
+ * order, so a click made while a program is busy computing is not lost
+ * (vdi_input_poll, phase 95).  Every pointer's left button is a trigger,
+ * and both a tablet's are.  Four slots hold three changes, which is a
+ * double click's press, release and press: the poll's own look at the
+ * button delivers the last release, so a full ring dropping the newest
+ * change loses nothing a hand does.  The slot before the tail is the
+ * last change made, consumed or not, which is what a new one is told
+ * from -- bank $00 below the window has no byte to spare for it. */
+extern volatile uint8_t  irq_tq[4], irq_tq_head, irq_tq_tail;
 extern volatile uint8_t  irq_fault;        /* 2 BRK, 3 ABORT (1 was COP,   */
                                            /* now the ABI: src/sys/abi.s)  */
 
