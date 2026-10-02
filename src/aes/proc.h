@@ -159,6 +159,11 @@ extern PROC *proc_input;
  * loader and no pool passes a static array, which is why proc.c allocates
  * nothing itself.  FALSE for a null store. */
 #define PROC_STORE  (NUM_PROCS * sizeof(PROC))
+/* ...and as a word in the image, which is what the callers allocate by and
+ * what tools/memreport.py reads out of build/gem.elf: its model of the
+ * pool had 7 * 52 written in, and the records grew to 90 bytes each
+ * without anything noticing (phase 100). */
+extern const uint16_t proc_store_size;
 WORD  proc_init(void *store);
 WORD  proc_pid(const PROC *p);
 PROC *proc_of(WORD pid);

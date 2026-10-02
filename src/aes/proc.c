@@ -20,6 +20,8 @@ WORD  proc_turns;   /* turns handed over: a measurement, not a gate */
  * the pool for one. */
 extern WORD *gl_appqueue(WORD *max);
 
+const uint16_t proc_store_size = PROC_STORE;
+
 WORD proc_init(void *store)
 {
     WORD i, max;

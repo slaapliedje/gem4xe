@@ -252,7 +252,7 @@ TASK void main(void)
      * context may ever park above it -- src/sys/ctx.h has the argument
      * and test-m27 caught it being got wrong.  main() is the shallowest
      * place in gem4xe that can ever change hands. */
-    if (!ctx_regs_ok() || !proc_init(pool_alloc(PROC_STORE, 2))
+    if (!ctx_regs_ok() || !proc_init(pool_alloc(proc_store_size, 2))
         || !ctx_make(&proc_app->p_ctx, 0))
         _sys_exit();
     ctx_init(&proc_app->p_ctx);

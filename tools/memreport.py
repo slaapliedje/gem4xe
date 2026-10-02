@@ -39,9 +39,22 @@ BUILD = os.path.join(ROOT, "build")
 
 # The engine's own take from the pool, before any program: the process
 # records (src/aes/proc.h, NUM_PROCS * sizeof(PROC)) and an eight-message
-# queue for each accessory that loads.  test-boot checks the live number.
-PROC_STORE = 7 * 52
+# queue for each accessory that loads.  The records' size is READ OUT OF
+# THE IMAGE (proc_store_size), not written here: it was, as 7 * 52, and
+# the records grew to 90 bytes each while this went on predicting a page
+# more room than a running machine had (phase 100).  m44 now compares
+# the floor this predicts with the one a running machine reaches.
 ACC_QUEUE = 8 * 8 * 2
+
+
+def proc_store(elf=os.path.join(BUILD, "gem.elf")):
+    """NUM_PROCS * sizeof(PROC), as the built image has it."""
+    segs, syms = mkg4a.mkxex.read_elf(elf)
+    a = syms["proc_store_size"]
+    for base, data in segs:
+        if base <= a < base + len(data) - 1:
+            return data[a - base] | data[a - base + 1] << 8
+    raise SystemExit(f"memreport: proc_store_size is not in {elf}'s image")
 
 # What must be left, and why.
 FLOORS = {
@@ -117,9 +130,14 @@ def rsc_pool(path):
     return imdata + hdrs, rssize - imdata + len(d) - rssize, max(rssize, imdata + hdrs)
 
 
-def main(argv):
-    quiet = "--quiet" in argv
+def main(argv, extra_modules=(), want_floor=False):
+    """The report; or, with want_floor, the permanent floor it predicts for
+    the product with extra_modules loaded as well -- for a gate to hold
+    against a running machine (tests/emu/m44_cpanel.py)."""
+    quiet = "--quiet" in argv or want_floor
     bad = []
+    PROC_STORE = proc_store()
+    floors = {}
     r = regions(os.path.join(BUILD, "gem.map"))
 
     def say(*a):
@@ -234,6 +252,7 @@ def main(argv):
         if loud:
             say(f"  {'-- permanent below here':<34} {'':6}   ${brk:04X}")
         room[title] = top - ((brk + 0xFF) & ~0xFF)
+        floors[title] = brk
         take(desk, 0x100, "the desktop")
         if desk_rsc:
             take(desk_rsc, 2, "its resource", desk_peak)
@@ -278,7 +297,8 @@ def main(argv):
             continue
         base, pool = rr["AppPool"][0], rr["AppPool"][1]
         free, worst = walk(base, pool, accs, title, not quiet,
-                           modules("general", "color") if title == product else ())
+                           modules("general", "color", *extra_modules)
+                           if title == product else ())
         if worst < 0:
             bad.append(f"{mapname}: the pool runs out by {-worst} bytes "
                        f"while a resource is loading -- rs_load takes the "
@@ -293,6 +313,8 @@ def main(argv):
     # runs one (src/aes/shel.c), so a program's near region may use all
     # of the pool above the permanent floor.  QED is the largest shipped,
     # and it is built outside this tree; when it is here, it must fit.
+    if want_floor:
+        return floors.get(product)
     if product in room:
         say(f"  a program launched from the desktop gets {room[product]} bytes")
         qed = os.path.join(BUILD, "qed", "QED.PRG")

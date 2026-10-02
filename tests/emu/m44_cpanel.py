@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""0.12's gate for item 9: the Control Panel keeps the screen while it is up.
+"""0.12's gate for item 9: the Control Panel keeps the screen while it is up
+-- and, on the way, item 14: tools/memreport.py's pool floor is the
+machine's.
 
 Desk -> Control Panel -> General -> Look: 3D -> OK.  General's OK redraws
 the whole screen, because everything on it was drawn in the other look,
@@ -35,6 +37,7 @@ from shots import (Tour, boot, poke16, PTR_NONE, SYMS, DISK,   # noqa: E402
 from deskrsc import DESKMENU                  # noqa: E402
 from m7_form import K, F                      # noqa: E402
 from aesref import RETURN                     # noqa: E402
+import memreport                              # noqa: E402
 
 OUT = os.path.join(HERE, "..", "..", "build", "shots", "m44")
 GN_3D = (319, 148)          # General's "Look: 3D", on the screen
@@ -62,6 +65,16 @@ def run(window):
     b = emu.bridge
     try:
         boot(b, syms, OUT)
+        if not window:
+            # THE POOL'S FLOOR, while this disk is up anyway: what
+            # tools/memreport.py predicts for the product's accessories and
+            # modules -- this disk carries the gate's TEST.CPX too -- must
+            # be where a running machine puts it.  The model had a stale
+            # size for the process records and was a page out (phase 100).
+            want = memreport.main([], extra_modules=("m35_cpx",), want_floor=True)
+            got = b.peek16(syms["pool_low"])
+            check(got == want, f"the pool's permanent floor: the machine's "
+                               f"${got:04X}, tools/memreport.py's ${want:04X}")
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, OUT)
         if window:

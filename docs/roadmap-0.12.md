@@ -31,7 +31,7 @@ call on the emulated Rapidus, from the 0.11 release build.
 | 11 | **The accessory slots proven**: the sixth loads, the seventh is refused and says so | |
 | 12 | **`WM_*` messages reach an accessory's own window**, gated | |
 | 13 | **SpartaDOS 3.2's root fallback in `Fdelete`**: its "is it still there?" open can find the root's file too (phase 65 fixed `Fopen`'s); and MyDOS measured for the same | **done**, phase 99 |
-| 14 | **`memreport`'s pool model** is a page under the live machine (7,168 against 7,424, phase 69): find the page | |
+| 14 | **`memreport`'s pool model** is a page under the live machine (7,168 against 7,424, phase 69): find the page | **done**, phase 100: it was a page over, not under |
 
 Done before 0.12 began: the cartridge's white screen in Altirra
 (`docs/phase78.md`).
