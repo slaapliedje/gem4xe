@@ -182,7 +182,13 @@
  * and blitted in bands.  The first page boundary after the save buffer.  */
 #define VR_STRIP           ((VR_SAVE + VB_BYTES_MAX + 0xFFFUL) & ~0xFFFUL)
 #define VR_STRIP_LEN       0x1000UL
-/* VR_STRIP + VR_STRIP_LEN onward is free: window backing stores, icons */
+/* Thickened glyph masks (src/vdi/dev_vbxe.c, bold_build): every glyph
+ * ORed with itself one pixel right, nine pixels, five bytes at either
+ * parity of x; the even strip then the odd one, 1280 bytes a row by the
+ * cell's eight rows.  Built the first time bold text is drawn after a
+ * face is chosen, not at start-up.  20 KB, to $59FFF.                  */
+#define VR_FONT_BOLD       (VR_STRIP + VR_STRIP_LEN)
+/* VR_FONT_BOLD + 20 KB onward is free: window backing stores, icons */
 /* A raster form in VRAM says so in its address: the screen's and the save
  * buffer's carry this bit (src/vdi/dev_vbxe.c, dev_copy_form).  Any other
  * form's address is the program's memory, bank $00 or far.            */
@@ -215,6 +221,8 @@ void     vram_unmap(void);                            /* closed until the next
  * maths per byte.  Valid until the next vram_* call or blit. */
 volatile uint8_t *vram_win(uint32_t addr);
 void     vram_write(uint32_t addr, const uint8_t *src, uint16_t len);
+/* ...and back: len bytes of VRAM into bank $00, a word at a time. */
+void     vram_read(uint8_t *dst, uint32_t addr, uint16_t len);
 void     vram_fill(uint32_t addr, uint8_t val, uint16_t len);
 uint8_t  vram_read8(uint32_t addr);
 
@@ -263,6 +271,9 @@ void     blit_pattern(uint32_t src, uint16_t sstride, uint32_t dst,
                       uint8_t and_mask, uint8_t xor_mask, uint8_t mode,
                       uint8_t repeat);
 uint8_t  blit_pending(void);
+/* The source and destination X steps of the blit just queued (1 unless
+ * set): every n-th byte along a row. */
+void     blit_xstep(uint8_t sx, uint8_t dx);
 void     blit_run(void);                              /* upload, start, wait */
 void     blit_start(void);                            /* upload and start only */
 uint8_t  blit_busy(void);                             /* non-zero while running */

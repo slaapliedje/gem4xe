@@ -165,6 +165,33 @@ void vram_write(uint32_t addr, const uint8_t *src, uint16_t len)
     }
 }
 
+/* vram_write the other way round, and for the same reasons: words, with
+ * the pointers and the count in the direct page.  What a program's
+ * vro_cpyfm from the screen into its own memory reads with
+ * (src/vdi/dev_vbxe.c, rows_direct). */
+static uint16_t * TINY vr_d;
+static const uint16_t * TINY vr_w;
+
+void vram_read(uint8_t *dst, uint32_t addr, uint16_t len)
+{
+    while (len) {
+        uint16_t off = (uint16_t)(addr & 0x0FFF);
+        uint16_t n   = (uint16_t)(MEMAC_WIN_SIZE - off);
+        if (n > len)
+            n = len;
+        vram_map(addr);
+        vr_w = (const uint16_t *)(WIN + off);
+        vr_d = (uint16_t *)dst;
+        if ((vw_n = n >> 1) != 0)
+            do *vr_d++ = *vr_w++; while (--vw_n);
+        if (n & 1)
+            *(uint8_t *)vr_d = *(const uint8_t *)vr_w;
+        addr += n;
+        dst  += n;
+        len  = (uint16_t)(len - n);
+    }
+}
+
 void vram_fill(uint32_t addr, uint8_t val, uint16_t len)
 {
     while (len) {
@@ -430,6 +457,17 @@ void blit_xor(uint32_t d, uint16_t s, uint16_t b, uint16_t r, uint8_t v)
 { blit_rmw(d, s, b, r, v, BLT_MODE_XOR); }
 
 uint8_t blit_pending(void) { return bcb_count; }
+
+/* The X steps of the blit just queued, which every queueing call above
+ * sets to 1: a byte at a time along the row.  Another step reads or
+ * writes every n-th byte -- one column of every glyph in a font strip,
+ * which is how the thickened strips are built (src/vdi/dev_vbxe.c). */
+void blit_xstep(uint8_t sx, uint8_t dx)
+{
+    BCB *b = (BCB *)(bcb_end - BCB_SIZE);
+    b->sxstep = sx;
+    b->dxstep = dx;
+}
 
 void vram_write8(uint32_t addr, uint8_t v)
 {

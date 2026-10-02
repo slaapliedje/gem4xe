@@ -11,13 +11,18 @@
  * its width shows.  The rows either side and the bytes either side of
  * the run must not change.  In the compiler's own simulator at -O2,
  * because that is where this tree's rasteriser bugs have come from.
+ *
+ * THICKENED runs too, in transparent mode, the one they are drawn in:
+ * against each cell drawn and then drawn again one pixel right, which is
+ * what the VDI's two passes were (phase 105).
  */
 #include "portab.h"
 #include "antic/antic.h"
 
 #define H      6                        /* rows a glyph has */
 #define FSTR   256                      /* antic.c: AN_FONT_STRIDE */
-#define CASES  (4 * 2 * 8 * 3)          /* mode x pen x alignment x length */
+#define PLAIN  (4 * 2 * 8 * 3)          /* mode x pen x alignment x length */
+#define CASES  (PLAIN + 2 * 8 * 3)      /* ...and thickened: pen x align x len */
 
 uint16_t ts_cases;                      /* run */
 uint16_t ts_bad;                        /* whose pixels differ */
@@ -46,13 +51,15 @@ int main(void)
         font[i] = (uint8_t)rnd();
     ts_first = 0xFFFF;
     for (c = 0; c < CASES; c++) {
-        int16_t mode = (int16_t)(1 + (c & 3));
-        uint8_t pen = (uint8_t)((c >> 2) & 1);
+        int16_t thick = (int16_t)(c >= PLAIN);
+        uint16_t k = (uint16_t)(thick ? (c - PLAIN) * 4 + 1 : c);   /* trans */
+        int16_t mode = (int16_t)(1 + (k & 3));
+        uint8_t pen = (uint8_t)((k >> 2) & 1);
         int16_t w = 6;                  /* the only face antic_text draws */
         uint16_t most = (uint16_t)((AN_W - 16) / w);
-        uint16_t len = (uint16_t)((c >> 6) % 3);
+        uint16_t len = (uint16_t)((k >> 6) % 3);
         uint16_t n = (uint16_t)(len == 0 ? 1 : len == 1 ? 1 + rnd() % 20 : most);
-        int16_t x = (int16_t)(8 * (rnd() % 2) + ((c >> 3) & 7));
+        int16_t x = (int16_t)(8 * (rnd() % 2) + ((k >> 3) & 7));
         /* a row above and below the glyphs, which must not move */
         int16_t y0 = (int16_t)(rnd() % (AN_H - H - 2));
         volatile uint8_t *rows = screen + (uint16_t)y0 * AN_STRIDE;
@@ -69,16 +76,22 @@ int main(void)
             rows[i] = v;
         }
         /* the cells one at a time: what the screen should end up as */
-        for (i = 0; i < n; i++)
+        for (i = 0; i < n; i++) {
             antic_glyph(face, (uint16_t)chars[i], (int16_t)(x + (int16_t)i * w),
                         (int16_t)(y0 + 1), mode, pen, w, H);
+            if (thick)
+                antic_glyph(face, (uint16_t)chars[i],
+                            (int16_t)(x + (int16_t)i * w + 1),
+                            (int16_t)(y0 + 1), mode, pen, w, H);
+        }
         for (i = 0; i < (H + 2) * AN_STRIDE; i++) {
             uint8_t v = rows[i];
 
             want[i] = v;
             rows[i] = before[i];
         }
-        antic_text(face, chars, n, x, (int16_t)(y0 + 1), mode, pen, w, H);
+        antic_text(face, chars, n, x, (int16_t)(y0 + 1), mode, pen, w, H,
+                   thick);
         for (j = 0; j < (H + 2) * AN_STRIDE; j++) {
             uint8_t got = rows[j];
 

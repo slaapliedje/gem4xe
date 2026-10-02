@@ -564,8 +564,11 @@ void dev_cursor_discard(void)
  * rather than four conditionals per byte. */
 static const uint8_t nib2[4] = { 0x00, 0x0F, 0xF0, 0xFF };
 
+static TINY uint8_t bold_ready;         /* bold_build's strips match the face */
+
 void dev_font_changed(void)
 {
+    bold_ready = 0;                     /* the thickened strips are stale */
     /* The expanded font is 8 KB at VR_FONT: exactly two 4 KB MEMAC pages, and
      * within a page the layout is contiguous.  Streaming through a window
      * pointer keeps this to 16-bit pointer arithmetic; doing it with a
@@ -660,6 +663,77 @@ static void draw_glyph(WORD ch, WORD cx, WORD cy, WORD hwink, WORD cleared)
                   0xFF, 0xFF, BLT_MODE_AND);
     if (c)
         blit_mask(src, sstride, dst, SCR_STRIDE, bytes, FONT_H,
+                  c, 0x00, BLT_MODE_OR);
+}
+
+/* THE THICKENED LETTER AS ONE MASK.  Bold was the glyph drawn twice, the
+ * second time one pixel right: two AND/OR pairs a letter, and G4BENCH's
+ * bold line cost twice its plain one.  The union of the two passes is
+ * a mask of its own -- each font row b becomes the nine pixels of
+ * (b << 1) | b, bit 8 the leftmost -- so one pair draws it, and the
+ * pixels are the same: ORing a mask in twice is ORing in their union, and
+ * the AND before each OR clears the same pixels either way.  The strips
+ * are made by the blitter out of the two the font already has.
+ *
+ * Five bytes a row at EITHER parity: an even x has a paper nibble after
+ * the ninth pixel, an odd one a paper nibble before the first, and paper
+ * leaves a pixel alone under both blits, as the odd strip's does.  Built
+ * on first use after the face changes (bold_ready), not at start-up. */
+#define BOLD_BYTES   FONT_OBYTES                  /* 5 bytes either way    */
+#define BOLD_STRIDE  FONT_OSTRIDE                 /* 1280 bytes per row    */
+#define VR_BOLD_ODD  (VR_FONT_BOLD + (uint32_t)BOLD_STRIDE * FONT_H)
+
+
+static void bold_build(void)
+{
+    WORD k;
+
+    /* The odd strip already holds every glyph one pixel right of its
+     * cell, five bytes a row at the same stride as these: that is the
+     * second pass of a letter whose first is at the cell's start, so the
+     * EVEN thickened strip is the odd strip with the even one ORed into
+     * its first four bytes.  The ODD thickened strip is the same odd
+     * strip with the even one ORed one byte further on -- the letter at
+     * the cell's second pixel, its pass at the third.  Byte k of every
+     * glyph is a column of the strip, 256 bytes at X steps of 4 and 5:
+     * eighteen blits, where the same 20 KB expanded through the window
+     * by the CPU took a quarter of a second. */
+    for (k = 0; k < BOLD_BYTES; k++) {
+        blit_copy(VR_FONT_ODD + k, FONT_OSTRIDE, VR_FONT_BOLD + k,
+                  BOLD_STRIDE, 256, FONT_H);
+        blit_xstep(FONT_OBYTES, BOLD_BYTES);
+        blit_copy(VR_FONT_ODD + k, FONT_OSTRIDE, VR_BOLD_ODD + k,
+                  BOLD_STRIDE, 256, FONT_H);
+        blit_xstep(FONT_OBYTES, BOLD_BYTES);
+    }
+    for (k = 0; k < FONT_BYTES; k++) {
+        blit_mask(VR_FONT + k, FONT_VSTRIDE, VR_FONT_BOLD + k, BOLD_STRIDE,
+                  256, FONT_H, 0xFF, 0x00, BLT_MODE_OR);
+        blit_xstep(FONT_BYTES, BOLD_BYTES);
+        blit_mask(VR_FONT + k, FONT_VSTRIDE, VR_BOLD_ODD + 1 + k, BOLD_STRIDE,
+                  256, FONT_H, 0xFF, 0x00, BLT_MODE_OR);
+        blit_xstep(FONT_BYTES, BOLD_BYTES);
+    }
+    bold_ready = 1;
+}
+
+/* The thickened letter at (cx, cy): draw_glyph's AND and OR, from the
+ * strips above.  The AND is never skipped: the ninth column is outside
+ * the cell a replace has just cleared. */
+static void draw_glyph_bold(WORD ch, WORD cx, WORD cy, WORD hwink)
+{
+    uint32_t src, dst;
+    uint8_t  c = (uint8_t)(((hwink & 0x0F) << 4) | (hwink & 0x0F));
+
+    if (!bold_ready)
+        bold_build();
+    src = ((cx & 1) ? VR_BOLD_ODD : VR_FONT_BOLD)
+          + (uint32_t)(ch & 0xFF) * BOLD_BYTES;
+    dst = VR_SCREEN0 + scr_row(cy) + (uint32_t)(cx >> 1);
+    blit_mask(src, BOLD_STRIDE, dst, SCR_STRIDE, BOLD_BYTES, FONT_H,
+              0xFF, 0xFF, BLT_MODE_AND);
+    if (c)
+        blit_mask(src, BOLD_STRIDE, dst, SCR_STRIDE, BOLD_BYTES, FONT_H,
                   c, 0x00, BLT_MODE_OR);
 }
 
@@ -994,20 +1068,30 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
 {
     WORD mode = (WORD)(vwk.wrt_mode + 1);
     WORD blittable = (mode == MD_REPLACE || mode == MD_TRANS);
+    WORD thick = (WORD)(overlay == GLYPH_THICK);
+    WORD w = (WORD)(FONT_W + thick);    /* the columns it covers */
     WORD fits = (cx >= 0 && cy >= 0 &&
-                 cx + FONT_W <= SCR_W && cy + FONT_H <= SCR_H);
+                 cx + w <= SCR_W && cy + FONT_H <= SCR_H);
 
     if (fits && vwk.clip)
         fits = (cx >= vwk.xmn_clip && cy >= vwk.ymn_clip &&
-                cx + FONT_W - 1 <= vwk.xmx_clip &&
+                cx + w - 1 <= vwk.xmx_clip &&
                 cy + FONT_H - 1 <= vwk.ymx_clip);
     if (fits && blittable) {
-        if (mode == MD_REPLACE && !overlay)
+        if (mode == MD_REPLACE && overlay != 1)
             dev_fill_rect(cx, cy, (WORD)(cx + FONT_W - 1),
                           (WORD)(cy + FONT_H - 1), 0);
-        draw_glyph(ch, cx, cy, HW(vwk.text_color),
-                   (WORD)(!overlay && mode == MD_REPLACE));
+        if (thick)
+            draw_glyph_bold(ch, cx, cy, HW(vwk.text_color));
+        else
+            draw_glyph(ch, cx, cy, HW(vwk.text_color),
+                       (WORD)(!overlay && mode == MD_REPLACE));
         /* no run per glyph: a string is one list (vdi(), src/vdi/vdi.c) */
+    } else if (thick) {
+        /* both passes do not fit the one mask's nine columns: each on
+         * its own, the way it always went */
+        dev_glyph(ch, cx, cy, 0);
+        dev_glyph(ch, (WORD)(cx + 1), cy, 1);
     } else {
         draw_glyph_cpu(ch, cx, cy);
     }
@@ -1216,18 +1300,7 @@ static void span_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
             vram_write(a, buf, n);
             return;
         }
-        while (n) {
-            uint16_t k = (uint16_t)(0x1000 - (uint16_t)(a & 0x0FFF)), j;
-            volatile uint8_t *w = vram_win(a);
-
-            if (k > n)
-                k = n;
-            for (j = 0; j < k; j++)
-                buf[j] = w[j];
-            a += k;
-            buf += k;
-            n = (uint16_t)(n - k);
-        }
+        vram_read(buf, a, n);
     } else if (a + n <= 0x10000UL) {
         uint8_t *p = (uint8_t *)(uint16_t)a;
         if (put)
@@ -1250,6 +1323,8 @@ static void span_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
  * so a move inside one form never reads a pixel it has already
  * written. */
 #define ROW_CHUNK 24      /* on the stack, as ANTIC's is: LoRAM has no room */
+
+void nib_shift(uint8_t *dst, const uint8_t *src, uint16_t n);   /* nibs.s */
 
 /* Set around a copy_rows that ORs its source over the destination, nibble
  * by nibble, rather than replacing it (vro_cpyfm's S_OR_D: a colour icon,
@@ -1322,21 +1397,138 @@ static void copy_rows(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
                     row_dst[dn - 1] = (uint8_t)((row_src[dn - 1] & 0xF0)
                                                 | (last & 0x0F));
             } else {
-                UWORD s = (UWORD)(sx & 1), d = (UWORD)(dx & 1), k;
+                /* A nibble out of step: each destination byte is the low
+                 * nibble of one source byte and the high nibble of the
+                 * next (nib_shift, src/vdi/nibs.s) -- it went a pixel at a
+                 * time, and G4BENCH's form copy to and from an odd window
+                 * spent most of its time here (phase 105).  A source byte
+                 * one past the row is row_src's spare, whose nibble lands
+                 * only where the destination's own is put back below. */
+                uint8_t first = row_dst[0], last = row_dst[dn - 1];
 
-                for (k = 0; k < (UWORD)n; k++, s++, d++) {
-                    uint8_t v = row_src[s >> 1];
-                    uint8_t *p = &row_dst[d >> 1];
-
-                    v = (s & 1) ? (uint8_t)(v & 0x0F) : (uint8_t)(v >> 4);
-                    *p = (d & 1) ? (uint8_t)((*p & 0xF0) | v)
-                                 : (uint8_t)((*p & 0x0F) | (v << 4));
+                if (sx & 1) {                   /* source odd, dest even */
+                    nib_shift(row_dst, row_src, dn);
+                } else {                        /* source even, dest odd */
+                    row_dst[0] = (uint8_t)((first & 0xF0) | (row_src[0] >> 4));
+                    nib_shift(row_dst + 1, row_src, (uint16_t)(dn - 1));
                 }
+                if ((dx + n) & 1)
+                    row_dst[dn - 1] = (uint8_t)((row_dst[dn - 1] & 0xF0)
+                                                | (last & 0x0F));
             }
             span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, dn, 1);
             done = (WORD)(done + n);
         }
     }
+}
+
+/* BETWEEN VRAM AND A PROGRAM'S MEMORY, every row's whole destination
+ * bytes in one move, straight between the window and the program's
+ * bytes.  copy_rows takes 23 bytes at a time through two buffers on the
+ * stack -- the window into one, a memcpy into the other, a memcpy out,
+ * and a pixel at a time when the ends are of different parity -- and
+ * that, not the slow bus, was most of what G4BENCH's "screen to memory
+ * and back" cost (phase 105).  Bank $00 memory only; the rest still goes
+ * by copy_rows, and so do the half bytes at either end of a row.
+ *
+ * Out of step by a pixel, the source byte under each destination byte
+ * is the low nibble of one byte and the high nibble of the next
+ * (nib_shift, nibs.s).  Into memory, the n + 1 source bytes are read
+ * into the destination itself and shifted down in place, and the byte
+ * after the row, which that borrowed, is put back; out of memory they go
+ * shifted through a buffer.  Either way one source byte past the
+ * rectangle's last pixel is READ, never written.
+ *
+ * The two forms are different memories, so nothing read can have been
+ * written already and the order is free. */
+#define DIRECT_CHUNK 32         /* on the stack, as copy_rows's buffers are */
+
+/* One pixel of a row's half byte at either end: the source's nibble put
+ * in the destination's place, the other nibble kept.  Addresses as
+ * span_io takes them, tagged when they are VRAM. */
+static void edge_px(uint32_t s, WORD sodd, uint32_t d, WORD dodd)
+{
+    uint8_t px[2];                      /* the source's byte, the dest's */
+    UWORD v, b;
+
+    /* Words and ifs, not byte ternaries: cc65816 -O2 put the first
+     * ternary's result in one stack slot and read it back from another
+     * (phase 105), and both edges of every row came out $18. */
+    span_io(s, &px[0], 1, 0);
+    span_io(d, &px[1], 1, 0);
+    v = px[0];
+    if (sodd)
+        v &= 0x0F;
+    else
+        v >>= 4;
+    b = px[1];
+    if (dodd)
+        b = (UWORD)((b & 0xF0) | v);
+    else
+        b = (UWORD)((b & 0x0F) | (v << 4));
+    px[1] = (uint8_t)b;
+    span_io(d, &px[1], 1, 1);
+}
+
+static WORD rows_direct(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
+                        uint32_t db, uint16_t ds, WORD dx1, WORD dy1,
+                        WORD w, WORD h)
+{
+    WORD l = (WORD)(dx1 & 1), r = (WORD)((dx1 + w) & 1);
+    WORD shift = (WORD)((sx1 ^ dx1) & 1);
+    WORD get = (WORD)((sb & VR_FORM_TAG) != 0);
+    WORD sx2 = (WORD)(sx1 + w - 1), dx2 = (WORD)(dx1 + w - 1);
+    uint16_t n = (uint16_t)((UWORD)(w - l - r) >> 1), y;
+    uint32_t srow = sb + form_row(sy1, (WORD)ss);   /* tagged, as given */
+    uint32_t drow = db + form_row(dy1, (WORD)ds);
+    uint32_t sr = srow + (uint32_t)((UWORD)(sx1 + l) >> 1);
+    uint32_t dr = drow + (uint32_t)((UWORD)(dx1 + l) >> 1);
+    uint32_t mem = get ? dr : sr;
+    uint16_t mstride = get ? ds : ss;
+
+    if (mem + form_row((WORD)(h - 1), (WORD)mstride) + n + shift > 0x10000UL)
+        return 0;
+    sr &= ~VR_FORM_TAG;
+    dr &= ~VR_FORM_TAG;
+    for (y = 0; y < (uint16_t)h; y++) {
+        if (n == 0) {
+            /* a rectangle of half bytes only */
+        } else if (!shift) {
+            if (get)
+                vram_read((uint8_t *)(uint16_t)dr, sr, n);
+            else
+                vram_write(dr, (const uint8_t *)(uint16_t)sr, n);
+        } else if (get) {
+            uint8_t *d = (uint8_t *)(uint16_t)dr;
+            uint8_t after = d[n];
+
+            vram_read(d, sr, (uint16_t)(n + 1));
+            nib_shift(d, d, n);
+            d[n] = after;
+        } else {
+            uint8_t buf[DIRECT_CHUNK];
+            uint16_t k, m;
+
+            for (k = 0; k < n; k = (uint16_t)(k + m)) {
+                m = (uint16_t)(n - k);
+                if (m > DIRECT_CHUNK)
+                    m = DIRECT_CHUNK;
+                nib_shift(buf, (const uint8_t *)(uint16_t)(sr + k), m);
+                vram_write(dr + k, buf, m);
+            }
+        }
+        if (l)
+            edge_px(srow + (uint32_t)((UWORD)sx1 >> 1), (WORD)(sx1 & 1),
+                    drow + (uint32_t)((UWORD)dx1 >> 1), 1);
+        if (r)
+            edge_px(srow + (uint32_t)((UWORD)sx2 >> 1), (WORD)(sx2 & 1),
+                    drow + (uint32_t)((UWORD)dx2 >> 1), 0);
+        sr += ss;
+        dr += ds;
+        srow += ss;
+        drow += ds;
+    }
+    return 1;
 }
 
 /* Screen and save buffer are both in VRAM, and there the blitter moves
@@ -1360,6 +1552,10 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
         return;
     }
     if (!(sb & db & VR_FORM_TAG) || ((sx1 ^ dx1) & 1)) {
+        if (((sb ^ db) & VR_FORM_TAG)
+            && rows_direct(sb, src->stride, sx1, sy1,
+                           db, dst->stride, dx1, dy1, w, h))
+            return;
         copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, w, h);
         return;
     }

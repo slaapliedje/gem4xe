@@ -125,6 +125,9 @@
 #endif
 #endif /* GEM4XE_DEV_IMPL */
 
+/* dev_glyph's `overlay`: the letter and its thickening pass in one call. */
+#define GLYPH_THICK 2
+
 /* A raster form as the copy sees it: an MFDB resolved, or the screen.
  * `base` is 24-bit because on one device it is a VRAM address and on the
  * other a bank-$00 one, and the VDI does not care which. */
@@ -196,7 +199,13 @@ typedef struct {
      * overlay is drawn in THAT mode too and the device may take a different
      * path for it.  The device clips the cell: a partial glyph is not
      * something GEM asks for, and whether a whole one can be blitted is the
-     * device's question, not the VDI's. */
+     * device's question, not the VDI's.
+     *
+     * GLYPH_THICK is both at once: the letter, then its thickening pass
+     * one pixel right, exactly as a 0 and a 1 would draw them -- asked
+     * only when that pass's cell ends inside the screen.  A device with
+     * nothing faster makes the two calls itself; the VBXE has the
+     * thickened letter as one mask and draws it in one pass (phase 105). */
     void (*glyph)(WORD ch, WORD cx, WORD cy, WORD overlay);
 
     /* The font strip changed (src/vdi/font.c loaded another face).  A device
@@ -348,7 +357,10 @@ typedef struct {
      * mode and text colour, drawn as n dev_glyph calls would draw them.
      * Worth having where the per-glyph set-up costs more than the pixels:
      * on ANTIC a string of 53 was 53 cells' set-up (docs/phase54.md).
-     * Never asked for thickened text, whose second pass is per glyph.
+     * Thickened text only in transparent mode, where the order of the
+     * passes cannot matter, and only when the column after the last cell
+     * is visible too: drawn as n dev_glyph(GLYPH_THICK) calls would draw
+     * it (phase 105).
      * After text_prefill, and NULL for any device whose initialiser stops
      * short of it, so those devices did not have to change. */
     void (*text_run)(const WORD *chars, WORD n, WORD x, WORD cy);

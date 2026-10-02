@@ -213,6 +213,12 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
     uint8_t pen = (uint8_t)(vwk.text_color ? 1 : 0);
     WORD r;
 
+    if (overlay == GLYPH_THICK) {       /* the letter, then its second pass */
+        dev_glyph(ch, cx, cy, 0);
+        dev_glyph(ch, (WORD)(cx + 1), cy, 1);
+        return;
+    }
+
     if (overlay && mode == MD_REPLACE)
         mode = MD_TRANS;                /* the thickening pass ADDS ink */
     if (vwk.clip &&

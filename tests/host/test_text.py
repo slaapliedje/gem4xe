@@ -25,7 +25,7 @@ SIM_C = os.path.join(ROOT, "tests", "host", "text_sim.c")
 sys.path.insert(0, os.path.join(ROOT, "tools", "ccbug"))
 import check as ccbug                      # noqa: E402  (the simulator driver)
 
-CASES = 4 * 2 * 8 * 3                       # text_sim.c
+CASES = 4 * 2 * 8 * 3 + 2 * 8 * 3           # text_sim.c: plain, thickened
 
 
 class TestTextRun(unittest.TestCase):

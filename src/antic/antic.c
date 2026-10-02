@@ -637,7 +637,7 @@ static void an_pack6(uint8_t *buf, const uint8_t FAR *sr,
  * to. */
 void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
                 int16_t x, int16_t y, int16_t mode, uint8_t pen,
-                int16_t w, int16_t h)
+                int16_t w, int16_t h, int16_t thick)
 {
     uint8_t buf[AN_STRIDE + 1];         /* on the stack, as antic_copy's:
                                          * bank $00 has no 41 bytes to
@@ -654,7 +654,7 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
         return;
     if (w != 6)
         return;                         /* the device's face is the 6x6 */
-    x2 = (int16_t)(x + (int16_t)n * w - 1);
+    x2 = (int16_t)(x + (int16_t)n * w - 1 + (thick ? 1 : 0));
     if (x < 0 || y < 0 || x2 >= AN_W || y + h > AN_H)
         return;
     an_op_pen(&o, mode, pen);
@@ -665,7 +665,23 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
     p = SCREEN + (uint16_t)y * AN_STRIDE + ((uint16_t)x >> 3);
 
     for (row = 0; row < (uint16_t)h; row++) {
-        an_pack6(buf, sr, chars, n, lead);
+        if (thick) {
+            /* THICKENED: the row ORed with itself one pixel right, the
+             * bit falling off each byte carried into the next -- which
+             * is the last byte of the run when the packed glyphs end on
+             * a byte, so that one starts empty (phase 105) */
+            uint8_t c = 0;
+
+            buf[last] = 0;
+            an_pack6(buf, sr, chars, n, lead);
+            for (k = 0; k <= last; k++) {
+                g = buf[k];
+                buf[k] = (uint8_t)(g | (uint8_t)(g >> 1) | c);
+                c = (uint8_t)(g << 7);
+            }
+        } else {
+            an_pack6(buf, sr, chars, n, lead);
+        }
         if (last == 0) {
             AN_PUT(p, o, buf[0], (uint8_t)(lm & rm), t);
         } else {

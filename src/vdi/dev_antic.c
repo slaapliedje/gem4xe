@@ -155,6 +155,26 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
 {
     WORD mode = (WORD)(vwk.wrt_mode + 1);
 
+    if (overlay == GLYPH_THICK) {
+        /* Transparent, and the cell and the column after it all inside:
+         * one thickened run of one (antic_text).  Otherwise the letter,
+         * then its second pass. */
+        if (mode == MD_TRANS && cx >= 0 && cy >= 0 && cx + FONT_W < AN_W
+            && cy + FONT_H <= AN_H
+            && (!vwk.clip || (cx >= vwk.xmn_clip && cy >= vwk.ymn_clip
+                              && cx + FONT_W <= vwk.xmx_clip
+                              && cy + FONT_H - 1 <= vwk.ymx_clip))) {
+            int16_t c = (int16_t)ch;
+
+            antic_text(vdi_font, &c, 1, (int16_t)cx, (int16_t)cy, (int16_t)mode,
+                       (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H, 1);
+            return;
+        }
+        dev_glyph(ch, cx, cy, 0);
+        dev_glyph(ch, (WORD)(cx + 1), cy, 1);
+        return;
+    }
+
     /* The thickening pass must ADD ink to the letter already there, so a
      * replace-mode overlay is drawn transparently -- otherwise it would
      * repaint the cell background and rub out the first pass.  XOR and
@@ -191,18 +211,21 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
         int16_t c = (int16_t)ch;
 
         antic_text(vdi_font, &c, 1, (int16_t)cx, (int16_t)cy, (int16_t)mode,
-                   (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
+                   (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H, 0);
     }
 }
 
 /* A string's visible run, a row of the whole run at a time (text_run in
- * vdidev.h).  The mode is dev_glyph's for a first pass: never an overlay,
- * because v_gtext does not ask for thickened text here. */
+ * vdidev.h).  The mode is dev_glyph's for a first pass; thickened only in
+ * transparent mode, which is the only time v_gtext asks for it here. */
 void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
 {
+    WORD mode = (WORD)(vwk.wrt_mode + 1);
+
     antic_text(vdi_font, (const int16_t *)chars, (uint16_t)n,
-               (int16_t)x, (int16_t)cy, (int16_t)(vwk.wrt_mode + 1),
-               (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H);
+               (int16_t)x, (int16_t)cy, (int16_t)mode,
+               (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H,
+               (int16_t)(mode == MD_TRANS && (vwk.text_effects & TXT_THICKEN)));
 }
 
 /* vrt_cpyfm: a one-plane source into the screen -- which is how every

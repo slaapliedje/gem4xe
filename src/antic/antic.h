@@ -144,10 +144,15 @@ void antic_glyph(uint32_t face, uint16_t ch,
  * face 6 wide is drawn -- the device's; any other is nothing at all
  * (docs/phase55.md).  A single cell is a run of one: dev_glyph draws
  * that way, and antic_glyph stays as what tests/host/text_sim.c holds
- * this to. */
+ * this to.
+ *
+ * `thick`, in transparent mode only: each glyph and its thickening pass
+ * one pixel right, as 2n calls would draw them -- each row ORed with
+ * itself shifted one pixel, n * w + 1 wide, so that column must be on
+ * the screen too. */
 void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
                 int16_t x, int16_t y, int16_t mode, uint8_t pen,
-                int16_t w, int16_t h);
+                int16_t w, int16_t h, int16_t thick);
 
 /* A PATTERNED run.  `patrow` is one row of a GEM fill pattern: sixteen
  * bits, bit 15 the leftmost pixel of a 16-ALIGNED screen word, which is

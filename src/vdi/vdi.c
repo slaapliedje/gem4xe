@@ -383,13 +383,15 @@ static WORD align_y(WORD y)
  * v_justified, which places its cells one at a time. */
 static void draw_char(WORD ch, WORD cx, WORD cy)
 {
-    dev_glyph(ch, cx, cy, 0);
     /* Thickened: the same glyph again, one pixel right, drawn over the
      * first so the two overlap into a heavier letter.  Whether that
-     * second pass costs a blit or a pixel loop is the device's business;
-     * that there IS one is the VDI's. */
+     * second pass costs a blit, a pixel loop or nothing extra at all is
+     * the device's business (GLYPH_THICK, vdidev.h); that there IS one
+     * is the VDI's. */
     if ((vwk.text_effects & TXT_THICKEN) && cx + 1 + FONT_W <= SCR_W)
-        dev_glyph(ch, (WORD)(cx + 1), cy, 1);
+        dev_glyph(ch, cx, cy, GLYPH_THICK);
+    else
+        dev_glyph(ch, cx, cy, 0);
 }
 
 /* The row under a string, in the text colour: solid and clipped, because
@@ -408,6 +410,8 @@ static void vdi_v_gtext(void)
     WORD x = align_x(ptsin[0], (WORD)(n * FONT_W));
     WORD cy = align_y(ptsin[1]);
     WORD pre = 0, run = 0, lo = 0, hi = -1;
+    WORD thick = (WORD)((vwk.text_effects & TXT_THICKEN) != 0);
+    WORD thick_run = (WORD)(thick && TEXT_RUN && vwk.wrt_mode + 1 == MD_TRANS);
 
     if (n > INTIN_SIZE)
         n = INTIN_SIZE;
@@ -422,10 +426,13 @@ static void vdi_v_gtext(void)
      *   at a time rather than a cell at a time (docs/phase54.md).
      *
      * A cell outside the run goes the way it always did.  NEITHER when
-     * thickened: the second pass spills a column into the next cell, and
-     * it is the next cell's own background that erases it. */
+     * thickened in replace mode: the second pass spills a column into the
+     * next cell, and it is the next cell's own background that erases it.
+     * A TEXT_RUN in transparent mode may be thickened -- an OR, so the
+     * order of the passes cannot matter -- when the column the last
+     * cell's second pass spills into is visible too (phase 105). */
     if ((TEXT_RUN || (TEXT_PREFILL && vwk.wrt_mode + 1 == MD_REPLACE))
-        && n > 0 && !(vwk.text_effects & TXT_THICKEN)
+        && n > 0 && (!thick || thick_run)
         && cy >= 0 && cy + FONT_H <= SCR_H
         && (!vwk.clip || (cy >= vwk.ymn_clip && cy + FONT_H - 1 <= vwk.ymx_clip))) {
         WORD left = 0, right = (WORD)(SCR_W - 1);
@@ -437,7 +444,7 @@ static void vdi_v_gtext(void)
         for (lo = 0; lo < n && x + lo * FONT_W < left; lo++)
             ;
         for (hi = (WORD)(n - 1);
-             hi >= lo && x + hi * FONT_W + FONT_W - 1 > right; hi--)
+             hi >= lo && x + hi * FONT_W + FONT_W - 1 + thick > right; hi--)
             ;
         if (hi >= lo) {
             if (TEXT_RUN) {

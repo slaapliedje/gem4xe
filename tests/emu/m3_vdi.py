@@ -540,6 +540,26 @@ CASES = [
         (V_GTEXT, (320, 140), tuple(b"thick and centred")),
         (VST_ALIGNMENT, (), (0, 0)), (VST_EFFECTS, (), (0,))]),
 
+    # Thickened text where the VBXE draws it from one mask when its nine
+    # columns fit and as two passes when they do not (src/vdi/dev_vbxe.c,
+    # phase 105): odd x, white ink over a fill, a clip through letters at
+    # both ends, and the right edge of the narrowest screen.  Transparent:
+    # in replace mode the model repaints the cell under the second pass
+    # and no device does, so it has no case yet (docs/phase105.md).
+    ("text: thickened -- odd x, white ink, clipped, the screen's edge", [
+        (VSF_INTERIOR, (), (1,)), (VSF_COLOR, (), (2,)),
+        (VR_RECFL, (0, 150, 639, 239), ()),
+        (VSWR_MODE, (), (2,)), (VST_EFFECTS, (), (1,)), (VST_COLOR, (), (1,)),
+        (V_GTEXT, (17, 30), tuple(b"odd x, on white")),
+        (V_GTEXT, (16, 170), tuple(b"even x, on red")),
+        (VST_COLOR, (), (0,)), (V_GTEXT, (19, 186), tuple(b"white ink, odd")),
+        (VST_COLOR, (), (3,)), (VS_CLIP, (100, 140, 203, 239), (1,)),
+        (V_GTEXT, (97, 202), tuple(b"cut at both ends")),
+        (V_GTEXT, (96, 218), tuple(b"cut, even x")),
+        (VS_CLIP, (0, 0, 639, 239), (0,)),
+        (V_GTEXT, (489, 50), tuple(b"abc")), (V_GTEXT, (488, 70), tuple(b"abc")),
+        (VST_EFFECTS, (), (0,)), (VSWR_MODE, (), (1,))]),
+
     ("text: the metrics an application measures with", [
         (VQT_EXTENT, (), tuple(b"a string")),
         (VQT_WIDTH, (), (ord("M"),)),

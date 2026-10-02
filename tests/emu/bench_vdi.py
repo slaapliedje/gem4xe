@@ -44,6 +44,23 @@ ICON = lambda mode, x: (V.VRT_CPYFM, (0, 0, 31, 23, x, 40), (mode, 1, 0), "icon"
 CLIP_CORNER = (V.VS_CLIP, (620, 230, 639, 239), (1,))
 CLIP_OFF = (V.VS_CLIP, (0, 0, 639, 239), (0,))
 
+class _Form:
+    def __init__(self, a):
+        self.mfdb_addr = a
+
+
+MEM = _Form(None)                       # filled in by run(): scratch + 552
+LINE40 = tuple(ord(c) for c in "The quick brown fox jumps over the lazy")
+
+
+def memcopy(i, x0=11):
+    """G4BENCH's "screen to memory, back": a 64x32 four-plane form, out
+    of a window's work area -- whose x is odd -- and back into it."""
+    x, y = x0 + 64 + (i * 8) % 400, 42 + (i * 4) % 140
+    return [(V.VRO_CPYFM, (x0, 10, x0 + 63, 41, 0, 0, 63, 31), (3,), (None, MEM)),
+            (V.VRO_CPYFM, (0, 0, 63, 31, x, y, x + 63, y + 31), (3,), (MEM, None))]
+
+
 # name: (script of N ops, ops counted, form bits)
 CASES = {
     "pline-h":     ([(V.V_PLINE, (10, 10 + 8 * i, 610, 10 + 8 * i)) for i in range(N)], N),
@@ -62,6 +79,17 @@ CASES = {
                     + [(V.V_GDP, (320, 120, 0, 0, 60, 0), (), None, V.GDP_CIRCLE)] * N, N),
     "ellipse":     ([(V.VSF_INTERIOR, (), (1,))]
                     + [(V.V_GDP, (320, 120, 100, 50), (), None, V.GDP_ELLIPSE)] * N, N),
+    "memcopy":     ([r for i in range(N) for r in memcopy(i)], N),
+    "memcopy-even": ([r for i in range(N) for r in memcopy(i, 10)], N),
+    # G4BENCH's text rows (src/apps/g4bench.c text()): transparent
+    "text":        ([(V.VSWR_MODE, (), (2,)), (V.VST_HEIGHT, (0, 6), ())]
+                    + [(V.V_GTEXT, (12, 20 + 8 * i), LINE40) for i in range(N)], N),
+    "text-bold":   ([(V.VSWR_MODE, (), (2,)), (V.VST_HEIGHT, (0, 6), ()),
+                     (V.VST_EFFECTS, (), (1 | 8,))]
+                    + [(V.V_GTEXT, (12, 20 + 8 * i), LINE40) for i in range(N)], N),
+    "text-boldonly": ([(V.VSWR_MODE, (), (2,)), (V.VST_HEIGHT, (0, 6), ()),
+                       (V.VST_EFFECTS, (), (1,))]
+                    + [(V.V_GTEXT, (12, 20 + 8 * i), LINE40) for i in range(N)], N),
     "rfbox":       ([(V.VSF_INTERIOR, (), (1,))]
                     + [(V.V_GDP, (200, 60, 440, 180), (), None, V.GDP_RFBOX)] * N, N),
 }
@@ -185,9 +213,12 @@ def run(b, syms, ranges, place, label, script, ops, profile, top, by_function):
     b.memload(sc, ONES)
     b.memload(sc + 512, pack_mfdb(sc, ICON_W, ICON_H, ICON_WDW))
     b.memload(sc + 532, pack_mfdb(0, 0, 0, 0))
+    b.memload(sc + 552, V.pack_mfdb(sc + 1024, 64, 32, 4, 4))
+    MEM.mfdb_addr = sc + 552
     full = [(V.V_OPNWK, (), V.WORK_IN), (m.V_CLRWK,)] + script
     resolved = [(r[0], r[1] if len(r) > 1 else (), r[2] if len(r) > 2 else (),
-                 (True if r[3] == "icon" else None) if len(r) > 3 else None)
+                 (r[3] if isinstance(r[3], tuple) else
+                  True if r[3] == "icon" else None) if len(r) > 3 else None)
                 + ((r[4],) if len(r) > 4 else ())
                 for r in full]
     m.poke_script(b, sa, resolved, sc + 512, script_room, screen_mfdb=sc + 532)
