@@ -30,7 +30,7 @@ call on the emulated Rapidus, from the 0.11 release build.
 | 10 | **`wind_get` answers `WF_KIND`, `WF_NAME` and `WF_INFO`**, and **`wind_set(WF_BOTTOM)`** sends a window to the bottom (`docs/api.md`) | **done**, phase 98 |
 | 11 | **The accessory slots proven**: the sixth loads, the seventh is refused and says so | |
 | 12 | **`WM_*` messages reach an accessory's own window**, gated | |
-| 13 | **SpartaDOS 3.2's root fallback in `Fdelete`**: its "is it still there?" open can find the root's file too (phase 65 fixed `Fopen`'s); and MyDOS measured for the same | |
+| 13 | **SpartaDOS 3.2's root fallback in `Fdelete`**: its "is it still there?" open can find the root's file too (phase 65 fixed `Fopen`'s); and MyDOS measured for the same | **done**, phase 99 |
 | 14 | **`memreport`'s pool model** is a page under the live machine (7,168 against 7,424, phase 69): find the page | |
 
 Done before 0.12 began: the cartridge's white screen in Altirra

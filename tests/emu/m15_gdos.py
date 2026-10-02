@@ -34,6 +34,7 @@ import symfile, atr                         # noqa: E402
 from m7_form import poke16, NOT_STARTED, STATUS, ST_GO, ST_DONE, SYMS  # noqa: E402
 from m12_file import Runner, D2, FAULT_I, FRAMES_I, SYS  # noqa: E402
 from m14_sparta import boot, screen, DISK as SPDISK  # noqa: E402
+import m14_sparta                                   # noqa: E402
 
 GDOS, RELEASE = SYS + 12, SYS + 13
 SCRAP = SYS + 18                            # sc_write then sc_clear (src/m3_vdi.c)
@@ -233,6 +234,17 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
         g.call("Fclose", W(ret))
         ret, _ = g.call("Fopen", L(g.string("TEST.TXT")), W(0))
         check(ret == EFILNF, f"Fopen TEST.TXT in \\SUB: {ret}, not EFILNF")
+        # ...nor a delete of it (phase 99): a name only the ROOT has,
+        # deleted in a folder, is not found -- and the root's file is
+        # still there.  Fdelete asks "is it still there?" after a delete
+        # that says not found, to tell a protected file from a missing
+        # one, and on SpartaDOS 3.2 that open found the root's.
+        ret, _ = g.call("Fdelete", L(g.string("A:\\SUB\\TEST.TXT")))
+        check(ret == EFILNF, f"Fdelete A:\\SUB\\TEST.TXT {ret}, not EFILNF")
+        ret, _ = g.call("Fopen", L(g.string("A:\\TEST.TXT")), W(0))
+        check(ret >= HANDLE_BASE,
+              f"the root's TEST.TXT after that delete: Fopen {ret}")
+        g.call("Fclose", W(ret))
     else:
         check(ret == EPTHNF, f"Dsetpath on a flat DOS {ret}, not EPTHNF")
     ret, _ = g.call("Dsetpath", L(g.string("\\")))
@@ -562,9 +574,48 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
     g.call("Fclose", W(h))
 
 
+def folder_cases(g, check):
+    """--from-sub: the runner started with SpartaDOS 3.2's OWN current
+    directory in >SUB (phase 99).  There, and only there, an open for
+    reading of a name the folder does not have finds the ROOT's file --
+    measured: every one of four names, in >SUB and in >SUB>DEEP, opened
+    with GEMDOS's guard (gd_in_dir) taken out.  The product disks are
+    like this: STARTUP.BAT does CD >GEM."""
+    o1, _ = g.call("Fopen", L(g.string("A:\\SUB\\TEST.TXT")), W(0))
+    check(o1 == EFILNF, f"Fopen A:\\SUB\\TEST.TXT, the root's name: {o1}, not EFILNF")
+    o2, _ = g.call("Fopen", L(g.string("A:\\SUB\\DEEP\\X32G.DOS")), W(0))
+    check(o2 == EFILNF, f"Fopen A:\\SUB\\DEEP\\X32G.DOS: {o2}, not EFILNF")
+    # Fdelete's "is it still there?", which tells a protected file from a
+    # missing one, opened the root's and answered EACCDN
+    d, _ = g.call("Fdelete", L(g.string("A:\\SUB\\TEST.TXT")))
+    check(d == EFILNF, f"Fdelete A:\\SUB\\TEST.TXT: {d}, not EFILNF")
+    keep, _ = g.call("Fopen", L(g.string("A:\\TEST.TXT")), W(0))
+    check(keep >= HANDLE_BASE, f"the root's TEST.TXT after that delete: Fopen {keep}")
+    if keep >= HANDLE_BASE:
+        g.call("Fclose", W(keep))
+    # ...and the other half of that witness: a LOCKED file in the folder
+    # is still refused, which the folder's entries now say rather than
+    # the open (src/sys/gemdos.c, GD_FDELETE)
+    h, _ = g.call("Fcreate", L(g.string("A:\\SUB\\GDLOCK.TXT")), W(0))
+    check(h >= HANDLE_BASE, f"Fcreate A:\\SUB\\GDLOCK.TXT {h}")
+    g.call("Fclose", W(h))
+    ret, _ = g.call("Fattrib", L(g.string("A:\\SUB\\GDLOCK.TXT")), W(1), W(FA_RDONLY))
+    check(ret == 0, f"Fattrib read-only {ret}")
+    lk, _ = g.call("Fdelete", L(g.string("A:\\SUB\\GDLOCK.TXT")))
+    check(lk == EACCDN, f"Fdelete of a locked file in >SUB: {lk}, not EACCDN")
+    g.call("Fattrib", L(g.string("A:\\SUB\\GDLOCK.TXT")), W(1), W(0))
+    ret, _ = g.call("Fdelete", L(g.string("A:\\SUB\\GDLOCK.TXT")))
+    check(ret == 0, f"Fdelete of it unlocked {ret}")
+    # what WAS answered, not what should be: this is the report, and the
+    # checks above are the verdict
+    print(f"  in >SUB: Fopen {o1} and {o2}, Fdelete {d}, locked {lk}; the "
+          f"root's TEST.TXT {'opens' if keep >= HANDLE_BASE else 'is gone'}")
+
+
 def main(argv):
     cart = flash = None
     dos2 = "--dos2" in argv
+    from_sub = "--from-sub" in argv
     for a in argv:
         if a.startswith("--sdx="):
             cart = a[6:]
@@ -572,6 +623,8 @@ def main(argv):
             flash = a[7:]
     kind = DOS_2 if dos2 else DOS_SDX if (cart or flash) else DOS_SPARTA
     tag = {DOS_2: "m15d", DOS_SPARTA: "m15", DOS_SDX: "m15u" if flash else "m15x"}[kind]
+    if from_sub:
+        tag = "m15s"
     syms = symfile.load(SYMS)
     fails = []
 
@@ -611,6 +664,11 @@ def main(argv):
                 b.frames(4)
             if st[:2] != b"VD" or st[2] != 1:
                 st = None
+        elif from_sub:
+            def into_sub(bb):
+                m14_sparta.type_line(bb, "CD >SUB")
+                bb.frames(100)
+            _, st = boot(b, into_sub, program=">M3")
         else:
             _, st = boot(b)
         if st is None:
@@ -622,13 +680,18 @@ def main(argv):
         check(st[8] == kind, f"the seam says DOS kind {st[8]}, expected {kind}")
         r = Runner(b, syms)
         g = Gdos(r, check)
-        print("GEMDOS on CIO, against the image:")
-        cases(g, r, check, fs, kind, b, clock=bool(flash),
-              dos_clock=(kind == DOS_SDX and not flash))
+        if from_sub:
+            print("GEMDOS with the DOS in a folder:")
+            folder_cases(g, check)
+        else:
+            print("GEMDOS on CIO, against the image:")
+            cases(g, r, check, fs, kind, b, clock=bool(flash),
+                  dos_clock=(kind == DOS_SDX and not flash))
     finally:
         emu.stop()
 
-    print(f"gem4xe-m15: {'PASS' if not fails else 'FAIL'} -- GEMDOS on {KIND[kind]}, "
+    print(f"gem4xe-m15: {'PASS' if not fails else 'FAIL'} -- GEMDOS on {KIND[kind]}"
+          + (", from a folder" if from_sub else "") + ", "
           f"{len(fails)} problem(s)")
     return 1 if fails else 0
 

@@ -48,7 +48,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 | | ST / EmuTOS | gem4xe | Where |
 |---|---|---|---|
 | Drive names | `A:` to `P:` | `A:` to `H:` to a program, which are **`D1:` to `D8:`** to a person: the desktop and the file selector show `D1:`, and `DESKINF=` takes either spelling | `src/sys/dos.c`, `src/desk/desktop.c` |
-| The file system | FAT | the DOS's: SpartaDOS X, SpartaDOS 3.2 and MyDOS have folders; **DOS 2 has none**, and a path on it is its last component | `src/sys/dos.c` |
+| The file system | FAT | the DOS's: SpartaDOS X and SpartaDOS 3.2 have folders; **DOS 2 has none**, and a path on it is its last component.  MyDOS has folders, but gem4xe treats it as a DOS 2 and does not use them | `src/sys/dos.c` |
 | Names | 8.3 | 8.3, upper case, by the DOS's own rules for which characters it takes | `src/sys/dos.c` |
 | A folder's name | can be changed | **cannot**: the DOSes refuse to rename a directory, so Show info greys it | `src/desk/deskfun.c` |
 | `Fattrib` | reads and sets | **sets** read-only (the DOS's lock) and **refuses a read**: a search answers what a read would | `src/sys/gemdos.c` |

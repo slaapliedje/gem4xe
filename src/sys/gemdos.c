@@ -2331,11 +2331,20 @@ void gemdos_call(uint32_t pb)
         if (r == GD_EFILNF) {
             /* SpartaDOS erases around a protected file and reports
              * "not found" ($AA, measured on 3.2): a file still there
-             * was refused, which the ST calls EACCDN. */
-            int16_t iocb = cio_open(gw->cio, CIO_A_READ, 0);
-            if (iocb >= 0) {
-                cio_close(iocb);
-                r = GD_EACCDN;
+             * was refused, which the ST calls EACCDN.  "Still there" is
+             * asked of the folder's own entries on SpartaDOS, as gd_open
+             * asks it: with 3.2's own directory in a folder, the open
+             * finds the ROOT's file of that name, and a missing file was
+             * reported refused (phase 99, test-m15s). */
+            if (dos.kind == DOS_SPARTA && gd_split(gw->full) > 3) {
+                if (gd_in_dir())
+                    r = GD_EACCDN;
+            } else {
+                int16_t iocb = cio_open(gw->cio, CIO_A_READ, 0);
+                if (iocb >= 0) {
+                    cio_close(iocb);
+                    r = GD_EACCDN;
+                }
             }
         }
         break;
