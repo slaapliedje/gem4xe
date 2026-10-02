@@ -1,5 +1,8 @@
 # Roadmap -- 1.0
 
+**Superseded by [`roadmap-0.12.md`](roadmap-0.12.md)**: this line is
+0.12 now, and its figures were measured again there.
+
 1.0 is **stability and speed** on top of 0.9's features (the numbering
 is the old Linux kernel's: odd adds features, even does not).  Every
 speed item is measured by G4BENCH (`make g4bench`, `docs/phase59.md`),

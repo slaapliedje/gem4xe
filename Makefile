@@ -278,6 +278,10 @@ build/div16.o: src/sys/div16.s
 	@mkdir -p build
 	$(AS) -o $@ $<
 
+build/mul32.o: src/sys/mul32.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+
 # Our own memcpy/memset/str* so that no Apache-2.0 object from the
 # vendor's C library is linked into a GPLv2 binary (src/sys/clib.c has
 # the argument, and docs/licence.md what is still outstanding).
@@ -480,10 +484,13 @@ build/scrap.o: src/aes/scrap.c src/aes/aes.h src/sys/farmem.h
 # build/app/clib.o is src/sys/clib.c -- the same eight ISO C functions the
 # engine uses, for the same reason: Calypsi's are Apache-2.0 and this is a
 # GPLv2 tree (docs/licence.md).  It is part of the LIBRARY and not of a
-# program, so the kit ships it and anybody's application gets it.
+# program, so the kit ships it and anybody's application gets it.  So is
+# build/mul32.o, the library's _Mul32 replaced (--override, below) by a
+# faster one, which makes its table in the program's far variables
+# (src/sys/mul32.s; the system links the library's).
 G4A_LIB = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o \
           build/app/gemstat.o build/app/gemtime.o build/app/gemcompat.o \
-          build/app/gemstub.o build/app/clib.o
+          build/app/gemstub.o build/app/clib.o build/mul32.o
 
 # ...and the same three for an application compiled --data-model=large.
 # The linker refuses to mix runtime models, so a large-data program needs
@@ -492,7 +499,8 @@ G4A_LIB = build/app/crt_gemapp.o build/app/gemabi.o build/app/gemlib.o \
 # differs (docs/gacs.md).
 G4A_LIB_LD = build/appld/crt_gemapp.o build/appld/gemabi.o build/appld/gemlib.o \
              build/appld/gemstat.o build/appld/gemtime.o \
-             build/appld/gemcompat.o build/appld/gemstub.o build/appld/clib.o
+             build/appld/gemcompat.o build/appld/gemstub.o build/appld/clib.o \
+             build/mul32.o
 LIB_LD     = clib-lc-ld.a
 
 build/app/clib.o: src/sys/clib.c
@@ -553,14 +561,14 @@ build/app/gemtime.o: src/app/gemtime.c src/app/gem.h src/app/time.h
 # (src/app/gemapp.scm).
 define g4a
 build/$(1).elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --list-file build/$(1).map --stack-size $(5) \
 	    --memories-expression "(app-layout-n #x1000 #x020000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 build/$(1)-near.elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-n #x1100 #x020000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 build/$(1)-far.elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-n #x1000 #x030000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 # ...and three more, for a program small enough to be PACKED (phase 80):
 # the code moved down a bank and up a page, and the far variables up a
@@ -569,19 +577,19 @@ build/$(1)-far.elf: $(2) src/app/gemapp.scm
 # each at any page of any bank (.G4A format 5).  A program that does not
 # fit is written as format 3 or 4, whole banks, as before.
 build/$(1)-cdown.elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x010000 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 build/$(1)-cpage.elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x020100 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 build/$(1)-vpage.elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x020000 (+ #x020100 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 # ...and one more that nothing builds but tests/host/test_pack.py: the
 # program linked where a loader might PUT it, code and variables apart at
 # odd pages, for the format 5 fixups to be checked against byte for byte.
 build/$(1)-at.elf: $(2) src/app/gemapp.scm
-	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --cstartup gemapp -o $$@ \
+	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --stack-size $(5) --memories-expression "(app-layout-v #x1300 #x050300 #x0a0600 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
 build/$(1).g4a build/$(1).sym $(7): build/$(1).elf build/$(1)-near.elf build/$(1)-far.elf \
 	    build/$(1)-cdown.elf build/$(1)-cpage.elf build/$(1)-vpage.elf tools/mkg4a.py

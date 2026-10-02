@@ -55,6 +55,7 @@ MANIFEST = [
     ("lib/gemstub.c",       "src/app/gemstub.c"),       # the C library's board stubs
     ("lib/clib.c",          "src/sys/clib.c"),
     ("lib/gemabi.s",        "src/app/gemabi.s"),
+    ("lib/mul32.s",         "src/sys/mul32.s"),       # a fast 32-bit multiply
     ("lib/crt_gemapp.s",    "src/app/crt_gemapp.s"),
     ("lib/gemapp.scm",      "src/app/gemapp.scm"),
     # A control panel extension: the contract, and the main() you do not

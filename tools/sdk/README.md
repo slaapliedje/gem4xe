@@ -65,6 +65,11 @@ ends with `Ptermres` and stays -- see "Starting at boot" below.
     lib/gemtime.c       time(), gmtime(), strftime(), clock()
     lib/gemcompat.c     stricmp(), opendir() and the rest an ST source
                         reaches for
+    lib/mul32.s         a faster 32-bit multiply, linked in place of
+                        the C library's (G4BENCH's Mandelbrot takes
+                        57% less time): it makes a 1 KB table in your
+                        far variables the first time a program
+                        multiplies two longs
     include/osbind.h    ...and the headers an ST source includes by
     include/tos.h       reflex.  Most are one door pointing at gem.h;
     include/mintbind.h  support.h and dirent.h carry real code in

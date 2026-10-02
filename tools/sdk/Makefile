@@ -103,9 +103,11 @@ B = build/$(DATAMODEL)
 
 ASM_OBJS = $(patsubst %.s,$(B)/%.o,$(notdir $(ASM)))
 OBJS = $(B)/crt_gemapp.o $(B)/gemabi.o $(B)/gemlib.o $(B)/gemstat.o \
-       $(B)/gemtime.o $(B)/gemcompat.o $(B)/gemstub.o $(B)/clib.o \
+       $(B)/gemtime.o $(B)/gemcompat.o $(B)/gemstub.o $(B)/clib.o $(B)/mul32.o \
        $(KIT_EXTRA) $(B)/$(NAME).o $(ASM_OBJS)
-LDOPT = lib/gemapp.scm $(OBJS) $(LDLIB) --rtattr exit=simplified \
+# lib/mul32.s replaces the C library's _Mul32: faster, the same products
+# (gem4xe's docs/phase92.md, tests/host/test_mul32.py)
+LDOPT = lib/gemapp.scm $(OBJS) $(LDLIB) --rtattr exit=simplified --override _Mul32 \
         --cstartup gemapp --stack-size $(STACK)
 
 all: $(NAME).g4a
@@ -161,6 +163,9 @@ $(B)/$(NAME).o: $(APP) include/gem.h | $(B)
 # with Ptermres so the module stays resident.  You do not write this.
 $(B)/cpxmain.o: lib/cpxmain.c include/cpx.h include/gem.h | $(B)
 	$(CC) $(CFLAGS) -o $@ $<
+
+$(B)/mul32.o: lib/mul32.s | $(B)
+	$(AS) -o $@ $<
 
 $(foreach s,$(ASM),$(eval $(B)/$(basename $(notdir $(s))).o: $(s) | $(B) ; $$(AS) -o $$@ $$<))
 
