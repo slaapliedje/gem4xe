@@ -261,8 +261,14 @@ workstation: one `v_opnvwk` kept for the life of the machine.
 open over is going away, so anything of *its* that you were holding is
 gone.  Do not close your own window on it -- the AES has.
 
+**Its window's messages are its own.**  A window you `wind_create` is
+yours (`WF_OWNER`), and its `WM_REDRAW`, `WM_TOPPED`, `WM_MOVED`,
+`WM_CLOSED` and the rest come to your `evnt_mesag`, not the desktop's.
+Answer them as any GEM program does.
+
 Six slots, TOS's number, and the loader stops sooner if the pool runs
-out.  It goes in `\GEM\`, never `\APPS\`: the AES scans its own
+out; a seventh, or one with no room, is left out and an alert says so
+when the machine starts.  It goes in `\GEM\`, never `\APPS\`: the AES scans its own
 directory for `*.ACC` and nowhere else.
 
 ## Writing a control panel extension

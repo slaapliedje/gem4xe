@@ -78,7 +78,7 @@ static void handle_arrow_msg(WORD wh, WORD gadget)
 {
     wm_update(END_UPDATE);
     ct_action = gl_wa[gadget - W_UPARROW];
-    ap_sendmsg(proc_app, WM_ARROWED, wh, ct_action, 0, 0, 0);
+    ap_sendmsg(wm_owner(wh), WM_ARROWED, wh, ct_action, 0, 0, 0);
     ct_held = TRUE;
     ct_wh = wh;
     ct_tick = gl_ticks;
@@ -95,7 +95,7 @@ void ct_arrow_repeat(void)
     }
     if ((gl_ticks - ct_tick) < (uint32_t)gl_dclick)
         return;
-    ap_sendmsg(proc_app, WM_ARROWED, ct_wh, ct_action, 0, 0, 0);
+    ap_sendmsg(wm_owner(ct_wh), WM_ARROWED, ct_wh, ct_action, 0, 0, 0);
 }
 
 void ct_arrow_stop(void)
@@ -127,7 +127,7 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
 
     if (wh != gl_wtop) {
         /* went down on an inactive window: tell the owner to top it */
-        ct_msgup(proc_app, WM_TOPPED, wh, 0, 0, 0, 0);
+        ct_msgup(wm_owner(wh), WM_TOPPED, wh, 0, 0, 0, 0);
         return;
     }
 
@@ -225,7 +225,7 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
     else if (need_normal)
         ob_change(gl_awind, gadget, NORMAL, TRUE);
 
-    ct_msgup(proc_app, message, wh, x, y, w, h);
+    ct_msgup(wm_owner(wh), message, wh, x, y, w, h);
 }
 
 /* The window manager's press at (mx,my).  The desktop's presses are the

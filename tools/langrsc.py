@@ -124,6 +124,9 @@ STRINGS = [
     ("EXIT_NOFILE", "gem4xe: DESKTOP.PRG is not on the disk"),
     ("EXIT_NODESK", "gem4xe: the desktop could not be loaded"),
     ("EXIT_ANYKEY", "Press a key to start again"),
+    # an accessory found and not loaded, said at boot before the desktop
+    # (src/aes/shel.c, sh_main): past the six slots, or no memory for it
+    ("ACCFULL", "[1][Not every desk accessory|could be loaded. There are|six places for them, and|memory may allow fewer.][ OK ]"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -175,6 +178,7 @@ TRANSLATIONS = {
         "EXIT_NOFILE": "gem4xe: DESKTOP.PRG fehlt",
         "EXIT_NODESK": "gem4xe: Desktop nicht ladbar",
         "EXIT_ANYKEY": "Taste druecken fuer Neustart",
+        "ACCFULL": "[1][Nicht alle Accessories|konnten geladen werden. Es|gibt sechs Plätze, und der|Speicher reicht evtl. für|weniger.][ OK ]",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -220,6 +224,7 @@ TRANSLATIONS = {
         "EXIT_NOFILE": "gem4xe: DESKTOP.PRG est absent",
         "EXIT_NODESK": "gem4xe: impossible de charger le bureau",
         "EXIT_ANYKEY": "Appuyez sur une touche pour redemarrer",
+        "ACCFULL": "[1][Certains accessoires n'ont|pas pu être chargés. Il y a|six emplacements, et la|mémoire peut en limiter|le nombre.][ OK ]",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -265,6 +270,7 @@ TRANSLATIONS = {
         "EXIT_NOFILE": "gem4xe: falta DESKTOP.PRG en el disco",
         "EXIT_NODESK": "gem4xe: no se pudo cargar el escritorio",
         "EXIT_ANYKEY": "Pulse una tecla para reiniciar",
+        "ACCFULL": "[1][No se pudieron cargar|todos los accesorios. Hay|seis espacios, y la memoria|puede admitir menos.][ OK ]",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -310,6 +316,7 @@ TRANSLATIONS = {
         "EXIT_NOFILE": "gem4xe: brak DESKTOP.PRG na dysku",
         "EXIT_NODESK": "gem4xe: nie mozna wczytac pulpitu",
         "EXIT_ANYKEY": "Nacisnij klawisz, aby zaczac od nowa",
+        "ACCFULL": "[1][Nie wszystkie akcesoria|udało się wczytać. Jest|sześć miejsc, a pamięci|może wystarczyć na mniej.][ OK ]",
     },
 }
 

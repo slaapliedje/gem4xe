@@ -663,6 +663,11 @@ ACC_OBJS   = $(G4A_LIB) build/app/m28_acc.o
 # near constants, and 128 left six bytes free.
 $(eval $(call g4a,m28_acc,$(ACC_OBJS),1152,160,384,,))
 
+# The window gate accessory (src/m45_acc.c, test-m45): seven copies of it
+# on one disk, so it is as small as an accessory can be built.
+ACC45_OBJS = $(G4A_LIB) build/app/m45_acc.o
+$(eval $(call g4a,m45_acc,$(ACC45_OBJS),768,160,384,,))
+
 # The shipped applications (src/apps): the first programs written to the
 # application ABI that are not tests.  Each is one C file, one resource
 # built on the host, and the same three-way link every .g4a takes.
@@ -1409,6 +1414,16 @@ build/gem-shots.atr: $(SP_DEPS)
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) $(SP_LAYOUT) $(SP_APPS)
 
+# The accessory slots' and windows' gate's disk (test-m45): the product
+# system and SEVEN copies of the window gate accessory, and nothing else
+# in \GEM\ that is an accessory -- six slots, so the seventh must be
+# turned away (docs/phase103.md).
+ACC45_FILES = $(foreach n,1 2 3 4 5 6 7,--add build/m45_acc.g4a "GEM>A$(n).ACC")
+build/m45-boot.atr: build/gem.xex build/deskicon.rsc build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) build/m45_acc.g4a tools/mkspdisk.py tools/atr.py
+	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) $(SP_LAYOUT) $(ACC45_FILES)
+
 # The persistence gate's disk (test-m36): the product disk, plus a
 # GENERAL.CFG that says what a person saved LAST time.  The bytes are the
 # module's own (src/apps/general.c: a mark, the double-click rate, the
@@ -1657,7 +1672,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-boot test-install g4bench
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-boot test-install g4bench
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1995,6 +2010,9 @@ test-m43: build/gem-shots.atr
 test-m44: build/gem-shots.atr
 	python3 tests/emu/m44_cpanel.py
 
+test-m45: build/m45-boot.atr build/m45_acc.sym build/calc.sym build/desktop.sym
+	python3 tests/emu/m45_accwin.py
+
 test-m22: build/m22-boot.atr build/calc.sym build/clock.sym
 	python3 tests/emu/m22_apps.py
 
@@ -2232,4 +2250,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 sd demo movie bench emu-stop clean

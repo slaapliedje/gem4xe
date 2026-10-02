@@ -762,6 +762,9 @@ void wm_update(WORD beg_update);
 struct PROC;
 WORD wm_lock(WORD mode);        /* wind_update from a program: a lock */
 WORD wm_lockfree(const struct PROC *p); /* could p take it now? */
+/* Who a message about window wh goes to: the process that created it
+ * (WF_OWNER), or the application when that process is gone. */
+struct PROC *wm_owner(WORD wh);
 /* wind_new (109): the windows, the locks and the pointer's hide count
  * put back as a program found them.  See the body. */
 void wm_new(void);

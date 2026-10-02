@@ -900,6 +900,21 @@ static WORD w_union(const ORECT FAR *po, GRECT *pt)
     return TRUE;
 }
 
+/* WHO HEARS ABOUT A WINDOW: the process that created it.  Every WM_
+ * message went to the application until phase 103, whoever owned the
+ * window -- so an accessory's own window was redrawn, topped, moved and
+ * closed by the desktop's handlers, which knew nothing of it, and the
+ * accessory heard nothing.  The donor sends to the window's owner
+ * (gemwmlib.c, w_redraw's ap_sendmsg to D.w_win[w_handle].w_owner); an
+ * owner that is no longer a process -- a record given back -- falls to
+ * the application, which is what every message did before. */
+PROC *wm_owner(WORD wh)
+{
+    PROC *p = proc_of(gl_win[wh].w_owner);
+
+    return p ? p : proc_app;
+}
+
 /* Send window wh a WM_REDRAW for the part of pt inside its work area
  * that it can see. */
 static void w_redraw(WORD wh, const GRECT *pt)
@@ -911,7 +926,7 @@ static void w_redraw(WORD wh, const GRECT *pt)
     if (rc_intersect(&t, &d) &&
         w_union(gl_win[wh].w_rlist, &d) &&
         rc_intersect(&d, &t)) {
-        ap_sendmsg(proc_app, WM_REDRAW, wh, t.g_x, t.g_y, t.g_w, t.g_h);
+        ap_sendmsg(wm_owner(wh), WM_REDRAW, wh, t.g_x, t.g_y, t.g_w, t.g_h);
     }
 }
 
@@ -1702,7 +1717,7 @@ void w_look(void)
         wm_calc(WC_WORK, pwin->w_kind, t.g_x, t.g_y, t.g_w, t.g_h,
                 &pwin->w_work.g_x, &pwin->w_work.g_y,
                 &pwin->w_work.g_w, &pwin->w_work.g_h);
-        ap_sendmsg(proc_app, WM_SIZED, wh, t.g_x, t.g_y, t.g_w, t.g_h);
+        ap_sendmsg(wm_owner(wh), WM_SIZED, wh, t.g_x, t.g_y, t.g_w, t.g_h);
     }
     w_setactive();
 }

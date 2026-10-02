@@ -38,7 +38,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 |---|---|---|---|
 | Multitasking | single-tasking TOS; MultiTOS and MagiC multitask | single-tasking, as TOS: the desktop, one program, and the desk accessories | `src/aes/shel.c` |
 | `Pexec` | load and go, load, go, create a basepage | mode 0, load and go, only; the environment is not passed | `src/sys/gemdos.c` |
-| Desk accessories | `*.ACC` in the boot drive's root | `*.ACC` in the system's folder (`\GEM\`), loaded once at boot, as many as the pool has room for, up to the Desk menu's six | `src/aes/shel.c` |
+| Desk accessories | `*.ACC` in the boot drive's root | `*.ACC` in the system's folder (`\GEM\`), loaded once at boot, as many as the pool has room for, up to the Desk menu's six; one more than that, or one with no room, is left out **and an alert says so** before the desktop starts, where TOS says nothing | `src/aes/shel.c` |
 | The AUTO folder | `\AUTO\` | `\GEM\AUTO\`.  `Ptermres` keeps all of a program or none of it, and a `.TTP` is not run from there | `src/aes/shel.c`, `tools/sdk/README.md` |
 | Control panel modules | Atari's XCONTROL `.CPX` | gem4xe's own control panel and module interface, in the same shape; a module is built with the kit | `src/apps/cpanel.c`, `tools/sdk/cpx.c` |
 | A DOS prompt | -- | `Psystem`, GEMDOS `0x1F0`, gem4xe's own: a command line run by SpartaDOS X, its output captured | `src/sys/gemdos.c` |

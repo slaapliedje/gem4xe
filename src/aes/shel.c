@@ -813,7 +813,12 @@ static void sh_accs(void)
     fd = cio_open(cio, CIO_A_DIR, 0);
     if (fd < 0)
         return;
-    while (n < NUM_PROCS - 1) {
+    /* THE WHOLE DIRECTORY, not the first six.  One past the slots used to
+     * stop the read, so a seventh accessory was never even seen -- left
+     * out with nothing said, and the person who copied it in left to
+     * wonder why it is not in the Desk menu.  Now it is counted with the
+     * ones that had no room, and sh_main says so (phase 103). */
+    for (;;) {
         uint16_t got = 0;
         uint8_t  st = cio_getrec(fd, line, sizeof line, &got);
 
@@ -824,8 +829,10 @@ static void sh_accs(void)
             break;
         if ((dos_dirline(line, got, fname, 0) & DOS_ENT_KIND) == DOS_ENT_FILE
             && dos_wildcmp("*." ACC_EXT, fname)) {
-            strcpy(names[n], fname);
-            n++;
+            if (n < NUM_PROCS - 1)
+                strcpy(names[n++], fname);
+            else
+                sh_accfull++;               /* past the six slots */
         }
         if (st == CIO_OK_EOF)
             break;
@@ -1014,6 +1021,12 @@ WORD sh_main(void)
             fm_alert(1, rc == APP_E_FILE   ? lang_str(LS_APPNOTFOUND)
                       : rc == APP_E_OLDSDK ? lang_str(LS_APPOLDSDK)
                       :                      lang_str(LS_APPNOTLOAD));
+        /* ...and before the first desktop, an accessory that was found
+         * and not loaded: past the six slots, or no room in the pool.
+         * TOS leaves it out silently; this says so once, at boot, on the
+         * bare desk (phase 103). */
+        else if (!sh_runs && sh_accfull)
+            fm_alert(1, lang_str(LS_ACCFULL));
         rc = sh_ldapp();
     } while (sh_doexec != 4);
     return rc ? rc : sh_runs;
