@@ -559,7 +559,9 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
         if (state & OUTLINED)
             gr_inside(&c, -3);
         else
-            gr_inside(&c, (WORD)((th < 0) ? 3 * th : -3 * th));
+            /* 3 * |th| outward, added up: a multiply here is the
+             * run-time library's, once an object drawn (phase 104) */
+            gr_inside(&c, (WORD)((th < 0) ? th + th + th : -(th + th + th)));
         if (!gsx_chkclip(&c))
             return;
     }

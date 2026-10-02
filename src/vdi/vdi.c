@@ -640,6 +640,14 @@ static void    *vwk_own[NUM_VWK];
 static WORD vwk_select(WORD h)
 {
     WORD i = (WORD)(h - 1);
+    /* THE ONE ALREADY CURRENT, which is nearly every call: answered from
+     * the live copy.  The table's own test below indexes an array of
+     * Vwks, which the compiler does with its run-time _Mul16 -- once a
+     * VDI call, a hundred a window opened and closed (phase 104).  The
+     * live copy's handle is 0 exactly when the table's is: a close
+     * zeroes the slot and makes the physical one current. */
+    if (i == vwk_cur && vwk.handle)
+        return 1;
     if (h < 1 || h > NUM_VWK || vwk_tab[i].handle == 0)
         return 0;
     if (i != vwk_cur) {

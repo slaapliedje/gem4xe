@@ -740,6 +740,24 @@ extern OBJECT FAR *gl_wtree;            /* the window tree: W_TREE[NUM_WIN] */
 extern OBJECT FAR *gl_awind;            /* the frame being drawn: W_ACTIVE[] */
 extern WORD    gl_wtop;             /* the top window, NIL for none */
 extern WINDOW  gl_win[NUM_WIN];
+/* k * n for a constant n under 256, as shifts and adds: one term for each
+ * bit of n, the rest folded away.  For an array of records whose size is
+ * not a power of two -- the compiler indexes those with its run-time
+ * _Mul16.  n is sizeof as the CODE sees it, which is the stride the
+ * compiler steps by: a constant expression's sizeof may be the size
+ * padded to four (B7), and a check written as one would lie. */
+#define MUL_BY(k, n) ((((n) & 0x01) ? (k) : 0) + (((n) & 0x02) ? (k) << 1 : 0) \
+    + (((n) & 0x04) ? (k) << 2 : 0) + (((n) & 0x08) ? (k) << 3 : 0) \
+    + (((n) & 0x10) ? (k) << 4 : 0) + (((n) & 0x20) ? (k) << 5 : 0) \
+    + (((n) & 0x40) ? (k) << 6 : 0) + (((n) & 0x80) ? (k) << 7 : 0))
+
+/* &gl_win[h], without the multiply: it was 9% of opening and closing a
+ * window, through the rectangle walks that ask for a window's list every
+ * time (phase 104). */
+static inline WINDOW *w_win(WORD h)
+{
+    return (WINDOW *)((char *)gl_win + MUL_BY((uint16_t)h, sizeof(WINDOW)));
+}
 extern OBJECT FAR *gl_newdesk;          /* the desktop tree, if one is installed */
 extern WORD    gl_newroot;
 extern GRECT   gl_rzero;

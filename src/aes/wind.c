@@ -283,7 +283,7 @@ static ORECT FAR *brkrct(const ORECT FAR *new, ORECT FAR *r,
 /* Break every rectangle in window wh's list around gl_mkrect. */
 static void mkrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
 {
-    WINDOW *pwin = &gl_win[wh];
+    WINDOW *pwin = w_win(wh);
     ORECT FAR *p, *r;
 
     (void)tree; (void)sx; (void)sy;
@@ -321,7 +321,7 @@ static void mkrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
  * out of it by the windows above it calling this in turn). */
 static void newrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
 {
-    WINDOW *pwin = &gl_win[wh];
+    WINDOW *pwin = w_win(wh);
     ORECT FAR *r, *new;
 
     (void)sx; (void)sy;
@@ -360,7 +360,7 @@ static void w_nilit(WORD num, OBJECT olist[])
 
 static void w_setup(WORD w_handle, WORD kind)
 {
-    WINDOW *pwin = &gl_win[w_handle];
+    WINDOW *pwin = w_win(w_handle);
 
     pwin->w_flags = VF_INUSE;
     pwin->w_kind = (UWORD)kind;
@@ -373,7 +373,7 @@ static void w_setup(WORD w_handle, WORD kind)
 
 static GRECT *w_getxptr(WORD which, WORD w_handle)
 {
-    WINDOW *pwin = &gl_win[w_handle];
+    WINDOW *pwin = w_win(w_handle);
 
     switch (which) {
     case WS_CURR:
@@ -425,7 +425,7 @@ static void do_walk(WORD wh, OBJECT FAR *tree, WORD obj, WORD depth, GRECT *pc)
         rc_intersect(&gl_rfull, pc);
     else
         pc = &gl_rfull;
-    for (po = gl_win[wh].w_rlist; po; po = po->o_link) {
+    for (po = w_win(wh)->w_rlist; po; po = po->o_link) {
         t = po->o_gr;
         if (rc_intersect(pc, &t)) {
             gsx_sclip(&t);
@@ -770,7 +770,7 @@ void w_bldactive(WORD w_handle)
 
     if (w_handle == NIL)
         return;
-    pw = &gl_win[w_handle];
+    pw = w_win(w_handle);
     istop = (gl_wtop == w_handle);
     kind = (WORD)pw->w_kind;
     w_nilit(NUM_ELEM, W_ACTIVE);
@@ -782,6 +782,7 @@ void w_bldactive(WORD w_handle)
             W_ACTIVE[tempw].ob_spec = gl_waspec[tempw];
     }
     gl_ainfo.te_color = UNTOPPED_COLOR;
+    W_ACTIVE[W_TITLE].ob_type = G_BOX;          /* and see the title bar */
 
     w_ptext(&gl_aname, pw->w_pname);
     w_ptext(&gl_ainfo, pw->w_pinfo);
@@ -817,6 +818,17 @@ void w_bldactive(WORD w_handle)
             w_adjust(W_TITLE, W_NAME, t.g_x, t.g_y, tempw, gl_hbox);
             W_ACTIVE[W_NAME].ob_state = istop ? NORMAL : DISABLED;
             gl_aname.te_color = istop ? TOPPED_COLOR : UNTOPPED_COLOR;
+            /* WITH A NAME THE BAR IS TILED: closer, name and fuller side
+             * by side, each drawing every pixel of its own box in
+             * replace mode, border and fill.  The bar's own outline and
+             * white fill underneath them were drawn to be painted over,
+             * a box and a fill each time a frame was drawn, so the bar
+             * draws nothing now (phase 104).  Not in 3D, where it is the
+             * ground in the gaps between them. */
+            if (tempw > 0) {
+                W_ACTIVE[W_TITLE].ob_type = G_IBOX;
+                W_ACTIVE[W_TITLE].ob_spec = 0;
+            }
         }
         t.g_x = 0;
         t.g_y = (WORD)(t.g_y + gl_hbox - 1);
@@ -910,7 +922,7 @@ static WORD w_union(const ORECT FAR *po, GRECT *pt)
  * the application, which is what every message did before. */
 PROC *wm_owner(WORD wh)
 {
-    PROC *p = proc_of(gl_win[wh].w_owner);
+    PROC *p = proc_of(w_win(wh)->w_owner);
 
     return p ? p : proc_app;
 }
@@ -924,7 +936,7 @@ static void w_redraw(WORD wh, const GRECT *pt)
     t = *pt;
     w_getsize(WS_WORK, wh, &d);
     if (rc_intersect(&t, &d) &&
-        w_union(gl_win[wh].w_rlist, &d) &&
+        w_union(w_win(wh)->w_rlist, &d) &&
         rc_intersect(&d, &t)) {
         ap_sendmsg(wm_owner(wh), WM_REDRAW, wh, t.g_x, t.g_y, t.g_w, t.g_h);
     }
@@ -1033,12 +1045,13 @@ void w_update(WORD bottom, GRECT *pt, WORD top, WORD moved)
  * for a plain move of the top window, the frame alone for a change of
  * top, otherwise a redraw of the union of old and new from wherever in
  * the stack it starts to matter. */
+static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr);
+
 static void draw_change(WORD wh, const GRECT *pt)
 {
-    GRECT c, pprev;
-    WORD start, stop, moved;
-    WORD oldtop, clrold, wasclr;
-    WINDOW *pwin = &gl_win[wh];
+    GRECT c;
+    WORD wasclr;
+    WINDOW *pwin = w_win(wh);
 
     wasclr = !(pwin->w_flags & VF_BROKEN);
     w_getsize(WS_CURR, wh, &c);
@@ -1049,6 +1062,25 @@ static void draw_change(WORD wh, const GRECT *pt)
             &pwin->w_work.g_w, &pwin->w_work.g_h);
     if (!(pwin->w_flags & VF_ISOPEN))
         return;
+
+    /* THE POINTER IS HIDDEN ONCE for everything below.  Each object
+     * drawing hides and shows it itself (ob_draw), and the old top's
+     * frame is drawn rectangle by rectangle outside w_update's own hide:
+     * five times taking the pointer off the screen and putting it back,
+     * with the pixels under it saved again each time, for one window
+     * opened.  The hide nests, so theirs cost nothing inside this one
+     * (phase 104). */
+    gsx_moff();
+    draw_change2(wh, pt, &c, wasclr);
+    gsx_mon();
+}
+
+/* draw_change's second half: everything after the rectangle lists. */
+static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr)
+{
+    GRECT c = *pc, pprev;
+    WORD start, stop, moved;
+    WORD oldtop, clrold;
 
     everyobj(gl_wtree, ROOT, NIL, newrect, 0, 0, MAX_DEPTH);
     oldtop = gl_wtop;
@@ -1065,7 +1097,7 @@ static void draw_change(WORD wh, const GRECT *pt)
                 return;
             if (oldtop != NIL) {
                 w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE);
-                clrold = !(gl_win[oldtop].w_flags & VF_BROKEN);
+                clrold = !(w_win(oldtop)->w_flags & VF_BROKEN);
             } else {
                 clrold = TRUE;
             }
@@ -1154,8 +1186,8 @@ void wm_init(void)
         W_TREE[i].ob_spec = 0;
         W_TREE[i].ob_x = W_TREE[i].ob_y = 0;
         W_TREE[i].ob_width = W_TREE[i].ob_height = 0;
-        gl_win[i].w_flags = 0;
-        gl_win[i].w_rlist = 0;
+        w_win(i)->w_flags = 0;
+        w_win(i)->w_rlist = 0;
     }
     w_nilit(NUM_WIN, W_TREE);
     W_TREE[ROOT].ob_type = G_BOX;
@@ -1176,7 +1208,7 @@ void wm_init(void)
     po = get_orect();
     po->o_link = 0;
     po->o_gr = gl_rfull;
-    gl_win[DESKWH].w_rlist = po;
+    w_win(DESKWH)->w_rlist = po;
     w_setup(DESKWH, 0);
     w_setsize(WS_CURR, DESKWH, &gl_rscreen);
     w_setsize(WS_PREV, DESKWH, &gl_rscreen);
@@ -1204,7 +1236,7 @@ WORD wm_create(WORD kind, const GRECT *pt)
     WORD i;
 
     for (i = 0; i < NUM_WIN; i++) {
-        if (!(gl_win[i].w_flags & VF_INUSE)) {
+        if (!(w_win(i)->w_flags & VF_INUSE)) {
             w_setup(i, kind);
             w_setsize(WS_CURR, i, &gl_rzero);
             w_setsize(WS_PREV, i, &gl_rzero);
@@ -1219,9 +1251,9 @@ static WINDOW *get_pwin(WORD w_handle)
 {
     if (w_handle < 0 || w_handle >= NUM_WIN)
         return 0;
-    if (!(gl_win[w_handle].w_flags & VF_INUSE))
+    if (!(w_win(w_handle)->w_flags & VF_INUSE))
         return 0;
-    return &gl_win[w_handle];
+    return w_win(w_handle);
 }
 
 WORD wm_open(WORD w_handle, const GRECT *pt)
@@ -1644,9 +1676,9 @@ void wm_new(void)
         wu_count = 0;
     }
     for (wh = 1; wh < NUM_WIN; wh++) {
-        if (gl_win[wh].w_flags & VF_ISOPEN)
+        if (w_win(wh)->w_flags & VF_ISOPEN)
             wm_close(wh);
-        if (gl_win[wh].w_flags & VF_INUSE)
+        if (w_win(wh)->w_flags & VF_INUSE)
             wm_delete(wh);
     }
     gsx_mreset();
@@ -1712,7 +1744,7 @@ void w_look(void)
 
     for (wh = W_TREE[ROOT].ob_head; wh != NIL && wh != ROOT;
          wh = W_TREE[wh].ob_next) {
-        pwin = &gl_win[wh];
+        pwin = w_win(wh);
         w_getsize(WS_CURR, wh, &t);
         wm_calc(WC_WORK, pwin->w_kind, t.g_x, t.g_y, t.g_w, t.g_h,
                 &pwin->w_work.g_x, &pwin->w_work.g_y,

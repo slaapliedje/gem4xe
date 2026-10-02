@@ -17,7 +17,7 @@ call on the emulated Rapidus, from the 0.11 release build.
 | 2 | **Filled curves and polygons**, measured again after 1: circles, ellipses, polygons, rounded boxes | 106 / 84 / 68 / 54 | 87 / 72 / 53 / 40 | **done**, phase 93: 69 / 56 / 44 / 37 and 49 / 44 / 28 / 23 |
 | 3 | **Screen to memory and back on VBXE**: five times ANTIC's | 113 | 23 | |
 | 4 | **Bold text at twice plain**: the thickening pass is a second whole glyph | 31 vs 16 | 34 vs 9 | |
-| 5 | **A dialog, and a window opened and closed**; and the 3D frame, which costs a window open about 40 ms on the desktop (`docs/phase88.md`) | 38, 74 | 45, 85 | |
+| 5 | **A dialog, and a window opened and closed**; and the 3D frame, which costs a window open about 40 ms on the desktop (`docs/phase88.md`) | 38, 74 | 45, 85 | **done**, phase 104: 26, 62 and 32, 72; the 3D frame 91 to 83 |
 | 6 | **Programs packed** as GEM.COM is (G4Z, phase 57): QED is 328 KB unpacked, which is load time on every run and why it has no floppy of its own | | | **done**, phase 94: the desktop 211 sectors to 109, the DOS 2 floppy 14 free to 114 |
 
 ## Stability

@@ -102,7 +102,7 @@ void ct_arrow_stop(void)
 {
     ct_held = FALSE;
     if (ct_pressed) {                   /* the arrow comes back up */
-        if (ct_wh == gl_wtop && (gl_win[ct_wh].w_flags & VF_ISOPEN)) {
+        if (ct_wh == gl_wtop && (w_win(ct_wh)->w_flags & VF_ISOPEN)) {
             w_bldactive(ct_wh);
             ct_show(ct_wh, ct_pressed, NORMAL);
         } else {
@@ -116,7 +116,7 @@ void ct_arrow_stop(void)
 static void hctl_window(WORD wh, WORD mx, WORD my)
 {
     GRECT   t, f;
-    WINDOW *pwin = &gl_win[wh];
+    WINDOW *pwin = w_win(wh);
     WORD    x, y, w, h;
     WORD    wm, hm;
     WORD    elev_x, elev_y;

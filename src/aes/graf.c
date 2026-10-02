@@ -609,13 +609,48 @@ void gr_inside(GRECT *pt, WORD th)
 
 /* A border th pixels thick around (x,y,w,h), in the current line colour.
  * GEM's sign convention: positive grows inward from the rectangle, negative
- * outward.  Drawn as |th| nested one-pixel outlines. */
+ * outward.  The donor draws |th| nested one-pixel outlines (and one more
+ * outward, the rectangle's own edge).
+ *
+ * A BORDER OF MORE THAN ONE IS FOUR SOLID BARS here, the same pixels in
+ * four blits where the outlines took four a pixel of thickness -- a
+ * default button's four outlines were sixteen.  On the VBXE every blit is
+ * a control block written to VRAM over the slow bus, so the count is the
+ * cost (phase 104).  Only in replace mode, where pixels drawn twice and
+ * once are the same, and only when the innermost outline is a real box:
+ * the bars are the frame between the outer box and the hole inside the
+ * innermost one, which is what the outlines' union is only then.  The
+ * fill colour is left as the line colour; everything after that fills in
+ * a colour sets its own (gr_rect, the shadow, DISABLED), and XOR, the one
+ * fill that does not, ignores the pen (src/vdi/vdi.c paint_rect). */
 void gr_box(WORD x, WORD y, WORD w, WORD h, WORD th)
 {
     GRECT t, n;
+    WORD k;
 
     r_set(&t, x, y, w, h);
     if (th != 0) {
+        k = (th > 0) ? th : (WORD)(1 - th);     /* outlines drawn */
+        n = t;
+        if (th < 0)
+            gr_inside(&n, th);                  /* the outermost */
+        if (k > 1 && gl_mode == MD_REPLACE
+            && n.g_w - 2 * (k - 1) >= 1 && n.g_h - 2 * (k - 1) >= 1) {
+            WORD side = (WORD)(n.g_h - 2 * k);
+            gsx_moff();
+            gsx_fcolor(gl_lcolor);
+            bb_fill(MD_REPLACE, FIS_SOLID, gl_patt, n.g_x, n.g_y, n.g_w, k);
+            bb_fill(MD_REPLACE, FIS_SOLID, gl_patt, n.g_x,
+                    (WORD)(n.g_y + n.g_h - k), n.g_w, k);
+            if (side > 0) {
+                bb_fill(MD_REPLACE, FIS_SOLID, gl_patt, n.g_x,
+                        (WORD)(n.g_y + k), k, side);
+                bb_fill(MD_REPLACE, FIS_SOLID, gl_patt,
+                        (WORD)(n.g_x + n.g_w - k), (WORD)(n.g_y + k), k, side);
+            }
+            gsx_mon();
+            return;
+        }
         if (th < 0)
             th--;
         gsx_moff();
