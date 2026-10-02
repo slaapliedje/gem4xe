@@ -65,7 +65,7 @@ APP_OK = 0
 REC_WORDS = vdiref.RESULT_WORDS
 FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
 # AES calls src/m11_app.c makes WITHOUT a record_aes(): five objc_sysvar
-# probes, three appl_find ones, six appl_getinfo ones and one
+# probes, three appl_find ones, seven appl_getinfo ones and one
 # appl_yield, and one graf_mbox -- which is here for the dispatch case
 # rather than for an answer, and whose real check is that the screen
 # below still matches the model.  They are deliberately outside
@@ -74,7 +74,7 @@ FOREIGN_REFUSED = 0x1234        # src/m11_cop.s: Y as it went in
 # fixes rather than behaviour a model computes.  They still cost a COP
 # each, so the reconciliation below has to know how many -- naming them
 # keeps it able to catch a call nobody meant to make.
-UNRECORDED_AES = 5 + 3 + 6 + 1 + 1
+UNRECORDED_AES = 5 + 3 + 7 + 1 + 1
 FOREIGN_OS = -110               # Rapidus OS: an unassigned kmem function
 PROFILE_OS = os.path.join(ROOT, "build", "altirra-m11os")
 
@@ -368,6 +368,12 @@ def main(argv):
         # colours on this device.  Then colour icons, which this
         # sixteen-colour screen draws in colour (phase 86; the answer said
         # 0 until phase 91), and yes to the extended resource format.
+        # WF_BOTTOM set, bit 6, and nothing else: wind_set sends a window
+        # to the bottom since phase 98, and every other bit would send a
+        # program to a field this AES does not serve (src/aes/appl.c)
+        winw = words("ag_win")
+        check(winw == [1, 64, 0, 0, 0],
+              f"appl_getinfo(AES_WINDOW) answered {winw}, not [1, 64, 0, 0, 0]")
         print(f"  appl_getinfo(AES_SYSTEM) -> {sysw}")
         check(sysw == [1, -1, 16, 1, 1],
               f"appl_getinfo(AES_SYSTEM) answered {sysw}, not [1, -1, 16, 1, 1] "

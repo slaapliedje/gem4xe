@@ -175,13 +175,13 @@ draws nothing, which is what an application expects of it.
 
 ## wind_get and wind_set fields
 
-**14 answered by wind_get, 9 taken by wind_set**, out of the fields EmuTOS's `aesdefs.h` and the kit's `gem.h` name.  From the `case` labels of `wm_get` and `wm_set` (`src/aes/wind.c`).  A field a call does not take makes it return 0, which is failure.
+**17 answered by wind_get, 10 taken by wind_set**, out of the fields EmuTOS's `aesdefs.h` and the kit's `gem.h` name.  From the `case` labels of `wm_get` and `wm_set` (`src/aes/wind.c`).  A field a call does not take makes it return 0, which is failure.
 
 | field | name | wind_get | wind_set |
 |---|---|---|---|
-| 1 | `WF_KIND` | -- | -- |
-| 2 | `WF_NAME` | -- | yes |
-| 3 | `WF_INFO` | -- | yes |
+| 1 | `WF_KIND` | yes | -- |
+| 2 | `WF_NAME` | yes | yes |
+| 3 | `WF_INFO` | yes | yes |
 | 4 | `WF_WORKXYWH` | yes | -- |
 | 5 | `WF_CURRXYWH` | yes | yes |
 | 6 | `WF_PREVXYWH` | yes | -- |
@@ -198,7 +198,7 @@ draws nothing, which is what an application expects of it.
 | 18 | `WF_COLOR` | -- | -- |
 | 19 | `WF_DCOLOR` | -- | -- |
 | 20 | `WF_OWNER` | yes | -- |
-| 25 | `WF_BOTTOM` | yes | -- |
+| 25 | `WF_BOTTOM` | yes | yes |
 
 ## appl_getinfo subjects
 

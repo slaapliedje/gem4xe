@@ -253,16 +253,15 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_WINDOW:
-        /* Every bit of this is 0, and each for a reason worth keeping:
-         * WF_TOP answers one word and not the window below it too;
-         * WF_NEWDESK is set-only, so wind_get refuses it; there are no
-         * per-window colours (WF_COLOR/WF_DCOLOR) and no WF_BEVENT; and
-         * the two gem4xe does serve are HALF each -- WF_OWNER is
-         * wind_get only and bit 4 asks for get AND set, WF_BOTTOM is
-         * wind_get only and bit 6 asks for the SET.  Claiming either
-         * would send a program to a wind_set that answers FALSE.
-         * No iconifier, no bottomer, no shift-click-to-bottom, no hot
-         * close box. */
+        /* Bit 6, WF_BOTTOM set, since phase 98; every other bit 0, each
+         * for a reason worth keeping: WF_TOP answers one word and not
+         * the window below it too; WF_NEWDESK is set-only, so wind_get
+         * refuses it; there are no per-window colours (WF_COLOR/
+         * WF_DCOLOR) and no WF_BEVENT; and WF_OWNER is wind_get only,
+         * where bit 4 asks for get AND set -- claiming it would send a
+         * program to a wind_set that answers FALSE.  No iconifier, no
+         * bottomer gadget, no shift-click-to-bottom, no hot close box. */
+        *out1 = 1 << 6;
         break;
 
     case AI_MESSAGE:

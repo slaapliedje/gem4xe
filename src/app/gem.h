@@ -549,8 +549,9 @@ typedef struct userblk {
  * port that asks unguarded is better served with the truth than with a
  * refusal.  WF_OWNER: the owner's ap_id, the open status, and the
  * handles directly above and below it -- 0 (the desk) for neither.
- * WF_BOTTOM is wind_GET only; wind_set(WF_BOTTOM), which would send a
- * window to the bottom, is not served. */
+ * wind_set(WF_BOTTOM) sends a window to the bottom, and the window now
+ * on top becomes the top one (since gem4xe 0.12; appl_getinfo(AES_WINDOW)
+ * bit 6 says so). */
 #define WF_OWNER    20
 #define WF_BOTTOM   25
 /* WM_ARROWED's word 4 */

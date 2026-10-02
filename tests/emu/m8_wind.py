@@ -171,6 +171,32 @@ def case_two(L, s):
     ] + rects(1, 3) + mesag(2) + [timeout()]
 
 
+def case_bottom(L, s):
+    """WF_BOTTOM, and wind_get's WF_KIND, WF_NAME and WF_INFO (phase 98):
+    three windows stacked; the top one sent to the back, so what the two
+    above it covered is theirs to redraw and the middle one becomes the
+    top; then one already at the back, which changes nothing."""
+    return [
+        create(ALL), wopen(1, 60, 40, 400, 150),
+        setaddr(1, WF_NAME, L.text("Back")),
+        create(NAME | MOVER), wopen(2, 160, 80, 300, 120),
+        setaddr(2, WF_NAME, L.text("Middle")),
+        create(NAME | MOVER | INFO), wopen(3, 260, 110, 300, 100),
+        setaddr(3, WF_NAME, L.text("Front")),
+        setaddr(3, WF_INFO, L.text("sent to the back")),
+    ] + mesag(3) + [
+        get(3, WF_KIND), get(3, WF_NAME), get(3, WF_INFO), get(1, WF_KIND),
+        get(0, WF_TOP), get(0, WF_BOTTOM),
+        wset(3, WF_BOTTOM),
+        get(0, WF_TOP), get(0, WF_BOTTOM),
+        get(1, WF_OWNER), get(2, WF_OWNER), get(3, WF_OWNER),
+    ] + rects(1, 3) + rects(2, 2) + rects(3, 3) + mesag(3) + [
+        timeout(),                              # a redraw each, and no more
+        wset(3, WF_BOTTOM),                     # already at the back
+        get(0, WF_BOTTOM),
+    ] + [timeout()]
+
+
 def case_move(L, s):
     # The dialog drawn inside the window is what the blit has to carry.
     return [
@@ -649,6 +675,7 @@ def case_new(L, s):
 CASES = [
     ("wind_calc, create and open: the frame, the lists, WM_REDRAW", case_open),
     ("two windows: rectangle lists, WF_TOP, the redraw messages", case_two),
+    ("WF_BOTTOM; WF_KIND, WF_NAME and WF_INFO answered", case_bottom),
     ("moves: an odd x snaps and blits, off the edge clips, back redraws", case_move),
     ("sizes, wind_find, close and delete: uncovers", case_size),
     ("WF_NAME, WF_INFO and the sliders", case_sliders),

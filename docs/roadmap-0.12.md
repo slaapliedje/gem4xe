@@ -27,7 +27,7 @@ call on the emulated Rapidus, from the 0.11 release build.
 | 7 | **A click made while a program is busy is lost**: queue the button's changes in the interrupt, as the ST does, rather than sampling it | **done**, phase 95 |
 | 8 | **MyDOS 4.50: Quit and DOS commands stall** on the way back to MyDOS | |
 | 9 | **The Control Panel after a live look switch** shows General's buttons until it closes: the panel's dialog is not redrawn | **done**, phase 97 |
-| 10 | **`wind_get` answers `WF_KIND`, `WF_NAME` and `WF_INFO`**, and **`wind_set(WF_BOTTOM)`** sends a window to the bottom (`docs/api.md`) | |
+| 10 | **`wind_get` answers `WF_KIND`, `WF_NAME` and `WF_INFO`**, and **`wind_set(WF_BOTTOM)`** sends a window to the bottom (`docs/api.md`) | **done**, phase 98 |
 | 11 | **The accessory slots proven**: the sixth loads, the seventh is refused and says so | |
 | 12 | **`WM_*` messages reach an accessory's own window**, gated | |
 | 13 | **SpartaDOS 3.2's root fallback in `Fdelete`**: its "is it still there?" open can find the root's file too (phase 65 fixed `Fopen`'s); and MyDOS measured for the same | |

@@ -57,6 +57,7 @@ WORD ag_font[5];                    /* AES_LARGEFONT */
 WORD ag_shell[5];                   /* AES_SHELL */
 WORD ag_obj[5];                     /* AES_OBJECT */
 WORD ag_sys[5];                     /* AES_SYSTEM */
+WORD ag_win[5];                     /* AES_WINDOW */
 WORD ay_ret;                        /* appl_yield's answer */
 WORD ag_lang;                       /* AES_LANGUAGE: the return alone */
 WORD ag_junk;                       /* a subject this AES does not know */
@@ -209,6 +210,8 @@ int main(void)
                                &ag_obj[3], &ag_obj[4]);
     ag_sys[0]   = appl_getinfo(AES_SYSTEM, &ag_sys[1], &ag_sys[2],
                                &ag_sys[3], &ag_sys[4]);
+    ag_win[0]   = appl_getinfo(AES_WINDOW, &ag_win[1], &ag_win[2],
+                               &ag_win[3], &ag_win[4]);
 
     /* appl_yield (17): somebody else's turn.  There IS nobody else here
      * -- one program, no accessory -- so what this proves is the half

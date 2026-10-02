@@ -1290,6 +1290,22 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds)
         return FALSE;
 
     switch (w_field) {
+    case WF_KIND:
+        /* Not in the Compendium's wind_get, but every later AES answers
+         * these three (MagiC, XaAES, N.AES): the components the window
+         * was created with, and the title's and the info line's address
+         * as wind_set took it -- high word first, as WF_NEWDESK answers
+         * -- whole, so a large-data program's far string comes back far
+         * (phase 98). */
+        poutwds[0] = (WORD)pwin->w_kind;
+        break;
+    case WF_NAME:
+    case WF_INFO: {
+        uint32_t a = (w_field == WF_NAME) ? pwin->w_pname : pwin->w_pinfo;
+        poutwds[0] = (WORD)(a >> 16);
+        poutwds[1] = (WORD)a;
+        break;
+    }
     case WF_WXYWH:
     case WF_CXYWH:
     case WF_PXYWH:
@@ -1366,6 +1382,32 @@ static void wm_mktop(WORD w_handle)
     w_setsize(WS_PREV, w_handle, &p);
 }
 
+/* WF_BOTTOM (AES 4.0, Compendium p.460): window wh to the back -- first
+ * among the root's children, drawn first -- and whatever is now last is
+ * the top.  What the windows above it covered of it is theirs now, so its
+ * rectangle is redrawn from it upward, frames and WM_REDRAWs (w_update),
+ * and the new top's whole frame is drawn active, which it may need where
+ * it does not overlap.  An only window, or one already at the back, stays
+ * where it is (phase 98). */
+static void wm_mkbottom(WORD w_handle)
+{
+    GRECT t;
+    WORD oldtop = gl_wtop;
+
+    if (W_TREE[ROOT].ob_head == w_handle)
+        return;
+    ob_order(gl_wtree, w_handle, 0);
+    everyobj(gl_wtree, ROOT, NIL, newrect, 0, 0, MAX_DEPTH);
+    gl_wtop = W_TREE[ROOT].ob_tail;
+    w_setactive();
+    w_getsize(WS_CURR, w_handle, &t);
+    t.g_w = (WORD)(t.g_w + DROP_SHADOW_SIZE);
+    t.g_h = (WORD)(t.g_h + DROP_SHADOW_SIZE);
+    w_update(w_handle, &t, DESKWH, FALSE);
+    if (gl_wtop != oldtop && gl_wtop != NIL)
+        w_cpwalk(gl_wtop, 0, MAX_DEPTH, TRUE);
+}
+
 WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
 {
     WINDOW *pwin = get_pwin(w_handle);
@@ -1420,6 +1462,10 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
     case WF_TOP:
         if (w_handle != gl_wtop)
             wm_mktop(w_handle);
+        break;
+    case WF_BOTTOM:
+        if (pwin->w_flags & VF_ISOPEN)
+            wm_mkbottom(w_handle);
         break;
     case WF_NEWDESK:
         /* BOTH WORDS: high first, as the ST passes it.  This took only

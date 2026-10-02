@@ -61,7 +61,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 | | ST / EmuTOS | gem4xe | Where |
 |---|---|---|---|
 | Version | 1.40 (TOS 1.04) to 4.x | **1.40** in `global[0]`, and all 79 opcodes of AES 4's set served, `menu_popup`, `menu_attach` and `appl_getinfo` among them -- ask with `appl_getinfo`, not the version | [`api.md`](api.md) |
-| Window fields | the ST's | no `WF_COLOR` or `WF_DCOLOR`; `wind_get` does not answer `WF_KIND`, `WF_NAME` or `WF_INFO` | [`api.md`](api.md), `src/aes/wind.c` |
+| Window fields | the ST's | no `WF_COLOR` or `WF_DCOLOR`.  `wind_get` answers `WF_KIND`, `WF_NAME` and `WF_INFO` as MagiC and XaAES do -- the Compendium's lists none of them -- with an address high word first | [`api.md`](api.md), `src/aes/wind.c` |
 | Window position | any pixel | **x snaps to even**, because the blitter has no shifter: `wind_set(WF_CURRXYWH)` takes the snapped rectangle, and that is what `wind_get` answers | `src/aes/wind.c` |
 | The 3D look | TOS 4 always; EmuTOS when built so | **off by default**, on in the control panel's General module.  With it on, dialogs and window frames are raised on **grey** grounds where TOS 4's default gadgets are white, and a text a dialog prints on its ground gets no edge.  `objc_sysvar` answers for the look in force | `src/aes/objc.c`, `src/aes/wind.c` |
 | Colour icons | TOS 4 | drawn on the 16-colour screen, 4-plane forms up to 32 x 32; the mono form everywhere else | `src/aes/objc.c`, `src/aes/rsrc.c` |

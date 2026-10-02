@@ -3330,6 +3330,13 @@ class AES:
                  WF_PXYWH: WS_PREV, WF_FXYWH: WS_FULL}
         if field in sizes:
             out[:] = self.w_getsize(sizes[field], wh).tuple()
+        elif field == WF_KIND:
+            # not in the Compendium's wind_get; MagiC's and XaAES's answer
+            # (src/aes/wind.c, phase 98)
+            out[0] = pwin.w_kind
+        elif field in (WF_NAME, WF_INFO):
+            a = pwin.w_pname if field == WF_NAME else pwin.w_pinfo
+            out[0], out[1] = (a >> 16) & 0xFFFF, a & 0xFFFF
         elif field == WF_HSLIDE:
             out[0] = pwin.w_hslide
         elif field == WF_VSLIDE:
@@ -3371,6 +3378,24 @@ class AES:
         self.draw_change(wh, t)
         self.w_setsize(WS_PREV, wh, p)
 
+    def wm_mkbottom(self, wh):
+        """WF_BOTTOM (src/aes/wind.c wm_mkbottom): wh to the back, its
+        rectangle redrawn from it upward, the new top's frame active."""
+        W = self.W_TREE
+        oldtop = self.gl_wtop
+        if W[ROOT].ob_head == wh:
+            return
+        self.ob_order(W, wh, 0)
+        self.w_everyobj(ROOT, NIL, lambda obj, x, y: self.newrect(obj))
+        self.gl_wtop = W[ROOT].ob_tail
+        self.w_setactive()
+        t = self.w_getsize(WS_CURR, wh)
+        t.w += DROP_SHADOW_SIZE
+        t.h += DROP_SHADOW_SIZE
+        self.w_update(wh, t, DESKWH, False)
+        if self.gl_wtop != oldtop and self.gl_wtop != NIL:
+            self.w_cpwalk(self.gl_wtop, 0, MAX_DEPTH, True)
+
     def wm_set(self, wh, field, pinwds):
         pwin = self.get_pwin(wh)
         if pwin is None:
@@ -3402,6 +3427,9 @@ class AES:
         elif field == WF_TOP:
             if wh != self.gl_wtop:
                 self.wm_mktop(wh)
+        elif field == WF_BOTTOM:
+            if pwin.w_flags & VF_ISOPEN:
+                self.wm_mkbottom(wh)
         elif field == WF_NEWDESK:
             # both words, high first, as the ST passes it and as
             # src/aes/wind.c takes it -- a far tree needs the bank

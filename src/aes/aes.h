@@ -186,7 +186,7 @@ typedef struct {
 #define WF_COLOR    18
 #define WF_DCOLOR   19
 #define WF_OWNER    20
-#define WF_BOTTOM   25      /* wind_get only: wind_set(WF_BOTTOM) is not served */
+#define WF_BOTTOM   25      /* the bottom window; wind_set sends one there */
 
 /* wind_calc */
 #define WC_BORDER   0
