@@ -14,7 +14,7 @@ call on the emulated Rapidus, from the 0.11 release build.
 | | | VBXE | ANTIC | status |
 |---|---|---|---|---|
 | 1 | **The 32-bit multiply.**  The compiler's `_Mul32` is about 6,000 cycles, and three of them an iteration are why G4BENCH's 64 x 40 Mandelbrot takes 40 of its 60 seconds.  Our own, as `_Div16` and `_Mod16` already are (`--override`), for every program and the kit | Mandelbrot 40,070 | 46,564 | **done for programs**, phase 92: 17,356 and 19,308; GEM.COM keeps the library's |
-| 2 | **Filled curves and polygons**, measured again after 1: circles, ellipses, polygons, rounded boxes | 106 / 84 / 68 / 54 | 87 / 72 / 53 / 40 | |
+| 2 | **Filled curves and polygons**, measured again after 1: circles, ellipses, polygons, rounded boxes | 106 / 84 / 68 / 54 | 87 / 72 / 53 / 40 | **done**, phase 93: 69 / 56 / 44 / 37 and 49 / 44 / 28 / 23 |
 | 3 | **Screen to memory and back on VBXE**: five times ANTIC's | 113 | 23 | |
 | 4 | **Bold text at twice plain**: the thickening pass is a second whole glyph | 31 vs 16 | 34 vs 9 | |
 | 5 | **A dialog, and a window opened and closed**; and the 3D frame, which costs a window open about 40 ms on the desktop (`docs/phase88.md`) | 38, 74 | 45, 85 | |

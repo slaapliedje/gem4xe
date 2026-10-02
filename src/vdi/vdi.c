@@ -1047,11 +1047,55 @@ static void fill_span(WORD x1, WORD x2, WORD y)
  * `start` is the bottom scan line and `end` is one ABOVE the top one: the
  * loop stops before it, so a polygon does not paint its own topmost row.
  * That is the donor's rule, not a rounding accident, and a caller that
- * abuts two polygons depends on it. */
+ * abuts two polygons depends on it.
+ *
+ * The crossing is t * dx / dy in int32, truncated toward zero, which the
+ * compiler makes a _Mul32 and a _UDivMod32: a third of a filled circle.
+ * When every point is within +-16383 (flit_small), no difference
+ * overflows, |t| <= |dy| on a crossing edge, and so t * dx / dy is at
+ * most |dx| <= 65532: src/sys/muldiv.s does it in 16 bits, which is the
+ * same number bit for bit.  Anything larger takes the donor's arithmetic
+ * as it was. */
+#define FLIT_SMALL 16383
+
+/* the crossings of one scan line, filled in pairs */
+static void flit_row(WORD n, WORD y)
+{
+    WORD i;
+
+    if (n < 2)
+        return;
+    bub_sort(fill_buf, n);
+    for (i = 0; i + 1 < n; i += 2)
+        fill_span(fill_buf[i], fill_buf[i + 1], y);
+}
+
+/* clc_flit's small case: the same crossings in the same order, found by
+ * src/sys/muldiv.s's flit_scan.  Nothing can overflow, so the edge test
+ * is y1 <= y < y2 (or y2 <= y < y1), which is what the sign test means,
+ * and the crossing is done in 16 bits; tests/host/test_muldiv.py holds
+ * the assembly to this loop in C. */
+extern WORD flit_scan(const WORD *pt, WORD vectors, WORD y, WORD *out);
+
+static void flit_small(const WORD *pt, WORD vectors, WORD start, WORD end)
+{
+    WORD y;
+
+    for (y = start; y > end; y--)
+        flit_row(flit_scan(pt, vectors, y, fill_buf), y);
+}
+
 static void clc_flit(const WORD *pt, WORD vectors, WORD start, WORD end)
 {
     WORD y, i;
 
+    for (i = 0; i <= vectors * 2 + 1; i++)
+        if (pt[i] > FLIT_SMALL || pt[i] < -FLIT_SMALL)
+            break;
+    if (i > vectors * 2 + 1) {
+        flit_small(pt, vectors, start, end);
+        return;
+    }
     for (y = start; y > end; y--) {
         WORD n = 0;
 
@@ -1081,11 +1125,7 @@ static void clc_flit(const WORD *pt, WORD vectors, WORD start, WORD end)
                 }
             }
         }
-        if (n < 2)
-            continue;
-        bub_sort(fill_buf, n);
-        for (i = 0; i + 1 < n; i += 2)
-            fill_span(fill_buf[i], fill_buf[i + 1], y);
+        flit_row(n, y);
     }
 }
 

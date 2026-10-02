@@ -79,7 +79,7 @@ M27_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m24_antic.o build/antic.o build/font8x8.o
 # The VDI on the ANTIC device: the same vdi.c, compiled for the other
 # side of the seam and linked against dev_antic.o.
-M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m25_antic_vdi.o \
+M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/clib.o build/m25_antic_vdi.o \
              build/vdi.o build/dev_antic.o build/dev_print.o build/emit.o build/antic.o build/pointer.o \
              build/font8x8.o build/font6x6.o build/fillpat.o build/sintbl.o build/font.o \
              build/farmem.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
@@ -93,7 +93,7 @@ M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 # a page in far memory rather than a screen -- plus the emitters, which
 # are the only reason this milestone needs CIO.  No AES: nothing draws an
 # object tree onto paper here, so the stub answers for the call gate.
-M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m30_print.o \
+M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/clib.o build/m30_print.o \
              build/vdi.o build/dev_print.o build/emit.o build/pointer.o \
              build/font8x8.o build/fillpat.o build/sintbl.o build/font.o \
              build/farmem.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
@@ -103,7 +103,7 @@ M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
              build/wind.o build/ctrl.o build/menu.o build/form.o \
              build/alert.o build/gemdata.o build/lang.o build/lang_rsc.o \
              build/rsrc.o build/apppool.o
-M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
+M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
 
 # GEM.COM, the product (src/gem.c): the runner's objects with the runner
 # itself and its compiled-in test application taken out, linked on the
@@ -275,6 +275,10 @@ build/menu.o: src/aes/menu.c src/aes/aes.h src/vdi/vdi.h
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
 build/div16.o: src/sys/div16.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+
+build/muldiv.o: src/sys/muldiv.s
 	@mkdir -p build
 	$(AS) -o $@ $<
 

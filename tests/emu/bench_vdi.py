@@ -56,6 +56,14 @@ CASES = {
                     + [(V.V_SHOW_C, (), (0,)), (V.V_HIDE_C,)] * N, 2 * N),
     "vsc_form":    ([(V.VSC_FORM, (), m.cursor_form())] * N, N),
     "vswr_mode":   ([(V.VSWR_MODE, (), (1,))] * N, N),
+    # G4BENCH's curves (src/apps/g4bench.c), one at a time: a 5-tuple's
+    # last word is the GDP sub-function
+    "circle":      ([(V.VSF_INTERIOR, (), (1,))]
+                    + [(V.V_GDP, (320, 120, 0, 0, 60, 0), (), None, V.GDP_CIRCLE)] * N, N),
+    "ellipse":     ([(V.VSF_INTERIOR, (), (1,))]
+                    + [(V.V_GDP, (320, 120, 100, 50), (), None, V.GDP_ELLIPSE)] * N, N),
+    "rfbox":       ([(V.VSF_INTERIOR, (), (1,))]
+                    + [(V.V_GDP, (200, 60, 440, 180), (), None, V.GDP_RFBOX)] * N, N),
 }
 
 
@@ -180,6 +188,7 @@ def run(b, syms, ranges, place, label, script, ops, profile, top, by_function):
     full = [(V.V_OPNWK, (), V.WORK_IN), (m.V_CLRWK,)] + script
     resolved = [(r[0], r[1] if len(r) > 1 else (), r[2] if len(r) > 2 else (),
                  (True if r[3] == "icon" else None) if len(r) > 3 else None)
+                + ((r[4],) if len(r) > 4 else ())
                 for r in full]
     m.poke_script(b, sa, resolved, sc + 512, script_room, screen_mfdb=sc + 532)
     b.poke(STATUS + ST_DONE, 0)
@@ -255,7 +264,15 @@ def main(argv):
             b.key(k)
             b.frames(10)
         b.frames(200)
-        if bytes(b.memdump(STATUS, 3))[:2] != b"VD":
+        # ready is STATUS[2] == 1, polled for as m3_vdi does: how long the
+        # runner takes to start moves with the size of its image
+        for _ in range(200):
+            tag = bytes(b.memdump(STATUS, 3))
+            if tag[:2] == b"VD" and tag[2] == 1:
+                break
+            b.frames(4)
+        tag = bytes(b.memdump(STATUS, 3))
+        if tag[:2] != b"VD" or tag[2] != 1:
             print("FAIL: runner did not come up")
             return 1
         st = bytes(b.memdump(STATUS + 25, 5))
