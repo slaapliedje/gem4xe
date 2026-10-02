@@ -142,6 +142,8 @@ WORD proc_ready(const PROC *p)
         return TRUE;                /* it has never had its first turn */
     if (p->p_stat != P_LIVE)
         return FALSE;
+    if (p->p_evwait & EVW_UPDATE)   /* waiting for the screen: not before */
+        return wm_lockfree(p);      /* its holder lets it go */
     if (p == proc_input)
         return TRUE;                /* it can always look at the input */
     if (p->p_evwait == 0)

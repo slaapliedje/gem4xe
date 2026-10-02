@@ -759,6 +759,9 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds);
 WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds);
 WORD wm_find(WORD x, WORD y);
 void wm_update(WORD beg_update);
+struct PROC;
+WORD wm_lock(WORD mode);        /* wind_update from a program: a lock */
+WORD wm_lockfree(const struct PROC *p); /* could p take it now? */
 /* wind_new (109): the windows, the locks and the pointer's hide count
  * put back as a program found them.  See the body. */
 void wm_new(void);

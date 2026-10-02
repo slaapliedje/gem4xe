@@ -1476,7 +1476,8 @@ WORD wm_find(WORD x, WORD y)
     return ob_find(gl_wtree, ROOT, 2, x, y);
 }
 
-/* BEG/END_UPDATE hold off other processes' screen updates -- none here;
+/* BEG/END_UPDATE hold off other processes' screen updates (wm_lock,
+ * below, for a program's call; the AES's own calls only count);
  * BEG/END_MCTRL take the mouse from the window manager (fm_own). */
 /* Not static for the same reason ml_ocnt is not: wm_new unwinds it. */
 WORD wm_ucount;
@@ -1491,6 +1492,57 @@ void wm_update(WORD beg_update)
     } else {
         fm_own((WORD)(beg_update - 2));
     }
+}
+
+/* THE SCREEN LOCK BETWEEN PROCESSES (phase 97).  On GEM, a process that
+ * calls wind_update(BEG_UPDATE) while another holds it WAITS: that is how
+ * a desk accessory with a dialog up keeps every other program's redraw
+ * off the screen until it is done, since a dialog is not a window and no
+ * rectangle list knows to avoid it.  Here it was a count and nothing
+ * waited, and the desktop -- which takes BEG_UPDATE around its message
+ * handling -- repainted its windows over the Control Panel while the
+ * panel was still up, when General's OK redrew the whole screen.
+ *
+ * Only a PROGRAM's call is the lock (src/sys/abi.c, wind_update); the
+ * AES's own wm_update calls count as before, so nothing inside the AES
+ * can wait on it.  A waiter is parked as a wait is (p_evwait, EVW_UPDATE)
+ * and proc_ready does not give it a turn until the holder lets go.
+ * BEG_UPDATE | 0x100, AES 4's check-and-set, answers 0 instead of
+ * waiting. */
+/* On the direct page (TINY): LoRAM is at its 256-byte reserve and these
+ * four bytes took it under (tools/memreport.py), as ct_pressed did. */
+static struct PROC *TINY wu_owner;
+static TINY WORD wu_count;
+
+WORD wm_lockfree(const struct PROC *p)
+{
+    return wu_count == 0 || wu_owner == p;
+}
+
+WORD wm_lock(WORD mode)
+{
+    WORD what = (WORD)(mode & 0xFF);
+
+    if (what == BEG_UPDATE) {
+        if (!wm_lockfree(rlr)) {
+            WORD s_evwait = rlr->p_evwait;
+
+            if (mode & 0x100)
+                return 0;           /* check and set: it is taken */
+            while (!wm_lockfree(rlr)) {
+                rlr->p_evwait = EVW_UPDATE;
+                ev_poll();          /* the input, and the others' turns */
+            }
+            rlr->p_evwait = s_evwait;
+        }
+        wu_owner = rlr;
+        wu_count++;
+    } else if (what == END_UPDATE && wu_count && wu_owner == rlr) {
+        if (--wu_count == 0)
+            wu_owner = 0;
+    }
+    wm_update(what);
+    return 1;
 }
 
 /* wind_new (109): undo what a program left behind -- its windows, the
@@ -1526,6 +1578,10 @@ void wm_new(void)
         wm_update(END_MCTRL);
     while (wm_ucount > 0)
         wm_update(END_UPDATE);
+    if (wu_owner == rlr) {          /* ...and the lock, if it held it */
+        wu_owner = 0;
+        wu_count = 0;
+    }
     for (wh = 1; wh < NUM_WIN; wh++) {
         if (gl_win[wh].w_flags & VF_ISOPEN)
             wm_close(wh);

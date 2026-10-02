@@ -433,6 +433,14 @@ void cp_panel(void)
     tree[CPOK].ob_state = NORMAL;
     tree[CPCNCL].ob_state = NORMAL;
 
+    /* The screen is the panel's until it closes, as GEM asks of an
+     * accessory with a dialog up: a dialog is not a window, so nothing
+     * else's redraw knows to stay off it.  Without this, a look switched
+     * in General -- whose OK redraws the whole screen -- had the desktop
+     * repaint its windows over the panel while it was still up (phase
+     * 97); now their redraws wait for END_UPDATE below.  The lock nests,
+     * so a module's own dialog inside it is the same owner's. */
+    wind_update(BEG_UPDATE);
     form_center(tree, &x, &y, &w, &h);
     form_dial(FMD_START, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_GROW, 0, 0, 0, 0, x, y, w, h);
@@ -486,4 +494,5 @@ void cp_panel(void)
     tree[CPCNCL].ob_state = NORMAL;
     form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
+    wind_update(END_UPDATE);
 }

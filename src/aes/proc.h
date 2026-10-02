@@ -76,6 +76,10 @@
 #define P_NEW   1               /* loaded, never given a turn */
 #define P_LIVE  2               /* running, or parked with a wait recorded */
 #define P_DONE  3               /* its program returned */
+/* In p_evwait beside the MU_* bits: parked in wind_update(BEG_UPDATE)
+ * until the process holding the screen lets it go (src/aes/wind.c,
+ * wm_lock; phase 97). */
+#define EVW_UPDATE 0x4000
 
 typedef struct PROC {
     CTX      p_ctx;             /* its turn on the engine stack */

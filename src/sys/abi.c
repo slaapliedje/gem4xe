@@ -742,8 +742,8 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     case 106:                       /* wind_find: x, y */
         ret = wm_find(int_in[0], int_in[1]);
         break;
-    case 107:                       /* wind_update */
-        wm_update(int_in[0]);
+    case 107:                       /* wind_update: between processes, a lock */
+        ret = wm_lock(int_in[0]);
         break;
     case 108:                       /* wind_calc */
         wm_calc(int_in[0], (UWORD)int_in[1], int_in[2], int_in[3],
