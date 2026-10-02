@@ -273,6 +273,41 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
     return APP_OK;
 }
 
+/* FORMAT 6: A SQUEEZED PROGRAM (phase 94, tools/mkg4a.py squeeze).
+ *
+ * A whole format 3, 4 or 5 file as one G4Z stream: 'G4A' 6, the length it
+ * unsqueezes to, then the stream.  It reads off a disk in about half the
+ * sectors, and unpacking it (src/sys/g4z.s) costs far less than reading
+ * the other half would have.  It is unpacked into a block of its own, the
+ * file inside is loaded from there as any other, and the block is given
+ * back: what stays is exactly what an unsqueezed file would have left. */
+#define HDR_V6 8
+
+extern int16_t g4z_unpack(uint32_t src, uint32_t dst, uint32_t count);
+
+static int16_t app_load_v6(uint32_t b, uint32_t len, APP *app, uint8_t own)
+{
+    uint32_t n, wide;
+    int16_t st;
+
+    if (len <= HDR_V6)
+        return APP_E_SHORT;
+    n = rd32(b + 4);
+    if (n < HDR_SIZE)
+        return APP_E_SHORT;
+    wide = far_alloc_top(n);            /* out of the program's way */
+    if (!wide)
+        return APP_E_FAR;
+    if (g4z_unpack(b + HDR_V6, wide, n) != 0)
+        st = APP_E_SHORT;               /* the stream ran past its length */
+    else if (far_read8(wide + 3) == 6)
+        st = APP_E_MAGIC;               /* squeezed twice: not ours */
+    else
+        st = app_load_as((const uint8_t FAR *)wide, n, app, own);
+    far_free(wide);
+    return st;
+}
+
 static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
                            uint8_t own)
 {
@@ -295,6 +330,8 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
      * goes nowhere. */
     if (rd8(b + 3) == 1 || rd8(b + 3) == 2)
         return APP_E_OLDSDK;
+    if (rd8(b + 3) == 6)
+        return app_load_v6(b, len, app, own);
     if (rd8(b + 3) == 5) {
         app->owner = own;           /* app_free frees by it: without this
                                      * every packed program's blocks outlived

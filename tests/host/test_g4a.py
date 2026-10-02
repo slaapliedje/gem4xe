@@ -27,6 +27,7 @@ Both formats are covered, and that is the point of m31_huge:
   another repository and is not always present.
 """
 import os
+import random
 import struct
 import subprocess
 import sys
@@ -58,8 +59,7 @@ def whole_banks(name):
 
 def unpack(path):
     """The header and the four fixup lists, read the way app_load reads them."""
-    with open(path, "rb") as fh:
-        d = fh.read()
+    d = mkg4a.read_file(path)
     if d[:3] != b"G4A":
         raise AssertionError(f"{path}: not a G4A")
     ver = d[3]
@@ -176,11 +176,44 @@ class G4AFormat(unittest.TestCase):
             with self.subTest(app=name):
                 build(f"build/{name}.g4a")
                 path = os.path.join(ROOT, "build", f"{name}.g4a")
-                with open(path, "rb") as f:
-                    self.assertEqual(f.read(4)[3], 5, f"{name} is not packed")
-                v5, v3 = os.path.getsize(path), os.path.getsize(whole_banks(name))
+                self.assertEqual(mkg4a.read_file(path)[3], 5,
+                                 f"{name} is not packed")
+                # unsqueezed, both: format 6 squeezes either (phase 94)
+                v5 = len(mkg4a.read_file(path))
+                v3 = len(mkg4a.read_file(whole_banks(name)))
                 self.assertLessEqual(v5, v3, f"{name}: {v5} bytes packed, "
                                              f"{v3} as whole banks")
+
+    def test_every_shipped_app_is_squeezed(self):
+        """Format 6 since phase 94: the file on the disk is the format 5
+        one packed, about half of it, and unpacks to exactly that."""
+        for name in ("desktop", "calc", "clock", "clockacc", "cpanelacc",
+                     "calcacc", "general", "color", "g4bench"):
+            with self.subTest(app=name):
+                build(f"build/{name}.g4a")
+                path = os.path.join(ROOT, "build", f"{name}.g4a")
+                with open(path, "rb") as f:
+                    raw = f.read()
+                self.assertEqual(raw[:4], mkg4a.MAGIC_V6, f"{name} is not squeezed")
+                whole = mkg4a.unsqueeze(raw)
+                self.assertEqual(whole[:4], mkg4a.MAGIC_V5)
+                self.assertEqual(len(whole), int.from_bytes(raw[4:8], "little"))
+                self.assertLess(len(raw), len(whole) * 3 // 5,
+                                f"{name}: {len(raw)} of {len(whole)}")
+
+    def test_squeeze_refuses_what_the_unpacker_cannot_count(self):
+        """A run of literals is a 16-bit number to src/sys/g4z.s; a file
+        whose parse has a longer one is left unsqueezed rather than
+        mis-unpacked.  No real file comes near it -- the parse finds short
+        matches even in noise -- so the parse is made to say one."""
+        blob = random.Random(94).randbytes(70000)
+        real = mkg4a.mkxex.parse
+        mkg4a.mkxex.parse = lambda data: [("L", len(data))]
+        try:
+            self.assertIsNone(mkg4a.squeeze(blob))
+        finally:
+            mkg4a.mkxex.parse = real
+        self.assertEqual(mkg4a.unsqueeze(blob), blob)
 
     def test_fixup_offsets_are_inside_the_image(self):
         """app_load bounds-checks these; a packer that emitted one outside
@@ -198,8 +231,8 @@ class G4AFormat(unittest.TestCase):
         for name in ("desktop", "m29_big"):     # format 5: the long ones
             with self.subTest(app=name, fmt=5):  # patch a byte after, too
                 build(f"build/{name}.g4a")
-                f = mkg4a.read_v5(open(os.path.join(ROOT, "build",
-                                                    f"{name}.g4a"), "rb").read())
+                f = mkg4a.read_v5(mkg4a.read_file(os.path.join(
+                    ROOT, "build", f"{name}.g4a")))
                 for l, lst in enumerate(f["lists"]):
                     size = len(f["near"]) if l < mkg4a.V5_LISTS else len(f["code"])
                     extra = 1 if l % mkg4a.V5_LISTS in (1, 4) else 0
@@ -221,8 +254,8 @@ class G4AFormat(unittest.TestCase):
         for name in ("desktop", "m29_big"):
             with self.subTest(app=name, fmt=5):
                 build(f"build/{name}.g4a")
-                f = mkg4a.read_v5(open(os.path.join(ROOT, "build",
-                                                    f"{name}.g4a"), "rb").read())
+                f = mkg4a.read_v5(mkg4a.read_file(os.path.join(
+                    ROOT, "build", f"{name}.g4a")))
                 for part in (f["lists"][:mkg4a.V5_LISTS],
                              f["lists"][mkg4a.V5_LISTS:]):
                     seen = set()

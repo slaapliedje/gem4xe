@@ -55,6 +55,8 @@ uint32_t far_alloc(uint32_t bytes);     /* never crosses a bank */
  * far_write8, far_put_span, far_copy_span -- and never by walking a
  * pointer over the boundary.  The reasoning is in farmem.c. */
 uint32_t far_alloc_span(uint32_t bytes);
+/* ...the same at the top of the highest gap it fits: a moment's block. */
+uint32_t far_alloc_top(uint32_t bytes);
 /* Page-aligned, and ending at or below `limit` within its bank. */
 uint32_t far_alloc_page(uint32_t bytes, uint32_t limit);
 uint16_t far_alloc_banks(uint16_t n);   /* n whole banks from the top: the

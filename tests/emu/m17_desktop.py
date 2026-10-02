@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import aesref, vdiref, vbxeref, symfile, atr    # noqa: E402
 import deskref                              # noqa: E402
+import mkg4a                                # noqa: E402
 import copy                                 # noqa: E402
 import farref                               # noqa: E402
 from farheap import far_heap, heap_then, heap_text  # noqa: E402
@@ -111,8 +112,7 @@ def g4a(path):
     """The G4A header (src/sys/app.c app_load, tools/mkg4a.py), any format:
     3 and 4 place the far region whole, in banks; 5 is PACKED -- code and
     far variables placed apart, each at a page (phase 80)."""
-    with open(path, "rb") as f:
-        d = f.read(48)
+    d = mkg4a.read_file(path)[:48]     # unsqueezed: format 6 holds one
     assert d[:3] == b"G4A" and d[3] in (3, 4, 5), d[:4]
     link_near, near_size = struct.unpack("<HH", d[4:8])
     h = dict(fmt=d[3], link_near=link_near, near_size=near_size,
@@ -183,7 +183,7 @@ def desk_g(b, syms):
             + (g_link & 0xFFFF))
 
 
-def desk_places(heap):
+def desk_places(heap, read=True):
     """Where the shell, app_load and rs_load put the desktop, as the model
     must see it -- the allocator's own rules (tools/farref.py) run on the
     target's heap as it stood before (far_heap):
@@ -201,13 +201,25 @@ def desk_places(heap):
 
     Returns the keywords Desktop() wants, so the gates that build the
     model share one copy of this instead of each its own.
+
+    read=False is a desktop loaded AGAIN, after a program: the shell kept
+    the file from the first time (shel.c sh_desk_blob), and `heap` already
+    holds it, with whatever the AES kept of the first desktop's.
     """
     g = g4a(DESKTOP)
     link_near, near_size = g["link_near"], g["near_size"]
     h = copy.deepcopy(heap)
     h.owner = 0
-    h.read_file(os.path.getsize(DESKTOP))       # the shell's, kept
+    if read:
+        h.read_file(os.path.getsize(DESKTOP))   # the shell's, kept
     h.owner = 0xFE                              # the desktop's
+    # SQUEEZED (format 6, phase 94): the loader unpacks into a span at the
+    # top of the heap (far_alloc_top), places the program, and gives the
+    # span back before the desktop runs
+    with open(DESKTOP, "rb") as f:
+        raw = f.read(8)
+    wide = (h.alloc_top(int.from_bytes(raw[4:8], "little"))
+            if raw[:4] == mkg4a.MAGIC_V6 else 0)
     if g["fmt"] == 5:
         # PACKED: the code under the $D5 page, then the variables in one
         # bank (src/sys/app.c app_load_v5).  G is a variable, so the model
@@ -220,6 +232,8 @@ def desk_places(heap):
     else:
         far_base = h.alloc_banks(g["far_banks"]) << 16
         bank_from = link_bank(DESKTOP)
+    if wide:
+        h.free(wide)
     large = desk_large()
     rlen = rsc_rssize(DESK_RSC) if large else rsc_imlen(DESK_RSC)
     rsc = h.alloc(rlen) if rlen else 0

@@ -82,7 +82,7 @@ STOPS = STOPS1 + STOPS2
 def inputs_before(memo):
     """The first desktop's step producers, one per wait."""
     def probe(d):
-        memo.setdefault("globes", []).append(d.globes())
+        memo.setdefault("globes", []).append((d.G, d.globes()))
         return PROBE
 
     def open_a(d):
@@ -111,7 +111,7 @@ def inputs_before(memo):
 def inputs_after(memo):
     """The second desktop's: one wait, with the window back."""
     def probe(d):
-        memo.setdefault("globes", []).append(d.globes())
+        memo.setdefault("globes", []).append((d.G, d.globes()))
         return PROBE
 
     def restored(d):
@@ -142,6 +142,11 @@ def program_calls(a):
     # places or in neither: it was counted in neither when objc_sysvar
     # arrived, and this gate spent five commits red for it.
     return len(app_calls(0, 0)) + UNRECORDED_AES + 7 + n
+
+
+def desk_size():
+    """DESKTOP.PRG's length as the shell reads it: the file, squeezed."""
+    return os.path.getsize(DESKTOP)
 
 
 def model_desk(v, a):
@@ -185,10 +190,19 @@ def model(mark, brk, pointer, drvmap):
     # M11.PRG: counted, not replayed
     m11 = program_calls(a)
     model_desk(v, a)
-    a.dos_brk = copy.deepcopy(arena)
-    a.dos_brk.blocks = sorted(a.dos_brk.blocks + kept)
+    # the second desktop: placed again on the heap as it now stands -- the
+    # shell's copy of the file, and what the AES kept of the first's
+    # (desk_places, read=False) -- rather than assumed to land where the
+    # first did, which phase 94's first unpack span (taken low) broke
+    again = copy.deepcopy(brk)
+    again.owner = 0
+    again.read_file(desk_size())
+    again.blocks = sorted(again.blocks + kept)
+    pl2 = desk_places(again, read=False)
+    a.dos_brk = pl2.pop("dos_brk")
+    pl2.pop("link_near"), pl2.pop("near_size")
     d2 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_after(memo), deskicon=icons, **pl)
+                 inputs_after(memo), deskicon=icons, **pl2)
     d2.main()
     return v, a, want, d1, d2, memo, m11, kept
 
@@ -267,7 +281,10 @@ def main(argv):
         check(bool(kept) and d1.g_cicon and d2.g_cicon == d1.g_cicon,
               f"the colour icons: kept {kept}, the desktops' g_cicon "
               f"${d1.g_cicon:06X} and ${d2.g_cicon:06X}")
-        check(d1.G == d2.G, f"the desktops' G differ: ${d1.G:04X}, ${d2.G:04X}")
+        # each probe reads its own desktop's G: the model places the second
+        # one on the heap as it stands, not where the first one was
+        if d2.G != d1.G:
+            print(f"  the desktop again: G at ${d2.G:04X}, not ${d1.G:04X}")
         print(f"  the model's desktop: {len(d1.script)} calls, waits at {d1.waits}, "
               f"near ${d1.near:04X}, G ${d1.G:04X}, arena ${d1.dta:06X}; "
               f"{PROGRAM}: {m11} calls; the desktop again: {len(d2.script)} calls, "
@@ -357,10 +374,10 @@ def main(argv):
         probes = iter(enumerate(memo["globes"]))
 
         def probe(bb):
-            k, want_g = next(probes)
-            got = bb.memdump(d1.G, GLOBES_SIZE)
+            k, (g_at, want_g) = next(probes)
+            got = bb.memdump(g_at, GLOBES_SIZE)
             if got == want_g:
-                print(f"  G at ${d1.G:04X}, probe {k} (call {read()}): "
+                print(f"  G at ${g_at:04X}, probe {k} (call {read()}): "
                       f"{GLOBES_SIZE} bytes as the model has them")
                 return
             bad = [i for i in range(GLOBES_SIZE) if got[i] != want_g[i]]

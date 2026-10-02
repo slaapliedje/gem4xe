@@ -412,6 +412,33 @@ uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
     return take(bytes, 2, limit);
 }
 
+/* ...and at the TOP of the highest gap it fits, which may cross banks:
+ * for a block that lives only a moment -- the span a squeezed program is
+ * unpacked into (src/sys/app.c, phase 94) -- so that what is placed while
+ * it lives goes where it would have gone without it.  Taken low, it put
+ * every boot-time program above it and left the hole under them when it
+ * went (test-m37: the boot past three banks).  Data only, never code, so
+ * the SDRAM cache worry below does not reach it. */
+uint32_t far_alloc_top(uint32_t bytes)
+{
+    uint16_t i;
+    uint32_t lo, hi, a;
+
+    if (!far_table || bytes == 0)
+        return 0;
+    for (i = (uint16_t)(far_blocks + 1); i-- > 0; ) {
+        lo = gap_lo(i);
+        hi = gap_hi(i);
+        if (hi - lo < bytes)
+            continue;
+        a = (hi - bytes) & ~3UL;
+        if (a < lo)
+            continue;
+        return fb_insert(i, a, bytes);
+    }
+    return 0;
+}
+
 /* n whole banks, the LOWEST run that is free: the first bank's number.
  * Low, not from the top where they would keep out of the small blocks'
  * way: on a Rapidus the top of the heap is SDRAM, behind a cache that no

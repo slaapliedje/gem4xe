@@ -31,6 +31,9 @@ import re
 import struct
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mkg4a                                # noqa: E402
+
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 BUILD = os.path.join(ROOT, "build")
 
@@ -69,7 +72,7 @@ def regions(mapfile):
 
 def g4a_near(path):
     """What a .G4A reserves in the pool: its whole near region."""
-    d = open(path, "rb").read(20)
+    d = mkg4a.read_file(path)[:20]     # unsqueezed: format 6 holds one
     assert d[:3] == b"G4A" and d[3] in (3, 4, 5), (path, d[:4])   # tools/mkg4a.py
     return struct.unpack("<H", d[6:8])[0]
 

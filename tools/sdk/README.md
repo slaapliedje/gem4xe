@@ -9,6 +9,11 @@ gates and is loaded, relocated and called at run time.
     make APP=mine.c             mine.c           ->  mine.g4a
     make APP=src/mine.c NAME=ed                  ->  ed.g4a
     make APP=mine.c ASM="fast.s io.s"            ->  mine.g4a, your assembly linked in
+    make SQUEEZE=0 ...                           ->  not squeezed, for gem4xe before 0.12
+
+A `.g4a` comes out **squeezed**: packed to about half its size, so it
+reads off a disk in about half the time, and unpacked by the loader.
+gem4xe 0.12 and later load it; an older one needs `SQUEEZE=0`.
 
 You need **Calypsi for the 65816** (`cc65816`, `as65816`, `ln65816`),
 **5.18.2 or later**, from <https://www.calypsi.cc/>.  Its licence covers

@@ -47,7 +47,7 @@ class TestPacked(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0,
                          f"cannot build {name}: {r.stderr[-300:]}")
-        blob = open(g4a, "rb").read()
+        blob = mkg4a.read_file(g4a)
         if blob[3] != 5:
             self.fail(f"{name} is not packed (format {blob[3]})")
         near, code, link_near, near_size, code_size = load_v5(blob)

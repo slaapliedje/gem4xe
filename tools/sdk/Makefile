@@ -197,11 +197,18 @@ $(B)/$(NAME)-vpage.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
 	    --memories-expression "(app-layout-v #x1000 #x020000 #x030100 $(BSS) $(BITS) 1 1)"
 
+# The file is then SQUEEZED -- .G4A format 6, the whole of it packed, about
+# half the size -- so it reads off a disk in half the time and the loader
+# unpacks it.  gem4xe 0.12 and later load format 6; `make SQUEEZE=0` for a
+# file an older one can.
+SQUEEZE ?= 1
+
 $(NAME).g4a: $(B)/$(NAME).elf $(B)/$(NAME)-near.elf $(B)/$(NAME)-far.elf \
 	    $(B)/$(NAME)-cdown.elf $(B)/$(NAME)-cpage.elf $(B)/$(NAME)-vpage.elf
 	python3 tools/mkg4a.py $(B)/$(NAME).elf $(B)/$(NAME)-near.elf \
 	    $(B)/$(NAME)-far.elf $@ --syms $(B)/$(NAME).sym \
-	    --pack $(B)/$(NAME)-cdown.elf $(B)/$(NAME)-cpage.elf $(B)/$(NAME)-vpage.elf
+	    --pack $(B)/$(NAME)-cdown.elf $(B)/$(NAME)-cpage.elf $(B)/$(NAME)-vpage.elf \
+	    $(if $(filter 0,$(SQUEEZE)),--no-squeeze)
 
 clean:
 	rm -rf build $(NAME).g4a

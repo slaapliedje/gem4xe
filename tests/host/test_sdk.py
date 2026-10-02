@@ -30,6 +30,7 @@ import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import mkg4a                                # noqa: E402
 import mksdk                                # noqa: E402
 
 CALYPSI = os.environ.get("CALYPSI",
@@ -44,8 +45,7 @@ NEAR_SIZE = 0x100 + 2048 + 256
 
 def g4a_header(path):
     """The .g4a header the loader reads (src/sys/app.c, tools/mkg4a.py)."""
-    with open(path, "rb") as f:
-        d = f.read(48)
+    d = mkg4a.read_file(path)[:48]     # unsqueezed: format 6 holds one
     # 5 since phase 80: a small program is PACKED, its code and its far
     # variables placed apart at page granularity; 3 is whole banks
     assert d[:4] in (b"G4A\x03", b"G4A\x05"), d[:4]

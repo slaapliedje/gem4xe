@@ -85,6 +85,20 @@ class Heap:
     def alloc_span(self, n):
         return self._take(n, 1)
 
+    def alloc_top(self, n):
+        """far_alloc_top: the top of the highest gap it fits."""
+        if n == 0:
+            return 0
+        for i in range(len(self.blocks), -1, -1):
+            lo, hi = self.gap_lo(i), self.gap_hi(i)
+            if hi - lo < n:
+                continue
+            a = (hi - n) & ~3
+            if a < lo:
+                continue
+            return self._insert(i, a, n)
+        return 0
+
     def alloc_page(self, n, limit):
         return self._take(n, 2, limit)
 

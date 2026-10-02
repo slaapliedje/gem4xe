@@ -66,19 +66,72 @@ entry point are read from the ELFs.
     packer was enforcing an invariant it does not own, and the cost was
     that no application could be larger than a bank.
 
+FORMAT 6, squeezed (phase 94): the file is written as one G4Z stream of
+the format 3, 4 or 5 it would otherwise be, when that is smaller -- about
+half, for a program -- and src/sys/g4z.s unpacks it at load time.
+--no-squeeze writes the plain one; --c-array is always plain.  A reader
+of a .G4A takes read_file() below, which unsqueezes.
+
 Usage: mkg4a.py base.elf near-shifted.elf far-shifted.elf out.g4a
-                [--syms out.sym] [--c-array out.c NAME]
+                [--syms out.sym] [--c-array out.c NAME] [--no-squeeze]
 """
 import re
 import struct
 import sys
 
+import mkxex
 from mkxex import read_elf
 
 MAGIC_V3 = b"G4A\x03"      # far fixups u16
 MAGIC_V4 = b"G4A\x04"      # far fixups three bytes
 MAGIC_V5 = b"G4A\x05"      # packed: code and far variables placed apart
 HDR_V5 = 48
+MAGIC_V6 = b"G4A\x06"      # squeezed: a whole format 3, 4 or 5 file in G4Z
+HDR_V6 = 8                 # 'G4A' 6, u32 the length it unsqueezes to
+
+
+def squeeze(blob):
+    """Format 6 (docs/phase94.md): the file `blob` -- a format 3, 4 or 5 --
+    as one G4Z stream, which src/sys/g4z.s unpacks at load time; or None
+    when that would not be smaller, or when a run of literals is too long
+    for the unpacker's sixteen-bit numbers."""
+    if any(e[0] == "L" and e[1] > 0xFFFF for e in mkxex.parse(blob)):
+        return None
+    res = mkxex.chunks(blob, 1 << 30, 1 << 30)
+    if len(res) != 1 or res[0][0] != len(blob):
+        return None
+    out = MAGIC_V6 + struct.pack("<I", len(blob)) + res[0][1]
+    if unsqueeze(out) != blob:
+        raise SystemExit("format 6 does not unsqueeze to what was squeezed")
+    return out if len(out) < len(blob) else None
+
+
+def unsqueeze(blob):
+    """A format 6 file as the format 3, 4 or 5 file it holds; any other
+    returned as it is."""
+    if blob[:4] != MAGIC_V6:
+        return blob
+    n = struct.unpack_from("<I", blob, 4)[0]
+    out = bytearray()
+    mkxex.decode(blob[HDR_V6:], n, out, 0)
+    return bytes(out)
+
+
+def write_file(out, blob, squeezed):
+    """The program to `out`, squeezed when that is asked for and smaller;
+    what was written, said in a few words for the build's line."""
+    small = squeeze(blob) if squeezed else None
+    with open(out, "wb") as fh:
+        fh.write(small or blob)
+    if small:
+        return f", squeezed to {len(small)} ({100 * len(small) // len(blob)}%)"
+    return ""
+
+
+def read_file(path):
+    """A .G4A file's bytes, unsqueezed: what every reader of one wants."""
+    with open(path, "rb") as f:
+        return unsqueeze(f.read())
 PACK_LIMIT = 0xD500         # a packed program's code stays under the $D5 page
 # What formats 3 and 4 promise the loader: the call gates' COP signatures
 # (src/sys/abi.h, src/app/gemabi.s).
@@ -361,7 +414,7 @@ def apply_v5(f, near_at, code_at, vars_at):
 
 
 def write_v5(out, packed, nb, near_size, fb, far_size, entry,
-             near_img, far_img, b_syms, syms_out, c_out, c_name):
+             near_img, far_img, b_syms, syms_out, c_out, c_name, squeezed):
     """Format 5 (src/sys/app.c reads it):
 
       0  'G4A' 5
@@ -390,8 +443,7 @@ def write_v5(out, packed, nb, near_size, fb, far_size, entry,
     f = read_v5(blob)
     if apply_v5(f, nb, fb, vb) != (near_img, far_img):
         raise SystemExit("format 5 does not read back as it was written")
-    with open(out, "wb") as fh:
-        fh.write(blob)
+    note = write_file(out, blob, squeezed)
     if syms_out:
         with open(syms_out, "w") as fh:
             for name, val in sorted(b_syms.items(), key=lambda kv: kv[1]):
@@ -408,7 +460,8 @@ def write_v5(out, packed, nb, near_size, fb, far_size, entry,
             fh.write("};\n")
     print(f"{out}: PACKED, near ${nb:04X}+{near_size}, code ${fb:06X}+{far_size}, "
           f"far variables ${vb:06X}+{vs}, fixups "
-          + "/".join(str(len(l)) for l in lists) + f", {len(blob)} bytes")
+          + "/".join(str(len(l)) for l in lists) + f", {len(blob)} bytes"
+          + note)
     return 0
 
 
@@ -418,6 +471,7 @@ def main(argv):
     base_elf, near_elf, far_elf, out = argv[:4]
     syms_out = c_out = c_name = None
     pack = None
+    squeezed = True
     i = 4
     while i < len(argv):
         if argv[i] == "--syms":
@@ -426,6 +480,9 @@ def main(argv):
         elif argv[i] == "--pack":
             pack = argv[i + 1:i + 4]
             i += 4
+        elif argv[i] == "--no-squeeze":
+            squeezed = False
+            i += 1
         elif argv[i] == "--c-array":
             c_out, c_name = argv[i + 1], argv[i + 2]
             i += 3
@@ -500,7 +557,8 @@ def main(argv):
             print(f"{out}: not packed -- {why}")
     if packed:
         return write_v5(out, packed, nb, near_size, fb, far_size, entry,
-                        near_img, far_img, b_syms, syms_out, c_out, c_name)
+                        near_img, far_img, b_syms, syms_out, c_out, c_name,
+                        squeezed)
 
     # v3 unless the far image needs more room than its offsets have. Every
     # program in this tree but GACS's shell is v3.
@@ -525,8 +583,7 @@ def main(argv):
         else:
             body += b"".join(struct.pack("<H", o) for o in lst)
     blob = hdr + body
-    with open(out, "wb") as f:
-        f.write(blob)
+    note = write_file(out, blob, squeezed)
 
     if syms_out:
         with open(syms_out, "w") as f:
@@ -546,7 +603,7 @@ def main(argv):
     print(f"{out}: near ${nb:04X}+{near_size} ({len(near_hi)} page, "
           f"{len(near_bank)} bank fixups), far ${fb:06X}+{far_size} "
           f"({len(far_hi)} page, {len(far_bank)} bank fixups), "
-          f"entry ${entry:06X}, {len(blob)} bytes")
+          f"entry ${entry:06X}, {len(blob)} bytes{note}")
     return 0
 
 

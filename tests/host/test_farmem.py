@@ -32,7 +32,7 @@ import check as ccbug                      # noqa: E402  (the simulator driver)
 import farref                              # noqa: E402
 
 FIRST, LAST = 2, 9                         # eight banks
-ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST = range(1, 10)
+ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP = range(1, 11)
 
 # (op, a, b); a FREE or SHRINK's `a` is the index of an earlier step
 SCRIPT = [
@@ -67,6 +67,16 @@ SCRIPT = [
     (ALLOC, 0x10000, 0),        # 28
     (ALLOC, 0x10000, 0),        # 29
     (LARGEST, 0, 0),            # 30
+    (FREE, 24, 0),              # 31 a bank free in the middle ($07)
+    (FREE, 26, 0),              # 32 ...and the top one ($09)
+    (TOP, 0x100, 0),            # 33 the top of the highest hole: $09FF00
+    (TOP, 0x10000, 0),          # 34 no longer fits there: the lower one
+    (FREE, 33, 0),              # 35
+    (TOP, 0x1FFFC, 0),          # 36 bigger than any gap: refused
+    (TOP, 0xFFFE, 0),           # 37 an odd length: rounded down to 4
+    (FREE, 34, 0),              # 38
+    (FREE, 23, 0),              # 39 $06 and $07 free together
+    (TOP, 0x18000, 0),          # 40 across the bank: $068000
 ]
 
 
@@ -93,6 +103,8 @@ def model():
             h.owner = a
         elif op == LARGEST:
             r = h.largest(a)
+        elif op == TOP:
+            r = h.alloc_top(a)
         out.append(r)
     return out
 

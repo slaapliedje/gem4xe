@@ -49,6 +49,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import vbxeref, vdiref, aesref, symfile, atr  # noqa: E402
+import mkg4a                                  # noqa: E402
 from vdiref import (WORK_IN, V_OPNVWK, VSF_COLOR, VSF_INTERIOR, VR_RECFL,  # noqa: E402
                     VST_COLOR, V_GTEXT, VSL_COLOR, V_PLINE)
 from aesref import (Obj, Text, APPL_INIT, APPL_EXIT, GRAF_HANDLE, OBJC_DRAW,  # noqa: E402
@@ -180,8 +181,7 @@ def main(argv):
     # and every read came out a page adrift -- while the program itself
     # ran perfectly and returned the right count, which is what made it
     # look like anything but a gate bug.
-    with open(APP_G4A, "rb") as f:
-        link_near = struct.unpack("<H", f.read(8)[4:6])[0]
+    link_near = struct.unpack("<H", mkg4a.read_file(APP_G4A)[4:6])[0]
     fails = []
 
     def check(cond, msg):

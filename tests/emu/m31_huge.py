@@ -52,6 +52,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import aesref, symfile                      # noqa: E402
+import mkg4a                                # noqa: E402
 from m7_form import (poke16, NOT_STARTED, STATUS, ST_GO,  # noqa: E402
                      SYMS)
 from m4_aes import PRELUDE                  # noqa: E402
@@ -84,8 +85,7 @@ def main(argv):
     hsym = symfile.load(HUGE_SYM)
     link_near, near_size, far_banks = header(HUGE)
 
-    with open(HUGE, "rb") as f:
-        hdr = f.read(32)
+    hdr = mkg4a.read_file(HUGE)[:32]
     ver = hdr[3]
     far_size = int.from_bytes(hdr[10:14], "little")
     check(ver == 4, f"M31.PRG is format {ver}, expected 4 -- an image over "

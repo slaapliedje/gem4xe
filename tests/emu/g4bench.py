@@ -27,6 +27,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from a8test.launcher import launch            # noqa: E402
 import symfile                                # noqa: E402
+import mkg4a                                  # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
 DISK = os.path.join(BUILD, "g4bench-boot.atr")
@@ -47,8 +48,7 @@ COUNTS = [200, 200, 100, 50, 50, 20, 20, 20, 20, 50, 50, 50, 50, 50, 100, 20, 10
 def run(screen):
     gsym = symfile.load(os.path.join(BUILD, "gem.sym"))
     bsym = symfile.load(os.path.join(BUILD, "g4bench.sym"))
-    with open(G4A, "rb") as f:
-        link_near, = struct.unpack("<H", f.read(6)[4:6])
+    link_near, = struct.unpack("<H", mkg4a.read_file(G4A)[4:6])
     emu = launch(tag=f"g4bench-{screen}", memsize="1088K", vbxe=(screen == "vbxe"),
                  extra_args=["--disk", DISK])
     b = emu.bridge
