@@ -965,6 +965,12 @@ WORD sh_main(void)
     sh_auto();
     sh_cpx();                   /* ...so the panel can boot-init them */
     sh_accs();
+    /* The AUTO programs and the modules ran in the application's record
+     * (they are programs, run through app_run), so their calls were
+     * counted as the application's.  They are not the desktop's: start
+     * its count here, or a gate asking which call the desktop is in is
+     * a module's four calls out for every .CPX (phase 102). */
+    app_calls = 0;
 
     /* EVERYTHING TAKEN SO FAR IS PERMANENT, and from here the machine
      * keeps that rather than this file arranging it.  Above this mark is

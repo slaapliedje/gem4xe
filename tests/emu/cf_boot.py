@@ -482,7 +482,13 @@ def main(argv):
         brk = far_heap(b, syms)
         pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
         print(f"  pool ${mark:04X}, far heap {heap_text(brk)}, pointer {pointer}")
-        ref_v, ref_a, d = desk_model(mark, brk, pointer, DRVMAP, listing(fs))
+        # File -> DOS command is lit on a SpartaDOS X of 4.4 or later with
+        # its jfsymbol in place, as tests/emu/product_boot.py asks; the
+        # model here greyed it, a call the card's desktop does not make
+        # (phase 102)
+        psystem = b.peek(0x0701) >= 0x44 and b.peek(0x07EB) == 0x4C
+        ref_v, ref_a, d = desk_model(mark, brk, pointer, DRVMAP, listing(fs),
+                                     psystem=psystem)
         check(len(ref_a.shots) == 1, f"the model took {len(ref_a.shots)} shots")
         check((n - 1) & 0xFFFF == d.waits[0],
               f"the desktop is in call {(n - 1) & 0xFFFF}, not its first "
