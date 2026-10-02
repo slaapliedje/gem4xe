@@ -68,6 +68,5 @@ changing from 0 to 1 is what says the measured click on "3D" landed.
 
 ## Not done
 
-The other accessories with dialogs, the calculator and the clock, do
-not take the lock yet.  A program's redraw can still land on them while
-they are up, which is what this phase fixed for the panel.
+The other accessories with dialogs, the calculator and the clock, did
+not take the lock yet.  They do since phase 101.

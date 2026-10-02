@@ -148,6 +148,10 @@ void clock_panel(WORD handle)
     (void)handle;
     ask_gemdos();
 
+    /* The screen is the clock's while it is up, as the Control Panel's is
+     * (src/apps/cpanel.c, phase 97).  Its own redraws, every tick, are
+     * the holder's and do not wait. */
+    wind_update(BEG_UPDATE);
     form_center(tree, &x, &y, &w, &h);
     form_dial(FMD_START, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_GROW, 0, 0, 0, 0, x, y, w, h);
@@ -179,4 +183,5 @@ void clock_panel(WORD handle)
 
     form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
+    wind_update(END_UPDATE);
 }

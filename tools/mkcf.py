@@ -211,8 +211,19 @@ def build(out, mb=16, system_mb=8, adds=(), boot=BOOT, root=None, fat_mb=0,
         apt.write_table(img, parts)
     fs = Sdfs.format(parts[0], "GEM4XE")
     Sdfs.format(parts[1], "DOCS")
+    made = set()
     for d in DIRS:
         fs.mkdir(d)
+        made.add(d)
+    # an --add path's folders are made as they are needed, so a test card
+    # can carry, say, GEM>LANG>DE>LANG.RSC beside the product's own
+    for _, name in adds:
+        folders = name.split(">")[:-1]
+        for k in range(1, len(folders) + 1):
+            d = ">".join(folders[:k])
+            if d not in made:
+                fs.mkdir(d)
+                made.add(d)
     for path, name in system + list(adds):
         with open(os.path.join(root, path), "rb") as f:
             data = f.read()

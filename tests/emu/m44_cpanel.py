@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """0.12's gate for item 9: the Control Panel keeps the screen while it is up
 -- and, on the way, item 14: tools/memreport.py's pool floor is the
-machine's.
+machine's, and the calculator and the clock hold the screen too.
 
 Desk -> Control Panel -> General -> Look: 3D -> OK.  General's OK redraws
 the whole screen, because everything on it was drawn in the other look,
@@ -42,6 +42,7 @@ import memreport                              # noqa: E402
 OUT = os.path.join(HERE, "..", "..", "build", "shots", "m44")
 GN_3D = (319, 148)          # General's "Look: 3D", on the screen
 D1_ICON = (40, 38)          # drive D1's icon on the desk
+CALC_QUIT = (363, 188)      # the calculator's Quit (RETURN is its "=")
 # the panel as the raw screenshot has it: inside its frame, and away from
 # the pointer, which is parked at the screen's corner
 PANEL = (180, 28, 492, 220)
@@ -77,6 +78,26 @@ def run(window):
                                f"${got:04X}, tools/memreport.py's ${want:04X}")
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, OUT)
+        if not window:
+            # THE OTHER ACCESSORIES WITH A DIALOG hold the screen too, from
+            # their panel's FMD_START to its FMD_FINISH, as the panel does
+            # (phase 101): the calculator closed with its Quit, the clock
+            # with any key.
+            for name, close in (("Calculator", ("click", CALC_QUIT)),
+                                ("Clock", K("SPACE", 0x20))):
+                before = b.peek16(syms["wu_count"])
+                t.choose(DESKMENU, t.desk_acc(name))
+                b.frames(80)
+                held = b.peek16(syms["wu_count"])
+                if close[0] == "click":
+                    t.click(close[1])
+                    b.frames(80)
+                else:
+                    t.run([close, F(80)])
+                after = b.peek16(syms["wu_count"])
+                check((before, held, after) == (0, 1, 0),
+                      f"the {name} holds the screen while it is up "
+                      f"(wind_update's count {before} -> {held} -> {after})")
         if window:
             t.dclick(D1_ICON)
             b.frames(200)

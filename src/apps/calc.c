@@ -193,6 +193,10 @@ void calc_panel(void)
 {
     WORD x, y, w, h, obj, done = FALSE;
 
+    /* The screen is the panel's until Quit: a dialog is not a window, so
+     * another program's redraw would land on it.  As the Control Panel
+     * does (src/apps/cpanel.c, phase 97). */
+    wind_update(BEG_UPDATE);
     form_center(tree, &x, &y, &w, &h);
     form_dial(FMD_START, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_GROW, 0, 0, 0, 0, x, y, w, h);
@@ -235,4 +239,5 @@ void calc_panel(void)
 
     form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
     form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
+    wind_update(END_UPDATE);
 }
