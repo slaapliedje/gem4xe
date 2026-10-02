@@ -170,5 +170,60 @@ class Model(unittest.TestCase):
             self.assertIn(name, names)
 
 
+
+class Translations(unittest.TestCase):
+    """German, French, Spanish and Polish (phase 96): each keeps every rule
+    the English does, and its file is the English file's shape with its
+    own bytes in it, string for string."""
+
+    def test_every_translation_keeps_the_rules(self):
+        for lang in langrsc.TRANSLATIONS:
+            with self.subTest(lang=lang):
+                self.assertEqual(langrsc.check(lang), [])
+
+    def test_the_english_keeps_them_too(self):
+        """The rules are the English's own: a rule it broke would be one
+        made up for the translations."""
+        self.assertEqual(langrsc.check("de", dict(langrsc.STRINGS)), [])
+
+    def test_the_file_is_the_translation_in_its_own_characters(self):
+        for lang, t in langrsc.TRANSLATIONS.items():
+            with self.subTest(lang=lang):
+                data = langrsc.build(lang=lang).file()
+                self.assertEqual(header(data)["nstring"], len(langrsc.STRINGS))
+                self.assertEqual(
+                    strings_of(data),
+                    [langrsc.encode(t[n], lang).decode("latin1")
+                     for n, _ in langrsc.STRINGS])
+
+    def test_the_characters_are_the_fonts(self):
+        # the ST set has an a-umlaut at $84 and an e-acute at $82; Latin-2
+        # has an l-stroke at $B3 -- what each font draws, not Latin-1
+        self.assertEqual(langrsc.encode("ä", "de"), b"\x84")
+        # ...and the boot screen's strings never need them
+        for lang, t in langrsc.TRANSLATIONS.items():
+            for name, text in t.items():
+                if name.startswith(("BOOT_", "EXIT_")):
+                    self.assertTrue(text.isascii(), (lang, name))
+        self.assertEqual(langrsc.encode("é", "fr"), b"\x82")
+        self.assertEqual(langrsc.encode("ł", "pl"), b"\xb3")
+        self.assertEqual(langrsc.FONT, {"pl": "l2.fnt"})
+
+    def test_the_check_speaks(self):
+        t = dict(langrsc.TRANSLATIONS["de"])
+        t["ERRTOS"] = "[3][TOS-Fehler.][Abbruch]"               # no #
+        t["ERRDRIVE"] = "[2][Das angegebene Laufwerk|existiert nicht.][Abbruch]"
+        t["BOOT_VIDEO"] = "Bildschirm"                           # ten columns
+        t["APPNOTLOAD"] = "[1][" + "x" * 41 + "][ OK ]"          # a long line
+        t["EXIT_ANYKEY"] = "Ω"                                   # not in the set
+        t["BOOT_NONE"] = "aucune élément"                         # not ASCII, on E:
+        del t["BOOT_CLOCK"]
+        bad = " ".join(langrsc.check("de", t))
+        for word in ("ERRTOS", "ERRDRIVE: icon", "BOOT_VIDEO", "APPNOTLOAD",
+                     "EXIT_ANYKEY", "BOOT_CLOCK: missing",
+                     "BOOT_NONE: not plain ASCII"):
+            self.assertIn(word, bad)
+
+
 if __name__ == "__main__":
     unittest.main()

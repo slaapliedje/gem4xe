@@ -163,6 +163,17 @@ SYSTEM = [
     ("qed/QEDAPACH.TXT", "QEDAPACH.TXT"),
 ]
 
+# The translations of LANG.RSC (tools/langrsc.py, phase 96): (language
+# code, its name in English, the font it needs beside it or None).  Each
+# goes to system/LANG/XX/; a person copies the two files over the ones
+# beside GEM.COM.
+LANGS = [
+    ("de", "German", None),
+    ("fr", "French", None),
+    ("es", "Spanish", None),
+    ("pl", "Polish", "l2.fnt"),
+]
+
 WHAT_IT_IS = {
     "GEM.COM": "the system: the VDI, the AES, GEMDOS and the shell",
     "DESKTOP.PRG": "the desktop, which is an application like any other",
@@ -450,6 +461,21 @@ def build(out, tar=None, require_clean=False, public=False, zip_path=None):
         shutil.copyfile(p, os.path.join(out, "system", name))
         sysrows.append(f"| `{name}` | {os.path.getsize(p):,} bytes | "
                        f"{WHAT_IT_IS[name]} |")
+    for code, lang, font in LANGS:
+        d = os.path.join(out, "system", "LANG", code.upper())
+        os.makedirs(d, exist_ok=True)
+        for src, name in ((f"lang/{code}/LANG.RSC", "LANG.RSC"),
+                          (font, "SYSTEM.FNT")):
+            if not src:
+                continue
+            p = os.path.join(BUILD, src)
+            if not os.path.isfile(p):
+                raise SystemExit(f"mkdist: build/{src} is not built "
+                                 "(make langs fonts)")
+            shutil.copyfile(p, os.path.join(d, name))
+            sysrows.append(f"| `LANG\\{code.upper()}\\{name}` | "
+                           f"{os.path.getsize(p):,} bytes | "
+                           f"{lang_what(lang, name)} |")
 
     mksdk.build(os.path.join(out, "sdk", "gem4xe-sdk"),
                 os.path.join(out, "sdk", "gem4xe-sdk.tar.gz"))
@@ -536,6 +562,14 @@ def build(out, tar=None, require_clean=False, public=False, zip_path=None):
     return made, missing
 
 
+def lang_what(lang, name):
+    if name == "SYSTEM.FNT":
+        return (f"the Latin-2 character set the {lang} needs; copy it "
+                "beside GEM.COM with the LANG.RSC above it")
+    return (f"what the system says, in {lang}: copy it over LANG.RSC "
+            "beside GEM.COM")
+
+
 def guide():
     """The release's page as the repository keeps it, docs/guide.md: the
     same template, filled from what does not need a build -- the version,
@@ -552,6 +586,10 @@ def guide():
     sysrows = ["| file | |", "|---|---|"]
     for src, name in SYSTEM:
         sysrows.append(f"| `{name}` | {WHAT_IT_IS[name]} |")
+    for code, lang, font in LANGS:
+        for name in ("LANG.RSC",) + (("SYSTEM.FNT",) if font else ()):
+            sysrows.append(f"| `LANG\\{code.upper()}\\{name}` | "
+                           f"{lang_what(lang, name)} |")
     items = menu_items()
     with open(TEMPLATE) as f:
         page = f.read()

@@ -694,6 +694,21 @@ What is not in `LANG.RSC`, and why:
    NDC, no Bezier, no metafile.  With 14 MB of RAM the memory was never
    the constraint -- the geometry is.
 
+**Four translations ship** (phase 96): German, French, Spanish and
+Polish, for where the Atari 8-bit was at home.  `tools/langrsc.py` holds
+them beside the English and `make langs` writes one `LANG.RSC` each to
+`build/lang/`; the release carries them under `system/LANG/`, Polish
+with the Latin-2 `SYSTEM.FNT` it needs.  A person copies the files over
+the ones beside `GEM.COM`.  The five long `form_error` alerts are
+EmuTOS's own translations.  `check()` holds each to the rules: the alert
+grammar with the English icon and buttons, lines of forty, the `#`,
+`LANG_MAXLEN` -- the near buffer cannot grow, bank $00 being full --
+and plain ASCII for the boot screen and the exit lines, which go to the
+OS's text screen in ATASCII and not through the system font.
+`make test-m20` draws the German, French and Spanish alerts and compares
+them with the model pixel for pixel.  The desktop's own menus and
+dialogs are `DESKTOP.RSC`'s, and are still English.
+
 Two more things a translator will ask for, recorded so they are not
 forgotten: **the keyboard** (gem4xe reads POKEY scan codes directly,
 `src/vdi/pointer.c` and `src/sys/irq.s`, through a table that is the US

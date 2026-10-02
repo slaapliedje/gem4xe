@@ -432,6 +432,15 @@ build/gemdata.o: build/gemdata.c src/aes/aes.h
 build/lang.rsc build/lang_rsc.c build/lang_rsc.h: tools/langrsc.py tools/rsc.py
 	@mkdir -p build
 	python3 tools/langrsc.py build/lang.rsc build/lang_rsc.c build/lang_rsc.h
+# ...and its translations (phase 96), one LANG.RSC a language, which the
+# release carries under system/LANG/ for a person to copy over the one
+# beside GEM.COM.  Polish needs the Latin-2 font beside it as SYSTEM.FNT.
+LANGS = de fr es pl
+LANG_FILES = $(foreach l,$(LANGS),build/lang/$(l)/LANG.RSC)
+build/lang/%/LANG.RSC: tools/langrsc.py tools/rsc.py
+	@mkdir -p $(dir $@)
+	python3 tools/langrsc.py --lang $* $@
+langs: $(LANG_FILES)
 build/lang_rsc.o: build/lang_rsc.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $<
@@ -1733,7 +1742,7 @@ DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-q
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
              build/prefs.rsc build/deskicon.rsc build/g4bench.g4a $(QED_FILES) \
-             $(APP_DEPS) $(ACCP_DEPS)
+             $(APP_DEPS) $(ACCP_DEPS) $(LANG_FILES) build/l2.fnt
 
 dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
       tools/mkdist.py tools/dist/README.md tools/mksdk.py
@@ -1756,7 +1765,7 @@ dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
 VERSION := $(shell cat VERSION)
 RELEASE  = build/gem4xe-$(VERSION)
 
-release: $(DIST_SYS) $(QED_FILES) build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr build/gem-qed.atr \
+release: $(DIST_SYS) $(QED_FILES) $(LANG_FILES) build/l2.fnt build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr build/gem-qed.atr \
          build/gem4xe-sys.car build/gem4xe-sdk.tar.gz \
          tools/mkdist.py tools/dist/README.md tools/mksdk.py
 	@python3 -c 'import sys; sys.exit(b"version $(VERSION)\0" not in open("build/desktop.rsc","rb").read())' \

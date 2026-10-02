@@ -230,6 +230,11 @@ whatever name it is given:
 | `QED.TXT` | what QED.PRG is made of and on what terms: QED's own, the gem4xe application kit and cflib (LGPL), and the C library's Apache NuttX code (Apache 2.0) |
 | `QEDLGPL.TXT` | the LGPL 2.1, which QED.TXT names |
 | `QEDAPACH.TXT` | the Apache License 2.0, which QED.TXT names |
+| `LANG\DE\LANG.RSC` | what the system says, in German: copy it over LANG.RSC beside GEM.COM |
+| `LANG\FR\LANG.RSC` | what the system says, in French: copy it over LANG.RSC beside GEM.COM |
+| `LANG\ES\LANG.RSC` | what the system says, in Spanish: copy it over LANG.RSC beside GEM.COM |
+| `LANG\PL\LANG.RSC` | what the system says, in Polish: copy it over LANG.RSC beside GEM.COM |
+| `LANG\PL\SYSTEM.FNT` | the Latin-2 character set the Polish needs; copy it beside GEM.COM with the LANG.RSC above it |
 
 ## What works
 

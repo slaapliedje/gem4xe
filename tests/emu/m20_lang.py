@@ -13,6 +13,8 @@ Three disks, one script:
     m20-de.atr    a translation: every string replaced, longer than the
                   English, the error number moved to the end of its alert
     m20-none.atr  no LANG.RSC at all -- the built-in English
+    m20-xde.atr, -xfr.atr, -xes.atr   the German, French and Spanish
+                  translations that ship, accents and all
 
 The first and the third must draw the same pixels, because the file and
 the fallback are the same bytes; the second must draw the translation,
@@ -57,10 +59,21 @@ GERMAN = [(name, "[1][Diese Meldung kommt aus LANG.RSC|"
                  + "][ Weiter ]")
           for name, _ in langrsc.STRINGS]
 
+# The translations that ship (phase 96), each in the bytes its font draws.
+# German, French and Spanish are in the Atari ST set the linked font has,
+# so the model draws them as it draws the English; Polish needs the
+# Latin-2 font beside it and is held to its rules in tests/host/test_lang.py.
+def shipped(lang):
+    t = langrsc.TRANSLATIONS[lang]
+    return [(n, langrsc.encode(t[n], lang).decode("latin-1"))
+            for n, _ in langrsc.STRINGS]
+
+
 # (tag, what the disk carries, the strings the model should speak)
 DISKS = [("en", langrsc.STRINGS, langrsc.STRINGS),
          ("de", GERMAN, GERMAN),
-         ("none", None, langrsc.STRINGS)]
+         ("none", None, langrsc.STRINGS)] + [
+        (f"x{lang}", shipped(lang), shipped(lang)) for lang in ("de", "fr", "es")]
 
 
 def make_disk(tag, strings):
