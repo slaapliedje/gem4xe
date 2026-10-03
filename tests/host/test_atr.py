@@ -163,5 +163,107 @@ class Enhanced(unittest.TestCase):
         self.assertEqual(fs2.free_count(), 1010)
 
 
+class MyDOSExtendedLinks(unittest.TestCase):
+    """A MyDOS volume over 1023 sectors -- the 1440-sector MyDOS 4.50
+    fixture is one -- chains a file by EXTENDED links: the next sector's
+    whole number, high byte first, and no directory number in the link;
+    the file carries $04 in its flag.  The volume says so with a VTOC code
+    above 2.  Altirra's ATDiskFSDOS2 (WriteFile's extFile, GetNextSector)
+    is the rule, and the disk below is laid out by hand from it, not by
+    Dos2, so the writer is not marking its own homework.
+
+    Read as DOS 2 links, A's link to sector 1030 ($0406) is "file 1,
+    sector 6" -- B's first sector.  That is the shape of what --sweep did
+    to the MyDOS fixture: it followed other files' chains into DUP.SYS's
+    sectors, freed them, and wrote AUTORUN.SYS over them, so Quit stalled
+    reloading a DUP.SYS that was no longer there (docs/phase106.md)."""
+
+    A_SECS = [4, 1030, 5]
+    B_SECS = [6, 7]
+
+    def volume(self):
+        img = ATRImage(DD, 1440)
+        bits = bytearray(b"\xff" * 181)
+        used = [0, 1, 2, 3, 360] + list(range(361, 369)) + self.A_SECS + self.B_SECS
+        for sec in used:
+            bits[sec // 8] &= ~(0x80 >> (sec % 8)) & 0xFF
+        vtoc = bytearray(256)
+        vtoc[0] = 3                         # MyDOS, extended links
+        vtoc[1], vtoc[2] = 1428 & 0xFF, 1428 >> 8
+        free = sum(bin(b).count("1") for b in bits)
+        vtoc[3], vtoc[4] = free & 0xFF, free >> 8
+        vtoc[10:10 + 181] = bits
+        img.write_sector(360, vtoc)
+        self.data = {}
+        d = bytearray(256)
+        for k, (name, secs) in enumerate((("A       BIN", self.A_SECS),
+                                          ("B       BIN", self.B_SECS))):
+            body = bytes((k * 7 + i) & 0xFF for i in range(253 * len(secs) - 9))
+            self.data[name[:1] + ".BIN"] = body
+            d[k * 16:k * 16 + 5] = bytes([0x46, len(secs), 0, secs[0] & 0xFF, secs[0] >> 8])
+            d[k * 16 + 5:k * 16 + 16] = name.encode()
+            for i, sec in enumerate(secs):
+                chunk = body[i * 253:(i + 1) * 253]
+                nxt = secs[i + 1] if i + 1 < len(secs) else 0
+                raw = bytearray(256)
+                raw[:len(chunk)] = chunk
+                raw[253], raw[254], raw[255] = nxt >> 8, nxt & 0xFF, len(chunk)
+                img.write_sector(sec, raw)
+        img.write_sector(361, d)
+        return img
+
+    def test_read(self):
+        fs = Dos2(self.volume())
+        self.assertTrue(fs.mydos)
+        for name, body in self.data.items():
+            self.assertEqual(fs.read(name), body, name)
+
+    def test_delete_frees_its_own_sectors_only(self):
+        img = self.volume()
+        fs = Dos2(img)
+        fs.delete("A.BIN")
+        _, bits = fs._bitmap()
+        for sec in self.A_SECS:
+            self.assertTrue(fs._bit(bits, sec), f"sector {sec} of A not freed")
+        for sec in self.B_SECS:
+            self.assertFalse(fs._bit(bits, sec), f"B's sector {sec} freed with A")
+        self.assertEqual(Dos2(img).read("B.BIN"), self.data["B.BIN"])
+
+    def test_a_new_file_is_written_the_volume_s_way(self):
+        img = self.volume()
+        fs = Dos2(img)
+        body = bytes(range(256)) * 3
+        fs.add_file("C.BIN", body, above=1100)
+        e = fs.find("C.BIN")
+        self.assertEqual(e.flag & 0x04, 0x04)
+        first = img.read_sector(e.start)
+        nxt = (first[253] << 8) | first[254]
+        self.assertGreater(nxt, 1023)       # the high byte is the number's
+        self.assertEqual(Dos2(img).read("C.BIN"), body)
+
+    def test_the_fixture_s_dos_survives_a_sweep(self):
+        """The MyDOS 4.50 fixture itself, swept as build/gem-mydos.atr is,
+        keeps DOS.SYS and DUP.SYS byte for byte."""
+        try:
+            import tomllib
+            with open(os.path.join(ROOT, "fixtures.toml"), "rb") as f:
+                src = tomllib.load(f)["dos"]["mydos"]
+        except (OSError, KeyError):
+            self.skipTest("no MyDOS fixture: [dos].mydos in fixtures.toml")
+        if not os.path.exists(src):
+            self.skipTest(f"{src} is not here")
+        img = ATRImage.load(src)
+        fs = Dos2(img)
+        keep = {n: fs.read(n) for n in ("DOS.SYS", "DUP.SYS")}
+        for e in fs.entries():
+            if e.in_use and e.filename not in keep:
+                fs.delete(e.filename)
+        fs.compact()
+        fs.add_file("AUTORUN.SYS", bytes(418 * 253))
+        fs = Dos2(img)
+        for n, body in keep.items():
+            self.assertEqual(fs.read(n), body, f"{n} changed by the sweep")
+
+
 if __name__ == "__main__":
     unittest.main()

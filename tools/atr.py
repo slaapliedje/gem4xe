@@ -192,6 +192,18 @@ class Dos2:
         self.mydos = (not self.dos25 and
                       (vtoc[0] > 2 or img.sector_count > self.SD_SECTORS
                        or (img.sector_count == self.SD_SECTORS and total == 708)))
+        # MyDOS's EXTENDED LINKS, on a volume whose VTOC code is above 2 --
+        # the 1440-sector MyDOS fixture is one.  A sector link is then the
+        # next sector's whole number, high byte first, with no file number
+        # in it, and a file written that way carries $04 in its flag
+        # (Altirra diskfsdos2.cpp: WriteFile's extFile, GetNextSector).
+        # Read as a DOS 2 link, a chain past sector 255 goes wrong at once;
+        # --sweep followed README.1ST's that way into DUP.SYS's sectors,
+        # freed them, and wrote AUTORUN.SYS over them.
+        self.ext = self.mydos and vtoc[0] > 2
+        if self.mydos and vtoc[0] > 3:
+            raise ATRError(f"MyDOS VTOC code {vtoc[0]}: a bitmap over more "
+                           f"than one sector, which Dos2 does not handle")
 
     # -- directory ---------------------------------------------------------
     def entries(self):
@@ -238,27 +250,34 @@ class Dos2:
         return [e.filename for e in self.entries() if e.in_use]
 
     # -- file contents -----------------------------------------------------
-    def _link(self, raw):
+    def _link(self, raw, ext=False):
         """A sector's last three bytes: the bytes it holds, the sector that
-        follows, and the directory entry it belongs to.  The count is a
-        whole byte in double density -- 253 does not fit in seven bits --
-        and seven bits in single, where DOS 1 kept the top one for itself
-        (Altirra diskfsdos2.cpp, GetSectorDataBytes and GetNextSector)."""
+        follows, and the directory entry it belongs to (None in an extended
+        link, which has no room for it).  The count is a whole byte in
+        double density -- 253 does not fit in seven bits -- and seven bits
+        in single, where DOS 1 kept the top one for itself (Altirra
+        diskfsdos2.cpp, GetSectorDataBytes and GetNextSector)."""
         n = len(raw)
         used = raw[n - 1] if n > 128 else raw[n - 1] & 0x7F
+        if ext:
+            return used, (raw[n - 3] << 8) | raw[n - 2], None
         return used, ((raw[n - 3] & 0x03) << 8) | raw[n - 2], raw[n - 3] >> 2
+
+    def _ext(self, e):
+        """Whether `e`'s sectors are chained by extended links."""
+        return bool(self.mydos and e.flag & 0x04)
 
     def read(self, filename):
         e = self.find(filename)
         if not e:
             raise ATRError(f"{filename}: not found")
         out = bytearray()
-        sec = e.start
+        sec, ext = e.start, self._ext(e)
         for _ in range(e.count + 1):
             if sec == 0:
                 break
             raw = self.img.read_sector(sec)
-            used, sec, _ = self._link(raw)
+            used, sec, _ = self._link(raw, ext)
             out += raw[:used]
         return bytes(out)
 
@@ -269,11 +288,11 @@ class Dos2:
         if not e:
             raise ATRError(f"{filename}: not found")
         vtoc, bits = self._bitmap()
-        sec = e.start
+        sec, ext = e.start, self._ext(e)
         for _ in range(e.count + 1):
             if sec == 0:
                 break
-            here, sec = sec, self._link(self.img.read_sector(sec))[1]
+            here, sec = sec, self._link(self.img.read_sector(sec), ext)[1]
             self._set(bits, here)
         self._write_bitmap(vtoc, bits)
         e.flag = 0x80
@@ -408,7 +427,10 @@ class Dos2:
             raw = bytearray(self.img.sector_len(s))
             n = len(raw)
             raw[:len(chunk)] = chunk
-            raw[n - 3] = (fileno << 2) | ((nxt >> 8) & 0x03)
+            if self.ext:                 # the whole number: see __init__
+                raw[n - 3] = nxt >> 8
+            else:
+                raw[n - 3] = (fileno << 2) | ((nxt >> 8) & 0x03)
             raw[n - 2] = nxt & 0xFF
             raw[n - 1] = len(chunk)      # a whole byte: see _link
             self.img.write_sector(s, raw)
@@ -416,6 +438,8 @@ class Dos2:
         self._write_bitmap(vtoc, bits)
         # in use, DOS 2 -- or DOS 2.5's mark for a file in the upper half
         ent.flag = 0x03 if self.dos25 and max(secs) >= self.HIGH else 0x42
+        if self.ext:
+            ent.flag |= 0x04
         ent.count = nsec
         ent.start = secs[0]
         ent.name, ent.ext = name[:8], ext[:3]

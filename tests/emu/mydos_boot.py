@@ -37,10 +37,23 @@ boot flag at $0700 with 'M' the way a SpartaDOS signs with 'S', and
 dos_ident uses that; the drive map expected here is worked out from the
 DISK'S boot sector, not asked of the machine.
 
+AND QUIT, which stalled (0.12's item 8).  It was never gem4xe: the DISK
+was broken.  The fixture is a 1440-sector MyDOS volume, whose files are
+chained by MyDOS's extended links -- the next sector's whole number, no
+file number -- and tools/atr.py read them as DOS 2 links.  Sweeping the
+fixture down to its DOS followed other files' chains into DUP.SYS's
+sectors, freed them, and AUTORUN.SYS was written over them.  Booting
+never reads DUP.SYS, so the desktop came up; Quit goes back through
+DOSVEC, MyDOS loads DUP.SYS, and ran what was left of it.  So this gate
+holds the disk's DOS.SYS and DUP.SYS to the fixture's, byte for byte,
+then quits (Ctrl+Q) and gives MyDOS a command: A, its directory, which
+must list AUTORUN.SYS (docs/phase106.md).
+
     python3 tests/emu/mydos_boot.py [--shot]
 """
 import os
 import sys
+import tomllib
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -98,6 +111,16 @@ def main(argv):
     flag = img.read_sector(1)[0]
     check(flag == MYDOS_FLAG, f"the boot flag is ${flag:02X}, not 'M': this "
                               f"fixture is not MyDOS")
+    # MyDOS's own files, as the fixture has them: the sweep must not have
+    # touched a byte of either (tools/atr.py, extended links)
+    with open(os.path.join(ROOT, "fixtures.toml"), "rb") as f:
+        src = atr.Dos2(atr.ATRImage.load(tomllib.load(f)["dos"]["mydos"]))
+    for n in ("DOS.SYS", "DUP.SYS"):
+        if n in names:
+            got, want = fs.read(n), src.read(n)
+            check(got == want, f"{n} on the disk is {len(got)} bytes that are "
+                               f"not the fixture's {len(want)}: the sweep "
+                               f"wrote over it")
     want_map = 0x03 if flag == MYDOS_FLAG else None
     print(f"  {DISK}: {img!r}, boot flag {chr(flag)!r}, "
           f"{', '.join(sorted(names))}")
@@ -166,6 +189,30 @@ def main(argv):
               f"drive map {want_map:#04x} from the disk's boot flag")
         if not bad_px and not keep:
             os.remove(shot)
+
+        # -- back to MyDOS, and a command there -------------------------------
+        b.key("Q", ctrl=True)               # File -> Quit
+        for t in range(0, 1500, 25):
+            b.frames(25)
+            if any("Select Item" in ln for ln in screen(b)):
+                break
+        else:
+            check(False, "Quit: MyDOS's menu never came up (DUP.SYS)")
+            for ln in screen(b):
+                if ln.strip():
+                    print("   |" + ln)
+            return 1
+        print(f"  Quit: MyDOS's menu {t + 25} frames later")
+        b.frames(30)
+        b.key("A")                          # Disk Directory ...
+        b.frames(30)
+        b.key("RETURN")                     # ... of D1:, to the screen
+        b.frames(300)
+        lines = [ln for ln in screen(b) if ln.strip()]
+        check(any("AUTORUN SYS" in ln for ln in lines),
+              "MyDOS's directory, A then RETURN, did not list AUTORUN.SYS")
+        for ln in lines[-6:]:
+            print("   |" + ln)
     finally:
         emu.stop()
 
