@@ -7,8 +7,10 @@
  *   ST mouse, Amiga mouse, CX80 trak-ball   RELATIVE -- quadrature on the
  *                                           joystick direction lines, read
  *                                           through PORTA, deltas integrated
- *   Touch tablet (CX77), KoalaPad           ABSOLUTE -- POT0/POT1, one
- *                                           position per POKEY pot scan
+ *   Touch tablet (CX77), KoalaPad           ABSOLUTE -- the port's two pot
+ *                                           lines, one position per POKEY
+ *                                           pot scan; buttons on its
+ *                                           direction lines
  *   mouSTer (USB adapter) in XEM1 mode      RELATIVE, but COUNTED BY THE
  *                                           DEVICE -- 7-bit position
  *                                           counters on the POT lines, so
@@ -52,8 +54,9 @@ typedef enum {
     PTR_ST_MOUSE,       /* Atari ST mouse via a joystick-port adapter */
     PTR_AMIGA_MOUSE,    /* same idea, different pin order */
     PTR_TRAKBALL,       /* Atari CX80 trak-ball, in trak-ball mode */
-    PTR_TABLET,         /* Atari CX77 touch tablet / KoalaPad, absolute */
-    PTR_XEM1            /* mouSTer, XEM1 mode: probes both ports for it   */
+    PTR_CX77,           /* Atari CX77 Touch Tablet, absolute */
+    PTR_XEM1,           /* mouSTer, XEM1 mode: probes both ports for it   */
+    PTR_KOALA           /* KoalaPad: the CX77's shape, its own readings */
 } ptr_kind;
 
 typedef struct {
@@ -106,6 +109,27 @@ void ptr_warp(WORD x, WORD y);  /* force a position (vq_mouse / tests)  */
 WORD ptr_decode_quad(uint8_t prev, uint8_t now);
 WORD ptr_decode_tb(uint8_t prev, uint8_t now);
 WORD ptr_pair(WORD kind, uint8_t nibble, WORD axis);
+
+/* THE TWO TABLETS, as Altirra models them (inputcontroller.cpp,
+ * ATTabletController; inputmanager.cpp makes the CX77 with (228, invertY)
+ * and the KoalaPad with (0, no invert)):
+ *
+ *   - the position is the port's pot pair, x then y, 0..228;
+ *   - with the stylus lifted BOTH read a fixed value -- 228 on the CX77,
+ *     0 on the KoalaPad -- which is not a place: the pointer stays where
+ *     the stylus left it;
+ *   - the CX77's y runs the other way: 228 at the top;
+ *   - the buttons are the port's DIRECTION lines, active low, not its
+ *     trigger: the stylus button the up line, the pad's left button the
+ *     left line, its right button the right line.
+ *
+ * ptr_decode_tablet: TRUE with *x, *y the screen position when the
+ * stylus is down, FALSE (and nothing written) when it is up.
+ * ptr_tablet_buttons: the button word from the port's direction nibble.
+ * Exposed for the device-layer tests (tests/host/test_pointer.py), which
+ * hold them to a model of that controller. */
+WORD ptr_decode_tablet(WORD kind, uint8_t px, uint8_t py, WORD *x, WORD *y);
+WORD ptr_tablet_buttons(uint8_t nibble);
 
 /* XEM1: a reading is a 7-bit counter sent as 64..191; the movement between
  * two readings is their difference modulo 128, halved (the low bit is

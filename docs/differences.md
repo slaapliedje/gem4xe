@@ -20,7 +20,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 | Screen memory | a program may write it | **not reachable**: the VBXE's memory is not in the CPU's map.  Drawing is through the VDI only, and a device-specific form is 4-bit **chunky**, not interleaved planes | `src/vdi/vdi.c` |
 | BIOS, XBIOS, line-A | there | **none**: a program reaches the machine through the VDI, the AES and GEMDOS only.  No cookie jar (`Getcookie` answers not found), no system variables, no `_hz_200` | `src/sys/abi.c` |
 | Supervisor mode | `Super` switches to it | there is no user mode to leave: `Super(1L)` answers -1, as TOS answers a supervisor, and nothing else changes | `src/sys/gemdos.c` |
-| Pointer | the ST mouse | an ST or Amiga mouse on a joystick-port adapter, a CX80 trak-ball, a CX77 or KoalaPad tablet, or a mouSTer; `MOUSE=` in `GEM4XE.CFG` | `src/vdi/pointer.h` |
+| Pointer | the ST mouse | an ST or Amiga mouse on a joystick-port adapter, a CX80 trak-ball, a CX77 Touch Tablet or a KoalaPad (port 1 unless `MOUSEPORT` says), or a mouSTer; `MOUSE=` in `GEM4XE.CFG` | `src/vdi/pointer.h` |
 | Keyboard | the ST's | the Atari's, sending **the ST's scan codes** for every key the two share, with the SHIFT and CONTROL it was pressed with.  HELP, or a 1200XL's F1, is the ST's Help; a 1200XL's F2 its Undo | `src/vdi/vdi.c` |
 
 ## Memory

@@ -18,7 +18,7 @@
  *
  *     # gem4xe boot options
  *     VIDEO=AUTO          ; AUTO, VBXE or ANTIC
- *     MOUSE=AUTO          ; AUTO, ST, AMIGA, TRAKBALL, TABLET, XEM1, NONE
+ *     MOUSE=AUTO          ; AUTO, ST, AMIGA, TRAKBALL, CX77 (TABLET), KOALA, XEM1, NONE
  *
  * THE RECOVERY PATH is a reboot to the DOS prompt and an edit here.  On
  * media that auto-starts GEM -- a SpartaDOS batch, DOS 2's AUTORUN.SYS

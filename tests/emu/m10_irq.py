@@ -55,6 +55,7 @@ ROWCRS, COLCRS, SAVMSC = 0x0054, 0x0055, 0x0058
 SYS_PTR, SYS_EXIT, SYS_WAIT, SYS_POLL = 3000, 3001, 3002, 3003
 SYS_BUTLOG = 3019
 PTR_TRAKBALL = 3
+PTR_CX77, PTR_KOALA = 4, 6
 
 # The two runs the shadow covers, and where the native vectors sit in them.
 RUNS = ((0xC000, 0xD000), (0xD800, 0x10000))
@@ -261,6 +262,56 @@ def main(argv):
         states = list(log[7:7 + min(log[6], 8)])
         check("the poll replayed press, release, press, release",
               states == [1, 0, 1, 0], f"{log[6]} change(s): {states}")
+        check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
+
+        # -- the touch tablets (phase 108) ----------------------------------
+        # The bridge can neither attach Altirra's tablet controllers nor
+        # set a pot, so what it CAN drive is held here: a port with nothing
+        # in it reads 228 on both pots -- a lifted CX77 stylus, which is not
+        # a place -- and the tablets' buttons are the port's DIRECTION
+        # lines, which JOY sets.  The arithmetic itself is held to Altirra's
+        # model in tests/host/test_pointer.py.  With no MOUSEPORT a tablet
+        # is on port 1, where Atari's tablet software reads it (the
+        # trak-ball above, a relative device, was on port 2).
+        print("touch tablets")
+
+        def tablet(steps):
+            run_script(b, sa, count_addr, vdiref.encode(steps))
+            if not wait_done(b):
+                return None
+            n = b.peek16(count_addr)
+            recs = vdiref.decode(b.memdump(results_addr, n * vdiref.RESULT_WORDS * 2), n)
+            m = recs[-1]
+            return m[2], m[2 + vdiref.RESULT_INTOUT], m[2 + vdiref.RESULT_INTOUT + 1]
+
+        settle = [(SYS_WAIT, (), (5,)), (SYS_POLL, (), ()),
+                  (SYS_WAIT, (), (5,)), (SYS_POLL, (), ()), (VQ_MOUSE, (), ())]
+        b.joy(0, "centre")
+        b.joy(1, "centre")
+        got = tablet([(SYS_PTR, (), (PTR_CX77, 300, 100))] + settle)
+        check("CX77, stylus lifted: the pointer stays where it was",
+              got == (0, 300, 100), f"buttons, x, y = {got}")
+        for line, want in (("up", 1), ("left", 1), ("right", 2)):
+            b.joy(0, line)
+            b.frames(2)
+            got = tablet([(SYS_POLL, (), ()), (VQ_MOUSE, (), ())])
+            check(f"CX77, port 1's {line} line held: buttons {want}",
+                  got is not None and got[0] == want, f"buttons, x, y = {got}")
+        b.joy(0, "centre")
+        b.joy(1, "right")                   # the other port is not the tablet
+        b.frames(2)
+        got = tablet([(SYS_POLL, (), ()), (VQ_MOUSE, (), ())])
+        check("CX77, port 2's lines: nothing", got is not None and got[0] == 0,
+              f"buttons, x, y = {got}")
+        b.joy(1, "centre")
+        got = tablet([(SYS_POLL, (), ()), (VQ_MOUSE, (), ())])
+        check("CX77, the lines released: no buttons", got is not None and got[0] == 0,
+              f"buttons, x, y = {got}")
+        # the KoalaPad's stylus-up reading is 0, so the same empty port is
+        # a touch at the pad's bottom-right corner
+        got = tablet([(SYS_PTR, (), (PTR_KOALA, 300, 100))] + settle)
+        check("KoalaPad, the same reading: a touch at the bottom right",
+              got == (0, 639, 239), f"buttons, x, y = {got}")
         check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
 
         # -- the way back ---------------------------------------------------

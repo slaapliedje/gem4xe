@@ -7,10 +7,6 @@ PTR_STATE ptr_state;
 PTR_STATE ptr_seen;
 
 #define PORTA  (*(volatile uint8_t *)0xD300)   /* PIA: joystick 0 in low nibble */
-#define TRIG0  (*(volatile uint8_t *)0xD010)   /* GTIA: 0 = pressed             */
-#define TRIG1  (*(volatile uint8_t *)0xD011)
-#define POT0   (*(volatile uint8_t *)0xD200)
-#define POT1   (*(volatile uint8_t *)0xD201)
 #define POT(n) (*(volatile uint8_t *)(0xD200 + (n)))
 #define TRIG(n) (*(volatile uint8_t *)(0xD010 + (n)))
 #define ALLPOT (*(volatile uint8_t *)0xD208)
@@ -40,10 +36,17 @@ static uint8_t xem_port;            /* XEM1: joystick port it answered on */
  * port 1 is reported to interfere with the keyboard.  The 4 kHz sampler
  * (src/sys/irq.s) reads this byte to pick PORTA's nibble. */
 uint8_t ptr_port = PTR_PORT_2;
+/* ...and whether MOUSEPORT said so.  A TABLET'S standard is the other
+ * port: Atari's touch tablet software and the KoalaPad's read port 1, and
+ * until phase 108 a tablet was read there whatever MOUSEPORT said.  So a
+ * tablet with no MOUSEPORT is on port 1, and with one is where it says.
+ * On the direct page: LoRAM is at its reserve. */
+static TINY uint8_t ptr_port_given;
 
 void ptr_setport(WORD port)
 {
     ptr_port = (uint8_t)((port == PTR_PORT_1) ? PTR_PORT_1 : PTR_PORT_2);
+    ptr_port_given = 1;
 }
 static uint8_t xem_found;
 static uint8_t xem_rx, xem_ry;      /* the readings the movement is from */
@@ -176,6 +179,9 @@ void ptr_warp(WORD x, WORD y)
 
 void ptr_init(ptr_kind kind, WORD x, WORD y)
 {
+    if (!ptr_port_given)
+        ptr_port = (uint8_t)((kind == PTR_CX77 || kind == PTR_KOALA)
+                             ? PTR_PORT_1 : PTR_PORT_2);
     ptr_state.kind = (WORD)kind;
     ptr_state.buttons = 0;
     ptr_state.wheel = 0;
@@ -185,7 +191,7 @@ void ptr_init(ptr_kind kind, WORD x, WORD y)
     rmb_seen_free = 0;
     xem_found = 0;
     xem_wheel = 0;
-    if (kind == PTR_TABLET || kind == PTR_XEM1
+    if (kind == PTR_CX77 || kind == PTR_KOALA || kind == PTR_XEM1
             || kind == PTR_ST_MOUSE || kind == PTR_AMIGA_MOUSE
             || kind == PTR_TRAKBALL) {
         POTGO = 0;                  /* the absolute devices' position, and
@@ -254,20 +260,53 @@ static void poll_relative(void)
  * The counter tops out around 228, against a 640x240 screen: roughly 2.8
  * screen pixels per step horizontally and about 1:1 vertically.  Good enough
  * to hit a menu item, coarse for drawing.  Callers wanting smooth motion
- * should filter, not scale harder. */
-static void poll_absolute(void)
+ * should filter, not scale harder.
+ *
+ * THE PORT'S own pots and lines (MOUSEPORT): port 1 is POT0/POT1 and
+ * PORTA's low nibble, port 2 POT2/POT3 and its high nibble.  Until phase
+ * 108 this read port 1's pots whatever the port, took the buttons from
+ * BOTH triggers -- where a tablet has none -- and moved the pointer to a
+ * corner every time the stylus was lifted. */
+WORD ptr_decode_tablet(WORD kind, uint8_t px, uint8_t py, WORD *x, WORD *y)
 {
-    uint16_t px, py;
-    if (pot_pending && (ALLPOT & 3) != 0)
-        return;                     /* scan still running; keep the old value */
-    px = POT0;
-    py = POT1;
+    uint8_t up = (kind == PTR_KOALA) ? 0 : POT_MAX;
+
     if (px > POT_MAX) px = POT_MAX;
     if (py > POT_MAX) py = POT_MAX;
-    ptr_state.x = (WORD)(((uint32_t)px * (SCR_W - 1)) / POT_MAX);
-    ptr_state.y = (WORD)(((uint32_t)py * (SCR_H - 1)) / POT_MAX);
-    clamp();
-    ptr_state.buttons = (WORD)(((TRIG0 & 1) ? 0 : 1) | ((TRIG1 & 1) ? 0 : 2));
+    if (px == up && py == up)
+        return 0;                       /* the stylus is lifted */
+    if (kind != PTR_KOALA)
+        py = (uint8_t)(POT_MAX - py);   /* the CX77 reads 228 at the top */
+    *x = (WORD)(((uint32_t)px * (SCR_W - 1)) / POT_MAX);
+    *y = (WORD)(((uint32_t)py * (SCR_H - 1)) / POT_MAX);
+    return 1;
+}
+
+WORD ptr_tablet_buttons(uint8_t nibble)
+{
+    WORD b = 0;
+
+    if (!(nibble & 1) || !(nibble & 4))
+        b |= 1;                         /* the stylus button, the left one */
+    if (!(nibble & 8))
+        b |= 2;                         /* the right one */
+    return b;
+}
+
+static void poll_absolute(void)
+{
+    WORD x, y;
+    uint8_t first = (uint8_t)(ptr_port * 2);
+    uint8_t nib = (uint8_t)((ptr_port ? (PORTA >> 4) : PORTA) & 0x0F);
+
+    ptr_state.buttons = ptr_tablet_buttons(nib);
+    if (pot_pending && (ALLPOT & (3 << first)) != 0)
+        return;                     /* scan still running; keep the old value */
+    if (ptr_decode_tablet(ptr_state.kind, POT(first), POT(first + 1), &x, &y)) {
+        ptr_state.x = x;
+        ptr_state.y = y;
+        clamp();
+    }
     POTGO = 0;                      /* start the next scan */
     pot_pending = 1;
 }
@@ -354,8 +393,10 @@ WORD ptr_buttons_at(uint8_t trig)
     case PTR_AMIGA_MOUSE:
     case PTR_TRAKBALL:
         return (WORD)(((trig >> ptr_port) & 1) | (ptr_state.buttons & 2));
-    case PTR_TABLET:
-        return (WORD)(trig & 3);
+    case PTR_CX77:
+    case PTR_KOALA:
+        return -1;                  /* a tablet's buttons are its direction
+                                     * lines, which the ring does not keep */
     case PTR_XEM1:
         if (!xem_found)
             return -1;
@@ -373,7 +414,8 @@ void ptr_poll(void)
     case PTR_TRAKBALL:
         poll_relative();
         break;
-    case PTR_TABLET:
+    case PTR_CX77:
+    case PTR_KOALA:
         poll_absolute();
         break;
     case PTR_XEM1:

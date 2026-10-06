@@ -416,7 +416,8 @@ void boot_pointer(int16_t kind)
     case PTR_ST_MOUSE:    s = LS_BOOT_PTR_ST;     break;
     case PTR_AMIGA_MOUSE: s = LS_BOOT_PTR_AMIGA;  break;
     case PTR_TRAKBALL:    s = LS_BOOT_PTR_CX80;   break;
-    case PTR_TABLET:      s = LS_BOOT_PTR_TABLET; break;
+    case PTR_CX77:        s = LS_BOOT_PTR_TABLET; break;
+    case PTR_KOALA:       s = LS_BOOT_PTR_KOALA; break;
     case PTR_XEM1:        s = LS_BOOT_PTR_XEM1;   break;
     default:              s = LS_BOOT_NONE;       break;
     }

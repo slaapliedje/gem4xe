@@ -30,6 +30,7 @@ IRQ_STUB_C = os.path.join(ROOT, "tests", "host", "irq_stub.c")
 DEV_STUB_C = os.path.join(ROOT, "tests", "host", "dev_stub.c")
 QUAD_SIM_C = os.path.join(ROOT, "tests", "host", "quad_sim.c")
 XEM1_SIM_C = os.path.join(ROOT, "tests", "host", "xem1_sim.c")
+TABLET_SIM_C = os.path.join(ROOT, "tests", "host", "tablet_sim.c")
 GRAY = (0, 1, 3, 2)          # the quadrature phase order, one full cycle
 CALYPSI = os.environ.get("CALYPSI", os.path.expanduser("~/dev/toolchains/calypsi-65816"))
 
@@ -201,6 +202,116 @@ class TestTabletScaling(unittest.TestCase):
 
     def test_vertical_is_about_one_to_one(self):
         self.assertLessEqual(abs(239 / self.POT_MAX - 1.0), 0.1)
+
+
+class AltirraTablet:
+    """Altirra's ATTabletController (inputcontroller.cpp), forward: where
+    the stylus is -> what the port reads.  inputmanager.cpp builds the
+    CX77 ("Tablet") with (stylus-up 228, invertY) and the KoalaPad with
+    (0, no invert).  A position is -1..+1 across the pad, left to right
+    and top to bottom, as the controller's raw position -0x10000..0x10000
+    is; the pot is (pos * 114 + 0x728000) >> 16, so 0..228."""
+    def __init__(self, cx77):
+        self.up, self.invert = (228, True) if cx77 else (0, False)
+
+    def pots(self, u, v, lifted=False):
+        if lifted:
+            return self.up, self.up
+        def pot(f):
+            pos = max(-0x10000, min(0x10000, int(round(f * 0x10000))))
+            return (pos * 114 + 0x728000) >> 16
+        return pot(u), pot(-v if self.invert else v)
+
+    @staticmethod
+    def lines(stylus=False, left=False, right=False):
+        """SetPortOutput: a pressed button's bit pulls its line low --
+        stylus button bit 0 (the up line), left bit 2, right bit 3."""
+        bits = (1 if stylus else 0) | (4 if left else 0) | (8 if right else 0)
+        return ~bits & 15
+
+
+def tablet_expect(cx77, px, py):
+    """What the pointer should do for a reading: None while the stylus is
+    up (the pointer stays), else the screen position -- 0..228 spread over
+    the VBXE's 640 x 240, top-left at the pad's top-left."""
+    up = 228 if cx77 else 0
+    px, py = min(px, 228), min(py, 228)
+    if px == up and py == up:
+        return None
+    if cx77:
+        py = 228 - py
+    return (px * 639) // 228, (py * 239) // 228
+
+
+class TestTablets(unittest.TestCase):
+    """The CX77 and the KoalaPad, held to Altirra's model of them.  Until
+    phase 108 gem4xe had one tablet with the KoalaPad's y and no stylus-up
+    value, read port 1 whatever MOUSEPORT said, and took the buttons from
+    both triggers."""
+
+    def test_the_model_places_the_corners(self):
+        for cx77 in (True, False):
+            t = AltirraTablet(cx77)
+            self.assertEqual(tablet_expect(cx77, *t.pots(1, 1)), (639, 239))
+            self.assertEqual(tablet_expect(cx77, *t.pots(-1, 1)), (0, 239))
+            self.assertEqual(tablet_expect(cx77, *t.pots(-0.99, -0.99)), (2, 1))
+            self.assertEqual(tablet_expect(cx77, *t.pots(0.99, -0.99)), (636, 1))
+
+    def test_one_corner_reads_as_lifted(self):
+        """The stylus-up reading is also one corner's: the CX77's top
+        right (228, 228 with its y inverted), the KoalaPad's top left
+        (0, 0).  Nothing can tell them apart, so the pointer stays where
+        it was -- a pixel short of that corner, never thrown to it."""
+        self.assertIsNone(tablet_expect(True, *AltirraTablet(True).pots(1, -1)))
+        self.assertIsNone(tablet_expect(False, *AltirraTablet(False).pots(-1, -1)))
+
+    def test_lifting_the_stylus_is_not_a_place(self):
+        for cx77 in (True, False):
+            t = AltirraTablet(cx77)
+            self.assertIsNone(tablet_expect(cx77, *t.pots(0, 0, lifted=True)))
+
+    def test_down_the_pad_is_down_the_screen(self):
+        for cx77 in (True, False):
+            t = AltirraTablet(cx77)
+            ys = [tablet_expect(cx77, *t.pots(0, v / 8))[1] for v in range(-7, 8)]
+            self.assertEqual(ys, sorted(ys), f"cx77={cx77}")
+            self.assertLess(ys[0], ys[-1])
+
+    def test_target_decode_matches_the_model(self):
+        got = simulate("tablet", [TABLET_SIM_C], ["r_cx77", "r_koala", "r_buttons"])
+
+        def one(h, cx77, px, py):
+            e = tablet_expect(cx77, px, py)
+            x, y = e if e else (-1, -1)
+            h = (h * 31 + (1 if e else 2)) & 0xFFFFFFFF
+            h = (h * 31 + (x & 0xFFFF)) & 0xFFFFFFFF
+            return (h * 31 + (y & 0xFFFF)) & 0xFFFFFFFF
+
+        def walk(cx77):
+            h = 0
+            for v in range(256):
+                for e in (0, 1, 114, 227, 228, 255):
+                    h = one(h, cx77, v, e)
+                    h = one(h, cx77, e, v)
+            return h
+        b = 0
+        for n in range(16):
+            left = (n & 1) == 0 or (n & 4) == 0
+            right = (n & 8) == 0
+            b = (b * 7 + (1 if left else 0) + (2 if right else 0)) & 0xFFFFFFFF
+        self.assertEqual(got["r_cx77"] & 0xFFFFFFFF, walk(True), "CX77")
+        self.assertEqual(got["r_koala"] & 0xFFFFFFFF, walk(False), "KoalaPad")
+        self.assertEqual(got["r_buttons"] & 0xFFFFFFFF, b, "buttons")
+
+    def test_the_buttons_are_the_direction_lines(self):
+        L = AltirraTablet.lines
+        def want(n):
+            return (1 if (n & 1) == 0 or (n & 4) == 0 else 0) | (2 if (n & 8) == 0 else 0)
+        self.assertEqual(want(L()), 0)
+        self.assertEqual(want(L(stylus=True)), 1)
+        self.assertEqual(want(L(left=True)), 1)
+        self.assertEqual(want(L(right=True)), 2)
+        self.assertEqual(want(L(stylus=True, right=True)), 3)
 
 
 class TestXem1(unittest.TestCase):

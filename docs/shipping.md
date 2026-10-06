@@ -539,7 +539,7 @@ desktop writes and reads with a GEM already on the screen.  Two things
 cannot be, and they are in a plain text file beside `GEM.COM`:
 
     # VIDEO=AUTO       AUTO, VBXE, ANTIC (= SAFE)
-    # MOUSE=AUTO       AUTO, ST, AMIGA, TRAKBALL, TABLET, XEM1, NONE
+    # MOUSE=AUTO       AUTO, ST, AMIGA, TRAKBALL, CX77 (TABLET), KOALA, XEM1, NONE
 
 **The screen**, because a monitor that will not lock to the VBXE's
 640x240 leaves the user with nothing to put a dialog on.  `VIDEO=ANTIC`

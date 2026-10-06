@@ -58,9 +58,10 @@ static const CFG_WORD FAR cfg_mouse[] = {
     { "TRAKBALL", PTR_TRAKBALL     },
     { "CX80",     PTR_TRAKBALL     },    /* Atari's part numbers, which is */
     { "CX22",     PTR_TRAKBALL     },    /* what the box says (a 0.9 tester */
-    { "TABLET",   PTR_TABLET       },    /* wrote MOUSE=CX77 and got the   */
-    { "CX77",     PTR_TABLET       },    /* ST mouse, silently)            */
-    { "KOALA",    PTR_TABLET       },    /* the same device, its other name */
+    { "TABLET",   PTR_CX77         },    /* the CX77, as TABLET always was */
+    { "CX77",     PTR_CX77         },    /* (a tester wrote MOUSE=CX77 and */
+    { "KOALA",    PTR_KOALA        },    /* got the ST mouse, silently);   */
+    { "KOALAPAD", PTR_KOALA        },    /* the KoalaPad apart: phase 108 */
     { "XEM1",     PTR_XEM1         },
     { "MOUSTER",  PTR_XEM1         }     /* likewise */
 };
