@@ -2439,7 +2439,14 @@ static void kb_queue(uint8_t code)
     uint8_t next = (uint8_t)((kb_tail + 1) & (KB_QLEN - 1));
     if (k && next != kb_head) {
         kb_q[kb_tail] = k;
-        kb_m[kb_tail] = (uint8_t)(((code & 0x40) ? 2 : 0) | ((code & 0x80) ? 4 : 0));
+        /* SHIFT is bit 6 of the code and CONTROL bit 7, so the two shifted
+         * down five are already the 2 and the 4 the modifier word wants.
+         * NOT two bit tests: at -O2 the compiler loaded the byte 16 bits
+         * wide and tested CONTROL with `bmi`, bit 15 -- a stray stack byte
+         * -- so whether a key came with CONTROL depended on the caller's Y
+         * (B23's family, tools/ccbug; found when a layout change made a
+         * plain `1` arrive as Ctrl-1 in test-m7, phase 107). */
+        kb_m[kb_tail] = (uint8_t)((code >> 5) & 6);
         kb_tail = next;
     }
 }
