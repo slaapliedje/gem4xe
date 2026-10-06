@@ -1270,6 +1270,18 @@ three rows, `idx + (row << 6)`.  And `mscan --build` now reports any
 operand at `0,s` in the build's own assembly, which nothing right can
 produce; `mscan_b23.s` is the reproducer's listing, kept to prove it can.
 
+**AND AT ANY OTHER SLOT (phase 107).**  `kb_queue` in `src/vdi/vdi.c`
+built the modifier byte as `((code & 0x40) ? 2 : 0) | ((code & 0x80) ? 4 :
+0)`.  At `-O2` the byte was stored at `7,s`, loaded 16 bits wide and
+tested with `inc a; dec a; bmi` -- bit 15, the byte above it -- so a key
+came with CONTROL or not by what the caller had left there.  Not at
+`0,s`, so `stack_zero` never saw it; it showed when a layout change made
+test-m7's `1` after Ctrl-N arrive as Ctrl-1.  Written `(code >> 5) & 6`
+now.  `mscan --build` also reports a slot the function only writes 8 bits
+wide, loaded 16 bits wide and sign-tested before anything masks it
+(`stray_sign`); `mscan_b23w.s` is kb_queue's listing, kept to prove it
+can.
+
 ## B24 — a value chosen in branches is stored in one slot and read from another
 
     icol = d3 == FL3DACT ? actbutcol : indbutcol;   /* in just_draw */
@@ -1306,3 +1318,17 @@ The shape to write instead: a TABLE read by index -- `col3d[d3 >> 9]`
 some other slot finds these, but finds legitimate code too (a value
 parked at `1,s` and compared on the next line), so it is not in
 `mscan` yet: the shape has to be pinned first.
+
+**A REGISTER FORM, AND A SCAN FOR IT (phase 107).**  A diagnostic build
+of `src/vdi/vdi.c` compiled `vdi_v_opnvwk` with `want` stored in
+`_Dp`/`_Dp+2` -- which an outlined fragment then overwrote -- and `vdev =
+want` read from `_Dp+8`/`_Dp+10`, callee-saved registers the function had
+pushed and never written: the caller's values, there the dispatch
+target `vdi` had just jumped through.  `vdev` became the address of
+`vdi_v_opnvwk` itself and the next device call ran into code.  The
+product's own compile of the same source keeps `want` in `_Dp+4` and is
+right; adding six lines elsewhere in the file was enough to change it.
+Unlike the stack-slot form this one has no legitimate twin -- a saved
+register's first use being a read can only see the caller's value -- so
+`mscan --build` reports it (`unset_saved`, following the file's own
+`?Lnnn` fragments).  `mscan_b24d.s` is that listing.

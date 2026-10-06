@@ -416,6 +416,134 @@ def wrong_bit(path):
             run = 0
 
 
+def _bodies(path):
+    """Each named function's instructions, as (op, operand, line), with
+    a ("LABEL", "", line) where a `?Lnnn` label falls inside it."""
+    func, body = None, []
+    for n, raw in enumerate(open(path, encoding="latin-1"), 1):
+        line = raw.split(";", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        if m:
+            if func:
+                yield func, body
+            func, body = m.group(1), []
+            line = m.group(2)
+        else:
+            m = re.match(r"^`[^`]*`:\s*(.*)$", line)
+            if m:
+                body.append(("LABEL", "", n))
+                line = m.group(1)
+        if not line.strip() or line.strip().startswith("."):
+            continue
+        op, _, arg = line.strip().partition(" ")
+        body.append((op, arg.strip(), n))
+    if func:
+        yield func, body
+
+
+# What a sign test may look past on its way from the load: nothing that
+# changes the accumulator.  A 16-bit `bit` with an immediate tests only
+# the bits it names, so a byte's bit 6 is still the byte's.
+_KEEPS_A = ("LABEL", "bit", "bne", "beq", "bcc", "bcs", "bvc", "bvs", "bra",
+            "ldx", "ldy", "inc", "dec", "inx", "dex", "iny", "dey", "stx",
+            "sty", "clc", "sec")
+
+
+def stray_sign(path):
+    """B23's wide form: a stack slot the function only ever writes 8 bits
+    wide, loaded 16 bits wide and then sign-tested (bmi/bpl) with nothing
+    between that narrows or masks it -- bit 15, the byte ABOVE the slot,
+    is tested.  B23 at 0,s is stack_zero(); this is the same fault at any
+    other slot, which is what kb_queue's CONTROL was (phase 107).  Yields
+    (function, line, text)."""
+    for func, body in _bodies(path):
+        m8, w = False, []
+        for op, arg, n in body:
+            if op == "sep" and arg in ("#32", "#48", "#0x20", "#0x30"):
+                m8 = True
+            elif op == "rep" and arg in ("#32", "#48", "#0x20", "#0x30"):
+                m8 = False
+            w.append((op, arg, n, m8))
+        w8, w16 = set(), set()
+        for op, arg, n, m8 in w:
+            m = re.match(r"^(\d+),s$", arg)
+            if m and op in ("sta", "stz"):
+                (w8 if m8 else w16).add(int(m.group(1)))
+        only8 = {k for k in w8 if not ({k - 1, k, k + 1} & w16)}
+        for i, (op, arg, n, m8) in enumerate(w):
+            m = re.match(r"^(\d+),s$", arg)
+            if m8 or op != "lda" or not m or int(m.group(1)) not in only8:
+                continue
+            for op2, _, _, m82 in w[i + 1:i + 12]:
+                if m82:
+                    break
+                if op2 in ("bmi", "bpl"):
+                    yield func, n, f"lda {arg} ... {op2}"
+                    break
+                if op2 not in _KEEPS_A:
+                    break
+
+
+def _fragments(path):
+    """Each outlined `?Lnnn` fragment's instructions, to its return."""
+    frags, cur = {}, None
+    for n, raw in enumerate(open(path, encoding="latin-1"), 1):
+        line = raw.split(";", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        m = re.match(r"^`([^`]*)`:\s*(.*)$", line)
+        if m:
+            cur = m.group(1)
+            frags.setdefault(cur, [])
+            line = m.group(2)
+        elif re.match(r"^[A-Za-z_][A-Za-z0-9_]*:", line):
+            cur = None
+            continue
+        if cur is None or not line.strip() or line.strip().startswith("."):
+            continue
+        op, _, arg = line.strip().partition(" ")
+        frags[cur].append((op, arg.strip(), n))
+        if op in ("rtl", "rts", "jmp", "jml", "bra", "brl"):
+            cur = None
+    return frags
+
+
+def unset_saved(path):
+    """B24's register form: a function pushes a callee-saved register
+    (`pei` of _Dp+8 or above in its prologue) and its first use of it is
+    a READ -- so it can only hold the caller's value.  Calls to the file's
+    own `?Lnnn` fragments are followed, because a prologue often hands
+    the setup to one.  vdi_v_opnvwk stored `want` in _Dp and read it back
+    from _Dp+8 (phase 107).  Yields (function, line, text)."""
+    frags = _fragments(path)
+
+    def expand(seq, depth=0):
+        for op, arg, n in seq:
+            m = re.search(r"`([^`]*)`", arg)
+            if op == "jsl" and m and m.group(1) in frags and depth < 3:
+                yield from expand(frags[m.group(1)], depth + 1)
+            yield op, arg, n
+
+    for func, body in _bodies(path):
+        saved, i = set(), 0
+        while i < len(body) and body[i][0] == "pei":
+            m = re.search(r"_Dp\+(\d+)", body[i][1])
+            if m and int(m.group(1)) >= 8:
+                saved.add(int(m.group(1)))
+            i += 1
+        seen = set()
+        for op, arg, n in expand(body[i:]):
+            for m in re.finditer(r"_Dp\+(\d+)", arg):
+                r = int(m.group(1))
+                if r not in saved or r in seen:
+                    continue
+                seen.add(r)
+                if op not in ("sta", "stx", "sty", "stz") or "[" in arg:
+                    yield func, n, f"{op} {arg}"
+
+
 def tree_sources():
     """The C the tree compiles, with the flags it compiles them with."""
     out = []
@@ -443,7 +571,7 @@ def build_scan():
     if not files:
         sys.exit("mscan --build: no assembly beside the objects -- run "
                  "`make mscan`, which rebuilds with CC_ASM=1")
-    calls = widths = zeros = shifts = 0
+    calls = widths = zeros = shifts = strays = unsets = 0
     for f in files:
         rel = os.path.relpath(f, ROOT)
         for func, n, tgt in scan(f):
@@ -464,11 +592,20 @@ def build_scan():
             print(f"{rel}:{n}: {func}: a signed >> {k} sign-extends a "
                   f"{k}-bit field (B12): shift an unsigned copy")
             shifts += 1
+        for func, n, text in stray_sign(f):
+            print(f"{rel}:{n}: {func}: `{text}` sign-tests the byte above "
+                  f"a byte (B23)")
+            strays += 1
+        for func, n, text in unset_saved(f):
+            print(f"{rel}:{n}: {func}: `{text}` reads a saved register "
+                  f"before it is written (B24)")
+            unsets += 1
     print(f"mscan: {len(files)} object(s) of the build scanned; {calls} "
           f"call(s) reached narrow, {widths} join(s) reached in the "
           f"wrong width, {zeros} read(s) below the stack, {shifts} signed "
-          f"shift(s) from the wrong bit")
-    return 1 if calls or widths or zeros or shifts else 0
+          f"shift(s) from the wrong bit, {strays} sign test(s) of a stray "
+          f"byte, {unsets} saved register(s) read unwritten")
+    return 1 if calls or widths or zeros or shifts or strays or unsets else 0
 
 
 def main(argv):

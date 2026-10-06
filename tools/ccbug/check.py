@@ -275,6 +275,16 @@ def main():
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b21m.s")
     fixtures["B21 mscan finds a join reached in both widths"] = (
         len(_mscan.mixed(_fix)), 1)
+    # ...and B23's wide form: kb_queue's -O2 listing, one sign test of
+    # the byte above a byte (phase 107).
+    _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b23w.s")
+    fixtures["B23 mscan finds the sign test of a stray byte"] = (
+        len(list(_mscan.stray_sign(_fix))), 1)
+    # ...and B24's register form: vdi_v_opnvwk's -O2 listing, both halves
+    # of a saved register read before it is written (phase 107).
+    _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b24d.s")
+    fixtures["B24 mscan finds a saved register read unwritten"] = (
+        len(list(_mscan.unset_saved(_fix))), 2)
     # ...and B12's: the compiler's own -O1 assembly, one wrong-bit shift
     # and an unsigned control beside it that must stay silent.
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b12.s")

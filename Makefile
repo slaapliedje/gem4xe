@@ -1697,7 +1697,7 @@ check-cc:
 # because it compiles the whole tree a second time; run it after a
 # toolchain change, or when something dies inside a callee that is not
 # at fault.
-# Two checks for cc65816's accumulator-width miscompiles (tools/ccbug/
+# Checks for cc65816 miscompiles (tools/ccbug/
 # mscan.py): a named function CALLED with an 8-bit accumulator (B17), and
 # an immediate REACHED in a width its encoding contradicts (B21, which
 # broke antic_copy in 2026-09).  Over the build's OWN assembly, so every
