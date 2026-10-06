@@ -743,8 +743,11 @@ static void win_bldview(WNODE *pw, const GRECT *r)
                 break;
             }
             pf->f_obid = obid;
+            /* WHITEBAK on an icon only: on a G_STRING -- the text view's
+             * lines -- it is MagiC's "underline a shortcut" (objc.c) */
             G.g_screen[obid].ob_state =
-                (UWORD)(WHITEBAK | ((pf->f_flags & F_SELECTED) ? SELECTED : 0));
+                (UWORD)((G.g_iview == V_TEXT ? 0 : WHITEBAK)
+                        | ((pf->f_flags & F_SELECTED) ? SELECTED : 0));
             G.g_screen[obid].ob_flags = NONE;
         }
     }

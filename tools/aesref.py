@@ -47,6 +47,10 @@ RBUTTON, LASTOB, TOUCHEXIT, HIDETREE, INDIRECT = 0x10, 0x20, 0x40, 0x80, 0x100
 NORMAL, SELECTED, CROSSED, CHECKED = 0, 1, 2, 4
 DISABLED, OUTLINED, SHADOWED = 8, 0x10, 0x20
 WHITEBAK = 0x40
+# MagiC's extended objects (src/aes/objc.c, ob_magx): what a WHITEBAK
+# button or string is, by its state's high byte
+MX_NONE, MX_CHECK, MX_RADIO, MX_GROUP = 0, 1, 2, 3
+MX_SCEXIT, MX_SCSTRING, MX_UNDERLINE = 4, 5, 6
 
 NIL, ROOT, MAX_DEPTH, MAX_LEN = -1, 0, 8, 81
 WHITE, BLACK, LWHITE, LBLACK = 0, 1, 8, 9
@@ -1229,12 +1233,102 @@ class AES:
             return 1, self.backgrcol if d else WHITE, 0
         return 0, 0, 0
 
+    @staticmethod
+    def ob_magx(typ, flags, state):
+        """MagiC's object kinds, from a WHITEBAK state's high byte -- the
+        encoding as CF-Lib's magxobj.c reads it: (kind, shortcut index or
+        -1).  A button: 0xFE a group frame; bit 15 a check box, or a radio
+        button when RBUTTON, its low nibble the shortcut and 0xFF none;
+        otherwise an EXIT button with a shortcut.  A string: 0xFF
+        underlined whole, 0x00-0x0F a shortcut."""
+        us = (state >> 8) & 0xFF
+        if not state & WHITEBAK:
+            return MX_NONE, -1
+        if typ == G_BUTTON:
+            if us == 0xFE:
+                return MX_GROUP, -1
+            if us & 0x80:
+                return (MX_RADIO if flags & RBUTTON else MX_CHECK,
+                        -1 if us == 0xFF else us & 0x0F)
+            if flags & EXIT:
+                return MX_SCEXIT, us & 0x0F
+        elif typ == G_STRING:
+            if us == 0xFF:
+                return MX_UNDERLINE, -1
+            if not us & 0xF0:
+                return MX_SCSTRING, us
+        return MX_NONE, -1
+
+    def mx_shortcut(self, x, y, sc, n):
+        """A shortcut letter's rule: under its cell's last row."""
+        if 0 <= sc < n:
+            x += sc * self.gl_wchar
+            y += self.gl_hchar - 1
+            self.gsx_cline(x, y, x + self.gl_wchar - 1, y)
+
+    def mx_draw(self, mx, sc, text, state, t):
+        """A check box, radio button or group frame, whole, on the dialog's
+        ground: no frame of its own, no 3D growth.  The indicator is one
+        row tall less two and a character and a half wide; a cross when a
+        check box is SELECTED, a solid centre when a radio button is, whose
+        box has its corners cut.  The label one character after it; a
+        frame's title over its top edge, a character in."""
+        ground = self.backgrcol if self.gl_3d else WHITE
+        self.gr_rect(ground, IP_SOLID, t)
+        self.gsx_attr(False, MD_REPLACE, BLACK)
+        if mx == MX_GROUP:
+            y0 = t.y + self.gl_hchar // 2
+            self.gr_box(t.x, y0, t.w, t.y + t.h - y0, 1)
+            tx, ty = t.x + self.gl_wchar, t.y
+        else:
+            bh = min(self.gl_hchar - 2, t.h)
+            bw = self.gl_wchar + self.gl_wchar // 2
+            b = Rect(t.x, t.y + cdiv(t.h - bh, 2), bw, bh)
+            if mx == MX_CHECK:
+                self.gr_box(b.x, b.y, bw, bh, 1)
+            else:
+                self.gsx_cline(b.x + 1, b.y, b.x + bw - 2, b.y)
+                self.gsx_cline(b.x + 1, b.y + bh - 1, b.x + bw - 2, b.y + bh - 1)
+                self.gsx_cline(b.x, b.y + 1, b.x, b.y + bh - 2)
+                self.gsx_cline(b.x + bw - 1, b.y + 1, b.x + bw - 1, b.y + bh - 2)
+            self.gr_inside(b, 1)
+            self.gr_rect(WHITE, IP_SOLID, b)
+            if state & SELECTED:
+                self.gsx_attr(False, MD_REPLACE, BLACK)
+                if mx == MX_CHECK:
+                    self.gsx_cline(b.x, b.y, b.x + b.w - 1, b.y + b.h - 1)
+                    self.gsx_cline(b.x, b.y + b.h - 1, b.x + b.w - 1, b.y)
+                else:
+                    self.gr_inside(b, 1)
+                    self.gr_rect(BLACK, IP_SOLID, b)
+            tx = t.x + bw + self.gl_wchar
+            ty = t.y + cdiv(t.h - self.gl_hchar, 2)
+        n = self.expand_string(text)
+        if n:
+            if mx == MX_GROUP:
+                self.gr_rect(ground, IP_SOLID,
+                             Rect(tx, ty, n * self.gl_wchar, self.gl_hchar))
+                n = self.expand_string(text)
+            self.gsx_attr(True, MD_TRANS, BLACK)
+            self.gsx_tblt(IBM, tx, ty, n)
+            self.gsx_attr(False, MD_REPLACE, BLACK)
+            self.mx_shortcut(tx, ty, sc, n)
+        if state & DISABLED:
+            self.gsx_fcolor(ground)
+            self.bb_fill(MD_TRANS, FIS_PATTERN, IP_4PATT, t.x, t.y, t.w, t.h)
+
     def just_draw(self, obj, sx, sy):
         state, typ, flags, spec, th, ch = self.ob_sst(obj)
         o = self.tree[obj]
         if (flags & HIDETREE) or spec == 0xFFFFFFFF:
             return
         t = Rect(sx, sy, o.ob_width, o.ob_height)
+        mx, sc = self.ob_magx(typ, flags, state)
+        if mx in (MX_CHECK, MX_RADIO, MX_GROUP):
+            if not self.gsx_chkclip(t.copy()):
+                return
+            self.mx_draw(mx, sc, self.mem[spec].s, state, t)
+            return
         d3 = (flags & FL3DMASK) if self.gl_3d else 0
         # a background TEXT takes the ground only: no edge, no growth
         edge3d = bool(d3) and not (d3 == FL3DBAK and typ in
@@ -1362,9 +1456,9 @@ class AES:
         elif typ in (G_STRING, G_TITLE, G_BUTTON):
             n = self.expand_string(self.mem[spec].s)
             if n:
-                self.gsx_attr(True, MD_TRANS,
-                              WHITE if (typ == G_BUTTON and changecol and
-                                        (state & SELECTED)) else BLACK)
+                tc = (WHITE if (typ == G_BUTTON and changecol and
+                                (state & SELECTED)) else BLACK)
+                self.gsx_attr(True, MD_TRANS, tc)
                 y = t.y + cdiv(t.h - self.gl_hchar, 2)
                 x = t.x
                 if typ == G_BUTTON:
@@ -1372,6 +1466,12 @@ class AES:
                     if movetext and not (state & SELECTED):
                         x, y = x - 1, y - 1
                 self.gsx_tblt(IBM, x, y, n)
+                if mx in (MX_SCEXIT, MX_SCSTRING):
+                    self.gsx_attr(False, MD_REPLACE, tc)
+                    self.mx_shortcut(x, y, sc, n)
+            if mx == MX_UNDERLINE:
+                self.gsx_attr(False, MD_REPLACE, BLACK)
+                self.gsx_cline(t.x, t.y + t.h - 1, t.x + t.w - 1, t.y + t.h - 1)
         # Outline
         if (state & OUTLINED) and d3 == FL3DBAK:
             self.draw_3d_outline(t)
@@ -1701,6 +1801,8 @@ class AES:
         th = th if th > 0 else 0
         if (typ not in (G_ICON, G_CICON, G_USERDEF)
                 and not (self.gl_3d and (flags & FL3DMASK))
+                and self.ob_magx(typ, flags, newstate)[0] not in
+                    (MX_CHECK, MX_RADIO, MX_GROUP)
                 and ((newstate ^ state) & SELECTED)):
             self.bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, x + th, y + th,
                          o.ob_width - 2 * th, o.ob_height - 2 * th)

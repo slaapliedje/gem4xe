@@ -358,9 +358,11 @@ def main(argv):
         check(shell == [1, 5, 1, 1, 0],
               f"appl_getinfo(AES_SHELL) answered {shell}, not [1, 5, 1, 1, 0]")
         # No 3D objects, objc_sysvar present (this is the subject cflib's
-        # obgframe.c branches on), no GDOS face in a TEDINFO.
-        check(obj == [1, 0, 1, 0, 0],
-              f"appl_getinfo(AES_OBJECT) answered {obj}, not [1, 0, 1, 0, 0]")
+        # obgframe.c branches on), no GDOS face in a TEDINFO, and MagiC's
+        # WHITEBAK objects drawn by the AES (bit 2 of the fourth word, which
+        # CF-Lib's init_userdef reads).
+        check(obj == [1, 0, 1, 0, 4],
+              f"appl_getinfo(AES_OBJECT) answered {obj}, not [1, 0, 1, 0, 4]")
         # The resolution number is -1 BECAUSE THERE ISN'T ONE.  Every
         # value Getrez can answer names an Atari screen -- 0/1/2 the ST's,
         # 4/6/7 the TT's -- and gem4xe's are the VBXE's own (512, 640 or

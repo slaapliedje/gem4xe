@@ -252,6 +252,55 @@ def change(obj, state, redraw=1, clip=FULL):
     return (OBJC_CHANGE, clip, (obj, state, redraw))
 
 
+MX_US = 0x0100                  # a MagiC state's high byte, one step
+
+
+def magx(L, d3=0, bak=0):
+    """MagiC's WHITEBAK objects (src/aes/objc.c, ob_magx), the kinds QED's
+    dialogs are made of: check boxes -- plain, with a shortcut and
+    SELECTED, DISABLED -- radio buttons one row apart, and a group frame.
+    `d3` gives the buttons QED's 3D flag (FL3DACT), `bak` the root its
+    background one, for the 3D look."""
+    cb = SELECTABLE | d3
+    return [
+        Obj(NIL,  1,   6, G_BOX,    bak,      0, 0x00021100, 100, 30, 440, 170),
+        Obj(2,  NIL, NIL, G_BUTTON, cb, WHITEBAK | 0xFF * MX_US,
+            L.text("Blinking cursor"), 16, 16, 200, 8),
+        Obj(3,  NIL, NIL, G_BUTTON, cb, WHITEBAK | 0x82 * MX_US | SELECTED,
+            L.text("Save windows"), 16, 24, 200, 8),
+        Obj(4,  NIL, NIL, G_BUTTON, cb, WHITEBAK | 0xFF * MX_US | DISABLED,
+            L.text("Use GEM clipboard"), 16, 32, 200, 8),
+        Obj(5,  NIL, NIL, G_BUTTON, cb | RBUTTON, WHITEBAK | 0xFF * MX_US,
+            L.text("Insert"), 16, 48, 120, 8),
+        Obj(6,  NIL, NIL, G_BUTTON, cb | RBUTTON, WHITEBAK | 0x81 * MX_US | SELECTED,
+            L.text("Overwrite"), 16, 56, 120, 8),
+        Obj(0,  NIL, NIL, G_BUTTON, d3 | LASTOB, WHITEBAK | 0xFE * MX_US,
+            L.text(" Server "), 232, 16, 192, 64),
+    ]
+
+
+def magx3d(L):
+    return magx(L, d3=FL3DACT, bak=FL3DBAK)
+
+
+def magxsc(L, d3=0, bak=0):
+    """MagiC's shortcut letters: an EXIT button's and a string's, and a
+    string underlined whole."""
+    return [
+        Obj(NIL,  1,   3, G_BOX,    bak,      0, 0x00021100, 100, 30, 440, 170),
+        Obj(2,  NIL, NIL, G_BUTTON, SELECTABLE | EXIT | d3, WHITEBAK | 0x01 * MX_US,
+            L.text("Cancel"), 248, 136, 88, 16),
+        Obj(3,  NIL, NIL, G_STRING, 0, WHITEBAK | 0x03 * MX_US,
+            L.text("Progressbar from"), 16, 96, 160, 8),
+        Obj(0,  NIL, NIL, G_STRING, LASTOB, WHITEBAK | 0xFF * MX_US,
+            L.text("normal block"), 16, 120, 120, 8),
+    ]
+
+
+def magxsc3d(L):
+    return magxsc(L, d3=FL3DACT, bak=FL3DBAK)
+
+
 def edit(obj, kind, idx, kchar=0):
     return (OBJC_EDIT, (), (obj, kchar, idx, kind))
 
@@ -338,6 +387,25 @@ CASES = [
       (OBJC_DELETE, (), (0,))]),            # the root cannot go: 0
     ("outward borders: negative spec thickness", borders,
      [draw()] + [find(x, y) for x, y in [(110, 80), (98, 58), (390, 90)]]),
+    # MagiC's WHITEBAK objects (phase 107).  A check box is found over its
+    # label as well as its box, and a change of SELECTED redraws its mark
+    # rather than inverting the row; the radio pair swaps as form_do would
+    # leave it.
+    ("MagiC objects: check boxes, radio buttons, a group frame", magx,
+     [draw()] + [find(x, y) for x, y in [(200, 49), (120, 87), (340, 60)]]
+     + [change(1, WHITEBAK | 0xFF * MX_US | SELECTED),
+        change(2, WHITEBAK | 0x82 * MX_US),
+        change(4, WHITEBAK | 0xFF * MX_US | SELECTED),
+        change(5, WHITEBAK | 0x81 * MX_US)]),
+    ("MagiC objects in the 3D look: no growth, the grey ground", magx3d,
+     [sysvar(SV_SET, G4_3DLOOK, 1), draw(),
+      change(1, WHITEBAK | 0xFF * MX_US | SELECTED),
+      change(3, WHITEBAK | 0xFF * MX_US),
+      sysvar(SV_SET, G4_3DLOOK, 0)]),
+    ("MagiC shortcut letters: an EXIT button, a string, a rule", magxsc,
+     [draw(), change(1, WHITEBAK | 0x01 * MX_US | SELECTED)]),
+    ("MagiC shortcut letters in the 3D look", magxsc3d,
+     [sysvar(SV_SET, G4_3DLOOK, 1), draw(), sysvar(SV_SET, G4_3DLOOK, 0)]),
 ]
 
 

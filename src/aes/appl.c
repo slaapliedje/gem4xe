@@ -284,6 +284,12 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
          * vst_font, so a TEDINFO cannot select a GDOS face. */
         *out1 = gl_3d;
         *out2 = 1;
+        /* Bit 2 of the fourth: MagiC's WHITEBAK objects -- check boxes,
+         * radio buttons, group frames and shortcut underlines -- are
+         * drawn here (objc.c, phase 107), which is what CF-Lib's
+         * init_userdef reads before turning them into G_USERDEFs of its
+         * own.  Bit 3, the G_SHORTCUT type, is not. */
+        *out4 = 4;
         break;
 
     case AI_FORM:

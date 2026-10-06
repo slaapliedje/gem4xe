@@ -494,6 +494,141 @@ static void draw_3d_outline(const GRECT *pt)
     }
 }
 
+/* ---- MagiC's extended objects ----------------------------------------
+ * A G_BUTTON or G_STRING whose ob_state has WHITEBAK set is one of
+ * MagiC's own kinds, named by the state's HIGH BYTE (CF-Lib's
+ * get_magx_obj, magxobj.c, reads them the same way): a button with 0xFE
+ * is a GROUP FRAME, a rectangle with its title set into the top edge; a
+ * button with bit 15 is a CHECK BOX, or a RADIO button when it is
+ * RBUTTON -- an indicator and its label, never a framed button -- and its
+ * low nibble is the letter to underline, 0xFF none; an EXIT button is an
+ * ordinary one with that letter underlined; a string is underlined
+ * whole with 0xFF or has its letter underlined with 0x00-0x0F.  MagiC,
+ * XaAES and N.AES draw these themselves, so programs written for them
+ * -- QED among them -- lay their dialogs out on that assumption: check
+ * boxes one text row apart, which as framed buttons tile and, in 3D,
+ * overlap (phase 107).  The check, radio and frame kinds take no 3D
+ * growth and no edge; MagiC frames none of them.  */
+#define MX_NONE      0
+#define MX_CHECK     1
+#define MX_RADIO     2
+#define MX_GROUP     3          /* the three above draw whole: mx_draw */
+#define MX_SCEXIT    4
+#define MX_SCSTRING  5
+#define MX_UNDERLINE 6
+
+static WORD ob_magx(WORD type, WORD flags, UWORD state, WORD *sc)
+{
+    WORD us = (WORD)((state >> 8) & 0xFF);
+
+    *sc = -1;
+    if (!(state & WHITEBAK))
+        return MX_NONE;
+    if (type == G_BUTTON) {
+        if (us == 0xFE)
+            return MX_GROUP;
+        if (us & 0x80) {
+            if (us != 0xFF)
+                *sc = (WORD)(us & 0x0F);
+            return (flags & RBUTTON) ? MX_RADIO : MX_CHECK;
+        }
+        if (flags & EXIT) {
+            *sc = (WORD)(us & 0x0F);
+            return MX_SCEXIT;
+        }
+    } else if (type == G_STRING) {
+        if (us == 0xFF)
+            return MX_UNDERLINE;
+        if (!(us & 0xF0)) {
+            *sc = us;
+            return MX_SCSTRING;
+        }
+    }
+    return MX_NONE;
+}
+
+/* The letter of a label at (x, y) that is its shortcut: a rule under its
+ * cell's last row. */
+static void mx_shortcut(WORD x, WORD y, WORD sc, WORD len)
+{
+    if (sc >= 0 && sc < len) {
+        x = (WORD)(x + sc * gl_wchar);
+        y = (WORD)(y + gl_hchar - 1);
+        gsx_cline(x, y, (WORD)(x + gl_wchar - 1), y);
+    }
+}
+
+/* A check box, a radio button or a group frame, whole.  The object's
+ * rectangle is painted the dialog's ground first, so a redraw for a
+ * changed state starts clean (ob_change redraws these rather than XOR
+ * them).  The indicator is a box one text row tall and half again a
+ * character wide -- square on the VBXE's tall pixels -- with a cross in
+ * it when SELECTED; a radio button's has its corners cut and a solid
+ * centre.  The label follows a character after it. */
+static void mx_draw(WORD mx, WORD sc, uint32_t spec, WORD state, const GRECT *pt)
+{
+    GRECT t = *pt, b;
+    WORD ground = gl_3d ? backgrcol : WHITE;
+    WORD len, tx, ty, bw, bh, y0;
+
+    gr_rect(ground, IP_SOLID, &t);
+    gsx_attr(0, MD_REPLACE, BLACK);
+    if (mx == MX_GROUP) {
+        y0 = (WORD)(t.g_y + gl_hchar / 2);
+        gr_box(t.g_x, y0, t.g_w, (WORD)(t.g_y + t.g_h - y0), 1);
+        tx = (WORD)(t.g_x + gl_wchar);
+        ty = t.g_y;
+    } else {
+        bh = (WORD)(gl_hchar - 2);
+        if (bh > t.g_h)
+            bh = t.g_h;
+        bw = (WORD)(gl_wchar + gl_wchar / 2);
+        r_set(&b, t.g_x, (WORD)(t.g_y + (t.g_h - bh) / 2), bw, bh);
+        if (mx == MX_CHECK) {
+            gr_box(b.g_x, b.g_y, bw, bh, 1);
+        } else {
+            gsx_cline((WORD)(b.g_x + 1), b.g_y, (WORD)(b.g_x + bw - 2), b.g_y);
+            gsx_cline((WORD)(b.g_x + 1), (WORD)(b.g_y + bh - 1),
+                      (WORD)(b.g_x + bw - 2), (WORD)(b.g_y + bh - 1));
+            gsx_cline(b.g_x, (WORD)(b.g_y + 1), b.g_x, (WORD)(b.g_y + bh - 2));
+            gsx_cline((WORD)(b.g_x + bw - 1), (WORD)(b.g_y + 1),
+                      (WORD)(b.g_x + bw - 1), (WORD)(b.g_y + bh - 2));
+        }
+        gr_inside(&b, 1);
+        gr_rect(WHITE, IP_SOLID, &b);
+        if (state & SELECTED) {
+            gsx_attr(0, MD_REPLACE, BLACK);
+            if (mx == MX_CHECK) {
+                gsx_cline(b.g_x, b.g_y, (WORD)(b.g_x + b.g_w - 1),
+                          (WORD)(b.g_y + b.g_h - 1));
+                gsx_cline(b.g_x, (WORD)(b.g_y + b.g_h - 1),
+                          (WORD)(b.g_x + b.g_w - 1), b.g_y);
+            } else {
+                gr_inside(&b, 1);
+                gr_rect(BLACK, IP_SOLID, &b);
+            }
+        }
+        tx = (WORD)(t.g_x + bw + gl_wchar);
+        ty = (WORD)(t.g_y + (t.g_h - gl_hchar) / 2);
+    }
+    len = expand_string(intin, (const char FAR *)SPEC_PTR(spec));
+    if (len) {
+        if (mx == MX_GROUP) {
+            r_set(&b, tx, ty, (WORD)(len * gl_wchar), gl_hchar);
+            gr_rect(ground, IP_SOLID, &b);
+            len = expand_string(intin, (const char FAR *)SPEC_PTR(spec));
+        }
+        gsx_attr(1, MD_TRANS, BLACK);
+        gsx_tblt(IBM, tx, ty, len);
+        gsx_attr(0, MD_REPLACE, BLACK);
+        mx_shortcut(tx, ty, sc, len);
+    }
+    if (state & DISABLED) {
+        gsx_fcolor(ground);
+        bb_fill(MD_TRANS, FIS_PATTERN, IP_4PATT, t.g_x, t.g_y, t.g_w, t.g_h);
+    }
+}
+
 /* ---- drawing one object ------------------------------------------------ */
 
 static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
@@ -505,7 +640,7 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
     char ch;
     GRECT t, c;
     TEDINFO ted;
-    WORD d3, edge3d, movetext = 0, changecol = 0, eff_th = 0;
+    WORD d3, edge3d, movetext = 0, changecol = 0, eff_th = 0, mx, sc;
     GRECT eff;
 
     ch = ob_sst(tree, obj, &spec, &state, &type, &flags, &t, &th);
@@ -515,6 +650,18 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
 
     t.g_x = sx;
     t.g_y = sy;
+
+    /* MagiC's check boxes, radio buttons and group frames draw whole */
+    mx = ob_magx(type, flags, (UWORD)state, &sc);
+    if (mx != MX_NONE && mx <= MX_GROUP) {
+        if (gl_clip.g_w && gl_clip.g_h) {
+            c = t;
+            if (!gsx_chkclip(&c))
+                return;
+        }
+        mx_draw(mx, sc, spec, state, &t);
+        return;
+    }
 
     /* a 3D object, with the look on, is drawn ADJ3DSTD bigger all round */
     d3 = 0;
@@ -806,6 +953,15 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
                 }
             }
             gsx_tblt(IBM, tmpx, tmpy, len);
+            if (mx == MX_SCEXIT || mx == MX_SCSTRING) {
+                gsx_attr(0, MD_REPLACE, tcol);
+                mx_shortcut(tmpx, tmpy, sc, len);
+            }
+        }
+        if (mx == MX_UNDERLINE) {
+            gsx_attr(0, MD_REPLACE, BLACK);
+            gsx_cline(t.g_x, (WORD)(t.g_y + t.g_h - 1),
+                      (WORD)(t.g_x + t.g_w - 1), (WORD)(t.g_y + t.g_h - 1));
         }
     }
 
@@ -951,7 +1107,7 @@ void objc_offset(OBJECT FAR *tree, WORD obj, WORD *px, WORD *py)
  * whatever clip is already in force. */
 void ob_change(OBJECT FAR *tree, WORD obj, UWORD new_state, WORD redraw)
 {
-    WORD flags, type, th, curr_state;
+    WORD flags, type, th, curr_state, mx, sc;
     uint32_t spec;
     GRECT t;
 
@@ -969,8 +1125,12 @@ void ob_change(OBJECT FAR *tree, WORD obj, UWORD new_state, WORD redraw)
     /* A change of SELECTED alone is an XOR of the inside -- cheap, and it
      * is what makes a button flash.  Anything else redraws the object.
      * (Icons never XOR: they would redraw here once they are drawn.) */
+    /* ...nor MagiC's check boxes and radio buttons, whose SELECTED is a
+     * mark in the indicator and not an inverted inside */
+    mx = ob_magx(type, flags, new_state, &sc);
     if (type != G_ICON && type != G_CICON && type != G_USERDEF &&
         !(gl_3d && (flags & FL3DMASK)) &&
+        !(mx != MX_NONE && mx <= MX_GROUP) &&
         ((new_state ^ (UWORD)curr_state) & SELECTED)) {
         bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, (WORD)(t.g_x + th), (WORD)(t.g_y + th),
                 (WORD)(t.g_w - 2 * th), (WORD)(t.g_h - 2 * th));

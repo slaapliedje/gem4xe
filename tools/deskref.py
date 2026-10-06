@@ -1101,7 +1101,10 @@ class Desktop:
                     break
                 pf.obid = obid
                 o = self.screen[obid]
-                o.ob_state = WHITEBAK | (SELECTED if pf.flags & F_SELECTED else 0)
+                # WHITEBAK on an icon only: a text line's would be MagiC's
+                # shortcut underline (objc.c)
+                o.ob_state = ((0 if self.iview == V_TEXT else WHITEBAK)
+                              | (SELECTED if pf.flags & F_SELECTED else 0))
                 o.ob_flags = NONE
             row += 1
         self.wind_set(pw.id, WF_HSLSIZ,

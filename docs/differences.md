@@ -65,6 +65,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 | Window position | any pixel | **x snaps to even**, because the blitter has no shifter: `wind_set(WF_CURRXYWH)` takes the snapped rectangle, and that is what `wind_get` answers | `src/aes/wind.c` |
 | The 3D look | TOS 4 always; EmuTOS when built so | **off by default**, on in the control panel's General module.  With it on, dialogs and window frames are raised on **grey** grounds where TOS 4's default gadgets are white, and a text a dialog prints on its ground gets no edge.  `objc_sysvar` answers for the look in force | `src/aes/objc.c`, `src/aes/wind.c` |
 | Colour icons | TOS 4 | drawn on the 16-colour screen, 4-plane forms up to 32 x 32; the mono form everywhere else | `src/aes/objc.c`, `src/aes/rsrc.c` |
+| MagiC's objects | MagiC, XaAES, N.AES; CF-Lib draws them as `G_USERDEF`s elsewhere | **drawn by the AES**: a `WHITEBAK` button or string whose state's high byte names a check box, a radio button, a group frame or a shortcut letter is drawn as one, and `appl_getinfo(AES_OBJECT)` says so (bit 2 of the fourth word).  Check boxes, radio buttons and frames take no 3D growth.  No `G_SHORTCUT` type, and the small font of a frame's title is the system font | `src/aes/objc.c` |
 | Flying dialogs | MagiC, some AES 4 | none: `form_do` takes the whole screen | `src/aes/appl.c` |
 | `objc_sysvar` | AES 3.40's settings | the same, and `G4_3DLOOK` (100) and `G4_DESKICON` (101), gem4xe's own | `src/aes/objc.c` |
 | `appl_getinfo` | subjects 0 to 14 | the same, and `AI_CPX` (64), gem4xe's own | `src/aes/appl.c` |
