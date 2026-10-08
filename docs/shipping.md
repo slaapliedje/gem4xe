@@ -543,7 +543,7 @@ cannot be, and they are in a plain text file beside `GEM.COM`:
 
 **The screen**, because a monitor that will not lock to the VBXE's
 640x240 leaves the user with nothing to put a dialog on.  `VIDEO=ANTIC`
-brings the machine up on stock ANTIC -- 320x168 in two colours, on
+brings the machine up on stock ANTIC -- 320x192 in two colours, on
 Atari's condensed 6x6 face -- even where a VBXE is fitted and working.
 That is the safe mode, and it has to beat a working VBXE or it is not a
 way out.

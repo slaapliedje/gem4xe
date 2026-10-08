@@ -355,7 +355,7 @@ PR_DPI = 100
 
 
 class Antic:
-    """320x168, ONE bit a pixel, 40 bytes a line, in plain motherboard
+    """320x192, ONE bit a pixel, 40 bytes a line, in plain motherboard
     RAM -- ANTIC mode F (src/antic/antic.h).
 
     Everything the VBXE device has to think about twice, this one does
