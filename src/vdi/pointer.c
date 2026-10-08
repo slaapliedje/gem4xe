@@ -20,6 +20,39 @@ PTR_STATE ptr_seen;
 static uint8_t last_x, last_y;      /* previous line pair per axis (polled) */
 static uint16_t last_qlo, last_qhi; /* the IRQ's counters as last consumed  */
 static WORD    pot_pending;
+/* irq_frames at the last POTGO.  On the direct page: LoRAM is at its
+ * reserve. */
+static TINY uint16_t pot_frame;
+
+/* A PADDLE SCAN MAY ONLY BE RESTARTED ONCE IT HAS RUN OUT.  POKEY counts
+ * 228 lines and only then dumps the capacitors; a POTGO before that finds
+ * every line it had charged still above threshold, and leaves those POTn
+ * registers alone -- they keep the old reading, and go on keeping it for
+ * as long as POTGOs keep arriving early.  ALLPOT says when the lines have
+ * CROSSED, not when the scan has ended, so at 20 MHz the polling loop
+ * restarted the scan many times a frame and a CX77 jumped to the first
+ * touch and then never moved (a real tablet, 2026-10-08; Altirra models
+ * the dump, but no gate can attach a tablet).  The OS restarts the scan
+ * once a frame from its VBI; this waits for two vertical blanks, which is
+ * at least a whole frame: 228 lines of scan and the dump after it.  A
+ * tablet is read 25-30 times a second, the right button as often.
+ * Without the interrupts there is no frame count, and ALLPOT is all
+ * there is. */
+static WORD pot_busy(uint8_t lines)
+{
+    if (!pot_pending)
+        return 0;
+    if (irq.how != IRQ_OFF)
+        return (uint16_t)(irq_frames - pot_frame) < 2;
+    return (ALLPOT & lines) != 0;
+}
+
+static void pot_start(void)
+{
+    POTGO = 0;
+    pot_frame = irq_frames;
+    pot_pending = 1;
+}
 /* THE RIGHT BUTTON IS NOT BELIEVED UNTIL ITS LINE HAS BEEN SEEN FREE.  An
  * ST mouse leaves the paddle line open when the button is up, and it
  * counts to ~229.  A switchable ST/Amiga mouse drives it low in either
@@ -194,9 +227,8 @@ void ptr_init(ptr_kind kind, WORD x, WORD y)
     if (kind == PTR_CX77 || kind == PTR_KOALA || kind == PTR_XEM1
             || kind == PTR_ST_MOUSE || kind == PTR_AMIGA_MOUSE
             || kind == PTR_TRAKBALL) {
-        POTGO = 0;                  /* the absolute devices' position, and
+        pot_start();                /* the absolute devices' position, and
                                      * a quadrature mouse's right button */
-        pot_pending = 1;
     }
 }
 
@@ -238,9 +270,10 @@ static void poll_relative(void)
     /* The paddle counts UP through a scan, so reading it mid-scan reads
      * low -- which is indistinguishable from a held button.  Sample it
      * only when the scan has finished, keep the answer until the next
-     * one, and start the next immediately.  (Reading it every poll is
-     * what made the right button stick down and the desktop unusable.) */
-    if (pot_pending && (ALLPOT & (1 << (ptr_port * 2))) != 0)
+     * one, and start the next when the last has run out (pot_busy).
+     * (Reading it every poll is what made the right button stick down
+     * and the desktop unusable.) */
+    if (pot_busy((uint8_t)(1 << (ptr_port * 2))))
         return;                     /* still counting: last answer stands */
     {
         WORD held = (WORD)(POT(ptr_port * 2) < PTR_RMB_MAX);
@@ -249,13 +282,13 @@ static void poll_relative(void)
         ptr_state.buttons = (WORD)((ptr_state.buttons & ~2)
                                    | ((held && rmb_seen_free) ? 2 : 0));
     }
-    POTGO = 0;
-    pot_pending = 1;
+    pot_start();
 }
 
-/* Absolute devices.  POKEY's pot scan takes a full frame in normal mode, so
- * this reads the previous scan's result and immediately starts the next --
- * one position per frame, which is all a GUI pointer needs.
+/* Absolute devices.  POKEY's pot scan takes most of a frame in normal mode,
+ * so this reads the previous scan's result and starts the next -- once the
+ * last one has run out (pot_busy), every other frame, which is all a GUI
+ * pointer needs.
  *
  * The counter tops out around 228, against a 640x240 screen: roughly 2.8
  * screen pixels per step horizontally and about 1:1 vertically.  Good enough
@@ -300,15 +333,14 @@ static void poll_absolute(void)
     uint8_t nib = (uint8_t)((ptr_port ? (PORTA >> 4) : PORTA) & 0x0F);
 
     ptr_state.buttons = ptr_tablet_buttons(nib);
-    if (pot_pending && (ALLPOT & (3 << first)) != 0)
+    if (pot_busy((uint8_t)(3 << first)))
         return;                     /* scan still running; keep the old value */
     if (ptr_decode_tablet(ptr_state.kind, POT(first), POT(first + 1), &x, &y)) {
         ptr_state.x = x;
         ptr_state.y = y;
         clamp();
     }
-    POTGO = 0;                      /* start the next scan */
-    pot_pending = 1;
+    pot_start();                    /* the next scan */
 }
 
 /* mouSTer in XEM1 mode.  The adapter keeps a 7-bit position counter per
@@ -382,7 +414,9 @@ static void poll_xem1(void)
         ptr_state.wheel = (WORD)(ptr_state.wheel + ptr_decode_quad(xem_wheel, q));
         xem_wheel = q;
     }
-    POTGO = 0;                      /* start the next scan */
+    POTGO = 0;                      /* start the next scan: the adapter
+                                     * drives its lines, so pot_busy()'s
+                                     * frame pacing is not assumed here */
     pot_pending = 1;
 }
 
