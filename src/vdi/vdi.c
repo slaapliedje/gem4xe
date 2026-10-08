@@ -7,6 +7,7 @@
  * through the MEMAC window would be roughly twenty times slower.
  */
 #include "portab.h"
+#include <stddef.h>
 #include "vdi.h"
 #include "vdidev.h"
 #include "print.h"
@@ -628,10 +629,37 @@ static void vdi_vq_color(void)
  * already there -- a switch costs two copies of a Vwk and happens where
  * the drawing changes hands, not per call.  Handle 1 is the physical
  * workstation, at [0]; a slot whose handle is 0 is closed.  The current
- * slot's copy in the table is stale until the next switch writes it. */
-#define NUM_VWK 4
-ZWIN static Vwk vwk_tab[NUM_VWK];
+ * slot's copy in the table is stale until the next switch writes it.
+ *
+ * THE TABLE IS FAR, and only each slot's handle is near.  It held four
+ * Vwks in `zwin` until 0.12.1, which is the physical workstation and
+ * three virtual ones: the desktop's, the clock accessory's (kept for the
+ * life of the machine), and QED's own -- whose CF-Lib opens a second.
+ * QED's v_opnvwk then got handle 0, its font cell came back as nothing,
+ * and its windows opened as a stub in the corner (docs/phase109.md).
+ * A Vwk is ~92 bytes and `zwin` had 12 to spare; far memory has room for
+ * as many as the handle mask (vdi_virtuals_open, 16 bits) can name.
+ * vdi_v_opnwk takes the block once; until it has, there is no table and
+ * no virtual workstation, only the physical one, which is `vwk` itself. */
+#define NUM_VWK 8
+ZWIN static uint32_t vwk_far;       /* NUM_VWK Vwks, 0 until v_opnwk */
+ZWIN static WORD vwk_hdl[NUM_VWK];  /* each slot's handle, 0 if closed */
 static WORD     vwk_cur;            /* the slot vwk holds */
+
+static uint32_t vwk_at(WORD i)
+{
+    return vwk_far + (uint32_t)(uint16_t)i * (uint16_t)sizeof(Vwk);
+}
+
+static void vwk_save(WORD i)        /* the live copy into slot i */
+{
+    far_put(vwk_at(i), (const uint8_t *)&vwk, (uint16_t)sizeof vwk);
+}
+
+static void vwk_load(WORD i)        /* slot i into the live copy */
+{
+    far_get((uint8_t *)&vwk, vwk_at(i), (uint16_t)sizeof vwk);
+}
 
 /* WHOSE each open slot is, by the CONTEXT that opened it.  The VDI has no
  * business knowing what an AES process is, and it does not need to: it
@@ -641,7 +669,7 @@ static WORD     vwk_cur;            /* the slot vwk holds */
  * program ended, which an accessory holding one cannot survive -- it is
  * why the clock opens and closes its own around each panel rather than
  * keeping it.  Slot 0 is the physical workstation and belongs to nobody. */
-static void    *vwk_own[NUM_VWK];
+ZWIN static void *vwk_own[NUM_VWK];
 
 /* Make handle h's workstation the current one; 0 if it is not open. */
 static WORD vwk_select(WORD h)
@@ -655,11 +683,11 @@ static WORD vwk_select(WORD h)
      * zeroes the slot and makes the physical one current. */
     if (i == vwk_cur && vwk.handle)
         return 1;
-    if (h < 1 || h > NUM_VWK || vwk_tab[i].handle == 0)
+    if (h < 1 || h > NUM_VWK || vwk_hdl[i] == 0)
         return 0;
     if (i != vwk_cur) {
-        vwk_tab[vwk_cur] = vwk;
-        vwk = vwk_tab[i];
+        vwk_save(vwk_cur);
+        vwk_load(i);
         vwk_cur = i;
         /* ...and the surface it draws on, which need not be the one the
          * last workstation drew on (src/vdi/vdi.h). */
@@ -723,12 +751,16 @@ static void vdi_v_opnwk(void)
      * whoever owned them: this is the device being opened, not a program
      * ending. */
     for (i = 0; i < NUM_VWK; i++) {
-        vwk_tab[i].handle = 0;
+        vwk_hdl[i] = 0;
         vwk_own[i] = 0;
     }
+    if (!vwk_far)
+        vwk_far = far_alloc((uint32_t)NUM_VWK * sizeof(Vwk));
     vwk_cur = 0;
     init_wk(VDI_PHYS_HANDLE);
-    vwk_tab[0] = vwk;
+    vwk_hdl[0] = VDI_PHYS_HANDLE;
+    if (vwk_far)
+        vwk_save(0);
     dev_invalidate();
     /* Opening the device resets the driver, cursor included: the saved
      * block under the pointer belongs to a screen that no longer applies. */
@@ -760,12 +792,13 @@ static void vdi_v_opnvwk(void)
      * page is a virtual workstation on another device, which is exactly
      * what a Vwk carrying its own device is for (src/vdi/vdi.h). */
     WORD devid = (WORD)(contrl[3] > 0 ? intin[0] : 1);
-    const VDIDEV FAR *want = (const VDIDEV FAR *)vwk_tab[0].dev;
+    const VDIDEV FAR *want;
+    const void FAR *d;
 
     for (i = 1; i < NUM_VWK; i++)
-        if (vwk_tab[i].handle == 0)
+        if (vwk_hdl[i] == 0)
             break;
-    if (i == NUM_VWK) {
+    if (i == NUM_VWK || !vwk_far) {
         contrl[6] = 0;
         return;
     }
@@ -775,12 +808,23 @@ static void vdi_v_opnvwk(void)
             return;
         }
         want = &vdev_print;
+    } else {
+        /* the screen: the physical workstation's device, as its slot has
+         * it -- or the live copy, when that is the one current */
+        if (vwk_cur == 0)
+            want = (const VDIDEV FAR *)vwk.dev;
+        else {
+            far_get((uint8_t *)&d, vwk_at(0) + offsetof(Vwk, dev),
+                    (uint16_t)sizeof d);
+            want = (const VDIDEV FAR *)d;
+        }
     }
-    vwk_tab[vwk_cur] = vwk;
+    vwk_save(vwk_cur);
     vwk_cur = i;
     vdev = want;                        /* init_wk reads the extent off it */
     init_wk((WORD)(i + 1));
-    vwk_tab[i] = vwk;
+    vwk_hdl[i] = vwk.handle;
+    vwk_save(i);
     vwk_own[i] = ctx_cur;           /* whoever asked keeps it */
     fill_workout();
     contrl[6] = vwk.handle;
@@ -791,7 +835,7 @@ static void vdi_v_opnvwk(void)
 static void vwk_to_phys(void)
 {
     vwk_cur = 0;
-    vwk = vwk_tab[0];
+    vwk_load(0);
     if (vwk.patsrc == PAT_USER)
         dev_invalidate();
 }
@@ -803,7 +847,8 @@ static void vdi_v_clsvwk(void)
 {
     if (vwk_cur == 0)
         return;
-    vwk_tab[vwk_cur].handle = 0;
+    vwk_hdl[vwk_cur] = 0;
+    vwk_own[vwk_cur] = 0;
     vwk_to_phys();
 }
 
@@ -829,10 +874,10 @@ void vdi_close_virtuals_but(uint16_t keep)
     WORD i;
     for (i = 1; i < NUM_VWK; i++)
         if (vwk_own[i] == (void *)ctx_cur && !(keep & (1 << i))) {
-            vwk_tab[i].handle = 0;
+            vwk_hdl[i] = 0;
             vwk_own[i] = 0;
         }
-    if (vwk_cur != 0 && vwk_tab[vwk_cur].handle == 0)
+    if (vwk_cur != 0 && vwk_hdl[vwk_cur] == 0)
         vwk_to_phys();
 }
 

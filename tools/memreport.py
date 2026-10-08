@@ -130,6 +130,46 @@ def rsc_pool(path):
     return imdata + hdrs, rssize - imdata + len(d) - rssize, max(rssize, imdata + hdrs)
 
 
+def src_num(path, name):
+    """A #define's number, from the source that defines it."""
+    with open(path) as f:
+        m = re.search(r"#define\s+%s\s+\(?\s*(\d+)" % name, f.read())
+    if not m:
+        raise SystemExit(f"memreport: no {name} in {path}")
+    return int(m.group(1))
+
+
+def fsel_work():
+    """LEN_FSWORK: what the file selector takes from the pool, all of it
+    since its tree went far (docs/phase109.md)."""
+    fsel = os.path.join(ROOT, "src", "aes", "fsel.c")
+    path = src_num(os.path.join(BUILD, "fsel_rsc.h"), "FS_LEN_DIRECT") + 9
+    return 4 * path + src_num(fsel, "MAX_FILES") * 2
+
+
+def aes_at_work():
+    """What the AES takes from the pool WHILE A PROGRAM RUNS, at most, and
+    who takes it: the file selector's work area (the tree is far since
+    0.12.1, docs/phase109.md) or an alert's tree, strings and icon -- not
+    both at once.  Read from the sources, so that this cannot drift from
+    them: 0.12 checked that QED fit beside the accessories, and nothing
+    checked that the selector still fit beside QED -- 768 bytes left,
+    1,780 of tree wanted, and File > Open did nothing."""
+    num = src_num
+    alert = os.path.join(ROOT, "src", "aes", "alert.c")
+    work = fsel_work()
+    lines, llen = num(alert, "MAX_LINENUM"), num(alert, "MAX_LINELEN")
+    buts, blen = num(alert, "MAX_BUTNUM"), num(alert, "MAX_BUTLEN")
+    gd = os.path.join(BUILD, "gemdata.h")
+    al = (num(alert, "NUM_ALOBJS") * 24                  # OBJECTs
+          + lines * (llen + 1) + buts * (blen + 1)       # ALSTR_SIZE
+          + 14                                           # a BITBLK
+          + num(gd, "GEM_ICON_WB") * num(gd, "GEM_ICON_HL"))
+    al += al & 1
+    return max(("the file selector's work area", work), ("an alert", al),
+               key=lambda t: t[1])
+
+
 def main(argv, extra_modules=(), want_floor=False):
     """The report; or, with want_floor, the permanent floor it predicts for
     the product with extra_modules loaded as well -- for a gate to hold
@@ -321,10 +361,17 @@ def main(argv, extra_modules=(), want_floor=False):
         if os.path.exists(qed):
             need = g4a_near(qed)
             say(f"  QED.PRG asks for {need}")
+            who, aes = aes_at_work()
+            say(f"  ...and the AES wants {aes} of what is left while it runs ({who})")
             if need > room[product]:
                 bad.append(f"QED.PRG asks for {need} bytes of the pool and a "
                            f"program gets {room[product]} with everything "
                            f"resident: it would not start (docs/phase69.md)")
+            elif need + aes > room[product]:
+                bad.append(f"QED.PRG leaves {room[product] - need} bytes of the "
+                           f"pool and the AES wants {aes} for {who}: it would "
+                           f"start, and then its File > Open or its alerts "
+                           f"would do nothing (docs/phase109.md)")
 
     say("")
     if bad:

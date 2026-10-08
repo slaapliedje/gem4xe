@@ -5,16 +5,19 @@
  * THE TREE.  The donor's selector lives in the AES's own resource, fixed
  * up once at start-up; gem4xe has no resident resource and no bank-$00
  * room to keep a 35-object tree in, so the tree travels as a .RSC file's
- * bytes in the far image (tools/fselrsc.py -> fs_rsc) and is loaded into
- * the application pool each time the selector opens -- copied down, fixed
- * up by rs_fixit() exactly as an application's resource is, used, and
- * released with the rest of the selector's memory when it closes.  The
+ * bytes in the far image (tools/fselrsc.py -> fs_rsc) and is copied, each
+ * time the selector opens, into a FAR block taken once at AES start-up
+ * (fs_start) -- fixed up there by rs_fixit() exactly as an application's
+ * far resource is, and drawn and edited from there, its strings 32-bit
+ * addresses like any far tree's.  It was the application pool until
+ * 0.12.1: 1,780 bytes of tree beside a program like QED, which leaves
+ * 768 with the product's accessories in, made the selector answer FALSE
+ * and draw nothing -- File > Open "did nothing" (docs/phase109.md).  The
  * indices come from the same script, through build/fsel_rsc.h.  What the
  * donor's fs_start() does to the tree's widths is done to every fresh
- * copy, since none of them lives to be done twice.  The pool is the
- * budget: 1516 bytes of tree (FS_RSC_SIZE), 272 of work area, and an
- * application that holds a resource of more than the remainder gets
- * FALSE, nothing drawn, the pool as it was (docs/phase11.md).
+ * copy, since none of them lives to be done twice.  The pool now holds
+ * only the work area, LEN_FSWORK; an application that leaves less than
+ * that gets FALSE, nothing drawn, the pool as it was (docs/phase11.md).
  *
  * THE NAMES.  The names of the directory being shown are the one thing
  * the donor keeps in the memory it takes per call that will not fit the
@@ -78,12 +81,25 @@
 WORD gl_drvbits = 0x00FF;               /* drives A..H: buttons enabled */
 
 static uint32_t fs_names_far;           /* MAX_FILES * LEN_FSNAME, 0 until fs_start */
+static uint32_t fs_tree_far;            /* FS_RSC_SIZE: the tree, 0 until fs_start */
 static WORD *g_fslist;                  /* slot numbers, sorted: the donor's offsets */
 
 void fs_start(void)
 {
     if (!fs_names_far)
         fs_names_far = far_alloc((uint32_t)MAX_FILES * LEN_FSNAME);
+    if (!fs_tree_far)
+        fs_tree_far = far_alloc(FS_RSC_SIZE);
+}
+
+/* strlen through a far address -- not `*s++` narrowed in one
+ * expression: B18, tools/ccbug */
+static uint16_t far_slen(uint32_t a)
+{
+    uint16_t n = 0;
+    while (far_read8(a + n))
+        n++;
+    return n;
 }
 
 /* ---- the donor's string helpers (util/optimize.c, util/miscutil.c) ---- */
@@ -130,29 +146,25 @@ static void unfmt_str(const char *instr, char *outstr)
     *outstr = 0;
 }
 
+/* The tree is far, and so is every TEDINFO and string in it: what the
+ * selector reads or writes of them goes through farmem's helpers. */
 static TEDINFO FAR *ted_of(OBJECT FAR *tree, WORD obj)
 {
-    return (TEDINFO FAR *)(uint16_t)tree[obj].ob_spec;
+    return (TEDINFO FAR *)tree[obj].ob_spec;
 }
 
 /* The string into the object's text, cut to the TEDINFO's length. */
 static void inf_sset(OBJECT FAR *tree, WORD obj, const char *pstr)
 {
     TEDINFO FAR *ted = ted_of(tree, obj);
-    char *text = (char *)(uint16_t)ted->te_ptext;
     WORD len = ted->te_txtlen;      /* a scalar first: B5, tools/ccbug */
-    WORD n = (WORD)(len - 1);
 
-    while (n > 0 && *pstr) {
-        *text++ = *pstr++;
-        n--;
-    }
-    *text = 0;
+    far_strput(ted->te_ptext, pstr, (uint16_t)len);
 }
 
 static void inf_sget(OBJECT FAR *tree, WORD obj, char *pstr)
 {
-    strcpy(pstr, (const char *)(uint16_t)ted_of(tree, obj)->te_ptext);
+    far_strget(pstr, ted_of(tree, obj)->te_ptext, LEN_FSNAME);
 }
 
 /* 1 if `ok` is SELECTED, 0 if the object after it is, -1 if neither; the
@@ -209,7 +221,7 @@ static void centre_title(OBJECT FAR *tree, WORD objnum)
     OBJECT FAR *str = tree + objnum;
 
     str->ob_x = (tree->ob_width
-                 - (WORD)strlen((const char *)(uint16_t)str->ob_spec) * gl_wchar) / 2;
+                 - (WORD)far_slen(str->ob_spec) * gl_wchar) / 2;
 }
 
 /* Back from the end of the path to the last separator, or the colon of
@@ -496,9 +508,14 @@ static WORD shown_drive(const char *path)
 static void dir_sset(OBJECT FAR *tree, const char *path)
 {
     TEDINFO FAR *ted = ted_of(tree, FS_FSDIRECT);
-    char *d = (char *)(uint16_t)ted->te_ptext;
-    char *end = d + ted->te_txtlen - 1;
+    WORD len = ted->te_txtlen;      /* a scalar first: B5, tools/ccbug */
+    char line[LEN_FSPATH + 2];
+    char *d = line;
+    char *end;
 
+    if (len > (WORD)sizeof line)
+        len = (WORD)sizeof line;
+    end = line + len - 1;
     if (shown_drive(path) && end - d > 3) {
         *d++ = 'D';
         *d++ = (char)('1' + path[0] - 'A');
@@ -507,10 +524,12 @@ static void dir_sset(OBJECT FAR *tree, const char *path)
     while (*path && d < end)
         *d++ = *path++;
     *d = 0;
+    far_strput(ted->te_ptext, line, (uint16_t)len);
 }
 
 /* What was typed on the directory line, as a path: "D1:" (or "1:") is
- * A:, a letter is itself, and the rest is copied. */
+ * A:, a letter is itself, and the rest is copied.  path may be line:
+ * every character moves left or stays, never right. */
 static void dir_sget(char *path, const char *line)
 {
     const char *s = line;
@@ -533,8 +552,11 @@ static void dir_sget(char *path, const char *line)
 static WORD path_changed(OBJECT FAR *tree, const char *path)
 {
     TEDINFO FAR *ted = ted_of(tree, FS_FSDIRECT);
-    const char *line = (const char *)(uint16_t)ted->te_ptext;
+    char text[LEN_FSPATH + 2];
+    const char *line = text;
     WORD n = (WORD)(ted->te_txtlen - 1);
+
+    far_strget(text, ted->te_ptext, sizeof text);
 
     if (shown_drive(path)) {
         if (line[0] != 'D' || line[1] != (char)('1' + path[0] - 'A'))
@@ -573,9 +595,11 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     WORD curr, count, sel;
     WORD mx, my;
     OBJECT FAR *tree, *obj;
-    RSHDR *h;
+    RSHDR FAR *h;
     UWORD bitmask;
-    char *ad_fpath, *ad_fname, *pstr;
+    uint32_t ad_fpath, ad_fname, at;
+    WORD fname_len;
+    char *pstr;
     char *locstr, *locold, *mask;
     char selname[LEN_FSNAME];
     GRECT pt, rfs;
@@ -583,19 +607,17 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     WORD diff;
 
     curr = count = 0;
-    if (!pipath || !fs_names_far)
+    if (!pipath || !fs_names_far || !fs_tree_far)
         return FALSE;
     if (!*pipath) {
         strcpy(pipath, "A:\\*.*");
         *pipath += dos_gdrv();
     }
 
-    /* the tree and the work area, from the pool: neither, and nothing
-     * has happened */
+    /* the work area, from the pool: none, and nothing has happened */
     mark = pool_mark();
-    h = pool_alloc(FS_RSC_SIZE, 2);
     g_fslist = pool_alloc(LEN_FSWORK, 2);
-    if (!h || !g_fslist) {
+    if (!g_fslist) {
         pool_release(mark);
         return FALSE;
     }
@@ -603,9 +625,12 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     locold = locstr + LEN_FSPATH;
     mask = locold + LEN_FSPATH;
 
-    far_get((uint8_t *)h, (uint32_t)(const uint8_t FAR *)fs_rsc, FS_RSC_SIZE);
-    rs_fixit((uint32_t)(uint16_t)h);   /* a bank-zero base: the pool */
-    tree = (OBJECT FAR *)(uint16_t)*(uint32_t *)((uint8_t *)h + h->rsh_trindex);
+    /* the tree, a fresh copy in its far block, fixed up where it lies */
+    far_copy(fs_tree_far, (uint32_t)(const uint8_t FAR *)fs_rsc, FS_RSC_SIZE);
+    rs_fixit(fs_tree_far);
+    h = (RSHDR FAR *)fs_tree_far;
+    far_get((uint8_t *)&at, fs_tree_far + h->rsh_trindex, sizeof at);
+    tree = (OBJECT FAR *)at;
 
     /* the donor's fs_start: centred, and the scroll bar the width of a
      * box in this resolution, the title (which overhangs it) narrowed
@@ -630,10 +655,11 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     set_mask(mask, locstr);
     ted_of(tree, FS_FTITLE)->te_ptext = (uint16_t)mask;
 
-    ad_fpath = (char *)(uint16_t)ted_of(tree, FS_FSDIRECT)->te_ptext;
+    ad_fpath = ted_of(tree, FS_FSDIRECT)->te_ptext;
     dir_sset(tree, locstr);
 
-    ad_fname = (char *)(uint16_t)ted_of(tree, FS_FSSELECT)->te_ptext;
+    ad_fname = ted_of(tree, FS_FSSELECT)->te_ptext;
+    fname_len = ted_of(tree, FS_FSSELECT)->te_txtlen;
     fmt_str(pisel, selname);
     inf_sset(tree, FS_FSSELECT, selname);
 
@@ -777,7 +803,8 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
         if (!newlist && !newdrive && path_changed(tree, locstr)) {
             char *typed = mask + LEN_FSPATH;    /* the work area's fourth */
 
-            dir_sget(typed, ad_fpath);
+            far_strget(typed, ad_fpath, LEN_FSPATH);
+            dir_sget(typed, typed);     /* in place: it only moves left */
             if (get_drive(typed) != get_drive(locstr))
                 newdrive = TRUE;
             else
@@ -801,7 +828,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
         }
 
         if (newsel) {
-            strcpy(ad_fname, selname + 1);
+            far_strput(ad_fname, selname + 1, (uint16_t)fname_len);
             ob_draw(tree, FS_FSSELECT, MAX_DEPTH);
             if (!cont)
                 ob_change(tree, FS_FSOK, SELECTED, TRUE);
@@ -813,7 +840,9 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     }
 
     strcpy(pipath, locstr);
-    unfmt_str(ad_fname, selname);
+    pstr = mask + LEN_FSPATH;           /* the typed line's room, spent */
+    far_strget(pstr, ad_fname, LEN_FSPATH);
+    unfmt_str(pstr, selname);
     strcpy(pisel, selname);
 
     fm_dial(FMD_FINISH, &gl_rcenter, &rfs);

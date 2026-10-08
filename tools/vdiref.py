@@ -95,7 +95,7 @@ LINE_STYLES = [0xFFFF, 0xFFFF, 0xFFF0, 0xE0E0, 0xFF18, 0xFF00, 0xF191]  # 7: ud_
 # The physical workstation's handle, by specification, and how many the
 # driver has, virtual ones included (vdi.c NUM_VWK).
 VDI_PHYS_HANDLE = 1
-NUM_VWK = 4
+NUM_VWK = 8
 
 # The font strips live in tools/fontref.py, below both this model and the
 # two surface models: a face is the DEVICE's (devref.py), and putting the

@@ -34,7 +34,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
-import vdiref, aesref, vbxeref, symfile, atr, mkrsc, rsc, fselrsc  # noqa: E402
+import vdiref, aesref, vbxeref, symfile, atr, mkrsc, rsc, fselrsc, memreport  # noqa: E402
 from m7_form import poke16, NOT_STARTED, STATUS, ST_GO, ST_DONE, DISK, SYMS  # noqa: E402
 from m4_aes import PRELUDE, FULL, OBJC_DRAW, SHOTDIR    # noqa: E402
 
@@ -795,19 +795,22 @@ def fsel_cases(r, check, b, keep, syms):
             return
 
     # -- refused while an application holds the pool ----------------------------
-    # The selector's tree and work area need more than the pool has left
-    # once an application's resource and its own takings are in it: it
-    # says no, takes nothing, draws nothing (docs/phase11.md).  The test
-    # resource alone no longer fills an 8 KB pool (docs/phase13.md), so
-    # the runner takes the rest on the application's behalf, leaving
-    # less than the selector's tree.
+    # The selector's work area needs more than the pool has left once an
+    # application's resource and its own takings are in it: it says no,
+    # takes nothing, draws nothing (docs/phase11.md).  The test resource
+    # alone no longer fills an 8 KB pool (docs/phase13.md), so the runner
+    # takes the rest on the application's behalf.  It left less than the
+    # selector's TREE until 0.12.1; the tree is far now (docs/phase109.md)
+    # and a selector short only of that opens -- QED beside the product's
+    # accessories, with 768 bytes -- so what is left is less than the
+    # WORK AREA, the one thing it still takes from the pool.
     rec = aes(RSRC_LOAD, (), r.stage(128, b"A:\\TEST.RSC\0"))
     check(rec[0] == 1, f"rsrc_load before the refusal returned {rec[0]}")
-    tree_bytes = len(fr.build().file())
+    tree_bytes = memreport.fsel_work()
     held = sysop(ALLOC)[6] & 0xFFFF
     rec = sysop(ALLOC, max(rec[3] - tree_bytes // 2, 0))
     left = rec[7]
-    check(left < tree_bytes, f"the pool still has {left} bytes, more than the selector's tree")
+    check(left < tree_bytes, f"the pool still has {left} bytes, more than the selector's work area")
     before = os.path.join(SHOTDIR, "m12-fsel-before.png")
     b.screenshot(before)
     path_addr = r.stage(PATH_OFF, b"A:\\*.*\0")
@@ -824,7 +827,7 @@ def fsel_cases(r, check, b, keep, syms):
     if not keep:
         os.remove(before)
         os.remove(after)
-    print(f"  refused with {left} bytes of pool: the tree alone is {tree_bytes}; nothing taken, nothing drawn")
+    print(f"  refused with {left} bytes of pool: the work area is {tree_bytes}; nothing taken, nothing drawn")
     sysop(ALLOC, 0, held)
     rec = aes(RSRC_FREE)
     check(rec[0] == 1, f"rsrc_free after the refusal returned {rec[0]}")
