@@ -777,6 +777,22 @@ static void vdi_v_opnwk(void)
  * contrl[6] when there is none -- the donor's answer.  The device is not
  * touched: the palette, the pointer and the screen are the physical
  * workstation's. */
+/* vdev made the physical workstation's device: the live copy's when it
+ * is the one current, its slot's otherwise -- written into vdev on each
+ * path, never returned.  cc65816 -O2 merges a far pointer that two paths
+ * produce through a saved register it then reads unwritten (B24): the
+ * same as a local in vdi_v_opnvwk and as an inlined return here, both in
+ * a diagnostic build, where vdev came out as garbage and the next call
+ * through it jumped into bank $49 (docs/phase109.md). */
+static void vdev_phys(void)
+{
+    if (vwk_cur == 0)
+        vdev = (const VDIDEV FAR *)vwk.dev;
+    else
+        far_get((uint8_t *)&vdev, vwk_at(0) + offsetof(Vwk, dev),
+                (uint16_t)sizeof vdev);
+}
+
 static void vdi_v_opnvwk(void)
 {
     WORD i;
@@ -792,8 +808,6 @@ static void vdi_v_opnvwk(void)
      * page is a virtual workstation on another device, which is exactly
      * what a Vwk carrying its own device is for (src/vdi/vdi.h). */
     WORD devid = (WORD)(contrl[3] > 0 ? intin[0] : 1);
-    const VDIDEV FAR *want;
-    const void FAR *d;
 
     for (i = 1; i < NUM_VWK; i++)
         if (vwk_hdl[i] == 0)
@@ -807,21 +821,12 @@ static void vdi_v_opnvwk(void)
             contrl[6] = 0;              /* no far memory for a page */
             return;
         }
-        want = &vdev_print;
-    } else {
-        /* the screen: the physical workstation's device, as its slot has
-         * it -- or the live copy, when that is the one current */
-        if (vwk_cur == 0)
-            want = (const VDIDEV FAR *)vwk.dev;
-        else {
-            far_get((uint8_t *)&d, vwk_at(0) + offsetof(Vwk, dev),
-                    (uint16_t)sizeof d);
-            want = (const VDIDEV FAR *)d;
-        }
-    }
+        vdev = &vdev_print;
+    } else
+        vdev_phys();
+    /* vdev first: init_wk reads the extent off it */
     vwk_save(vwk_cur);
     vwk_cur = i;
-    vdev = want;                        /* init_wk reads the extent off it */
     init_wk((WORD)(i + 1));
     vwk_hdl[i] = vwk.handle;
     vwk_save(i);

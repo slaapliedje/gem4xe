@@ -69,6 +69,21 @@ no virtual workstation -- a program that uses the VDI without probing
 far memory (the ANTIC benchmark) still has the physical one, which is
 `vwk` itself.  `v_clsvwk` now also clears the slot's owner.
 
+## B24 in the new v_opnvwk
+
+`v_opnvwk` chose the device a new workstation draws on -- the printer's,
+or the physical workstation's, read from its far slot when that is not
+current -- into a local, then assigned it to `vdev` after `vwk_save`.
+The release build compiled it correctly.  A diagnostic build that added
+calls elsewhere in the file did not: both paths left the pointer in
+`_Dp`/`_Dp+2`, and the assignment read `_Dp+8`/`_Dp+10`, which nothing
+had written -- `vdev` garbage, and the next VDI call jumped through it
+into bank $49 (a BRK, desktop call 7, in the emulator).  `make mscan`
+named it (B24, a saved register read unwritten).  A helper returning the
+pointer was inlined into the same mistake.  `vdev_phys()` now writes
+`vdev` on each path itself -- `far_get` straight into it -- so there is
+no value for the compiler to merge, and mscan is clean on both builds.
+
 ## The check that should have spoken
 
 `tools/memreport.py` checked that QED's near region fit the room a
