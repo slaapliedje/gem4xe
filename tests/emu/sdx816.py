@@ -300,6 +300,17 @@ def main(argv):
         check(n >= FIRST_WAIT,
               f"the desktop stopped at call {n}, short of its first wait at {FIRST_WAIT} "
               f"(DESKTOP.RSC refused: see proc_init)")
+        # THE HEAP STAYS OFF WHAT THE OS GAVE OUT (docs/phase110.md).
+        # 65816.SYS puts its drivers in a block at the top bank, $EF here;
+        # gem4xe 0.12 took every bank up to $EF and unpacked programs at
+        # the top of it.  Now it lists the allocator's blocks first.
+        fm = bytes(b.memdump(syms["farmem"], 9))
+        kind, fb, lb, nb, taken = fm[0], fm[1], fm[2], fm[3], fm[8]
+        print(f"  far heap: banks ${fb:02X}-${lb:02X} ({nb}); the OS's allocator "
+              f"(km_ok {b.peek(syms['km_ok'])}) has {taken} bank(s) in use")
+        check(b.peek(syms["km_ok"]) == 1, "the Rapidus OS's allocator was not found")
+        check(taken >= 1, "no bank in use: 65816.SYS's block was not seen")
+        check(lb < 0xEF, f"the heap runs to ${lb:02X}, over 65816.SYS's bank $EF")
         check(b.peek16(syms["gem_bad"]) == 0, f"{b.peek16(syms['gem_bad'])} ABI call(s) refused")
         check(b.peek(syms["irq_fault"]) == 0, f"irq_fault {b.peek(syms['irq_fault'])}")
         b.screenshot(shot)

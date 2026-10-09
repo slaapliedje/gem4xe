@@ -28,6 +28,7 @@
 
               .extern gem_cop
               .public irq_sei, irq_cop
+              .public km_getblk, km_size, km_attr, km_ok
 
               .section farcode, root
 
@@ -77,3 +78,33 @@ irq_cop:      rep     #0x30
               rti
 irq_cop_on:   pla                     ; gem_cop reads the caller's widths
               jmp     long:gem_cop    ; from the P in the frame, not M, X
+
+;;; ---------------------------------------------------------------------------
+;;; km_getblk -- the Rapidus OS kernel allocator's kmgetblk(n): COP #$01,
+;;; function 3, the block number pushed first (drac030's specification,
+;;; "kmem"; Rapidus OS 2.42 and later).  A = n in, A = the OS's status out
+;;; (negative: no such block, or no kmgetblk on this OS); km_size the
+;;; block's size in pages, km_attr its attribute word (bit 15 allocated,
+;;; bit 0 resident, bit 1 reset-proof).  SpartaDOS X's 65816.SYS replaces
+;;; the allocator and keeps the call.  The COP goes through gem4xe's own
+;;; handler, which passes a foreign one to the OS with the frame untouched
+;;; (src/sys/abi.s), so call this only when km_ok says there is an OS to
+;;; take it (src/sys/abi.c abi_probe_os).  Native mode; any widths in.
+;;; ---------------------------------------------------------------------------
+km_getblk:    php
+              rep     #0x30
+              pha                     ; the block number
+              pea     #3              ; kmgetblk
+              cop     #0x01
+              sta     abs:km_size
+              stx     abs:km_attr
+              pla                     ; the caller pops its own arguments
+              pla
+              tya
+              plp
+              rtl
+
+              .section ztiny, bss
+km_size:      .space  2
+km_attr:      .space  2
+km_ok:        .space  1               ; abi_probe_os: the allocator is there

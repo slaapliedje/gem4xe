@@ -26,6 +26,7 @@
 #define GEM4XE_FARMEM_H
 
 #include <stdint.h>
+#include "portab.h"
 
 #define FARMEM_NONE     0   /* no linear RAM -- gem4xe cannot run */
 #define FARMEM_RAPIDUS  1
@@ -37,9 +38,16 @@ typedef struct {
     uint8_t  last_bank;     /* highest usable bank, inclusive */
     uint8_t  banks;         /* count of usable banks */
     uint32_t bytes;         /* banks * 64K */
+    uint8_t  taken;         /* banks the OS's allocator says are in use */
 } FARMEM;
 
 extern FARMEM farmem;
+
+/* The Rapidus OS kernel allocator (src/sys/sei.s): km_ok says it is there
+ * (src/sys/abi.c), km_getblk(n) lists its blocks. */
+SIMPLE_CALL int16_t km_getblk(uint16_t n);
+extern uint16_t km_size, km_attr;
+extern uint8_t  km_ok;
 
 void     farmem_probe(void);
 /* The allocator (farmem.c, "THE ALLOCATOR"): blocks in a table, each with

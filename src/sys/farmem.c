@@ -127,16 +127,69 @@ void far_strput(uint32_t dst, const char *src, uint16_t max)
  * (docs/phase41.md).  The saved bytes are a local: 255 bytes of stack for a
  * moment at start-up, which bank $00's data could not spare as a static.
  */
+/* NOT ALL OF IT IS OURS.  The Rapidus OS hands out the high RAM through
+ * its kernel allocator (COP #$01), and things live there before gem4xe
+ * starts: on a real Rapidus the BIOS takes the top bank at every cold
+ * start ($EF0000-$EFFEFF on a 16 MB board, its own state at $EF:EE00 and
+ * the allocator's table at $EF:FF00), and SpartaDOS X's 65816.SYS puts
+ * its drivers -- SIO816, EXT816 -- in that same bank, CARCACHE and RD816
+ * below it.  gem4xe 0.12 unpacked programs at the top of a heap that ran
+ * to $EF: with 65816.SYS loaded a tester's machine never reached the
+ * desktop, and the BIOS's bank was overwritten on every real Rapidus
+ * (docs/phase110.md).  Altirra's stand-in BIOS reserves nothing, which is
+ * why no gate saw it.
+ *
+ * So when the allocator is there (km_ok), every block it has given out
+ * is walked with kmgetblk -- blocks lie end to end from LOSEGM's bank --
+ * and a bank any of them touches is not one of ours.  The heap is then
+ * the longest run that is both RAM and free.  An OS older than 2.42 has
+ * no kmgetblk and answers the first call with an error: nothing listed,
+ * the probe as before.  Without the OS nothing else can have been
+ * loaded there, and the probe is all there is.  Taking the memory FROM
+ * the allocator, so nothing loaded later is given it too, is the next
+ * step; this one stops taking what is already somebody's. */
+#define LOSEGM (*(volatile uint8_t *)0x024D)    /* the first high-RAM bank */
+
+/* busy: a bit a bank, 32 bytes -- not 256 on the stack beside save[] */
+#define BUSY(m, b)  ((m)[(b) >> 3] & (uint8_t)(1 << ((b) & 7)))
+
+static void km_busy(uint8_t *busy)
+{
+    uint32_t base = (uint32_t)LOSEGM << 16, end;
+    uint16_t n, b;
+
+    farmem.taken = 0;
+    if (!km_ok || !LOSEGM)
+        return;
+    for (n = 0; n < 128; n++) {
+        if (km_getblk(n) < 0 || !km_size)
+            break;
+        end = base + ((uint32_t)km_size << 8);
+        if (km_attr & 0x8000) {
+            for (b = (uint16_t)(base >> 16); b <= (uint16_t)((end - 1) >> 16) && b < 256; b++)
+                if (!BUSY(busy, b)) {
+                    busy[b >> 3] |= (uint8_t)(1 << (b & 7));
+                    farmem.taken++;
+                }
+        }
+        base = end;
+    }
+}
+
 void farmem_probe(void)
 {
     uint16_t b;
     uint16_t first = far_first_free_bank();
     uint8_t run_first = 0, run_len = 0, best_first = 0, best_len = 0;
     uint8_t save[0xFF];                 /* indexed by bank, $01-$FE */
+    uint8_t busy[32];                   /* the OS's allocator has it */
 
     farmem.kind = FARMEM_NONE;
     farmem.first_bank = farmem.last_bank = farmem.banks = 0;
     farmem.bytes = 0;
+    for (b = 0; b < 32; b++)
+        busy[b] = 0;
+    km_busy(busy);
     far_blocks = 0;
     far_table = 0;
 
@@ -150,7 +203,7 @@ void farmem_probe(void)
         far_write8(((uint32_t)b << 16) | PROBE_OFF, (uint8_t)b);
 
     for (b = first; b <= 0xFF; b++) {
-        uint8_t ok = (b <= 0xFE) &&
+        uint8_t ok = (b <= 0xFE) && !BUSY(busy, b) &&
                      (far_read8(((uint32_t)b << 16) | PROBE_OFF) == (uint8_t)b);
         if (ok) {
             if (!run_len)

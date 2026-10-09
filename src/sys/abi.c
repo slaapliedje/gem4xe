@@ -79,24 +79,30 @@ uint8_t  gem_term;
  * gem4xe's has nobody to go to. */
 #define SYSDEF_CPU     10
 #define SYSDEF_NATIVE  13
+#define SYSDEF_KMEM    14   /* bit 0: the kernel allocator, COP #$01 */
 #define CPU_65C816     2
 
 void abi_probe_os(void)
 {
-    uint8_t def[SYSDEF_NATIVE + 1];
+    uint8_t def[SYSDEF_KMEM + 1];
     uint16_t got = 0;
     uint8_t st;
     int16_t n;
 
     gem_cop_pass = 0;
+    km_ok = 0;
     n = cio_open("@:SYSDEF", 4, 0);     /* 4: read */
     if (n < 0)
         return;
     st = cio_read(n, def, sizeof def, &got);
     cio_close(n);
     if ((st == CIO_OK || st == CIO_OK_EOF) && got == sizeof def &&
-        def[SYSDEF_CPU] == CPU_65C816 && (def[SYSDEF_NATIVE] & 1))
+        def[SYSDEF_CPU] == CPU_65C816 && (def[SYSDEF_NATIVE] & 1)) {
         gem_cop_pass = 1;
+        /* ...and whether it hands out the high RAM, which farmem_probe
+         * then asks before it takes any (docs/phase110.md) */
+        km_ok = (uint8_t)(def[SYSDEF_KMEM] & 1);
+    }
 }
 
 /* The parameter blocks as they lie in the caller's memory: 32-bit
