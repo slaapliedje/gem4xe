@@ -213,7 +213,8 @@ void ptr_warp(WORD x, WORD y)
 void ptr_init(ptr_kind kind, WORD x, WORD y)
 {
     if (!ptr_port_given)
-        ptr_port = (uint8_t)((kind == PTR_CX77 || kind == PTR_KOALA)
+        ptr_port = (uint8_t)((kind == PTR_CX77 || kind == PTR_KOALA
+                              || kind == PTR_JOY)
                              ? PTR_PORT_1 : PTR_PORT_2);
     ptr_state.kind = (WORD)kind;
     ptr_state.buttons = 0;
@@ -420,12 +421,145 @@ static void poll_xem1(void)
     pot_pending = 1;
 }
 
+/* Moving the pointer by holding something: a joystick, or the arrow keys
+ * in pointer mode.  For each vertical blank since the last poll, 1 pixel
+ * a frame and faster the longer it is held -- or 1 a frame however long,
+ * when `fine`.  DIRS is 1 up, 2 down, 4 left, 8 right, set when held. */
+static TINY uint16_t mv_frame;
+static TINY uint8_t mv_held;
+
+static void ptr_move(WORD dirs, WORD fine)
+{
+    WORD n, step;
+
+    if (irq.how != IRQ_OFF) {
+        n = (WORD)(uint16_t)(irq_frames - mv_frame);
+        if (n == 0)
+            return;                 /* not a frame yet: the same place */
+        mv_frame = irq_frames;
+        if (n > 4)
+            n = 4;                  /* a long system call is not a leap */
+    } else {
+        n = 1;                      /* no frame count: a step a poll */
+    }
+    if (dirs == 0) {
+        mv_held = 0;
+        return;
+    }
+    if (mv_held < 255)
+        mv_held++;
+    step = (fine || mv_held < 10) ? n : (mv_held < 30) ? 3 * n : 6 * n;
+    if (dirs & 1) ptr_state.y = (WORD)(ptr_state.y - step);
+    if (dirs & 2) ptr_state.y = (WORD)(ptr_state.y + step);
+    if (dirs & 4) ptr_state.x = (WORD)(ptr_state.x - step);
+    if (dirs & 8) ptr_state.x = (WORD)(ptr_state.x + step);
+    clamp();
+}
+
+/* A joystick.  The four direction switches and the trigger, read once a
+ * poll: no paddle scan and no 4 kHz sampling, the plainest thing a port
+ * can be asked -- which is half the reason it exists (a real Rapidus
+ * froze with every device that uses the scan, docs/phase111.md).  The
+ * trigger is the left button; there is no right one.  On port 1 unless
+ * MOUSEPORT says, as every joystick program expects. */
+static WORD poll_joy(void)
+{
+    WORD nib = (WORD)((ptr_port ? (PORTA >> 4) : PORTA) & 0x0F);
+
+    ptr_state.buttons = (WORD)((TRIG(ptr_port) & 1) ? 0 : 1);
+    return (WORD)(~nib & 0x0F);         /* moved with the keys' (poll_keys) */
+}
+
+/* POINTER MODE: the keyboard as the pointer, as TOS 2.06's Alt and the
+ * arrows are -- with any device or none.  This keyboard has no Alt, and
+ * holding one key while pressing others on it is awkward, so the INVERSE
+ * key turns the mode on and off instead.  In it, the arrow keys (with or
+ * without CONTROL) move the pointer while held, one pixel a frame with
+ * SHIFT; RETURN is the left button and TAB the right, while held.  POKEY
+ * sees one held key at a time, so a drag cannot hold a button key and an
+ * arrow together: SPACE presses the left button and leaves it down until
+ * SPACE again, and the arrows drag.  Every other key types as before.
+ * By key code, KBCODE's low six bits. */
+#define SKSTAT  (*(volatile uint8_t *)0xD20F)
+#define KBCODE  (*(volatile uint8_t *)0xD209)
+#define KC_INV    0x27
+#define KC_UP     0x0E                  /* -  */
+#define KC_DOWN   0x0F                  /* =  */
+#define KC_LEFT   0x06                  /* +  */
+#define KC_RIGHT  0x07                  /* *  */
+#define KC_RETURN 0x0C
+#define KC_TAB    0x2C
+#define KC_SPACE  0x21
+#define KM_ON   1                       /* key_mode: pointer mode */
+#define KM_LOCK 2                       /* ...and SPACE has the left button down */
+static TINY uint8_t key_mode;
+
+WORD ptr_key(uint8_t code)
+{
+    WORD k = (WORD)(code & 0x3F);
+
+    if (k == KC_INV) {
+        key_mode = (uint8_t)((key_mode & KM_ON) ? 0 : KM_ON);
+        if (ptr_state.kind == PTR_NONE)
+            ptr_state.buttons = 0;      /* no device to let go of it */
+        return 1;
+    }
+    if (!(key_mode & KM_ON))
+        return 0;
+    switch (k) {
+    case KC_SPACE:
+        key_mode ^= KM_LOCK;
+        return 1;
+    case KC_UP: case KC_DOWN: case KC_LEFT: case KC_RIGHT:
+    case KC_RETURN: case KC_TAB:
+        return 1;                       /* held, not typed: ptr_poll reads them */
+    default:
+        return 0;
+    }
+}
+
+WORD ptr_keymode(void)
+{
+    return (WORD)(key_mode & KM_ON);
+}
+
+/* JOY is the joystick's directions (poll_joy), moved here together with
+ * the keys', so that one frame's step is taken once. */
+static void poll_keys(WORD joy)
+{
+    WORD k = -1, dirs = joy, b;
+
+    if (!(key_mode & KM_ON)) {
+        if (ptr_state.kind == PTR_JOY)
+            ptr_move(joy, 0);
+        return;
+    }
+    if (!(SKSTAT & 0x04))               /* a key is down: which, KBCODE */
+        k = (WORD)(KBCODE & 0x3F);
+    switch (k) {
+    case KC_UP:    dirs |= 1; break;
+    case KC_DOWN:  dirs |= 2; break;
+    case KC_LEFT:  dirs |= 4; break;
+    case KC_RIGHT: dirs |= 8; break;
+    default:       break;
+    }
+    b = (WORD)(((key_mode & KM_LOCK) || k == KC_RETURN) ? 1 : 0);
+    if (k == KC_TAB)
+        b |= 2;
+    if (ptr_state.kind == PTR_NONE)
+        ptr_state.buttons = b;          /* nothing else sets them */
+    else
+        ptr_state.buttons |= b;         /* the device's, read this poll */
+    ptr_move(dirs, !(SKSTAT & 0x08));
+}
+
 WORD ptr_buttons_at(uint8_t trig)
 {
     switch (ptr_state.kind) {
     case PTR_ST_MOUSE:
     case PTR_AMIGA_MOUSE:
     case PTR_TRAKBALL:
+    case PTR_JOY:
         return (WORD)(((trig >> ptr_port) & 1) | (ptr_state.buttons & 2));
     case PTR_CX77:
     case PTR_KOALA:
@@ -442,6 +576,8 @@ WORD ptr_buttons_at(uint8_t trig)
 
 void ptr_poll(void)
 {
+    WORD joy = 0;
+
     switch (ptr_state.kind) {
     case PTR_ST_MOUSE:
     case PTR_AMIGA_MOUSE:
@@ -455,7 +591,11 @@ void ptr_poll(void)
     case PTR_XEM1:
         poll_xem1();
         break;
+    case PTR_JOY:
+        joy = poll_joy();
+        break;
     default:
         break;
     }
+    poll_keys(joy);
 }

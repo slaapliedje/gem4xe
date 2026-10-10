@@ -128,6 +128,7 @@ STRINGS = [
     # (src/aes/shel.c, sh_main): past the six slots, or no memory for it
     ("ACCFULL", "[1][Not every desk accessory|could be loaded. There are|six places for them, and|memory may allow fewer.][ OK ]"),
     ("BOOT_PTR_KOALA", "KoalaPad"),
+    ("BOOT_PTR_JOY", "joystick"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -181,6 +182,7 @@ TRANSLATIONS = {
         "EXIT_ANYKEY": "Taste druecken fuer Neustart",
         "ACCFULL": "[1][Nicht alle Accessories|konnten geladen werden. Es|gibt sechs Plätze, und der|Speicher reicht evtl. für|weniger.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
+        "BOOT_PTR_JOY": "Joystick",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -228,6 +230,7 @@ TRANSLATIONS = {
         "EXIT_ANYKEY": "Appuyez sur une touche pour redemarrer",
         "ACCFULL": "[1][Certains accessoires n'ont|pas pu être chargés. Il y a|six emplacements, et la|mémoire peut en limiter|le nombre.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
+        "BOOT_PTR_JOY": "joystick",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -275,6 +278,7 @@ TRANSLATIONS = {
         "EXIT_ANYKEY": "Pulse una tecla para reiniciar",
         "ACCFULL": "[1][No se pudieron cargar|todos los accesorios. Hay|seis espacios, y la memoria|puede admitir menos.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
+        "BOOT_PTR_JOY": "joystick",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -322,6 +326,7 @@ TRANSLATIONS = {
         "EXIT_ANYKEY": "Nacisnij klawisz, aby zaczac od nowa",
         "ACCFULL": "[1][Nie wszystkie akcesoria|udało się wczytać. Jest|sześć miejsc, a pamięci|może wystarczyć na mniej.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
+        "BOOT_PTR_JOY": "joystick",
     },
 }
 

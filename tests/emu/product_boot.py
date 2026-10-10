@@ -219,9 +219,12 @@ def far_byte(far, addr):
 
 def dos2_listing(fs):
     """A DOS 2 root, in the shape the model wants.  Nothing in this gate
-    opens a window, so the desktop never asks for it -- it is here so the
-    model has an answer if it ever does."""
-    return {"A:\\": [(e.filename.upper(), 0, 0, 0, e.count * fs.data_bytes)
+    opens a window, but the desktop READS one file of it: GEM4XE.CFG, 128
+    bytes a call, for a DESKINF line (src/desk/deskwin.c inf_name), and the
+    model's Fread ends where this size says.  So the size is the file's
+    bytes, not its sectors times their data bytes -- a GEM4XE.CFG of 3,349
+    bytes is 27 reads, and 14 sectors of 253 said 28 (phase 111)."""
+    return {"A:\\": [(e.filename.upper(), 0, 0, 0, len(fs.read(e.filename)))
                      for e in fs.entries() if e.in_use and e.nameable]}
 
 

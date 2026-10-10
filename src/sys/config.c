@@ -63,7 +63,9 @@ static const CFG_WORD FAR cfg_mouse[] = {
     { "KOALA",    PTR_KOALA        },    /* got the ST mouse, silently);   */
     { "KOALAPAD", PTR_KOALA        },    /* the KoalaPad apart: phase 108 */
     { "XEM1",     PTR_XEM1         },
-    { "MOUSTER",  PTR_XEM1         }     /* likewise */
+    { "MOUSTER",  PTR_XEM1         },    /* likewise */
+    { "JOY",      PTR_JOY          },
+    { "JOYSTICK", PTR_JOY          }
 };
 
 static const CFG_WORD FAR cfg_printer[] = {

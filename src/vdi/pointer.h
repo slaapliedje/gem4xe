@@ -56,7 +56,8 @@ typedef enum {
     PTR_TRAKBALL,       /* Atari CX80 trak-ball, in trak-ball mode */
     PTR_CX77,           /* Atari CX77 Touch Tablet, absolute */
     PTR_XEM1,           /* mouSTer, XEM1 mode: probes both ports for it   */
-    PTR_KOALA           /* KoalaPad: the CX77's shape, its own readings */
+    PTR_KOALA,          /* KoalaPad: the CX77's shape, its own readings */
+    PTR_JOY             /* a joystick: held directions move the pointer */
 } ptr_kind;
 
 typedef struct {
@@ -94,6 +95,12 @@ void ptr_setport(WORD port);    /* before ptr_init; the sampler follows */
 
 void ptr_init(ptr_kind kind, WORD x, WORD y);
 void ptr_poll(void);            /* refresh ptr_state from the hardware */
+/* Pointer mode (INVERSE): the keyboard as the pointer.  ptr_key() is
+ * handed every key code before it is typed, and answers 1 for the ones
+ * that are the pointer's and not text; ptr_keymode() says whether the
+ * mode is on. */
+WORD ptr_key(uint8_t code);
+WORD ptr_keymode(void);
 void ptr_sample(void);          /* ptr_seen = ptr_state, torn reads retried */
 /* The buttons, had the triggers been `trig` (bit 0 TRIG0, bit 1 TRIG1,
  * 1 = pressed) and every other line as it is now; -1 for a device whose

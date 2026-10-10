@@ -2485,8 +2485,13 @@ static WORD kb_translate(uint8_t code)
 
 static void kb_queue(uint8_t code)
 {
-    WORD k = kb_translate(code);
-    uint8_t next = (uint8_t)((kb_tail + 1) & (KB_QLEN - 1));
+    WORD k;
+    uint8_t next;
+
+    if (ptr_key(code))
+        return;                     /* pointer mode's (src/vdi/pointer.c) */
+    k = kb_translate(code);
+    next = (uint8_t)((kb_tail + 1) & (KB_QLEN - 1));
     if (k && next != kb_head) {
         kb_q[kb_tail] = k;
         /* SHIFT is bit 6 of the code and CONTROL bit 7, so the two shifted

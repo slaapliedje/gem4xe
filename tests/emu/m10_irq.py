@@ -55,7 +55,7 @@ ROWCRS, COLCRS, SAVMSC = 0x0054, 0x0055, 0x0058
 SYS_PTR, SYS_EXIT, SYS_WAIT, SYS_POLL = 3000, 3001, 3002, 3003
 SYS_BUTLOG = 3019
 PTR_TRAKBALL = 3
-PTR_CX77, PTR_KOALA = 4, 6
+PTR_CX77, PTR_KOALA, PTR_JOY = 4, 6, 7
 
 # The two runs the shadow covers, and where the native vectors sit in them.
 RUNS = ((0xC000, 0xD000), (0xD800, 0x10000))
@@ -312,6 +312,122 @@ def main(argv):
         got = tablet([(SYS_PTR, (), (PTR_KOALA, 300, 100))] + settle)
         check("KoalaPad, the same reading: a touch at the bottom right",
               got == (0, 639, 239), f"buttons, x, y = {got}")
+        check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
+
+        # -- the joystick (phase 111) ---------------------------------------
+        # Held directions move the pointer a frame at a time, faster the
+        # longer they are held; fire is the left button; port 1 with no
+        # MOUSEPORT.  No paddle scan: POTGO is never written for it.
+        print("joystick")
+        b.joy(0, "centre")
+        b.joy(1, "centre")
+        got = tablet([(SYS_PTR, (), (PTR_JOY, 300, 100))] + settle)
+        check("joystick, centred: the pointer stays where it was",
+              got == (0, 300, 100), f"buttons, x, y = {got}")
+        b.joy(0, "right")
+        # a poll a frame, as the desktop's loop gives it: 10 frames at 1
+        # pixel, then 3 a frame -- about 70 pixels in 30 frames (two
+        # records a frame; the target keeps 48)
+        got = tablet([(SYS_POLL, (), ())]
+                     + [(SYS_WAIT, (), (1,)), (SYS_POLL, (), ())] * 22
+                     + [(VQ_MOUSE, (), ())])
+        check("joystick right, 22 frames: x moved right, faster, y did not",
+              got is not None and 330 <= got[1] <= 380 and got[2] == 100,
+              f"buttons, x, y = {got}")
+        x0 = got[1] if got else 0
+        b.joy(0, "up")
+        got = tablet([(SYS_POLL, (), ()), (SYS_WAIT, (), (5,)),
+                      (SYS_POLL, (), ()), (VQ_MOUSE, (), ())])
+        check("joystick up: y moved up, x did not",
+              got is not None and got[2] < 100 and got[1] == x0,
+              f"buttons, x, y = {got}")
+        b.joy(0, "centre", fire=True)
+        b.frames(2)
+        got = tablet([(SYS_POLL, (), ()), (VQ_MOUSE, (), ())])
+        check("joystick fire: the left button", got is not None and got[0] == 1,
+              f"buttons, x, y = {got}")
+        b.joy(0, "centre")
+        b.joy(1, "left", fire=True)        # the other port is not the stick
+        b.frames(2)
+        got = tablet([(SYS_POLL, (), ()), (SYS_WAIT, (), (5,)),
+                      (SYS_POLL, (), ()), (VQ_MOUSE, (), ())])
+        check("joystick, port 2 pushed and fired: nothing",
+              got is not None and got[0] == 0 and got[1] == x0,
+              f"buttons, x, y = {got}")
+        b.joy(1, "centre")
+        check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
+
+        # -- pointer mode (phase 111) ----------------------------------------
+        # INVERSE turns it on; held arrows move the pointer (SHIFT: a pixel
+        # a frame), RETURN and TAB are the buttons while held, SPACE holds
+        # the left one down until SPACE again.  Held through KEYRAW, the
+        # keyboard's own matrix, because the mode reads the key that is
+        # DOWN, not the one that was typed.  On PTR_NONE, the keyboard only.
+        print("pointer mode")
+        frames22 = ([(SYS_POLL, (), ())]
+                    + [(SYS_WAIT, (), (1,)), (SYS_POLL, (), ())] * 22
+                    + [(VQ_MOUSE, (), ())])
+        poll1 = [(SYS_WAIT, (), (2,)), (SYS_POLL, (), ()), (VQ_MOUSE, (), ())]
+        got = tablet([(SYS_PTR, (), (0, 300, 100))] + settle)
+        b.key_raw("EQUALS")                 # not yet the mode's: types
+        b.frames(2)
+        got = tablet(frames22)
+        b.key_raw("EQUALS", False)
+        b.frames(4)
+        check("pointer mode off: an arrow held moves nothing",
+              got == (0, 300, 100), f"buttons, x, y = {got}")
+        b.key_tap("INVERSE")
+        b.key_raw("EQUALS")
+        b.frames(2)
+        got = tablet(frames22)
+        b.key_raw("EQUALS", False)
+        b.frames(4)
+        check("INVERSE, then down held: y moved down and faster, x did not",
+              got is not None and got[1] == 300 and 140 <= got[2] <= 170
+              and got[0] == 0, f"buttons, x, y = {got}")
+        y0 = got[2] if got else 0
+        b.key_raw("PLUS", shift=True)
+        b.frames(2)
+        got = tablet(frames22)
+        b.key_raw("PLUS", False, shift=True)
+        b.frames(4)
+        check("SHIFT and left held: x a pixel a frame, y not",
+              got is not None and 300 - 26 <= got[1] <= 300 - 20
+              and got[2] == y0, f"buttons, x, y = {got}")
+        x0 = got[1] if got else 0
+        for name, want in (("RETURN", 1), ("TAB", 2)):
+            b.key_raw(name)
+            b.frames(2)
+            got = tablet(poll1)
+            b.key_raw(name, False)
+            b.frames(4)
+            check(f"{name} held: buttons {want}",
+                  got is not None and got[0] == want, f"buttons, x, y = {got}")
+            got = tablet(poll1)
+            check(f"{name} let go: no buttons",
+                  got is not None and got[0] == 0, f"buttons, x, y = {got}")
+        b.key_tap("SPACE")
+        b.key_raw("ASTERISK")
+        b.frames(2)
+        got = tablet(frames22)
+        b.key_raw("ASTERISK", False)
+        b.frames(4)
+        check("SPACE, then right held: a drag -- left down, x moved right",
+              got is not None and got[0] == 1 and got[1] > x0 + 30,
+              f"buttons, x, y = {got}")
+        b.key_tap("SPACE")
+        got = tablet(poll1)
+        check("SPACE again: the left button up",
+              got is not None and got[0] == 0, f"buttons, x, y = {got}")
+        x1 = got[1] if got else 0
+        b.key_tap("INVERSE")
+        b.key_raw("ASTERISK")
+        b.frames(2)
+        got = tablet(frames22)
+        b.key_raw("ASTERISK", False)
+        b.frames(4)
+        check("INVERSE again: the mode is off, the arrow moves nothing",
+              got is not None and got[1] == x1, f"buttons, x, y = {got}")
         check("no COP/BRK/ABORT taken", b.peek(syms["irq_fault"]) == 0)
 
         # -- the way back ---------------------------------------------------

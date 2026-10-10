@@ -282,6 +282,19 @@ the ST's desktop, and `1` to `8` open drive `D1:` to `D8:`.  A program
 gets the ST's key codes, so its own menu shortcuts work, and the `HELP`
 key -- or a 1200XL's F1 -- is the ST's Help, a 1200XL's F2 its Undo.
 
+**The keyboard as the pointer**, as on TOS 2.06 with Alt and the arrows:
+press the **INVERSE** key (the Atari key) to turn pointer mode on, and
+again to turn it off.  In it, the **arrow keys** -- with CONTROL or
+without -- move the pointer while you hold them, faster the longer you
+do, and one pixel at a time with **SHIFT**.  **RETURN** is the left
+button and **TAB** the right one, while held.  **SPACE** presses the
+left button and keeps it down until SPACE again, so that the arrows can
+drag: the Atari's keyboard sees one held key at a time.  Every other key
+types as usual.  It works beside any pointer, or with `MOUSE=NONE`.
+
+A **joystick** can be the pointer too, with `MOUSE=JOY` in
+`GEM4XE.CFG`: hold the stick to move, fire to click.
+
 **How it looks** is yours to choose in the **Control Panel** (the Desk
 menu): its *General* module sets the double-click speed, the sub-menu
 delay, the date and time, and the **Look** -- *Flat*, as GEM always was,

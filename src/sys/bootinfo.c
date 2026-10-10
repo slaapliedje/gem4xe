@@ -419,6 +419,7 @@ void boot_pointer(int16_t kind)
     case PTR_CX77:        s = LS_BOOT_PTR_TABLET; break;
     case PTR_KOALA:       s = LS_BOOT_PTR_KOALA; break;
     case PTR_XEM1:        s = LS_BOOT_PTR_XEM1;   break;
+    case PTR_JOY:         s = LS_BOOT_PTR_JOY;    break;
     default:              s = LS_BOOT_NONE;       break;
     }
     line(LS_BOOT_POINTER, lang_str(s));
