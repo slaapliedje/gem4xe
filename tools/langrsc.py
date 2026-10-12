@@ -129,6 +129,9 @@ STRINGS = [
     ("ACCFULL", "[1][Not every desk accessory|could be loaded. There are|six places for them, and|memory may allow fewer.][ OK ]"),
     ("BOOT_PTR_KOALA", "KoalaPad"),
     ("BOOT_PTR_JOY", "joystick"),
+    # the boot screen's second Memory line, only when the OS had given out
+    # some of the banks gem4xe's own image was loaded into (farmem.c)
+    ("BOOT_CLASH", "in use before GEM: $01-"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -183,6 +186,7 @@ TRANSLATIONS = {
         "ACCFULL": "[1][Nicht alle Accessories|konnten geladen werden. Es|gibt sechs Plätze, und der|Speicher reicht evtl. für|weniger.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "Joystick",
+        "BOOT_CLASH": "vor GEM belegt: $01-",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -231,6 +235,7 @@ TRANSLATIONS = {
         "ACCFULL": "[1][Certains accessoires n'ont|pas pu être chargés. Il y a|six emplacements, et la|mémoire peut en limiter|le nombre.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "joystick",
+        "BOOT_CLASH": "occupe avant GEM: $01-",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -279,6 +284,7 @@ TRANSLATIONS = {
         "ACCFULL": "[1][No se pudieron cargar|todos los accesorios. Hay|seis espacios, y la memoria|puede admitir menos.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "joystick",
+        "BOOT_CLASH": "en uso antes de GEM: $01-",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -327,6 +333,7 @@ TRANSLATIONS = {
         "ACCFULL": "[1][Nie wszystkie akcesoria|udało się wczytać. Jest|sześć miejsc, a pamięci|może wystarczyć na mniej.][ OK ]",
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "joystick",
+        "BOOT_CLASH": "zajete przed GEM: $01-",
     },
 }
 

@@ -46,6 +46,7 @@ gem4xe does not take its memory FROM the allocator, so something loaded
 after it could be given the same banks, and it does not free it on exit.
 Nor does it check that nothing sits where its own image loads (banks $01
 up, written by farload before any of this).  Both are the next step.
+Done in phase 112 (`docs/phase112.md`).
 
 ## Proof
 

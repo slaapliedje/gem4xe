@@ -184,6 +184,7 @@ TASK void main(void)
     if (video == CFG_VIDEO_AUTO)
         video = vbxe_detect() ? CFG_VIDEO_VBXE : CFG_VIDEO_ANTIC;
     else if (video == CFG_VIDEO_VBXE && !vbxe_detect()) {
+        farmem_release();
         irq_remove();
         rapidus_restore();
         exit_say(LS_EXIT_NOVBXE);
@@ -206,6 +207,7 @@ TASK void main(void)
      * screen and hangs at that first call, which is a white screen and
      * nothing after it -- what the first real Rapidus this met showed. */
     if (irq.how == IRQ_OFF) {
+        farmem_release();
         rapidus_restore();
         exit_say(irq.fail == IRQ_FAIL_COPY ? LS_EXIT_NOCOPY
                : irq.fail == IRQ_FAIL_VEC  ? LS_EXIT_NOVEC
@@ -253,8 +255,10 @@ TASK void main(void)
      * and test-m27 caught it being got wrong.  main() is the shallowest
      * place in gem4xe that can ever change hands. */
     if (!ctx_regs_ok() || !proc_init(pool_alloc(proc_store_size, 2))
-        || !ctx_make(&proc_app->p_ctx, 0))
+        || !ctx_make(&proc_app->p_ctx, 0)) {
+        farmem_release();
         _sys_exit();
+    }
     ctx_init(&proc_app->p_ctx);
     gemdos_init();              /* its far state below any application's */
     MARK(11); dev_clear_screen();   /* whichever screen it is */
@@ -274,7 +278,10 @@ TASK void main(void)
 
     /* The way back, in the reverse of the way in: interrupts off and the
      * ROM in, the screen off, the accelerator's windows written back and
-     * slow, then the CPU and the stack as DOS had them. */
+     * slow, then the CPU and the stack as DOS had them -- and the high
+     * RAM the OS lent, first, while its calls still come through the
+     * vectors they went out by. */
+    farmem_release();
     irq_remove();
     if (video == CFG_VIDEO_VBXE) {
         vbxe_off();

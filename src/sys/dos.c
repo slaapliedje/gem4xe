@@ -368,6 +368,8 @@ int32_t dos_command(uint32_t line, uint32_t out, uint32_t max)
     sdx_vec = sdx_xcomli;
     sdx_call(0);
     irq_pokey_resync();                         /* timer 1 armed again (cio.s) */
+    farmem_held();                              /* the OS's blocks still
+                                                 * gem4xe's (farmem.c) */
 
     MEMTOP = memtop;
     MEMLO = memlo;

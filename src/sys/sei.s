@@ -29,6 +29,7 @@
               .extern gem_cop
               .public irq_sei, irq_cop
               .public km_getblk, km_size, km_attr, km_ok
+              .public km_malloc, km_free, km_mode, km_page
 
               .section farcode, root
 
@@ -104,7 +105,49 @@ km_getblk:    php
               plp
               rtl
 
+;;; ---------------------------------------------------------------------------
+;;; km_malloc -- kmalloc(size, mode): COP #$01, function 1, mode pushed
+;;; first, then the size in 256-byte pages, then the function (drac030's
+;;; "kmem").  A = the size in, A = the OS's status out (negative: refused);
+;;; km_page the block's first page -- the top two bytes of its 24-bit
+;;; address -- and km_mode the mode it was asked with, set by the caller.
+;;; Mode 0 for anything gem4xe means to give back: kfree will not free a
+;;; resident (KM_RES) block.  The same rules as km_getblk above.
+;;; ---------------------------------------------------------------------------
+km_malloc:    php
+              rep     #0x30
+              tax                     ; the size, while the mode goes first
+              lda     abs:km_mode
+              pha                     ; mode
+              phx                     ; size
+              pea     #1              ; kmalloc
+              cop     #0x01
+              sta     abs:km_page
+              pla
+              pla
+              pla
+              tya
+              plp
+              rtl
+
+;;; ---------------------------------------------------------------------------
+;;; km_free -- kfree(page): COP #$01, function 2, the page km_malloc gave.
+;;; A = the page in, A = the OS's status out.
+;;; ---------------------------------------------------------------------------
+km_free:      php
+              rep     #0x30
+              pha                     ; the page
+              pea     #2              ; kfree
+              cop     #0x01
+              pla
+              pla
+              tya
+              plp
+              rtl
+
               .section ztiny, bss
+km_mode:      .space  2
+km_page:      .space  2
 km_size:      .space  2
 km_attr:      .space  2
 km_ok:        .space  1               ; abi_probe_os: the allocator is there

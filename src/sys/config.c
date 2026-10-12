@@ -12,6 +12,7 @@
 #include "../vdi/vdi.h"
 #include "../vbxe/vbxe.h"   /* VB_WIDE_*: the width index SCREENW keeps */
 #include "../vdi/pointer.h"
+#include "farmem.h"         /* HIGHRAM= goes straight into its limits */
 
 /* SCREENW's default is NAMED and not left to the zero the rest of the
  * struct starts as: VB_WIDE_NARROW is 0, so an unset SCREENW would have
@@ -91,6 +92,7 @@ static const char FAR k_clock[] = "CLOCK";
 static const char FAR k_topmargin[] = "TOPMARGIN";
 static const char FAR k_screenh[] = "SCREENH";
 static const char FAR k_screenw[] = "SCREENW";
+static const char FAR k_highram[] = "HIGHRAM";
 
 static char up(char c)
 {
@@ -142,6 +144,32 @@ static int16_t cfg_num(const char *v, int16_t dflt, int16_t max)
         any = 1;
     }
     return any ? n : dflt;
+}
+
+/* A bank number: $ and hex, or decimal.  -1 for no number at all. */
+static int16_t cfg_bank(const char **pv)
+{
+    const char *v = *pv;
+    int16_t n = 0;
+    WORD any = 0, hex = (*v == '$');
+
+    if (hex)
+        v++;
+    for (;; v++) {
+        WORD d;
+        if (*v >= '0' && *v <= '9')
+            d = (WORD)(*v - '0');
+        else if (hex && *v >= 'A' && *v <= 'F')
+            d = (WORD)(*v - 'A' + 10);
+        else
+            break;
+        n = (int16_t)(n * (hex ? 16 : 10) + d);
+        if (n > 0xFF)
+            n = 0xFF;
+        any = 1;
+    }
+    *pv = v;
+    return any ? n : -1;
 }
 
 static void cfg_line(char *s)
@@ -213,6 +241,24 @@ static void cfg_line(char *s)
             config.screenw = VB_WIDE_NORMAL;
         else if (px == CFG_SCREENW_WIDE)
             config.screenw = VB_WIDE_WIDE;
+    }
+    else if (same(k_highram, key)) {
+        /* HIGHRAM=$04-$3F: the banks the far heap may use, for a board
+         * whose OS does not say where its high RAM is (src/sys/farmem.c).
+         * Straight into farmem's own bytes, as MOUSEPORT goes into the
+         * pointer's.  Anything malformed leaves the probe to decide. */
+        const char *v = val;
+        int16_t lo = cfg_bank(&v), hi;
+        while (blank(*v)) v++;
+        if (*v == '-') {
+            v++;
+            while (blank(*v)) v++;
+            hi = cfg_bank(&v);
+            if (lo > 0 && hi >= lo) {
+                hiram_lo = (uint8_t)lo;
+                hiram_hi = (uint8_t)hi;
+            }
+        }
     }
     else if (same(k_printto, key)) {
         /* A NAME, not a word out of a table: the value is taken as it

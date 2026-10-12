@@ -41,15 +41,31 @@ typedef struct {
     uint8_t  taken;         /* banks the OS's allocator says are in use */
 } FARMEM;
 
+/* What gem4xe holds of the OS's allocator (phase 112), on the direct
+ * page -- LoRAM, where FARMEM is, is at its reserve.  Page numbers (the
+ * top two bytes of an address), 0 for none: the heap's block, and the
+ * one over the banks its own image was loaded into; farmem_release()
+ * gives both back. */
+extern TINY uint16_t km_heap, km_image;
+extern TINY uint8_t  km_clash;  /* something was in gem4xe's image banks:
+                                 * the image's last bank, 0 when nothing */
+extern TINY uint8_t  km_held;   /* farmem_held(): both blocks still ours */
+extern TINY uint8_t  hiram_lo;  /* HIGHRAM= in GEM4XE.CFG: the banks the */
+extern TINY uint8_t  hiram_hi;  /* heap may use, inclusive; 0: not said */
+
 extern FARMEM farmem;
 
 /* The Rapidus OS kernel allocator (src/sys/sei.s): km_ok says it is there
  * (src/sys/abi.c), km_getblk(n) lists its blocks. */
 SIMPLE_CALL int16_t km_getblk(uint16_t n);
-extern uint16_t km_size, km_attr;
+SIMPLE_CALL int16_t km_malloc(uint16_t pages);   /* mode in km_mode */
+SIMPLE_CALL int16_t km_free(uint16_t page);
+extern uint16_t km_size, km_attr, km_mode, km_page;
 extern uint8_t  km_ok;
 
 void     farmem_probe(void);
+void     farmem_release(void);  /* the OS's blocks back, on the way out */
+uint16_t farmem_held(void);     /* both still allocated: km_held */
 /* The allocator (farmem.c, "THE ALLOCATOR"): blocks in a table, each with
  * an owner, freed singly or by owner in any order.  0 on failure. */
 extern uint8_t  far_owner;              /* whose the next block is; 0 system */

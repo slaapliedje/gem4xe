@@ -123,6 +123,49 @@ def find_text(shot_path, text):
     return None
 
 
+def farmem(b, syms):
+    """src/sys/farmem.h's FARMEM, which this compiler packs byte by byte,
+    and what gem4xe holds of the OS's allocator, beside it on the direct
+    page (phase 112)."""
+    m = bytes(b.memdump(syms["farmem"], 9))
+    return {"kind": m[0], "first": m[1], "last": m[2], "banks": m[3],
+            "taken": m[8], "km_heap": b.peek16(syms["km_heap"]),
+            "km_image": b.peek16(syms["km_image"]),
+            "clash": b.peek(syms["km_clash"]), "held": b.peek(syms["km_held"])}
+
+
+def given_back(b, syms):
+    """Still held after the DOS command; then Quit, and KMSCAN at the
+    prompt: the OS's own report holds nothing of gem4xe's.  The failures."""
+    fails = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+            print(f"  FAIL: {msg}")
+
+    fm = farmem(b, syms)
+    check(fm["held"] == 1, "after the DOS command the OS no longer lists "
+                           "gem4xe's blocks: SpartaDOS X freed them under it")
+    b.key("Q", ctrl=True)                       # File -> Quit
+    b.frames(400)
+    for k in ("K", "M", "S", "C", "A", "N", "RETURN"):
+        b.key(k)
+        b.frames(8)
+    b.frames(300)
+    rows = [ln.split() for ln in screen(b)]
+    blocks = [r for r in rows if len(r) >= 5 and r[0].isdigit() and r[1].startswith("$")]
+    for r in blocks:
+        print(f"   KMSCAN | {' '.join(r)}")
+    check(blocks, "KMSCAN printed no blocks")
+    check(all(r[-1] in ("Unused", "System") for r in blocks),
+          "a block is left that is neither free nor the system's: gem4xe's, "
+          "not given back on the way out")
+    check(blocks and blocks[0][1] == "$010000" and blocks[0][-1] == "Unused",
+          "the free space does not start at $010000 again")
+    return fails
+
+
 def command(b, syms, shot):
     """File -> DOS command, VER, and what came of it.  The failures."""
     fails = []
@@ -262,7 +305,11 @@ def main(argv):
         f.write(b"".join(ln.encode() + b"\x9b" for ln in CONFIG))
     if os.path.exists(DISK):
         os.remove(DISK)
-    mkfloppy.build(DISK, [(driver, "65816.SYS"), (cfg, "CONFIG.SYS")],
+    # KMSCAN.COM beside it: the OS's own report of its blocks, run at the
+    # prompt after gem4xe quits (phase 112).  It ships with 65816.SYS.
+    kmscan = os.path.join(os.path.dirname(driver), "KMSCAN.COM")
+    mkfloppy.build(DISK, [(driver, "65816.SYS"), (cfg, "CONFIG.SYS"),
+                          (kmscan, "GEM>KMSCAN.COM")],
                    root=os.path.abspath(ROOT))
     syms = symfile.load(SYMS)
     if not os_profile(rom):
@@ -304,19 +351,34 @@ def main(argv):
         # 65816.SYS puts its drivers in a block at the top bank, $EF here;
         # gem4xe 0.12 took every bank up to $EF and unpacked programs at
         # the top of it.  Now it lists the allocator's blocks first.
-        fm = bytes(b.memdump(syms["farmem"], 9))
-        kind, fb, lb, nb, taken = fm[0], fm[1], fm[2], fm[3], fm[8]
+        fm = farmem(b, syms)
+        fb, lb, nb, taken = fm["first"], fm["last"], fm["banks"], fm["taken"]
         print(f"  far heap: banks ${fb:02X}-${lb:02X} ({nb}); the OS's allocator "
               f"(km_ok {b.peek(syms['km_ok'])}) has {taken} bank(s) in use")
         check(b.peek(syms["km_ok"]) == 1, "the Rapidus OS's allocator was not found")
         check(taken >= 1, "no bank in use: 65816.SYS's block was not seen")
         check(lb < 0xEF, f"the heap runs to ${lb:02X}, over 65816.SYS's bank $EF")
+        # TAKEN FROM THE ALLOCATOR, and one bank left (phase 112): the
+        # image's banks from $01 and the heap, each where gem4xe chose,
+        # and the OS saying both are allocated (farmem_held, kmgetblk).
+        print(f"  holds: image block ${fm['km_image']:04X}, heap block "
+              f"${fm['km_heap']:04X}, held {fm['held']}, clash {fm['clash']}")
+        check(lb == 0xED, f"the heap ends at ${lb:02X}, not $ED: $EE is the bank "
+                          f"left free, $EF 65816.SYS's")
+        check(fm["km_heap"] == fb << 8,
+              f"the heap's block is ${fm['km_heap']:04X}, not ${fb << 8:04X}")
+        check(fm["km_image"] == 0x0100,
+              f"the image's block is ${fm['km_image']:04X}, not $0100")
+        check(fm["clash"] == 0, "something was found in gem4xe's image banks")
+        check(fm["held"] == 1, "the OS does not list both blocks as allocated")
         check(b.peek16(syms["gem_bad"]) == 0, f"{b.peek16(syms['gem_bad'])} ABI call(s) refused")
         check(b.peek(syms["irq_fault"]) == 0, f"irq_fault {b.peek(syms['irq_fault'])}")
         b.screenshot(shot)
         cmdshot = os.path.join(SHOTDIR, "sdx816-cmd.png")
         if not fails:
             fails += command(b, syms, cmdshot)
+        if not fails:
+            fails += given_back(b, syms)
         if not fails and not keep:
             os.remove(shot)
             if os.path.exists(cmdshot):
@@ -325,7 +387,8 @@ def main(argv):
         emu.stop()
 
     print(f"gem4xe-sdx816: {'PASS' if not fails else 'FAIL'} -- GEM with SpartaDOS X's "
-          f"65816.SYS under Rapidus OS, and a DOS command from the desktop, "
+          f"65816.SYS under Rapidus OS, its high RAM taken from the OS and given "
+          f"back, and a DOS command from the desktop, "
           f"{len(fails)} problem(s)")
     return 1 if fails else 0
 

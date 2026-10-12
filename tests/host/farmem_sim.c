@@ -21,6 +21,9 @@ const uint8_t _fl_top[3] = { 0, 0, 1 };     /* the image ends in bank $01 */
 uint8_t  km_ok;
 uint16_t km_size, km_attr;
 int16_t km_getblk(uint16_t n) { (void)n; return -1; }
+uint16_t km_mode, km_page;
+int16_t km_malloc(uint16_t pages) { (void)pages; return -1; }
+int16_t km_free(uint16_t page) { (void)page; return -1; }
 
 uint32_t fm_out[STEPS];
 uint16_t fm_bad;                /* the first step after which the table was

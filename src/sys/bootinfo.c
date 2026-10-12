@@ -343,6 +343,18 @@ void boot_begin(void)
     p = hex2(p, farmem.last_bank);
     *p = '\0';
     line(LS_BOOT_MEMORY, v);
+    /* ...and, under it, when the OS had already given out some of the
+     * banks gem4xe's own code was loaded into: that memory was
+     * somebody's, and is gem4xe's now -- a driver or a RAM disk there is
+     * gone, and the person at the machine should hear it here, before
+     * whatever it was fails later (src/sys/farmem.c, km_busy). */
+    if (km_clash) {
+        p = app(v, lang_str(LS_BOOT_CLASH));
+        *p++ = '$';
+        p = hex2(p, km_clash);
+        *p = '\0';
+        line(LS_BOOT_MEMORY, v);
+    }
 
     line(LS_BOOT_DOS, dos.kind == DOS_SDX    ? s_sdx
                     : dos.kind == DOS_SPARTA ? s_sparta
