@@ -87,12 +87,29 @@ static uint16_t blit_busy_bit(void)
     return REG(FX_BLITTER_BUSY);
 }
 
+#ifdef BLIT_WATCHDOG
+/* VSTRESS only (src/vstress.c, the Makefile builds this file twice): a
+ * list that never finishes is reported, by sound, instead of being
+ * waited on forever -- on a frozen screen the only way to tell a stuck
+ * blitter from a stopped CPU. */
+extern void blit_stuck(uint16_t busy);
+#endif
+
 /* Wait for a started list to finish, if one may still be running. */
 static void blit_idle(void)
 {
     if (blit_running) {
+#ifdef BLIT_WATCHDOG
+        uint32_t spins = 0;
+        uint16_t b;
+
+        while ((b = blit_busy_bit()) != 0)        /* D1 BUSY | D0 BCB_LOAD */
+            if (++spins == 2000000UL)
+                blit_stuck(b);
+#else
         while (blit_busy_bit())                   /* D1 BUSY | D0 BCB_LOAD */
             ;
+#endif
         blit_running = 0;
     }
 }
@@ -521,6 +538,13 @@ void blit_move(uint32_t src, uint16_t sstride, uint32_t dst,
     p[20] = BLT_MODE_COPY;
 }
 
+#ifdef BLIT_WATCHDOG
+/* VSTRESS only: blit_start without its look at BUSY first -- the caller
+ * has waited the list out by other means (src/vstress.c, mode M). */
+static uint8_t start_nowait;
+void blit_start_nowait(void);
+#endif
+
 /* Upload the queued list and start it, without waiting. */
 void blit_start(void)
 {
@@ -530,6 +554,11 @@ void blit_start(void)
         return;
     /* The list about to be uploaded goes where the running one is read
      * from: that one has to be finished first. */
+#ifdef BLIT_WATCHDOG
+    if (start_nowait)
+        blit_running = 0;
+    else
+#endif
     blit_idle();
     /* The queue is EMPTIED BEFORE the upload, not after: the upload is a
      * CPU write to VRAM, and vram_map_page() drains a non-empty queue
@@ -565,6 +594,16 @@ void blit_start(void)
 }
 
 uint8_t blit_busy(void) { return REG(FX_BLITTER_BUSY); }
+
+#ifdef BLIT_WATCHDOG
+void blit_start_nowait(void)
+{
+    start_nowait = 1;
+    blit_start();
+    start_nowait = 0;
+    blit_running = 0;               /* nobody is to wait on it either */
+}
+#endif
 
 void blit_mask(uint32_t src, uint16_t sstride, uint32_t dst, uint16_t dstride,
                uint16_t bytes, uint16_t rows, uint8_t and_mask,

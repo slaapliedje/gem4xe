@@ -998,6 +998,42 @@ build/m3desk.elf: $(M3DESK_OBJS) src/gem4xe.scm
 build/m3desk.xex: build/m3desk.elf
 	python3 tools/mkxex.py $< $@ --entry _atari_entry --syms build/m3desk.sym
 
+# VSTRESS: gem4xe's Rapidus, interrupt, VBXE and pointer code and nothing
+# else, looping with a counter on the screen -- for a real machine that
+# freezes on the VBXE, to tell the hardware from the AES and the desktop
+# (src/vstress.c, docs/vstress.md).  One build per mode, a DOS 2 floppy each
+# that runs it at boot; the modes are listed at the top of the source.  Not a
+# gate: it is for a real machine, and the emulator never freezes.
+VSTRESS_OBJS = $(patsubst build/vbxe.o,build/vbxe-wd.o,$(filter-out build/m3_vdi.o,$(M3_OBJS)))
+
+VSTRESS_MODES = P D N B C I W R F L S M G H
+$(VSTRESS_MODES:%=build/vstress-%.o): build/vstress-%.o: src/vstress.c src/vbxe/vbxe.h src/vdi/vdi.h src/vdi/pointer.h src/sys/irq.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -D VS_MODE_$*=1 -I src -o $@ $<
+
+# The VBXE driver with the blitter watchdog (src/vbxe/vbxe.c), for VSTRESS
+# only: GEM.COM never has it.
+build/vbxe-wd.o: src/vbxe/vbxe.c src/vbxe/vbxe.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -D BLIT_WATCHDOG=1 -I src -o $@ $<
+
+$(VSTRESS_MODES:%=build/vstress-%.elf): build/vstress-%.elf: build/vstress-%.o $(VSTRESS_OBJS) src/gem4xe.scm
+	$(LD) src/gem4xe.scm $(VSTRESS_OBJS) $< -o $@ $(LIB) $(LDFLAGS) --list-file build/vstress-$*.map
+
+$(VSTRESS_MODES:%=build/vstress-%.xex): build/vstress-%.xex: build/vstress-%.elf
+	python3 tools/mkxex.py $< $@ --entry _atari_entry
+
+$(VSTRESS_MODES:%=build/vstress-%.atr): build/vstress-%.atr: build/vstress-%.xex
+	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep
+
+vstress: build/vstress-P.atr build/vstress-D.atr build/vstress-N.atr \
+         build/vstress-B.atr build/vstress-C.atr build/vstress-I.atr \
+         build/vstress-W.atr build/vstress-R.atr build/vstress-F.atr build/vstress-L.atr \
+         build/vstress-S.atr build/vstress-M.atr \
+         build/vstress-G.atr build/vstress-H.atr
+
 # The runner outgrew a single-density disk (620 free sectors; the .xex
 # alone wants more), so the fixture is converted to DOS 2.5 enhanced density
 # on the way (tools/atr.py enhance()), and the program goes into the upper
@@ -2260,4 +2296,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem vstress sd demo movie bench emu-stop clean
