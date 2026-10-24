@@ -14,7 +14,7 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-from a8test.launcher import launch      # noqa: E402
+from a8test.launcher import launch, VBXE_VERSION  # noqa: E402
 import vbxeref                          # noqa: E402
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "m2-boot.atr"))
@@ -63,8 +63,10 @@ def main():
             fails.append("program did not run (no 'VB' tag)")
         elif s[2] != 0xA5:
             fails.append(f"program stopped at stage ${s[2]:02X}, expected $A5")
-        if (s[3], s[4]) != (1, 26):
-            fails.append(f"on-target detection saw FX {s[3]}.{s[4]:02d}, expected 1.26")
+        want = (1, int(VBXE_VERSION) % 100)     # the core the launcher asked for
+        if (s[3], s[4]) != want:
+            fails.append(f"on-target detection saw FX {s[3]}.{s[4]:02d}, "
+                         f"expected {want[0]}.{want[1]:02d}")
         if st["mode"] != "65C816":
             fails.append(f"CPU is {st['mode']}")
 

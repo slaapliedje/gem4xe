@@ -76,7 +76,11 @@ XLROM = os.environ.get("ATARIXL_ROM", "/opt/altirra/roms/ATARIXL.ROM")
 BASE_ARGS = ["--hardware", "800xl", "--kernel", "xl", "--nobasic",
              "--diskemu", "generic", "--siopatch", "--nofastboot",
              "--noultimate1mb"]
-VBXE_DEVICE = "vbxe,version=126,alt_page=false,shared_mem=false"
+# The core the emulated VBXE models: 126 by default, the core most boards
+# carry; GEM4XE_VBXE=127 runs the gates against FX 1.27 (Altirra 4.50
+# test26 and later model it; an older build quietly gives 1.26).
+VBXE_VERSION = os.environ.get("GEM4XE_VBXE", "126")
+VBXE_DEVICE = f"vbxe,version={VBXE_VERSION},alt_page=false,shared_mem=false"
 RAPIDUS_DEVICE = "rapidus"
 
 
@@ -289,7 +293,7 @@ def launch(tag="run", extra_args=(), vbxe=True, rapidus=True, memsize="1088K",
                 f"asked for a plain 65C816 and got a {mode}: this build has no "
                 "--cpu switch (tools/altirra/altirra-sdl-cpu-highbanks.patch)")
     if vbxe and not b.cmd("DEVICE_GET vbxe").get("ok"):
-        b.ok("DEVICE_SET vbxe on version=126 base=d600")
+        b.ok(f"DEVICE_SET vbxe on version={VBXE_VERSION} base=d600")
     if verify_kernel(b) is False and require_real_rom:
         emu.stop()
         raise BridgeError("emulated $E000 does not match the real ATARIXL.ROM (AltirraOS in use?)")

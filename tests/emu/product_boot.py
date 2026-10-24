@@ -83,7 +83,7 @@ import sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from a8test.launcher import launch          # noqa: E402
+from a8test.launcher import launch, VBXE_VERSION  # noqa: E402
 from farheap import far_heap, heap_text  # noqa: E402
 import aesref, vbxeref, symfile, atr, mkxex, mkcf  # noqa: E402
 from deskref import Desktop                 # noqa: E402
@@ -264,7 +264,7 @@ def check_boot(name, report, gtia, b, syms, check):
                         (L("CPU"), "65C816, Rapidus"),
                         (L("CONFIG"), cfg),
                         (L("LANG"), "LANG.RSC"),
-                        (L("VIDEO"), "VBXE 1.26 ($D640)")):
+                        (L("VIDEO"), f"VBXE 1.{int(VBXE_VERSION) % 100:02d} ($D640)")):
         check(report.get(label) == want,
               f"{name}: the boot screen says {label} '{report.get(label)}', "
               f"not '{want}'")
