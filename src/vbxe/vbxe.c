@@ -273,6 +273,36 @@ void vbxe_palette(uint8_t pal, uint8_t first, const uint8_t *rgb, uint16_t count
  *     priority, scroll and palette selection are), so it must be set at the
  *     top of every XDL.
  */
+/* FEATURE_CONTROL, FX 1.27 and later.  Its GTIA palette, XCOLOR, BLEND
+ * and CLIP settings are not ours, and with D7 (PXGF) set they survive a
+ * RESET -- so whatever ran before gem4xe could leave, say, the strict
+ * 336-pixel clip on, which the 672-pixel screen sits right at.  Cleared
+ * when the screen goes on, and what was there given back on the way out.
+ * An older core has no such register: a write there is not ours to make. */
+ZWIN static uint8_t feat_saved, feat_held;
+
+static uint8_t has_features(void)
+{
+    return (uint8_t)(vbxe_major() == 1 && vbxe_minor_bcd() >= 27);
+}
+
+static void features_clear(void)
+{
+    if (feat_held || !has_features())
+        return;
+    feat_saved = REG(FX_FEATURE_CONTROL);
+    feat_held = 1;
+    REG(FX_FEATURE_CONTROL) = 0;
+}
+
+static void features_restore(void)
+{
+    if (!feat_held)
+        return;
+    REG(FX_FEATURE_CONTROL) = feat_saved;
+    feat_held = 0;
+}
+
 void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin,
                  uint8_t ovatt_width)
 {
@@ -319,6 +349,7 @@ void vbxe_xdl_hr(uint32_t screen, uint16_t height, uint8_t topmargin,
 
     vram_write(VR_XDL, xdl, n);
 
+    features_clear();
     REG(FX_XDL_ADR0) = (uint8_t)(VR_XDL);
     REG(FX_XDL_ADR1) = (uint8_t)(VR_XDL >> 8);
     REG(FX_XDL_ADR2) = (uint8_t)(VR_XDL >> 16);
@@ -343,6 +374,7 @@ void vram_unmap(void)
 void vbxe_off(void)
 {
     REG(FX_VIDEO_CONTROL)  = 0;
+    features_restore();
     REG(FX_MEMAC_BANK_SEL) = 0;
     REG(FX_MEMAC_CONTROL)  = 0;
     memac_invalidate();

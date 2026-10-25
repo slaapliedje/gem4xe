@@ -28,6 +28,8 @@
 #define FX_COLMASK         0x49
 #define FX_COLDETECT       0x4A   /* R */
 #define FX_COLCLR          0x4A   /* W (strobe) */
+#define FX_FEATURE_CONTROL 0x4B   /* R/W, FX 1.27+: GTIA palette, XCOLOR, BLEND,
+                                     CLIP; D7 (PXGF) keeps them through RESET */
 #define FX_BL_ADR0         0x50   /* W  (R = BLT_COLLISION_CODE)              */
 #define FX_BL_ADR1         0x51
 #define FX_BL_ADR2         0x52
