@@ -1006,7 +1006,7 @@ build/m3desk.xex: build/m3desk.elf
 # gate: it is for a real machine, and the emulator never freezes.
 VSTRESS_OBJS = $(patsubst build/vbxe.o,build/vbxe-wd.o,$(filter-out build/m3_vdi.o,$(M3_OBJS)))
 
-VSTRESS_MODES = P D N B C I W R F L S M G H
+VSTRESS_MODES = P D N B C I W R F L S M G H Q
 $(VSTRESS_MODES:%=build/vstress-%.o): build/vstress-%.o: src/vstress.c src/vbxe/vbxe.h src/vdi/vdi.h src/vdi/pointer.h src/sys/irq.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -D VS_MODE_$*=1 -I src -o $@ $<
@@ -1032,7 +1032,7 @@ vstress: build/vstress-P.atr build/vstress-D.atr build/vstress-N.atr \
          build/vstress-B.atr build/vstress-C.atr build/vstress-I.atr \
          build/vstress-W.atr build/vstress-R.atr build/vstress-F.atr build/vstress-L.atr \
          build/vstress-S.atr build/vstress-M.atr \
-         build/vstress-G.atr build/vstress-H.atr
+         build/vstress-G.atr build/vstress-H.atr build/vstress-Q.atr
 
 # The runner outgrew a single-density disk (620 free sectors; the .xex
 # alone wants more), so the fixture is converted to DOS 2.5 enhanced density

@@ -39,6 +39,9 @@
  *        and started, the list waited out in fast RAM.
  *   'G'  F, and 'H' S, with ten times the wait: a list given about 5 ms
  *        rather than 0.5 before the VBXE is touched again.
+ *   'Q'  F without rapidus_speedup(): the Rapidus's RAM windows stay as
+ *        its menu set them (on the user's 130XE, every one "No speed-up"),
+ *        so bank $00 is the Atari's own RAM over the slow bus.
  *   'R'  no blits at all: the blitter's busy register read in a loop,
  *        over the slow bus, as the busy-wait reads it.
  * A machine that freezes in N has a problem gem4xe's pointer is not part
@@ -89,6 +92,10 @@
 #elif defined(VS_MODE_H)
 #define VS_MODE 'H'
 #define VS_MODE_S 1                     /* S, waiting ten times as long */
+#elif defined(VS_MODE_Q)
+#define VS_MODE 'Q'
+#define VS_MODE_F 1                     /* F, bank $00 as the menu left it */
+#define VS_KEEP_RAPIDUS 1
 #elif defined(VS_MODE_C)
 #define VS_MODE 'C'
 #elif defined(VS_MODE_N)
@@ -310,7 +317,9 @@ TASK void main(void)
     uint8_t ticks = 0, beep = 0;
 
     dos_ident();
+#ifndef VS_KEEP_RAPIDUS
     rapidus_speedup();
+#endif
     irq_install();
     abi_probe_os();
     if (irq.how == IRQ_OFF || !vbxe_detect()) {
