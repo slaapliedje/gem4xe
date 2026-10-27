@@ -10,6 +10,10 @@ On the product disk, whose DOS's map gives the desk D1: and D2::
      reads its DESKTOP.INF, and apt is on the desk again ("#M" lines).
   3. apt selected, Install icon, Remove: apt is gone and D1: stays.
 
+Through all three the desk keeps the background somebody chose: Install
+icon rebuilds the desk, and the rebuild, and the boot that reads "#M",
+used to put back the built-in green over a saved blue.
+
 The dialog's buttons are found by their text on the screen, not by
 coordinates written down here.
 """
@@ -25,6 +29,7 @@ import symfile                                # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS   # noqa: E402
 from deskrsc import OPTNMENU, IICNITEM, SAVEITEM       # noqa: E402
 from m41_items import find_below              # noqa: E402
+from deskref import g_offset, DROOT, OBJ_SIZE  # noqa: E402
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "gem-shots.atr"))
 OUT = os.path.join(ROOT, "build", "shots", "m43")
@@ -61,6 +66,22 @@ def press(t, text, name):
     return True
 
 
+BLUE = 0x44                                     # pattern 4, colour 4
+SPEC_LOW = 12                                   # ob_spec's low byte
+
+
+def desk_byte(t):
+    return t.b.peek(t.g_screen() + DROOT * OBJ_SIZE + SPEC_LOW)
+
+
+def set_blue(t):
+    """What Set preferences... does with a blue desk (desk_patcol): the
+    remembered byte for both screens, and the desk itself."""
+    for scr in range(2):
+        t.b.memload(t.G() + g_offset("g_patcol") + scr * 4, [BLUE])
+    t.b.memload(t.g_screen() + DROOT * OBJ_SIZE + SPEC_LOW, [BLUE])
+
+
 def up(b, syms):
     boot(b, syms, OUT)
     poke16(b, syms["ptr_state"] + 6, PTR_NONE)
@@ -80,6 +101,8 @@ def main():
         t = up(b, syms)
         check(has_icon(t, "DISK D1:") and not has_icon(t, "apt"),
               "the desk starts as the DOS's map: DISK D1:, and no apt")
+        set_blue(t)
+        check(desk_byte(t) == BLUE, "the desk did not take the blue")
 
         t.choose(OPTNMENU, IICNITEM)
         b.frames(30)
@@ -94,6 +117,9 @@ def main():
         press(t, "Install", "install")
         check(has_icon(t, "apt") and has_icon(t, "DISK D1:"),
               "Install icon, drive 5, apt: the icon is there, beside DISK D1:")
+        check(desk_byte(t) == BLUE,
+              f"after Install icon the desk is ${desk_byte(t):02X}, not the "
+              f"blue ${BLUE:02X} it was")
 
         t.choose(OPTNMENU, SAVEITEM)
         b.frames(60)
@@ -106,6 +132,9 @@ def main():
         t = up(b, syms)
         check(has_icon(t, "apt") and has_icon(t, "DISK D1:"),
               "saved, and after a cold reset apt is on the desk again")
+        check(desk_byte(t) == BLUE,
+              f"after the cold reset the desk is ${desk_byte(t):02X}, not the "
+              f"saved blue ${BLUE:02X}")
 
         t.click(t.desk_icon("apt"))
         t.choose(OPTNMENU, IICNITEM)
@@ -114,6 +143,8 @@ def main():
         press(t, "Remove", "remove")
         check(not has_icon(t, "apt") and has_icon(t, "DISK D1:"),
               "apt selected, Remove: it is gone, and DISK D1: stays")
+        check(desk_byte(t) == BLUE,
+              f"after Remove the desk is ${desk_byte(t):02X}, not blue")
     finally:
         emu.stop()
     print(f"gem4xe-m43: {'FAIL' if problems else 'PASS'} -- Install icon, "

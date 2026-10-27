@@ -143,6 +143,7 @@ static void desk_build(void)
 void desk_rebuild(void)
 {
     desk_build();
+    desk_patcol_apply();                        /* desk_build put DESK_SPEC */
     do_wredraw(DESKWH, &G.g_desk);
 }
 
@@ -937,8 +938,10 @@ int main(void)
         return 1;
     }
     app_start();
-    if (drv_own_set())
+    if (drv_own_set()) {
         desk_build();                           /* the INF chose the drives */
+        desk_patcol_apply();                    /* and the "#Q" background */
+    }
     wind_newdesk(G.g_screen, DROOT);
     wind_update(BEG_UPDATE);
     do_wredraw(DESKWH, &G.g_desk);
