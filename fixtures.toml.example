@@ -44,3 +44,13 @@ sdx_cart = "/path/to/SDX450_maxflash1.car"
 # (--u1mbrom).  The PBI BIOS is what mounts a CF card's APT partitions:
 # docs/shipping.md section 3.
 flash = "/path/to/ultfull.rom"
+
+[gemarc]
+# GemARC's gates (tests/host/test_gemarc.py, tests/emu/gemarc.py).
+# `archive`: one real Atari ARC archive, made by somebody else's ARC, that
+# the emulator gate opens, takes out and checks against The Unarchiver --
+# the Rapidus OS 2019-05-03 release (drac030's), 7 members, stored,
+# squeezed and crunched.  `dirs`: folders searched for *.ARC, every
+# member of every one taken out on the host and compared with unar's.
+archive = "/home/jfergus/dev/firmware/rapidus-os/xlos-20190503.arc"
+dirs = ["/home/jfergus/dev/firmware", "/home/jfergus/Atari-CF-Backup/__Ziny"]

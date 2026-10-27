@@ -156,8 +156,8 @@ the way the card has them: `GEM.COM`, `DESKTOP.PRG`, `DESKTOP.RSC`,
 `CLOCK.ACC`, `CLOCK.RSC`, `CONTROL.ACC`, `CPANEL.RSC`, `CALC.ACC`,
 `CALC.RSC`, `GENERAL.CPX`, `GENERAL.RSC`, `COLOR.CPX`, `COLOR.RSC` into
 `\GEM\`; `HELLO.PRG`, `CALC.PRG`, `CALC.RSC`, `CLOCK.PRG`, `CLOCK.RSC`,
-`G4BENCH.PRG`, `QED.PRG`, `QED.RSC`, `QED.TXT`, `QEDLGPL.TXT`,
-`QEDAPACH.TXT` into `\APPS\`.
+`G4BENCH.PRG`, `GEMARC.PRG`, `GEMARC.RSC`, `QED.PRG`, `QED.RSC`,
+`QED.TXT`, `QEDLGPL.TXT`, `QEDAPACH.TXT` into `\APPS\`.
 
 If what you have is a **loader that reads FAT** -- a SIDE3, an AVGCART
 -- or an SDrive-MAX, a FujiNet or a real drive, then a floppy is what
@@ -217,6 +217,8 @@ whatever name it is given:
 | `CLOCK.PRG` | a clock.  With an Ultimate 1MB it shows the time; without one it counts up from midnight, which is what the machine knows |
 | `CLOCK.RSC` | its panel, and the templates that decide how a time and a date are written |
 | `G4BENCH.PRG` | a benchmark: lines, boxes, circles, text, blits, dialogs, windows and a Mandelbrot, timed on this machine, shown in a window and written to G4BENCH.TXT beside it -- a number to compare with somebody else's machine |
+| `GEMARC.PRG` | ARC archives: lists one, takes its files out and makes new ones -- the archives the Atari's ARC, SEA's ARC and PKARC write.  Drop an .ARC on it to open it |
+| `GEMARC.RSC` | its menus, alerts and words |
 | `CLOCK.ACC` | THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside GEM.COM, with CLOCK.RSC, and it appears in the Desk menu: the AES loads it once at start-up and it stays there, ticking, through every program the desktop runs. An accessory goes in the system's own directory, never in \APPS\ -- it is not something the desktop launches |
 | `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: the settings that belong to the machine rather than to a program, and a host for the extensions below.  Beside GEM.COM with CPANEL.RSC |
 | `CPANEL.RSC` | its panel and the list it shows the extensions in |
@@ -225,7 +227,7 @@ whatever name it is given:
 | `GENERAL.RSC` | its dialog |
 | `COLOR.CPX` | THE SCREEN'S COLOURS, a second control panel extension: pick a pen, step its red, green and blue, and the screen changes as you do.  OK keeps the palette and puts it back at every boot; Reset is gem4xe's own.  Beside GEM.COM with COLOR.RSC.  On ANTIC the screen has two pens, and only their brightness shows |
 | `COLOR.RSC` | its dialog |
-| `QED.PRG` | QED, THE TEXT EDITOR from the Atari ST, ported (slaapliedje/qed-gem4xe): its own sources, with three small portability fixes the port says.  Open, edit and save text files.  It may be given away but NOT SOLD -- its author's terms, in QED.TXT |
+| `QED.PRG` | QED, THE TEXT EDITOR from the Atari ST, ported (slaapliedje/qed-gem4xe): its own sources, with a few small changes the port lists -- Atari text files among them.  Open, edit and save text files.  It may be given away but NOT SOLD -- its author's terms, in QED.TXT |
 | `QED.RSC` | its menus and dialogs, 33 KB, which gem4xe loads into far memory |
 | `QED.TXT` | what QED.PRG is made of and on what terms: QED's own, the gem4xe application kit and cflib (LGPL), and the C library's Apache NuttX code (Apache 2.0) |
 | `QEDLGPL.TXT` | the LGPL 2.1, which QED.TXT names |

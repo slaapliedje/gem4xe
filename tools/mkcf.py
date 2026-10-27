@@ -88,7 +88,9 @@ APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         ("build/calc.rsc", "APPS>CALC.RSC"),
         ("build/clock.g4a", "APPS>CLOCK.PRG"),
         ("build/clock.rsc", "APPS>CLOCK.RSC"),
-        ("build/g4bench.g4a", "APPS>G4BENCH.PRG")]
+        ("build/g4bench.g4a", "APPS>G4BENCH.PRG"),
+        ("build/gemarc.g4a", "APPS>GEMARC.PRG"),
+        ("build/gemarc.rsc", "APPS>GEMARC.RSC")]
 # QED, the ST's GEM text editor, ported outside this tree
 # (slaapliedje/qed-gem4xe) and taken from its build by the Makefile.  On
 # the card beside the other programs, and on a floppy of its own: at

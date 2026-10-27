@@ -727,12 +727,47 @@ build/cpanel.rsc build/cpanelrsc.h: tools/cpanelrsc.py tools/rsc.py tools/aesref
 # rather than round numbers, because an accessory is charged to the pool
 # for as long as the machine is on.
 build/appsld/%.o: src/apps/%.c src/app/gem.h build/calcrsc.h build/clockrsc.h \
-                  build/cpanelrsc.h
+                  build/cpanelrsc.h build/gemarcrsc.h
 	@mkdir -p build/appsld
 	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
 
 CPANEL_OBJS = $(G4A_LIB_LD) build/appsld/cpanel.o build/appsld/cpanelacc.o
 $(eval $(call g4a,cpanelacc,$(CPANEL_OBJS),640,128,384,,,$(LIB_LD)))
+
+# GemARC (src/apps/gemarc.c, docs/gemarc.md): ARC archives listed,
+# taken out and made.  Large-data, so its resource and its 55 KB of
+# tables are far; the engine (arccodec.c, arcfile.c) is portable C that
+# tests/host/test_gemarc.py runs on the host as well.  The stack holds
+# the file selector's buffers and the paths Add files builds.
+build/gemarc.rsc build/gemarcrsc.h: tools/gemarcrsc.py tools/rsc.py tools/aesref.py VERSION
+	@mkdir -p build
+	python3 tools/gemarcrsc.py build/gemarc.rsc build/gemarcrsc.h
+
+# The emulator gate's disk (tests/emu/gemarc.py): SpartaDOS 3.2 on a 1 MB
+# image, GemARC as the desktop so the shell runs it at once, and a real
+# archive to open ([gemarc].archive).
+SRC_GEMARC ?= $(shell python3 -c "import tomllib;print(tomllib.load(open('fixtures.toml','rb'))['gemarc']['archive'])" 2>/dev/null)
+build/gemarc-test.atr: build/gem.xex build/gemarc.g4a build/gemarc.rsc build/lang.rsc tools/mkspdisk.py
+	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
+	@test -n "$(SRC_GEMARC)" || { echo "no archive: set [gemarc].archive in fixtures.toml"; exit 1; }
+	python3 tools/mkspdisk.py "$(SRC_SP32)" build/gem.xex $@ \
+	    --sectors 8192 --name GEM.COM --boot GEM \
+	    --add build/gemarc.g4a DESKTOP.PRG --add build/gemarc.rsc GEMARC.RSC \
+	    --add build/lang.rsc LANG.RSC --add "$(SRC_GEMARC)" TEST.ARC
+
+test-gemarc: build/gemarc-test.atr build/arc_host
+	python3 tests/host/test_gemarc.py
+	python3 tests/emu/gemarc.py
+
+build/arc_host: src/apps/arccodec.c src/apps/arcfile.c src/apps/arccodec.h src/apps/arcfile.h tests/host/arc_host.c
+	@mkdir -p build
+	gcc -O1 -Wall -Wextra -I src/apps -o $@ src/apps/arccodec.c src/apps/arcfile.c tests/host/arc_host.c
+
+build/appsld/arccodec.o build/appsld/arcfile.o build/appsld/gemarc.o: \
+    src/apps/arccodec.h src/apps/arcfile.h
+GEMARC_OBJS = $(G4A_LIB_LD) build/appsld/gemarc.o build/appsld/arcfile.o \
+              build/appsld/arccodec.o
+$(eval $(call g4a,gemarc,$(GEMARC_OBJS),2560,256,2048,,,$(LIB_LD)))
 
 # The calculator AS AN ACCESSORY: the same calc.o, the other main().
 # The ST shipped one, and it is what the Desk menu is FOR -- a thing you
@@ -1098,7 +1133,8 @@ DESK_EXTS   = --add tests/fixtures/test.txt SAMPLE.APP \
 APP_FILES = --mkdir APPS \
             --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
             --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
-APP_DEPS  = build/calc.g4a build/calc.rsc build/clock.g4a build/clock.rsc
+APP_DEPS  = build/calc.g4a build/calc.rsc build/clock.g4a build/clock.rsc \
+            build/gemarc.g4a build/gemarc.rsc
 # The gate accessory (src/m28_acc.c), in the system's own directory with
 # the extension the AES looks for there: an accessory is not in \APPS\
 # with the programs, because it is not one -- it is loaded once at
@@ -1712,7 +1748,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-boot test-install g4bench test-sdx816 test-kmem test-vbxefeat
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-gemarc test-boot test-install g4bench test-sdx816 test-kmem test-vbxefeat
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2308,4 +2344,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-gemarc test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat vstress sd demo movie bench emu-stop clean

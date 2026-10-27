@@ -148,6 +148,8 @@ SYSTEM = [
     ("clock.g4a", "CLOCK.PRG"),
     ("clock.rsc", "CLOCK.RSC"),
     ("g4bench.g4a", "G4BENCH.PRG"),
+    ("gemarc.g4a", "GEMARC.PRG"),
+    ("gemarc.rsc", "GEMARC.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
@@ -202,6 +204,10 @@ WHAT_IT_IS = {
                    "machine, shown in a window and written to G4BENCH.TXT "
                    "beside it -- a number to compare with somebody "
                    "else's machine",
+    "GEMARC.PRG": "ARC archives: lists one, takes its files out and "
+                  "makes new ones -- the archives the Atari's ARC, SEA's "
+                  "ARC and PKARC write.  Drop an .ARC on it to open it",
+    "GEMARC.RSC": "its menus, alerts and words",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "
                  "menu: the AES loads it once at start-up and it stays "
@@ -232,8 +238,8 @@ WHAT_IT_IS = {
                  "two pens, and only their brightness shows",
     "COLOR.RSC": "its dialog",
     "QED.PRG": "QED, THE TEXT EDITOR from the Atari ST, ported "
-               "(slaapliedje/qed-gem4xe): its own sources, with three "
-               "small portability fixes the port says.  "
+               "(slaapliedje/qed-gem4xe): its own sources, with a few "
+               "small changes the port lists -- Atari text files among them.  "
                "Open, edit and save text files.  It may be given away "
                "but NOT SOLD -- its author's terms, in QED.TXT",
     "QED.RSC": "its menus and dialogs, 33 KB, which gem4xe loads into far "
