@@ -245,6 +245,7 @@ EXPECT = [
     ("Tgettime", DOS, 0x2C, 0, 0, 0, 0),
     ("Tgettimeofday", DOS, 0x155, 0, 0, 0, 0),
     ("Psystem",  DOS, 0x1F0, 0, 0, 0, 0),
+    ("Dprobe",   DOS, 0x1F1, 0, 0, 0, 0),
     ("Tsettime", DOS, 0x2D, 0, 0, 0, 0),
     ("Fgetdta",  DOS, 0x2F, 0, 0, 0, 0),
     ("Sversion", DOS, 0x30, 0, 0, 0, 0),

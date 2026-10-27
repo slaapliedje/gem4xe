@@ -265,6 +265,7 @@ void drv_icon_own(void);
 void drv_icon_remove(WORD drive);
 void desk_rebuild(void);
 void fun_icon(WORD sel);
+void fun_devices(void);
 char *drv_show(char *d, const char *path, WORD n);
 SCREENINFO *obj_info(WORD obj);
 WORD obj_text(WORD wparent, WORD x, WORD y, WORD w, WORD h);

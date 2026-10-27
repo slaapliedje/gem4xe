@@ -1215,6 +1215,71 @@ void fun_del(WNODE *pw)
     win_rebld(pw);
 }
 
+/* Take the drive icons over from the desk as it stands -- the DOS's map,
+ * with the labels it shows -- the first time somebody changes them, so
+ * that a change adds to what is there rather than replacing it. */
+static void drv_take_over(void)
+{
+    WORD i;
+
+    if (drv_own_set())
+        return;
+    drv_icon_own();
+    for (i = 0; i < 8; i++) {
+        WORD o = obj_get_obid((WORD)('A' + i));
+        if (o)
+            drv_icon_seed(i, obj_info(o)->i.label);
+    }
+}
+
+/* "DISK D5:", the label a drive icon has when nobody gave it one: the
+ * resource's word for a disk, as the desk's own icons spell it
+ * (desktop.c desk_build). */
+static void drv_default_label(WORD drive, char *label)
+{
+    char *disk;
+    WORD i;
+
+    rsrc_gaddr(R_STRING, STDISK, (void **)&disk);
+    for (i = 0; disk[i] && i < LABEL_LEN - 5; i++)
+        label[i] = disk[i];
+    label[i++] = ' ';
+    label[i++] = 'D';
+    label[i++] = (char)('1' + drive);
+    label[i++] = ':';
+    label[i] = 0;
+}
+
+/* Options -> Install devices: EmuTOS's ins_devices.  Every drive that
+ * answers gets an icon if it has none, and every icon whose drive does
+ * not answer goes; the ones that stay keep their labels.  Asking is
+ * gem4xe's Dprobe -- a SpartaDOS has no drive map, and Dsetdrv guesses
+ * D1: and D2: until somebody asks -- and costs about a second for each
+ * drive that is not there, so the pointer is busy meanwhile.  Save
+ * desktop keeps the set, as it keeps Install icon's. */
+void fun_devices(void)
+{
+    char label[LABEL_LEN];
+    LONG map;
+    WORD i;
+
+    desk_busy(TRUE);
+    map = Dprobe();
+    desk_busy(FALSE);
+    if (map < 0)                                /* a gem4xe before 0.13 */
+        map = Dsetdrv(Dgetdrv());
+    drv_take_over();
+    for (i = 0; i < 8; i++) {
+        if (!(map & (1L << i)))
+            drv_icon_remove(i);
+        else if (!drv_icon_label(i)) {
+            drv_default_label(i, label);
+            drv_icon_seed(i, label);
+        }
+    }
+    desk_rebuild();
+}
+
 /* Options -> Install icon (phase 74): a drive icon on the desk, its drive
  * and its label.  With a drive icon selected the dialog is that icon's,
  * and Remove takes it away; with none it is a new one.  The drive is
@@ -1253,14 +1318,7 @@ void fun_icon(WORD sel)
     if (ret != ICINST && ret != ICREMV)
         return;
 
-    if (!drv_own_set()) {                       /* the desk as it stands */
-        drv_icon_own();
-        for (i = 0; i < 8; i++) {
-            WORD o = obj_get_obid((WORD)('A' + i));
-            if (o)
-                drv_icon_seed(i, obj_info(o)->i.label);
-        }
-    }
+    drv_take_over();                            /* the desk as it stands */
     if (ret == ICREMV) {
         drv_icon_remove((WORD)(was - 'A'));
     } else {
@@ -1271,14 +1329,8 @@ void fun_icon(WORD sel)
             ;
         while (i > 0 && label[i - 1] == ' ')
             label[--i] = 0;
-        if (!label[0]) {                        /* "DISK D5:" */
-            const char *s = "DISK D";
-            for (i = 0; s[i]; i++)
-                label[i] = s[i];
-            label[i++] = (char)('1' + drive);
-            label[i++] = ':';
-            label[i] = 0;
-        }
+        if (!label[0])
+            drv_default_label(drive, label);    /* "DISK D5:" */
         if (was && was - 'A' != drive)
             drv_icon_remove((WORD)(was - 'A')); /* the icon moved drive */
         drv_icon_seed(drive, label);

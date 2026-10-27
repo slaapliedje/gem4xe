@@ -42,6 +42,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 | The AUTO folder | `\AUTO\` | `\GEM\AUTO\`.  `Ptermres` keeps all of a program or none of it, and a `.TTP` is not run from there | `src/aes/shel.c`, `tools/sdk/README.md` |
 | Control panel modules | Atari's XCONTROL `.CPX` | gem4xe's own control panel and module interface, in the same shape; a module is built with the kit | `src/apps/cpanel.c`, `tools/sdk/cpx.c` |
 | A DOS prompt | -- | `Psystem`, GEMDOS `0x1F0`, gem4xe's own: a command line run by SpartaDOS X, its output captured | `src/sys/gemdos.c` |
+| Which drives there are | `Drvmap()`, kept by the BIOS | `Dsetdrv`'s map is DOS 2's own list, or a guess of D1: and D2: where the DOS keeps none (SpartaDOS); `Dprobe`, GEMDOS `0x1F1`, gem4xe's own, asks every drive and is the map from then on -- the desktop's *Install devices* | `src/sys/gemdos.c` |
 
 ## Files and drives
 

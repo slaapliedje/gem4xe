@@ -1357,11 +1357,70 @@ static LONG gd_dfree(LONG buf, WORD drv)
  * every one that is absent, so for those A and B are claimed and
  * DESKTOP.INF is left to say which icons there are.  dos_ident decides
  * which it is (DOS_CAP_DRVBYT). */
+static uint16_t gd_probed;              /* Dprobe's answer; 0 until asked */
+
 static LONG gd_drvmap(void)
 {
+    if (gd_probed)
+        return (LONG)gd_probed;
     if (dos.caps & DOS_CAP_DRVBYT)
         return DRVBYT ? DRVBYT : 1;
     return 0x03;
+}
+
+/* Dprobe: every drive asked, once, and the answer kept for every Dsetdrv
+ * after.  A drive is there unless the answer says nobody is: a timeout
+ * (138), and through the DOS also no such device (130) or a drive it
+ * does not serve (160).  An empty drive is there -- its door open
+ * answers otherwise -- which is TOS's rule too: an icon is for a device,
+ * not a disk.  The current drive is always there: something was read
+ * from it.
+ *
+ * HOW IT ASKS depends on the DOS, and m46 measured each.  SpartaDOS X
+ * is asked itself, its root opened: it serves drives SIO knows nothing
+ * of -- its RAM disk -- and it gives up on an absent one quickly, 1.8 s
+ * for six; SIO first cost 8.4.  Any other DOS is not asked at all, the
+ * drive is, with SIO's status command, which a PBI hard disk answers as
+ * well as a floppy, its BIOS hooking the same entry: one round of the
+ * OS's retries, about a second, for a drive that is not there.  Through
+ * SpartaDOS 3.2 an absent drive cost its retries on top, 4.7 s each, 33
+ * for seven.  A DOS that keeps a map of its drives (DOS 2: DRVBYT) is
+ * asked nothing about the others. */
+static LONG gd_dprobe(void)
+{
+    char full[8], cio[CIO_NAME_MAX + 1];
+    uint16_t map = (uint16_t)(1U << gd_drive);
+    int16_t iocb;
+    uint8_t st;
+    WORD d;
+
+    for (d = 0; d < 8; d++) {
+        if (dos.kind != DOS_SDX) {
+            if ((dos.caps & DOS_CAP_DRVBYT) && !(DRVBYT & (1U << d)))
+                continue;
+            st = dsk_status((uint8_t)(d + 1));
+            if (st != 0x8A)
+                map |= (uint16_t)(1U << d);
+            continue;
+        }
+        full[0] = (char)('A' + d);
+        full[1] = ':';
+        full[2] = '\\';
+        full[3] = '*';
+        full[4] = '.';
+        full[5] = '*';
+        full[6] = 0;
+        dos_cioname(full, cio);
+        iocb = cio_open(cio, CIO_A_DIR, 0);
+        if (iocb >= 0) {
+            cio_close(iocb);
+            map |= (uint16_t)(1U << d);
+        } else if (iocb != -CIO_E_NODEV && iocb != -0x8A && iocb != -0xA0) {
+            map |= (uint16_t)(1U << d);
+        }
+    }
+    gd_probed = map;
+    return (LONG)map;
 }
 
 /* ---- memory ---------------------------------------------------------------
@@ -1989,6 +2048,9 @@ static LONG gd_nopath(WORD fn)
         break;
     case GD_FFORCE:
         r = gd_fforce(arg_w(6), arg_w(8));
+        break;
+    case GD_DPROBE:
+        r = gd_dprobe();
         break;
     case GD_PSYSTEM:                    /* the DOS's command processor: it
                                          * is lent the pool above its cursor,

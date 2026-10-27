@@ -240,7 +240,7 @@ From `ob_sysvar`'s two switches (`src/aes/objc.c`).  100 and up are gem4xe's own
 
 ## GEMDOS functions
 
-**52 of the 54 EmuTOS implements, and 2 more.**  From the `case` labels of `gd_nopath` and `gemdos_call` (`src/sys/gemdos.c`), against the function table in EmuTOS's `bdos/bdosmain.c`.  There is no BIOS or XBIOS: a program reaches the machine through the VDI, the AES and GEMDOS only (`src/sys/abi.c`).
+**52 of the 54 EmuTOS implements, and 3 more.**  From the `case` labels of `gd_nopath` and `gemdos_call` (`src/sys/gemdos.c`), against the function table in EmuTOS's `bdos/bdosmain.c`.  There is no BIOS or XBIOS: a program reaches the machine through the VDI, the AES and GEMDOS only (`src/sys/abi.c`).
 
 | function | name | |
 |---|---|---|
@@ -300,3 +300,4 @@ From `ob_sysvar`'s two switches (`src/aes/objc.c`).  100 and up are gem4xe's own
 | 0x57 | `Fdatime` | served |
 | 0x155 | `Tgettimeofday` | served -- **not in EmuTOS** |
 | 0x1F0 | `Psystem` | served -- **not in EmuTOS** |
+| 0x1F1 | `Dprobe` | served -- **not in EmuTOS** |

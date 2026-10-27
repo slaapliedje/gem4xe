@@ -1213,6 +1213,13 @@ LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz);
  * question has nobody to answer it. */
 LONG Psystem(const char FAR *line, void FAR *out, LONG max);
 
+/* gem4xe's own (0x1F1): which of D1: to D8: answer, asked through the DOS
+ * now, as Dsetdrv's map -- bit 0 D1: -- and Dsetdrv's answer from then on.
+ * A SpartaDOS keeps no map of its own, so until this is asked Dsetdrv
+ * says D1: and D2:.  An absent drive costs about a second; this is for a
+ * person who asked (the desktop's Install devices).  EINVFN before 0.13. */
+LONG Dprobe(void);
+
 /* The C functions, through the ST's standard handles: 0 and 1 the
  * console, a VT-52 on GEM's screen; 2 aux:, with nothing behind it here;
  * 3 prn:, the printer GEM4XE.CFG names.  Fforce points one at a file or

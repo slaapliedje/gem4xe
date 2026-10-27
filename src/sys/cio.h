@@ -133,6 +133,9 @@ SIMPLE_CALL uint16_t cio_call(uint16_t iocb);
 #define SIO_PERCOM_LEN 12       /* the drive's geometry, as it reports it */
 uint8_t dsk_read(uint8_t unit, uint16_t sector, void *buf, uint16_t len);
 uint8_t dsk_percom(uint8_t unit, void *buf);   /* SIO_PERCOM_LEN bytes */
+/* The drive asked for its status, the answer thrown away: SIO_OK or the
+ * error, 138 when nobody answered.  One round of the OS's retries. */
+uint8_t dsk_status(uint8_t unit);
 SIMPLE_CALL uint16_t dsk_call(uint16_t unused);
 
 /* ---- the DOS's kernel, for what CIO has no call for ------------------- */

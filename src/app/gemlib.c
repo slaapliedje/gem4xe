@@ -1657,6 +1657,11 @@ LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz)
     return dos(0x155);
 }
 
+LONG Dprobe(void)
+{
+    return dos(0x1F1);
+}
+
 LONG Psystem(const char FAR *line, void FAR *out, LONG max)
 {
     dl(6, (LONG)(uint32_t)line);

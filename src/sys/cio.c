@@ -188,6 +188,7 @@ uint8_t cio_xio(uint8_t cmd, const char *name, uint8_t aux1, uint8_t aux2)
 #define SIO_DISK   0x31         /* DDEVIC for D1: .. D8: */
 #define SIO_READ   0x52         /* 'R' */
 #define SIO_PERCOM 0x4E         /* 'N': the drive's own geometry */
+#define SIO_STATUS 0x53         /* 'S': four bytes, from any drive there */
 #define SIO_FROM   0x40         /* DSTATS: the drive sends */
 #define SIO_TIME   0x0F         /* DTIMLO, as the OS uses for a disk */
 
@@ -227,4 +228,11 @@ uint8_t dsk_read(uint8_t unit, uint16_t sector, void *buf, uint16_t len)
 uint8_t dsk_percom(uint8_t unit, void *buf)
 {
     return sio(unit, SIO_PERCOM, 0, buf, SIO_PERCOM_LEN);
+}
+
+uint8_t dsk_status(uint8_t unit)
+{
+    uint8_t st[4];
+
+    return sio(unit, SIO_STATUS, 0, st, sizeof st);
 }

@@ -331,6 +331,7 @@ int main(void)
                                          * a call by its four-space indent */
     Tgettimeofday(&tv, 0);
     Psystem(path, 0, 0L);
+    Dprobe();
     Tsettime(0);
     Fgetdta();
     Sversion();

@@ -262,6 +262,7 @@ The desktop:
 - **Size to fit**
 - **Install icon...**
 - **Install application...**
+- **Install devices**
 - **Set preferences...**
 - **Read .INF file...**
 - **Save desktop...     ^S**

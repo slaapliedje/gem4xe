@@ -106,6 +106,10 @@
  * command processor given a line, and what it printed caught in a far
  * buffer (src/sys/dos.c dos_command).  Psystem in src/app/gem.h. */
 #define GD_PSYSTEM   0x1F0
+/* ...and which drives answer: each of D1: to D8: asked through the DOS,
+ * the map Dsetdrv returns from then on (gemdos.c gd_dprobe).  Dprobe in
+ * src/app/gem.h. */
+#define GD_DPROBE    0x1F1
 #define GD_FGETDTA   0x2F
 #define GD_SVERSION  0x30
 #define GD_PTERMRES  0x31

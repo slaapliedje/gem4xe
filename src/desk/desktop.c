@@ -461,6 +461,9 @@ static WORD do_optnmenu(WORD item)
     case IICNITEM:
         fun_icon(sel_item(DROOT));    /* a drive icon, or 0 */
         break;
+    case IDSKITEM:
+        fun_devices();
+        break;
     default:
         break;
     }

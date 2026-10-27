@@ -65,10 +65,11 @@ QUITITEM = 33                               # where EmuTOS puts its CLIITEM
 VIEWBOX, ICONITEM, TEXTITEM = 34, 35, 36    # 37 separator
 NAMEITEM, TYPEITEM, SIZEITEM, DATEITEM, NSRTITEM = 38, 39, 40, 41, 42  # 43
 FITITEM = 44
-OPTNBOX, IICNITEM, IAPPITEM = 45, 46, 47    # 48 separator
-PREFITEM = 49                               # 50 separator
-READITEM, SAVEITEM = 51, 52
-NOBS_MENU = 53
+OPTNBOX, IICNITEM, IAPPITEM = 45, 46, 47
+IDSKITEM = 48                               # 49 separator (EmuTOS's name)
+PREFITEM = 50                               # 51 separator
+READITEM, SAVEITEM = 52, 53
+NOBS_MENU = 54
 
 # ADDINFO objects.  DEVERSN and DEOK moved down one when the gem4xe
 # version line went in; they are constants for exactly that reason, and
@@ -354,7 +355,7 @@ INDICES = [
     ("ICONITEM", ICONITEM),
     ("TEXTITEM", TEXTITEM), ("NAMEITEM", NAMEITEM), ("TYPEITEM", TYPEITEM),
     ("SIZEITEM", SIZEITEM), ("DATEITEM", DATEITEM), ("NSRTITEM", NSRTITEM),
-    ("FITITEM", FITITEM), ("IICNITEM", IICNITEM), ("IAPPITEM", IAPPITEM),
+    ("FITITEM", FITITEM), ("IICNITEM", IICNITEM), ("IAPPITEM", IAPPITEM), ("IDSKITEM", IDSKITEM),
     ("PREFITEM", PREFITEM), ("READITEM", READITEM), ("SAVEITEM", SAVEITEM),
     ("DEVERSN", DEVERSN), ("DEOK", DEOK),
     ("ADMKDBOX", ADMKDBOX), ("MKNAME", MKNAME), ("MKOK", MKOK),
@@ -407,7 +408,7 @@ MENU = [
                         "  Sort by size", "  Sort by date", "  No sort",
                         "-", ("  Size to fit", CHECKED)]),
     (" Options ", 20, 25, ["  Install icon...", "  Install application...",
-                           "-", "  Set preferences...", "-",
+                           "  Install devices", "-", "  Set preferences...", "-",
                            "  Read .INF file...", keyed("Save desktop...", "S", 25)]),
 ]
 TITLE_X = [0, 6, 12, 18]                    # the titles, packed on the bar
