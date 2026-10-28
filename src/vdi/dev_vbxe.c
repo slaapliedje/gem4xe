@@ -464,8 +464,9 @@ void dev_cursor_form(WORD bg_pen, WORD fg_pen, const UWORD *mask,
     }
 }
 
-/* Queue the copy of what is under the form.  The caller runs the chain. */
-static void cursor_save(WORD cx, WORD cy)
+/* The block under the form at (cx, cy), clipped to the screen, into
+ * sv_bx/sv_y/sv_nb/sv_nr; sv_nb 0 when none of it is on the screen. */
+static void cursor_save_rect(WORD cx, WORD cy)
 {
     WORD bx0, bx1, y0, y1;
     bx0 = (WORD)(cx >> 1);
@@ -481,6 +482,14 @@ static void cursor_save(WORD cx, WORD cy)
     sv_y  = y0;
     sv_nb = (WORD)(bx1 - bx0 + 1);
     sv_nr = (WORD)(y1 - y0 + 1);
+}
+
+/* Queue the copy of what is under the form.  The caller runs the chain. */
+static void cursor_save(WORD cx, WORD cy)
+{
+    cursor_save_rect(cx, cy);
+    if (!sv_nb)
+        return;
     blit_copy(VR_SCREEN0 + scr_row(sv_y) + (uint32_t)sv_bx,
               SCR_STRIDE, VR_CURSAVE, VR_CURSAVE_STRIDE,
               (uint16_t)sv_nb, (uint16_t)sv_nr);
@@ -515,6 +524,109 @@ static void cursor_paint(WORD cx, WORD cy)
 }
 
 
+#ifdef CURSOR_SPLIT
+/* One of cursor_paint's two strips: 0 the AND, 1 the OR. */
+static void cursor_paint_one(WORD cx, WORD cy, WORD which)
+{
+    WORD par = (WORD)(cx & 1);
+    uint32_t off, dst;
+    if (!sv_nb)
+        return;
+    off = (uint32_t)(sv_y - cy) * CUR_STRIDE
+        + (uint32_t)(sv_bx - (WORD)(cx >> 1));
+    dst = VR_SCREEN0 + scr_row(sv_y) + (uint32_t)sv_bx;
+    if (which == 0)
+        blit_mask(VR_CUR_AND(par) + off, CUR_STRIDE, dst, SCR_STRIDE,
+                  (uint16_t)sv_nb, (uint16_t)sv_nr, 0xFF, 0x00, BLT_MODE_AND);
+    else
+        blit_mask(VR_CUR_OR(par) + off, CUR_STRIDE, dst, SCR_STRIDE,
+                  (uint16_t)sv_nb, (uint16_t)sv_nr, 0xFF, 0x00, BLT_MODE_OR);
+}
+#endif
+
+#if defined(CURSOR_CPU)
+/* DIAGNOSTIC BUILD (make CFLAGS+=-DCURSOR_CPU): the pointer with no
+ * blitter at all -- the block under it read into bank $00, painted and
+ * put back by the CPU through MEMAC.  Slow, and only to tell, on a real
+ * machine that leaves a trail of pointers, whether the blitter is part
+ * of it. */
+static uint8_t cpu_save[CUR_ROWS * CUR_BYTES];
+static uint8_t cpu_row[CUR_BYTES];
+
+void dev_cursor_show(WORD cx, WORD cy)
+{
+    WORD r, k, half, par = (WORD)(cx & 1);
+    WORD bx0 = (WORD)(cx >> 1);
+    uint8_t fg = (uint8_t)HW(cur_fg), bg = (uint8_t)HW(cur_bg);
+
+    if (blit_pending())
+        blit_run();
+    cursor_save_rect(cx, cy);           /* sv_bx, sv_y, sv_nb, sv_nr */
+    if (!sv_nb)
+        return;
+    for (r = 0; r < sv_nr; r++) {
+        WORD fr = (WORD)(sv_y + r - cy);            /* the form's row */
+        UWORD m = cur_mask[fr], d = cur_data[fr];
+        uint32_t a = VR_SCREEN0 + scr_row((WORD)(sv_y + r)) + (uint32_t)sv_bx;
+
+        vram_read(cpu_row, a, (uint16_t)sv_nb);
+        for (k = 0; k < sv_nb; k++) {
+            uint8_t v = cpu_row[k], nib;
+            cpu_save[r * CUR_BYTES + k] = v;
+            for (half = 0; half < 2; half++) {
+                WORD col = (WORD)((sv_bx + k - bx0) * 2 + half - par);
+                UWORD bit;
+                if (col < 0 || col >= CUR_W)
+                    continue;
+                bit = (UWORD)(0x8000u >> col);
+                if (d & bit)
+                    nib = fg;
+                else if (m & bit)
+                    nib = bg;
+                else
+                    continue;
+                if (half == 0)
+                    v = (uint8_t)((v & 0x0F) | (uint8_t)(nib << 4));
+                else
+                    v = (uint8_t)((v & 0xF0) | (nib & 0x0F));
+            }
+            cpu_row[k] = v;
+        }
+        vram_write(a, cpu_row, (uint16_t)sv_nb);
+    }
+}
+
+void dev_cursor_hide(void)
+{
+    WORD r;
+
+    if (!sv_nb)
+        return;
+    for (r = 0; r < sv_nr; r++)
+        vram_write(VR_SCREEN0 + scr_row((WORD)(sv_y + r)) + (uint32_t)sv_bx,
+                   &cpu_save[r * CUR_BYTES], (uint16_t)sv_nb);
+    sv_nb = 0;
+}
+#elif defined(CURSOR_SPLIT)
+/* DIAGNOSTIC BUILD (make CFLAGS+=-DCURSOR_SPLIT): the three blits of a
+ * show each run as a list of its own and waited out before the next. */
+void dev_cursor_show(WORD cx, WORD cy)
+{
+    if (blit_pending())
+        blit_run();
+    cursor_save(cx, cy);
+    blit_run();
+    cursor_paint_one(cx, cy, 0);
+    blit_run();
+    cursor_paint_one(cx, cy, 1);
+    blit_run();
+}
+
+void dev_cursor_hide(void)
+{
+    cursor_restore();
+}
+#else
 /* The three blits the VDI asks for as one: the block under the form
  * copied away, then the two strips over it, then the chain run. */
 void dev_cursor_show(WORD cx, WORD cy)
@@ -530,6 +642,7 @@ void dev_cursor_hide(void)
 {
     cursor_restore();
 }
+#endif
 
 void dev_cursor_discard(void)
 {

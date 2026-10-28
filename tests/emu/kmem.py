@@ -59,6 +59,12 @@ def wait_desk(b, syms, memlines):
                 memlines.append(s)
         if b.peek(syms["irq_cio_swap"]) in (1, 3) and b.peek16(syms["app_calls"]) > 30:
             b.frames(200)
+            # A sample can land while a line is still being printed:
+            # "Memory 14.7 MB, banks $04-$" and then the whole of it.
+            # Only whole lines count -- one that a later one starts with
+            # was that later one, caught half written.
+            memlines[:] = [m for m in memlines
+                           if not any(o != m and o.startswith(m) for o in memlines)]
             return True
     return False
 

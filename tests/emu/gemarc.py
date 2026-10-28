@@ -111,15 +111,22 @@ def main():
         settle()
 
     try:
-        f = 0
-        while f < 20000 and b.peek16(gsym["sh_runs"]) < 1:
-            b.frames(100)
-            f += 100
-        check(b.peek16(gsym["sh_runs"]) >= 1, "the shell ran GemARC")
-        b.frames(300)
+        # Up when its info line says so, read off the screen: sh_runs is
+        # not cleared until GEM.COM starts, so before then it reads
+        # whatever the memory held -- and a gate that trusted it once
+        # typed its first shortcut at the SpartaDOS prompt.
+        f, p = 0, None
+        while f < 30000:
+            b.frames(300)
+            f += 300
+            p = shot("01-up")
+            if find_text(p, "No archive") is not None:
+                break
         settle()
         p = shot("01-up")
-        check(find_text(p, "GemARC") is not None, f"GemARC's window is up ({p})")
+        check(find_text(p, "No archive") is not None
+              and find_text(p, "GemARC") is not None,
+              f"GemARC's window is up, after {f} frames ({p})")
 
         ctrl("O")
         type_in("TEST.ARC")
