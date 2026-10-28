@@ -47,6 +47,7 @@ uint16_t gem_calls;
 uint16_t gem_bad;
 uint8_t  gem_cop_pass;      /* abi.s reads it for a COP that is not gem4xe's */
 uint8_t  gem_term;          /* ...and this after every call it serves */
+uint16_t gem_caller_sp;     /* ...and this on the way in (the stack check) */
 uint16_t gem_reached;
 
 void gem_entry(void)

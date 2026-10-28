@@ -330,6 +330,7 @@ static WORD sh_ldacc(const char *name)
         return FALSE;
     }
     p->p_ctx.owner = app.owner;         /* what it takes is its own */
+    p->p_ctx.floor = (uint16_t)(app.near_base + CTX_FLOOR);   /* ctx.h */
     proc_name(p, name);                 /* what appl_find will search */
     ctx_switch(&p->p_ctx);              /* runs until it parks */
     p->p_stat = P_LIVE;                 /* it has had its first turn */
@@ -865,6 +866,7 @@ static WORD sh_ldapp(void)
     APP app;
     char cmd[SH_CMDLEN];
     WORD st, was = sh_next;
+    uint8_t stops;
 
     if (was == SH_DESKTOP) {
         /* The last program ran in its own directory (the desktop's
@@ -911,6 +913,7 @@ static WORD sh_ldapp(void)
     proc_name(proc_app, cmd);   /* the desktop's name is in cmd too now */
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
+    stops = gem_stack_stops;
     sh_lastret = app_exec(&app);
 
     /* The program has gone.  The mouse comes back here whatever it left
@@ -928,7 +931,9 @@ static WORD sh_ldapp(void)
      * left to do: that is a shutdown, not the desktop again forever. */
     if (was == SH_DESKTOP && sh_doexec == -1)
         sh_doexec = 4;
-    return 0;
+    /* stopped for its stack (src/sys/abi.c): the loop says so, on the
+     * bare desk, before whatever runs next */
+    return (gem_stack_stops != stops) ? APP_E_STACK : 0;
 }
 
 /* The donor's sh_main: until a shutdown, reset the windows and the menu,
@@ -1020,6 +1025,7 @@ WORD sh_main(void)
         if (rc)
             fm_alert(1, rc == APP_E_FILE   ? lang_str(LS_APPNOTFOUND)
                       : rc == APP_E_OLDSDK ? lang_str(LS_APPOLDSDK)
+                      : rc == APP_E_STACK  ? lang_str(LS_APPSTACK)
                       :                      lang_str(LS_APPNOTLOAD));
         /* ...and before the first desktop, an accessory that was found
          * and not loaded: past the six slots, or no room in the pool.

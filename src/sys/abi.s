@@ -49,10 +49,12 @@
 
               .extern _DirectPageStart, _Dp
               .extern gem_entry, gem_pb, gem_which, gem_api_sp, gem_depth
-              .extern gem_cop_pass, gem_term, irq_sei
+              .extern gem_cop_pass, gem_term, irq_sei, gem_caller_sp
               .public gem_cop, app_run
 
 ABI_VDI:      .equ    0x56            ; src/sys/abi.h, src/app/gemabi.s
+GEM_TERM_STACK: .equ  2               ; src/sys/abi.h
+GEM_STOPPED:  .equ    0xFFF7          ; -9, src/sys/abi.h
 ABI_AES:      .equ    0x41
 ABI_GEMDOS:   .equ    0x44
 VCOPN:        .equ    0x0256          ; Rapidus OS's native COP vector, LONG
@@ -113,11 +115,13 @@ gem_cop_ours: lda     10,s            ; the caller's I, read before the
               beq     gem_cop_stay    ; no application running: nowhere to go
               tsc
               tax
+              stx     abs:gem_caller_sp ; for gem_entry's look at it
               lda     abs:gem_api_sp
               tcs
               phx                     ; the caller's S, on gem4xe's stack
               bra     gem_cop_call
-gem_cop_stay: tsc
+gem_cop_stay: stz     abs:gem_caller_sp ; nested or no program: nothing to look at
+              tsc
               tax
               phx                     ; the same S, so the exit is one path
 gem_cop_call: lda     dp:.tiny(_Dp+4)
@@ -150,8 +154,10 @@ gem_cop_out:  rep     #0x30
 ;;; gem4xe's already, and app_run puts the interrupt state back.  With no
 ;;; program running there is nothing to end, and the call returns as any
 ;;; other does.
-gem_cop_term: stz     abs:gem_term
+gem_cop_term: cmp     #GEM_TERM_STACK
+              stz     abs:gem_term
               rep     #0x30
+              beq     gem_cop_stop    ; the program is stopped, not ending
               lda     abs:gem_api_sp
               beq     gem_cop_out
               lda     abs:gem_pb      ; the block's result word
@@ -160,7 +166,13 @@ gem_cop_term: stz     abs:gem_term
               sta     dp:.tiny(_Dp+2)
               lda     [.tiny _Dp]
               tax
-              sep     #0x20
+              bra     gem_cop_end
+;;; ...or gem_entry stopped it (abi.c gem_stack_check): its block is a
+;;; VDI's or an AES's, with no result word in it, so the code is fixed.
+gem_cop_stop: lda     abs:gem_api_sp
+              beq     gem_cop_out
+              ldx     ##GEM_STOPPED
+gem_cop_end:  sep     #0x20
               stz     abs:gem_depth
               rep     #0x20
               lda     abs:gem_api_sp

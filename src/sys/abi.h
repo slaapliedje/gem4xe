@@ -66,6 +66,19 @@ void abi_probe_os(void);
  * block goes to the program's loader as main()'s value would have.
  * gem_entry clears it before every call. */
 extern uint8_t gem_term;
+/* gem_term's second meaning: the program was STOPPED, by gem_entry, and
+ * did not end itself -- abi.s gives app_run GEM_STOPPED as its result,
+ * because the call that was stopped has no result word to take one from.
+ * The shell says why (src/aes/shel.c, APP_E_STACK).  Kept in step with
+ * abi.s by hand: two .equ there. */
+#define GEM_TERM_STACK 2
+#define GEM_STOPPED    (-9)
+/* The caller's S at the COP that switched to gem4xe's stack, or 0 for a
+ * nested one (abi.s); and how many programs were stopped for running
+ * their stack below their floor (src/sys/ctx.h), for the shell to tell
+ * and a gate to count. */
+extern uint16_t gem_caller_sp;
+extern uint8_t  gem_stack_stops;
 
 void gem_entry(void);          /* the C side of the handler */
 

@@ -86,6 +86,7 @@ int16_t ctx_make(CTX *c, uint32_t entry)
     c->api_sp = 0;
     c->which = 0;
     c->depth = 0;
+    c->floor = 0;
     return 1;
 }
 

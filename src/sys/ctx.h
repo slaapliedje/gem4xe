@@ -67,7 +67,17 @@ typedef struct {
      * a switch makes it far_owner, so an accessory's rsrc_load is the
      * accessory's and not whoever ran last */
     uint16_t owner;
+    /* THE LOWEST its program's stack may go: CTX_FLOOR past its near
+     * region's start, which is its direct page -- the compiler's pseudo
+     * registers in its first $24 bytes, the rest of the page unused
+     * (every program's map), so a stack a little too small that runs into
+     * the top of the page harms nothing: General's does, by 39 bytes.  A large-data program's stack and gem4xe's own variables
+     * are both in bank $00, the second just below the first, and a
+     * program that runs its stack past this has been writing over the
+     * system (docs/phase114.md).  0: nothing to check. */
+    uint16_t floor;
 } CTX;
+#define CTX_FLOOR 0x40
 
 extern CTX      *ctx_cur;       /* the running one; never 0 after ctx_init */
 extern CTX      *ctx_root;      /* context 0: where a finished one returns */

@@ -445,11 +445,16 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
 int16_t app_exec(const APP *app)
 {
     uint16_t keep = ctx_cur->owner;
+    uint16_t keep_floor = ctx_cur->floor;
     int16_t r;
 
     ctx_cur->owner = app->owner;
     far_owner = (uint8_t)app->owner;
+    /* the stack's floor is this program's while it runs, and its
+     * parent's again after -- Pexec runs a child in the same context */
+    ctx_cur->floor = (uint16_t)(app->near_base + CTX_FLOOR);
     r = app_run(app->entry);
+    ctx_cur->floor = keep_floor;
     ctx_cur->owner = keep;
     far_owner = (uint8_t)keep;
     return r;

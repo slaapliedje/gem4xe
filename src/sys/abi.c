@@ -53,11 +53,18 @@
 #include "sys/gemdos.h"
 #include "sys/farmem.h"
 #include "sys/app.h"
+#include "sys/zwin.h"
 
 uint32_t gem_pb;
 uint8_t  gem_which;
 uint16_t gem_api_sp;
 uint8_t  gem_depth;
+/* In the window (src/sys/zwin.h): LoRAM keeps 256 bytes for the
+ * engine's stack and had 2 more than that.  Only the call gate writes
+ * these, on its way in, before any DOS call can bank the window. */
+ZWIN uint16_t gem_caller_sp;
+ZWIN uint8_t  gem_stack_stops;
+ZWIN uint16_t gem_stop_sp, gem_stop_floor;  /* the last stop's, to read */
 uint16_t gem_calls;
 uint16_t app_calls;             /* of those, the application's: see abi.h */
 uint16_t gem_bad;
@@ -983,6 +990,31 @@ void gem_entry(void)
         return;
     }
     gem_calls++;
+    /* A PROGRAM WHOSE STACK HAS LEFT ITS OWN MEMORY is stopped here,
+     * at its next call, before the call is served.  Its stack is in
+     * bank $00 and gem4xe's variables are just below it: QED's Last
+     * version ran 2.3 KB past its 4 KB and the VDI's device pointer
+     * was its return addresses (docs/phase114.md).  Nothing can stop the
+     * writes as they happen; this stops the program at the first call
+     * it makes from down there, ends it as Pterm would, and the shell
+     * says why -- where before the machine went on until it jumped to
+     * $000000.
+     *
+     * BELOW THE FLOOR AND ABOVE gem4xe's OWN STACK.  A control panel
+     * module's start-up runs on the stack it was called with, which is
+     * the engine's ($2E7C-$369B, under ctx_base), not on one of its own
+     * -- legitimately below its floor, and the first version of this
+     * stopped both modules at every boot (test-m36).  A stack that has
+     * run out of its program's memory is in the gap between the two:
+     * QED's was at $46EC. */
+    if (gem_caller_sp && ctx_cur->floor && gem_caller_sp < ctx_cur->floor
+        && gem_caller_sp > ctx_base) {
+        gem_stack_stops++;
+        gem_stop_sp = gem_caller_sp;
+        gem_stop_floor = ctx_cur->floor;
+        gem_term = GEM_TERM_STACK;
+        return;
+    }
     /* ...and the application's own count, which is what a gate means when
      * it asks "which call is the desktop inside".  gem_calls counts every
      * process's, and the moment an accessory was resident that stopped

@@ -132,6 +132,9 @@ STRINGS = [
     # the boot screen's second Memory line, only when the OS had given out
     # some of the banks gem4xe's own image was loaded into (farmem.c)
     ("BOOT_CLASH", "in use before GEM: $01-"),
+    # a program stopped because its stack ran out of its own memory and
+    # into the system's (src/sys/abi.c), said on the bare desk after
+    ("APPSTACK", "[3][A program ran out of|stack memory and was|stopped, to protect|the system.][ OK ]"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -187,6 +190,7 @@ TRANSLATIONS = {
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "Joystick",
         "BOOT_CLASH": "vor GEM belegt: $01-",
+        "APPSTACK": "[3][Ein Programm hatte zu|wenig Stapelspeicher und|wurde zum Schutz des|Systems beendet.][ OK ]",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -236,6 +240,7 @@ TRANSLATIONS = {
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "joystick",
         "BOOT_CLASH": "occupe avant GEM: $01-",
+        "APPSTACK": "[3][Un programme a manqué de|mémoire de pile et a été|arrêté pour protéger|le système.][ OK ]",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -285,6 +290,7 @@ TRANSLATIONS = {
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "joystick",
         "BOOT_CLASH": "en uso antes de GEM: $01-",
+        "APPSTACK": "[3][Un programa se quedó sin|memoria de pila y se|detuvo para proteger|el sistema.][ OK ]",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -334,6 +340,7 @@ TRANSLATIONS = {
         "BOOT_PTR_KOALA": "KoalaPad",
         "BOOT_PTR_JOY": "joystick",
         "BOOT_CLASH": "zajete przed GEM: $01-",
+        "APPSTACK": "[3][Programowi zabrakło|pamięci stosu i został|zatrzymany, by chronić|system.][ OK ]",
     },
 }
 
