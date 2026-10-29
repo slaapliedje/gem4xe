@@ -82,6 +82,16 @@ static const CFG_WORD FAR cfg_clock[] = {
     { "NONE", CFG_CLOCK_NONE }
 };
 
+/* LOOK: the AES's own switch, gl_3d (src/aes/objc.c), set before the
+ * first window is drawn.  The Control Panel's General module puts back
+ * the look somebody saved there, after this, so a saved choice wins; a
+ * machine where nobody has saved one takes this file's. */
+static const CFG_WORD FAR cfg_look[] = {
+    { "FLAT", 0 },
+    { "3D",   1 }
+};
+extern WORD gl_3d;
+
 /* ...and the keys themselves, for the same reason. */
 static const char FAR k_video[] = "VIDEO";
 static const char FAR k_mouse[] = "MOUSE";
@@ -93,6 +103,7 @@ static const char FAR k_topmargin[] = "TOPMARGIN";
 static const char FAR k_screenh[] = "SCREENH";
 static const char FAR k_screenw[] = "SCREENW";
 static const char FAR k_highram[] = "HIGHRAM";
+static const char FAR k_look[] = "LOOK";
 
 static char up(char c)
 {
@@ -242,6 +253,8 @@ static void cfg_line(char *s)
         else if (px == CFG_SCREENW_WIDE)
             config.screenw = VB_WIDE_WIDE;
     }
+    else if (same(k_look, key))
+        gl_3d = lookup(NAMES(cfg_look), val, gl_3d);
     else if (same(k_highram, key)) {
         /* HIGHRAM=$04-$3F: the banks the far heap may use, for a board
          * whose OS does not say where its high RAM is (src/sys/farmem.c).

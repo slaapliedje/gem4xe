@@ -473,6 +473,37 @@ def enhance(img):
 # SpartaDOS file system
 # ---------------------------------------------------------------------------
 
+def message_boot(lines, load=0x3000):
+    """A one-sector Atari boot record that puts `lines` on the screen and
+    waits: for an image that is not a bootable disk but may be mounted as
+    one.  The OS loads sector 1 to `load` and calls load+6; the code puts
+    the text to the screen editor through CIO, IOCB 0, and loops.  DOSINI
+    is an RTS.  128 bytes at most -- one single-density sector."""
+    text = b"\x9b" + b"".join(ln.encode("ascii") + b"\x9b" for ln in lines)
+    code = bytearray([
+        0xA2, 0x00,                     # LDX #0
+        0xA9, 0x0B, 0x9D, 0x42, 0x03,   # ICCOM: put characters
+        0xA9, 0x00, 0x9D, 0x44, 0x03,   # ICBAL (patched below)
+        0xA9, 0x00, 0x9D, 0x45, 0x03,   # ICBAH
+        0xA9, 0x00, 0x9D, 0x48, 0x03,   # ICBLL
+        0xA9, 0x00, 0x9D, 0x49, 0x03,   # ICBLH
+        0x20, 0x56, 0xE4,               # JSR CIOV
+        0x4C, 0x00, 0x00,               # JMP * : wait
+        0x60])                          # DOSINI: RTS
+    start = load + 6
+    msg = start + len(code)
+    code[8], code[13] = msg & 0xFF, msg >> 8
+    code[18], code[23] = len(text) & 0xFF, len(text) >> 8
+    here = start + len(code) - 4
+    code[-3], code[-2] = here & 0xFF, here >> 8
+    rts = start + len(code) - 1
+    head = bytes([0x00, 0x01, load & 0xFF, load >> 8, rts & 0xFF, rts >> 8])
+    rec = head + bytes(code) + text
+    if len(rec) > 128:
+        raise ATRError(f"message_boot: {len(rec)} bytes, a sector holds 128")
+    return rec
+
+
 class SdfsEntry:
     """One 23-byte directory entry.  Entry 0 of every directory is the
     header: status $28, the PARENT's sector-map sector, the directory's
@@ -850,6 +881,9 @@ class Sdfs:
              + bytes([0x00, 0xA5, 0x00, 0x00])                              # +38 sequence, random ID, boot file map
              + bytes(22) + bytes([0x60]))                                   # +42.., +64 RTS
     BOOT1 = bytes([0xA9, 0x60, 0x8D, 0x40, 0x07, 0x38, 0x60])
+
+    # (say_no_dos, below, and message_boot are the same idea for a floppy's
+    # three boot sectors and for a single 128-byte boot record.)
 
     def say_no_dos(self, lines):
         """Boot sectors that SAY this disk has no DOS, in place of the blank

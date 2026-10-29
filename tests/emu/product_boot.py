@@ -659,6 +659,28 @@ def no_dos(check):
           f"{name} booted with no SpartaDOS X does not say it has no DOS")
     check(not any("BOOT ERROR" in ln for ln in shown),
           f"{name} booted with no SpartaDOS X still says BOOT ERROR")
+    # ...and the CARD image mounted as a floppy, which is what a tester
+    # in AltirraSDL did: its MBR read as a 256-sector boot record to
+    # $0000 and crashed at the end of a long load.  It says what it is.
+    import apt
+    card = "gem-cf.img"
+    emu = launch(tag="nodoscf", memsize="1088K",
+                 extra_args=["--disk", os.path.join(BUILD, card)])
+    b = emu.bridge
+    try:
+        b.ok("COLD_RESET")
+        lines = []
+        for _ in range(20):
+            b.frames(100)
+            lines = screen(b)
+            if any(apt.CARD_IMAGE_SAYS[-1] in ln for ln in lines):
+                break
+    finally:
+        emu.stop()
+    shown = [ln.strip() for ln in lines]
+    print(f"{card} mounted as a floppy: {[ln for ln in shown if ln]}")
+    check(all(want in shown for want in apt.CARD_IMAGE_SAYS),
+          f"{card} mounted as a floppy does not say it is a card image")
 
 
 def main(argv):

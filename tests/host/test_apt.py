@@ -46,6 +46,18 @@ class Table(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<I", mbr, 0x1CA)[0],
                          img.blocks - apt.APT_LBA)
 
+    def test_an_atari_booting_it_as_a_floppy_is_told(self):
+        """The MBR's first 128 bytes, which an APT reader never reads, are
+        an Atari boot record: ONE sector to $3000, never the 256 to $0000
+        that two zero bytes meant -- which crashed the machine at the end
+        of a long load -- and the message says what the image is."""
+        img, _ = card()
+        mbr = img.read_block(0)
+        self.assertEqual(mbr[1], 1)                         # one sector
+        self.assertEqual(mbr[2] | mbr[3] << 8, 0x3000)      # to $3000
+        self.assertIn(apt.CARD_IMAGE_SAYS[0].encode("ascii"), mbr[:128])
+        self.assertEqual(mbr[128:0x1BE], bytes(0x1BE - 128))  # nothing else
+
     def test_header(self):
         img, parts = card()
         tab = img.read_block(apt.APT_LBA)

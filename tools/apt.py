@@ -48,11 +48,15 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from atr import Sdfs, ATRError  # noqa: E402
+from atr import Sdfs, ATRError, message_boot  # noqa: E402
 
 BLOCK = 512
 HEADER_BLOCKS = 8               # LBA 0-7: the MBR, the table, and room to grow
 APT_LBA = 1
+# What a card image says when it is mounted as a floppy and booted (the
+# screen editor shows 38 columns).
+CARD_IMAGE_SAYS = ["gem4xe: a card image, not a floppy.",
+                   "Boot gem-sdx.atr instead."]
 MBR_TYPE_APT = 0x7F             # the type byte a protective MBR gives the table
 MBR_TYPE_FAT32 = 0x0C           # FAT32 with LBA addressing: the SD-card case
 SIG = b"APT"
@@ -168,6 +172,14 @@ def write_table(img, parts, boot_drive=0, apt_lba=APT_LBA, fat=None):
     if apt_lba < 1 or apt_lba >= img.blocks:
         raise ATRError(f"a table at block {apt_lba} is outside {img!r}")
     mbr = bytearray(BLOCK)
+    # The MBR's first 446 bytes are boot code for a PC and nothing to an
+    # Atari's APT reader.  Its first 128 are an ATARI boot record here, for
+    # the person who mounts the card image as a floppy -- which the OS then
+    # read as 256 sectors to load at $0000, over zero page, and crashed at
+    # the end of a long load (reported from AltirraSDL, 2026-10-29).  Now it
+    # says what it is and waits.
+    rec = message_boot(CARD_IMAGE_SAYS)
+    mbr[:len(rec)] = rec
     off = 0x1BE
     if fat:
         start, count = fat
