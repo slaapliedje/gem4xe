@@ -159,8 +159,8 @@ here rather than in a forum thread.
 | U1MB / Incognito, SIDE, SIDE2, SIDE3, IDE Plus 2.0, MyIDE-II | `disks/gem-cf.img` written to a card | APT; the system installs to `\GEM\`, applications to `\APPS\` |
 | An APT drive you have already partitioned | `disks/gem-sdx.atr` and `disks/gem-apps.atr`, and `-INSTALL` from each | the floppies are the card in two halves; nothing of yours is touched |
 | SIDE3 / AVGCART / any FAT loader, with SpartaDOS X in the machine | `disks/gem-sdx.atr` on the card you have, `disks/gem-apps.atr` as a second drive | the loader mounts them; SDX boots the first; nothing to install -- and they are the floppies in the public release |
-| SIDE3 / AVGCART / any FAT loader, without | `disks/gem-boot.atr` on the card you have | the loader mounts it and it boots its own DOS 2: the system, nothing else |
-| SDrive-MAX, FujiNet, a real drive | `disks/gem-sdx.atr` with `disks/gem-apps.atr` in a second drive (SpartaDOS X in the machine), or `disks/gem-boot.atr` (DOS 2) | plain floppy images |
+| SIDE3 / AVGCART / any FAT loader, without | `disks/gem-sdx.atr` on the card you have, `disks/gem-apps.atr` as a second drive | the system disk boots its own read-only DOS (docs/fdos.md): everything opens and runs, nothing saves |
+| SDrive-MAX, FujiNet, a real drive | `disks/gem-sdx.atr` with `disks/gem-apps.atr` in a second drive | plain floppy images: read and write under SpartaDOS X, read-only on their own (docs/fdos.md) |
 | A DOS you already like | `system/` -- the loose files | put them where you want; give the disk a start-up that runs `GEM` |
 | MIO, BlackBox, original MyIDE | the floppies | their partitioning is their own; nothing here writes it |
 

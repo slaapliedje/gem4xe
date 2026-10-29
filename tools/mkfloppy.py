@@ -51,23 +51,42 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mkcf                                      # noqa: E402
+import mkxex                                     # noqa: E402
 from atr import ATRImage, Sdfs                   # noqa: E402
 
 SECTOR = 256
 SECTORS = 1440                                   # DSDD, as an XF551 writes
 
 
-# What these disks say when the machine boots them with no SpartaDOS X:
-# they carry no DOS, and the blank stub's answer to that was BOOT ERROR
-# repeated, which told a tester in AltirraSDL nothing (atr.py say_no_dos).
+# What the applications' and QED's disks say when the machine boots them
+# with no SpartaDOS X: they carry no DOS, and the blank stub's answer to
+# that was BOOT ERROR repeated, which told a tester in AltirraSDL nothing
+# (atr.py say_no_dos).  The system disk boots its own (fdos=True).
 NO_DOS = ["gem4xe: this disk has no DOS on it.",
-          "Boot it with SpartaDOS X in the",   # the editor shows 38 columns
-          "machine (a cartridge, or U1MB flash),",
-          "or boot gem-boot.atr: GEM on DOS 2."]
+          "Boot the system disk, gem-sdx.atr,",   # the editor shows 38 columns
+          "or boot this one with SpartaDOS X",
+          "(a cartridge, or U1MB flash)."]
+
+
+def fdos_parts(root):
+    """The read-only DOS and its boot code, out of their links
+    (src/fdos.s, src/fdboot.s, src/fdos.scm): G4DOS.SYS from $0700 to
+    fd_image_end, and the boot code for sector 1's tail and sectors 2-3."""
+    dos_segs, syms = mkxex.read_elf(os.path.join(root, "build", "fdos.elf"))
+    code = [d for a, d in dos_segs if a == Sdfs.FDOS_AT]
+    if len(code) != 1:
+        raise SystemExit("build/fdos.elf: no segment at $0700 -- fd_base "
+                         "must be there to the byte (src/fdos.scm)")
+    dos = code[0][:syms["fd_image_end"] - Sdfs.FDOS_AT]
+    boot = dict(mkxex.read_elf(os.path.join(root, "build", "fdboot.elf"))[0])
+    if set(boot) != {0x3030, 0x3080}:
+        raise SystemExit(f"build/fdboot.elf: segments at "
+                         f"{sorted(hex(a) for a in boot)}, not $3030 and $3080")
+    return boot[0x3030], boot[0x3080], dos
 
 
 def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
-          dirs=("GEM",), volname="GEM4XE", sectors=SECTORS):
+          dirs=("GEM",), volname="GEM4XE", sectors=SECTORS, fdos=True):
     """The system floppy by default; build_apps() for the other."""
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     table = mkcf.SYSTEM if table is None else table
@@ -81,21 +100,27 @@ def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
             data = f.read()
         fs.add_file(name, data)
         print(f"{out}: {name} <- {path} ({len(data)} bytes)")
-    fs.say_no_dos(NO_DOS)
+    if fdos:
+        b1, b23, dos = fdos_parts(root)
+        fs.boot_gem4xe(b1, b23, dos)
+        print(f"{out}: boots {Sdfs.FDOS_NAME} ({len(dos)} bytes), read-only, "
+              f"without SpartaDOS X")
+    else:
+        fs.say_no_dos(NO_DOS)
     if boot:
         fs.add_file("AUTOEXEC.BAT", mkcf.batch(boot))
     if install:
         fs.add_file("INSTALL.BAT", mkcf.batch(install))
     img.save(out)
     free = fs.free_count()
-    print(f"{out}: {img!r}, {fs.volname}, no DOS; {free} sectors free, "
+    print(f"{out}: {img!r}, {fs.volname}, {"its own read-only DOS" if fdos else "no DOS"}; {free} sectors free, "
           f"{free * (SECTOR - 2) // 1024} KB")
     return out
 
 
 def build_apps(out, root=None):
     return build(out, (), None, root, mkcf.APPS, mkcf.INSTALL_APPS,
-                 mkcf.DIRS, "GEMAPPS")
+                 mkcf.DIRS, "GEMAPPS", fdos=False)
 
 
 # QED is 361 KB with its resource, and a double-sided double-density
@@ -108,7 +133,7 @@ QED_SECTORS = 2 * SECTORS
 def build_qed(out, root=None):
     """QED's own image (mkcf.QED), with the applications' INSTALL.BAT."""
     return build(out, (), None, root, mkcf.QED, mkcf.INSTALL_APPS,
-                 mkcf.DIRS, "GEMQED", QED_SECTORS)
+                 mkcf.DIRS, "GEMQED", QED_SECTORS, fdos=False)
 
 
 def main(argv=None):

@@ -57,15 +57,23 @@ class TestFloppy(unittest.TestCase):
         self.assertIsInstance(self.fs, atr.Sdfs)
         self.assertEqual(self.fs.volname, "GEM4XE")
 
-    def test_it_carries_no_dos(self):
-        """The whole reason it can be given away: no boot file, and the
-        boot sectors are gem4xe's own message, not somebody's DOS."""
-        self.assertEqual(self.fs.boot_file_map, 0)
-        boot = self.img.read_sector(2) + self.img.read_sector(3)
-        self.assertIn(mkfloppy.NO_DOS[0].encode("ascii"), boot)
+    def test_it_carries_only_its_own_dos(self):
+        """The whole reason it can be given away: the DOS it boots is
+        gem4xe's own read-only one (src/fdos.s), G4DOS.SYS, named as the
+        superblock's boot file, and the boot sectors are src/fdboot.s --
+        not somebody else's DOS."""
+        g4 = next(e for e in self.fs.entries("") if e.filename == "G4DOS.SYS")
+        self.assertEqual(self.fs.boot_file_map, g4.map)
+        b1, b23, dos = mkfloppy.fdos_parts(ROOT)
+        self.assertEqual(self.fs.read("G4DOS.SYS"), dos)
+        self.assertEqual(self.img.read_sector(2) + self.img.read_sector(3),
+                         b23 + bytes(256 - len(b23)))
+        sb = self.img.read_sector(1)
+        self.assertEqual(sb[48:48 + len(b1)], b1)
+        self.assertEqual(sb[4] | sb[5] << 8, 0x0700)     # DOSINI
         names = {e.filename for e in self.fs.entries("")}
         self.assertFalse({n for n in names if n.endswith(".DOS")
-                          or n.endswith(".SYS")}, names)
+                          or n.endswith(".SYS")} - {"G4DOS.SYS"}, names)
 
     def test_it_is_the_card_s_system(self):
         """Every file in tools/mkcf.py's SYSTEM table, in \\GEM\\, byte for
@@ -80,7 +88,8 @@ class TestFloppy(unittest.TestCase):
         on_disk = {f"GEM>{e.filename}" for e in self.fs.entries("GEM")}
         self.assertEqual(on_disk, set(want))
         root = {e.filename for e in self.fs.entries("")}
-        self.assertEqual(root, {"GEM", "AUTOEXEC.BAT", "INSTALL.BAT"})
+        self.assertEqual(root, {"GEM", "AUTOEXEC.BAT", "INSTALL.BAT",
+                                "G4DOS.SYS"})
 
     def test_the_installer_is_mkcf_s(self):
         self.assertEqual(self.fs.read("INSTALL.BAT"),

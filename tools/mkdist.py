@@ -97,16 +97,19 @@ DISKS = [
      "floppy's directories, so this disk is for trying GEM rather than "
      "for keeping it, and its Desk menu holds only the About item."),
     ("gem-sdx.atr", "disks/gem-sdx.atr", "sdfs",
-     "A double-sided double-density SDFS floppy, 360 KB, with **no DOS on "
-     "it**: the system -- the card's `\\GEM\\`, without the desk "
-     "accessory -- an `AUTOEXEC.BAT` that changes into `\\GEM\\` and runs "
-     "GEM, and `INSTALL.BAT`.  It boots under **SpartaDOS X** -- from a "
-     "cartridge or from Ultimate 1MB flash -- which is the one DOS that "
-     "lives in the machine rather than on the disk, and that is why this "
-     "floppy can be given away where the other two cannot.  Put it in D1: "
-     "and turn the machine on.  Its other half is `disks/gem-apps.atr`.  "
-     "Booted without SpartaDOS X -- an emulator's default setup -- it "
-     "says so and names `gem-boot.atr`, the disk that boots anywhere."),
+     "A double-sided double-density SDFS floppy, 360 KB: the system -- "
+     "the card's `\\GEM\\`, without the desk accessory -- an "
+     "`AUTOEXEC.BAT` that changes into `\\GEM\\` and runs GEM, and "
+     "`INSTALL.BAT`.  **It boots anywhere**: on a machine with no "
+     "SpartaDOS X its boot sectors load gem4xe's own small DOS, "
+     "`G4DOS.SYS`, which starts GEM -- read-only, so *Save desktop* "
+     "and copying tell you they cannot, but everything opens and runs, "
+     "from this disk and from the applications disk in D2:.  Under "
+     "**SpartaDOS X** -- a cartridge or Ultimate 1MB flash -- it is an "
+     "ordinary SDX disk and everything works, saving included, which is "
+     "how to keep GEM: `INSTALL.BAT` copies it onto your own drive.  "
+     "No third-party DOS is on it, which is why it can be given away.  "
+     "Its other half is `disks/gem-apps.atr`."),
     ("gem-apps.atr", "disks/gem-apps.atr", "sdfs",
      "The applications: the calculator, the clock and a hello-world "
      "program in `\\APPS\\`, and the clock desk accessory in `\\GEM\\`, on "

@@ -890,6 +890,37 @@ class Sdfs:
         self.img.write_sector(2, body[:128])
         self.img.write_sector(3, body[128:])
 
+    # Where tools/mkfloppy.py's read-only DOS goes (src/fdos.s, docs/fdos.md).
+    FDOS_AT = 0x0700
+    FDOS_NAME = "G4DOS.SYS"
+    BOOT1_AT = 48                   # sector 1's tail: boot code, past the fields
+
+    def boot_gem4xe(self, boot1, boot23, dos):
+        """Make this floppy boot gem4xe's own read-only DOS: `dos` (the bytes
+        of G4DOS.SYS, linked at $0700) as a file the superblock names as its
+        boot file, and src/fdboot.s as the boot code that loads it --
+        `boot23` for sectors 2 and 3 ($3080), `boot1` for sector 1 from
+        +48 ($3030).  The header: three sectors to $3000, DOSINI $0700,
+        JMP $3080.  Every file-system field of sector 1 stays as it is, and
+        SpartaDOS X never runs a disk's boot sectors, so under SDX this is
+        the same disk as before."""
+        if self.img.sector_len(1) != 128 or self._superblock()[1] != 3:
+            raise ATRError("boot_gem4xe: not a floppy's three boot sectors")
+        if len(boot23) > 256 or self.BOOT1_AT + len(boot1) > 128:
+            raise ATRError("boot_gem4xe: the boot code does not fit")
+        e = self.add_file(self.FDOS_NAME, dos)
+        sb = self._superblock()
+        sb[0], sb[1] = 0x00, 3
+        sb[2], sb[3] = 0x00, 0x30                       # load at $3000
+        sb[4], sb[5] = self.FDOS_AT & 0xFF, self.FDOS_AT >> 8   # DOSINI
+        sb[6], sb[7], sb[8] = 0x4C, 0x80, 0x30          # JMP $3080
+        sb[self.BOOT1_AT:self.BOOT1_AT + len(boot1)] = boot1
+        sb[40], sb[41] = e.map & 0xFF, e.map >> 8
+        self._write_superblock(sb)
+        self.img.write_sector(2, bytes(boot23[:128]))
+        self.img.write_sector(3, bytes(boot23[128:]))
+        return e
+
     @classmethod
     def format(cls, img, volname="GEM4XE"):
         """Lay a blank SDFS on `img`, the way Altirra's disk explorer does

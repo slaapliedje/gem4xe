@@ -364,13 +364,16 @@ def one(name, progname, how, batches, cart, keep, check):
               f"{name}: INSTALL.BAT is not tools/mkcf.py's INSTALL_SYSTEM")
         check("APPS" not in {e.filename.upper() for e in fs.entries("")},
               f"{name}: has an \\APPS\\, which belongs on gem-apps.atr")
-        # The release floppy carries no DOS: its superblock names no boot
-        # file and its boot sectors are the blank disk's stub.  A DOS on
-        # it would be somebody else's (tools/mkfloppy.py).
+        # The release floppy carries no third-party DOS: the one boot file
+        # its superblock may name is gem4xe's own, G4DOS.SYS (src/fdos.s,
+        # docs/fdos.md), which SpartaDOS X never runs.  Any other would be
+        # somebody else's DOS (tools/mkfloppy.py).
         if cart is not None:
-            check(fs.boot_file_map == 0,
+            g4 = [e for e in fs.entries("") if e.filename.upper() == "G4DOS.SYS"]
+            check(len(g4) == 1 and fs.boot_file_map == g4[0].map,
                   f"{name}: the superblock names a DOS file at map sector "
-                  f"{fs.boot_file_map}, and this disk is meant to carry none")
+                  f"{fs.boot_file_map}, and the only one this disk may name "
+                  f"is G4DOS.SYS")
     else:
         # DUP.SYS is on the disk (Makefile, build/gem-boot.atr): it is the
         # DOS's shell, and what GEM hands the machine back to.  It went,
@@ -628,14 +631,15 @@ def apps_disk(check):
 
 
 def no_dos(check):
-    """gem-sdx.atr booted the way a machine WITHOUT SpartaDOS X boots it --
+    """gem-apps.atr booted the way a machine WITHOUT SpartaDOS X boots it --
     an emulator's default, or the wrong disk in the drive: it must say it
     has no DOS and what to boot instead (tools/mkfloppy.py NO_DOS), where
     it used to fail with BOOT ERROR over and over.  Reported from
-    AltirraSDL as a sector error at the bootloader."""
+    AltirraSDL as a sector error at the bootloader.  (The system disk,
+    gem-sdx.atr, boots its own DOS now: tests/emu/fdos_boot.py.)"""
     import mkfloppy
     from m14_sparta import screen
-    name = "gem-sdx.atr"
+    name = "gem-apps.atr"
     emu = launch(tag="nodos", memsize="1088K",
                  extra_args=["--disk", os.path.join(BUILD, name)])
     b = emu.bridge
@@ -679,7 +683,7 @@ def main(argv):
             keep, check)
     if not only or any("apps" in o for o in only):
         apps_disk(check)
-    if not only or any("sdx" in o for o in only):
+    if not only or any("apps" in o for o in only):
         no_dos(check)
     print(f"{'FAIL' if fails else 'PASS'}: the product disks boot into the "
           f"desktop with nothing typed -- the loader switches the CPU "
