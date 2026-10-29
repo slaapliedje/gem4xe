@@ -77,7 +77,7 @@ DEV_MAGIC = b"CD"
 DEV_HDR = 4
 
 ENT_SIZE = 16                   # src/cartd.s says what the fields are
-MAX_FILES = 24
+MAX_FILES = 32                  # src/cartd.s: four bytes of seen bits
 # DOS 2's drive bitmap, which src/sys/gemdos.c's Drvmap returns verbatim.
 # With no DOS the handler writes it itself at install time -- one bit, D1:
 # -- because nothing else on the machine owns it (src/cartd.s).

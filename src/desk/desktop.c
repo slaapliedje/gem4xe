@@ -721,6 +721,8 @@ static WORD hndl_kbd(WORD key, WORD kstate)
     case KEY_DOWN:  key_arrow(page ? WA_DNPAGE : WA_DNLINE); break;
     case KEY_LEFT:  key_arrow(page ? WA_LFPAGE : WA_LFLINE); break;
     case KEY_RIGHT: key_arrow(page ? WA_RTPAGE : WA_RTLINE); break;
+    case KEY_RETURN:                            /* in the viewer: Edit */
+        return cmd_edit();
     case KEY_DELETE:
         return key_menu(FILEMENU, DELTITEM);
     case KEY_ESC:

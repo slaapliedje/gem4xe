@@ -150,6 +150,8 @@ SYSTEM = [
     ("g4bench.g4a", "G4BENCH.PRG"),
     ("gemarc.g4a", "GEMARC.PRG"),
     ("gemarc.rsc", "GEMARC.RSC"),
+    ("edit.g4a", "EDIT.PRG"),
+    ("edit.rsc", "EDIT.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
@@ -208,6 +210,12 @@ WHAT_IT_IS = {
                   "makes new ones -- the archives the Atari's ARC, SEA's "
                   "ARC and PKARC write.  Drop an .ARC on it to open it",
     "GEMARC.RSC": "its menus, alerts and words",
+    "EDIT.PRG": "a small text editor, for a CONFIG.SYS, a batch file or "
+                "a README: Show a document from the desktop and press "
+                "Return.  Atari files keep their $9B line ends and are "
+                "drawn in the Atari's own characters; ST and PC files "
+                "keep theirs.  Up to 32 KB",
+    "EDIT.RSC": "its menus, alerts and words",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "
                  "menu: the AES loads it once at start-up and it stays "

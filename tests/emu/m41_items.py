@@ -306,6 +306,19 @@ def main():
             check(lines == DOC_LINES and find_text(shot2, "SECOND LINE") is not None,
                   f"CR LF ends a line: the viewer counts {lines} line(s), "
                   f"wanted {DOC_LINES}, and draws SECOND LINE as its own row")
+            # Return in the viewer is Edit (docs/edit.md) -- and this disk
+            # has no EDIT.PRG, so it must do nothing: the viewer stays up
+            # with the file in it, and the desktop answers what follows.
+            cmd_id = b.peek16(near + dsyms["cmd_id"] - link_near)
+            b.key("RETURN")
+            b.frames(200)
+            t.settle()
+            shot3 = os.path.join(HERE, "..", "..", "build", "shots", "tour-m41-noedit.png")
+            b.screenshot(shot3)
+            check(cmd_id != 0
+                  and b.peek16(near + dsyms["cmd_id"] - link_near) == cmd_id
+                  and find_text(shot3, "SECOND LINE") is not None,
+                  "with no EDIT.PRG, Return in the viewer leaves it as it was")
     finally:
         emu.stop()
         shutil.rmtree(os.path.dirname(quiet), ignore_errors=True)

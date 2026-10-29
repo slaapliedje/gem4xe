@@ -124,7 +124,7 @@ guards is broken on purpose and the check must say so -- and where it
 can, a third view decides: the file on the disk image, the call the
 target actually made, the number the C's own sizes give.
 
-Calypsi cc65816 5.18.2 has **26 defects** this tree has met — mostly in code
+Calypsi cc65816 5.18.2 has **27 defects** this tree has met — mostly in code
 generation, plus two crashes in the compiler itself, a compile that never
 finishes, a refusal and a bad link — each reproduced in the vendor's own
 simulator and worked around at the source (or, for the divide flags, with

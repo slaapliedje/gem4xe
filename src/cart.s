@@ -54,8 +54,8 @@ CARTDMAX:     .equ    255             ; state now fills, and long enough for
                                       ; loaded here on an image with no system
 ;;; ...and the overlay's write, read back: 16-bit length and sum, and the
 ;;; step it reached (src/cartd.s; only with a DOS underneath).
-CARTWLEN:     .equ    0x06b0
-CARTWSUM:     .equ    0x06b2
+CARTWLEN:     .equ    0x06b4          ; after src/cartd.s's state, which ends
+CARTWSUM:     .equ    0x06b6          ; at $06B3 since it holds 32 entries
 ;;; Set by the D: handler's install: 1 if a DOS had booted first (src/cartd.s).
 CD_HASDOS:    .equ    0x060c
 ;;; ...and how far the load got, for the same reason: a machine that comes
@@ -159,7 +159,8 @@ LD_START:     .equ    0x0622          ; 16-bit: this segment's first address
 LD_LEN:       .equ    0x0624          ; 16-bit: and how many bytes it carries
 ;;; (Page 6 as a whole: $0600-$060C the flags above, $0610 the D: handler's
 ;;; fetch stub -- or the staging copier, on the image with no handler --
-;;; $0620 these, $0626-$06AA the handler's state, $06C0 the demo's listing.
+;;; $0620 these, $0626-$06B2 the handler's state, $06B4-$06B7 the overlay
+;;; write's test, $06C0 the demo's listing.
 ;;; src/cartd.s names its half.)
 
 ;;; The unpacker's pointers, in the floating-point package's FR0/FRE/FR1.

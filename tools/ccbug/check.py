@@ -79,6 +79,7 @@ LISTINGS = {
     "b16": ("B16 byte spin loop, rep before its back edge", "small"),
     "b19_ptrdiff": ("B19 pointer difference against a far array", "large"),
     "b21": ("B21 a join reached in two accumulator widths", "small"),
+    "b26_tinyfar": ("B26 direct-page far pointer, variable index", "large"),
 }
 # file stem: note -- the shapes the compiler NEVER FINISHES compiling.  The
 # only report a bug of this kind can make is the timeout that kills it, so
@@ -179,6 +180,13 @@ def far_ptrdiff_bug(listing):
         if m and not m.group(1).startswith((".word0", ".word2", "0", "$")):
             return True
     return False
+
+
+def tinyfar_bug(asm):
+    """True if the far pointer b26_p is dereferenced as `(.tiny b26_p),y`
+    -- a 16-bit pointer, the data bank's -- rather than `[.tiny b26_p],y`
+    (B26)."""
+    return any(re.search(r"\((?:\.tiny )?b26_p\),y", line) for line in open(asm))
 
 
 def loop_width_bug(listing):
@@ -339,6 +347,15 @@ def main():
                  "--assembly-source", asm,
                  os.path.join(ROOT, "tools", "ccbug", f"{tag}.c")])
             crashes[note] = bool(mscan.joins(asm))
+            continue
+        if tag == "b26_tinyfar":
+            # B26 is the addressing mode itself: `(.tiny p),y`, sixteen
+            # bits, through a pointer declared far
+            asm = os.path.join(a.out, f"{tag}.s")
+            run([cc, "--code-model=large", f"--data-model={model}", f"-O{a.O}",
+                 "--assembly-source", asm,
+                 os.path.join(ROOT, "tools", "ccbug", f"{tag}.c")])
+            crashes[note] = tinyfar_bug(asm)
             continue
         lst = os.path.join(a.out, f"{tag}.lst")
         run([cc, "--code-model=large", f"--data-model={model}", f"-O{a.O}",

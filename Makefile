@@ -734,7 +734,7 @@ build/cpanel.rsc build/cpanelrsc.h: tools/cpanelrsc.py tools/rsc.py tools/aesref
 # rather than round numbers, because an accessory is charged to the pool
 # for as long as the machine is on.
 build/appsld/%.o: src/apps/%.c src/app/gem.h build/calcrsc.h build/clockrsc.h \
-                  build/cpanelrsc.h build/gemarcrsc.h
+                  build/cpanelrsc.h build/gemarcrsc.h build/editrsc.h
 	@mkdir -p build/appsld
 	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
 
@@ -762,6 +762,10 @@ build/gemarc-test.atr: build/gem.xex build/gemarc.g4a build/gemarc.rsc build/lan
 	    --add build/gemarc.g4a DESKTOP.PRG --add build/gemarc.rsc GEMARC.RSC \
 	    --add build/lang.rsc LANG.RSC --add "$(SRC_GEMARC)" TEST.ARC
 
+test-edit: build/ed_host build/edit-test.atr build/desktop.sym
+	python3 tests/host/test_edit.py
+	python3 tests/emu/edit.py
+
 test-gemarc: build/gemarc-test.atr build/arc_host
 	python3 tests/host/test_gemarc.py
 	python3 tests/emu/gemarc.py
@@ -775,6 +779,22 @@ build/appsld/arccodec.o build/appsld/arcfile.o build/appsld/gemarc.o: \
 GEMARC_OBJS = $(G4A_LIB_LD) build/appsld/gemarc.o build/appsld/arcfile.o \
               build/appsld/arccodec.o
 $(eval $(call g4a,gemarc,$(GEMARC_OBJS),2560,256,2048,,,$(LIB_LD)))
+
+# EDIT (src/apps/edit.c, docs/edit.md): a small text editor, opened
+# from the desktop's Show with Return.  Large-data, so the text (40 KB)
+# and the Atari's glyphs are far; the text engine (edbuf.c) is portable C
+# that tests/host/test_edit.py runs on the host as well.
+build/edit.rsc build/editrsc.h: tools/editrsc.py tools/rsc.py tools/aesref.py VERSION
+	@mkdir -p build
+	python3 tools/editrsc.py build/edit.rsc build/editrsc.h
+
+build/ed_host: src/apps/edbuf.c src/apps/edbuf.h tests/host/ed_host.c
+	@mkdir -p build
+	gcc -O1 -Wall -Wextra -I src/apps -o $@ src/apps/edbuf.c tests/host/ed_host.c
+
+build/appsld/edbuf.o build/appsld/edit.o: src/apps/edbuf.h
+EDIT_OBJS = $(G4A_LIB_LD) build/appsld/edit.o build/appsld/edbuf.o
+$(eval $(call g4a,edit,$(EDIT_OBJS),2560,256,2048,,,$(LIB_LD)))
 
 # The calculator AS AN ACCESSORY: the same calc.o, the other main().
 # The ST shipped one, and it is what the Desk menu is FOR -- a thing you
@@ -1141,7 +1161,7 @@ APP_FILES = --mkdir APPS \
             --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
             --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
 APP_DEPS  = build/calc.g4a build/calc.rsc build/clock.g4a build/clock.rsc \
-            build/gemarc.g4a build/gemarc.rsc
+            build/gemarc.g4a build/gemarc.rsc build/edit.g4a build/edit.rsc
 # The gate accessory (src/m28_acc.c), in the system's own directory with
 # the extension the AES looks for there: an accessory is not in \APPS\
 # with the programs, because it is not one -- it is loaded once at
@@ -1497,6 +1517,15 @@ build/gem-shots.atr: $(SP_DEPS)
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) $(SP_LAYOUT) $(SP_APPS)
 
+# EDIT's gate disk (tests/emu/edit.py): the product SpartaDOS disk, as
+# test-m41 tours it (below SP_DEPS: a prerequisite list is expanded
+# where it is written), with EDIT in \APPS\; the gate adds the documents.
+build/edit-test.atr: $(SP_DEPS) build/edit.g4a build/edit.rsc
+	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) $(SP_LAYOUT) $(SP_APPS) \
+	    --add build/edit.g4a "APPS>EDIT.PRG" --add build/edit.rsc "APPS>EDIT.RSC"
+
 # The accessory slots' and windows' gate's disk (test-m45): the product
 # system and SEVEN copies of the window gate accessory, and nothing else
 # in \GEM\ that is an accessory -- six slots, so the seventh must be
@@ -1755,7 +1784,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-boot test-install g4bench test-sdx816 test-kmem test-vbxefeat
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-edit test-boot test-install g4bench test-sdx816 test-kmem test-vbxefeat
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2362,4 +2391,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-edit test-boot test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat vstress sd demo movie bench emu-stop clean

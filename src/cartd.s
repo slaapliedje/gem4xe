@@ -96,7 +96,7 @@ V_SPECIAL:    .equ    10
 ENT_BANK:     .equ    11
 ENT_PAGE:     .equ    12
 ENT_LEN:      .equ    13
-MAX_FILES:    .equ    24
+MAX_FILES:    .equ    32              ; tools/mkcar.py; four seen bytes
 
 ;;; Zero page: the FR0/FRE window, for src/farload.s's reason -- this runs
 ;;; with the OS's interrupts going and its handlers address zero page
@@ -127,24 +127,25 @@ cd_rem2:      .equ    0x0656
 cd_idx:       .equ    0x065e          ; the directory: which entry
 cd_pos:       .equ    0x0666          ; ...and where in its line
 cd_seen0:     .equ    0x066e          ; ROM entries the floppy also has,
-cd_seen1:     .equ    0x0676          ; a bit each: 0-7, 8-15, 16-23
+cd_seen1:     .equ    0x0676          ; a bit each: 0-7, 8-15, 16-23, 24-31
 cd_seen2:     .equ    0x067e
+cd_seen3:     .equ    0x0686
 ;;; one of each
-cd_want:      .equ    0x0686          ; 11: a name, in an entry's shape
-cd_digits:    .equ    0x0691          ; 3
-cd_nameat:    .equ    0x0694
-cd_dosl:      .equ    0x0695          ; the DOS's handler table, 0 = none
-cd_dosh:      .equ    0x0696
-cd_fvec:      .equ    0x0697          ; 2: where cd_fwd jumps
-cd_fa:        .equ    0x0699          ; A across a forward
-cd_acc:       .equ    0x069a          ; 11: a floppy line's name, as it passes
-cd_apos:      .equ    0x06a5          ; where in that line
-cd_c1:        .equ    0x06a6          ; its characters 1 and 13, which are
-cd_c13:       .equ    0x06a7          ; spaces on a file's line
-cd_bll:       .equ    0x06a8          ; ICBLL/ICBLH, kept while we read the
-cd_blh:       .equ    0x06a9          ; floppy's directory ourselves
-cd_ty:        .equ    0x06aa          ; a status, kept
-CD_STATE_END: .equ    0x06ab          ; must not reach $06C0
+cd_want:      .equ    0x068e          ; 11: a name, in an entry's shape
+cd_digits:    .equ    0x0699          ; 3
+cd_nameat:    .equ    0x069c
+cd_dosl:      .equ    0x069d          ; the DOS's handler table, 0 = none
+cd_dosh:      .equ    0x069e
+cd_fvec:      .equ    0x069f          ; 2: where cd_fwd jumps
+cd_fa:        .equ    0x06a1          ; A across a forward
+cd_acc:       .equ    0x06a2          ; 11: a floppy line's name, as it passes
+cd_apos:      .equ    0x06ad          ; where in that line
+cd_c1:        .equ    0x06ae          ; its characters 1 and 13, which are
+cd_c13:       .equ    0x06af          ; spaces on a file's line
+cd_bll:       .equ    0x06b0          ; ICBLL/ICBLH, kept while we read the
+cd_blh:       .equ    0x06b1          ; floppy's directory ourselves
+cd_ty:        .equ    0x06b2          ; a status, kept
+CD_STATE_END: .equ    0x06b3          ; must not reach $06B4 (src/cart.s)
 
 ;;; What an IOCB is doing.
 M_CLOSED:     .equ    0
@@ -489,6 +490,7 @@ cd_dirzero:   ldx     ZP_SLOT
               sta     cd_seen0,x
               sta     cd_seen1,x
               sta     cd_seen2,x
+              sta     cd_seen3,x
               rts
 
 ;;; ---------------------------------------------------------------------------
@@ -599,7 +601,8 @@ cd_isseen:    jsr     cd_bit          ; A: the bit if seen, 0 if not
               rts
 
 ;;; cd_bit -- A the bit, X the slot plus eight times the byte: so that
-;;; cd_seen0,x reaches cd_seen1 and cd_seen2, which follow it at eight.
+;;; cd_seen0,x reaches cd_seen1, cd_seen2 and cd_seen3, which follow it at
+;;; eight.
 cd_bit:       lda     ZP_IDX
               and     #7
               tax
@@ -612,7 +615,7 @@ cd_bit:       lda     ZP_IDX
               lda     ZP_IDX
               lsr     a
               lsr     a
-              lsr     a               ; 0, 1 or 2
+              lsr     a               ; 0 to 3
               asl     a
               asl     a
               asl     a               ; ...times eight

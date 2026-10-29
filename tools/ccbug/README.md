@@ -75,6 +75,7 @@ an optimiser fault, and saying which saves a vendor a bisect.
 | B16 | no | no | yes | |
 | B18 | no | yes | yes | the compiler never finishes; `--data-model=large` is clean at every level |
 | B19 | yes | yes | yes | the same instruction in both data models; a defect only where the symbol is far |
+| B26 | yes | yes | yes | small and large data models alike; the pointer is declared `__far` |
 
 `--no-inline` is a useful second axis: it clears B3 and B10, which is
 expected, and it must NOT clear anything else.  It was `--no-inline` that
@@ -143,6 +144,10 @@ What the sources do, in one line each. The reasons follow.
     or index (`s[n]`), or drop the cast. With the cast, the increment and
     the far read in one expression the compiler never finishes -- it is
     not a wrong answer but no answer, and `make` is what gets killed.
+18. **Never index a far pointer that lives in the direct page with a
+    variable.** Copy it into a local first (`char FAR *b = cmd_buf;
+    b[i] = c;`). A constant index is right; a variable one dereferences
+    the pointer as sixteen bits, in the data bank.
 
 ## B1 — stack-array element plus operand compiles to a load
 
@@ -1332,3 +1337,28 @@ Unlike the stack-slot form this one has no legitimate twin -- a saved
 register's first use being a read can only see the caller's value -- so
 `mscan --build` reports it (`unset_saved`, following the file's own
 `?Lnnn` fragments).  `mscan_b24d.s` is that listing.
+
+## B26 — a far pointer in the direct page, indexed by a variable, is used as a near one
+
+    char FAR * TINY cmd_buf;                      /* src/desk/deskcmd.c */
+    cmd_buf[CMD_PATH + n] = path[n];
+
+emits `tay ; sta (.tiny cmd_buf),y`: the 16-bit indirect mode, whose bank
+is the data bank register's, where the pointer is 24 bits and `sta
+[.tiny cmd_buf],y` was wanted.  The same file's constant-index store,
+`cmd_buf[CMD_PATH] = 0`, compiles to the long form and is right, and so
+does anything indexed through a local copy of the pointer -- which is why
+the viewer's older code (`cmd_title`, `cmd_textp`) never met it.  Reads
+are the same as writes.  Every `-O` level, both data models.
+`b26_tinyfar.c` is the reproducer; `make check-cc` reads its assembly.
+
+FOUND BY: EDIT (docs/edit.md).  The viewer keeps the shown file's path
+for Return to hand to EDIT.PRG; the gate pressed Return and nothing ran,
+and a memory dump of the far buffer had the title and the text and an
+empty path.  The thirteen bytes had gone to bank $00 at the pointer's
+low word plus 68 -- page 0.
+
+The shape to write instead: a local pointer (`cmd_path`,
+`src/desk/deskcmd.c`).  Only two far pointers live in the direct page:
+`cmd_buf`, fixed, and `r1_s` in `src/vdi/dev_vbxe.c`, which is only ever
+indexed by a constant (`r1_s[0]`, `r1_s[1]`).

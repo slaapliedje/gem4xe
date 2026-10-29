@@ -328,6 +328,7 @@ WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
                const char *args);   /* args: a .TTP's line, or "" */
 WORD fun_askline(char *line);           /* one line, in the PREFS dialog */
 void do_docu(WNODE *pw, const char FAR *name);   /* Show / Print / Cancel */
+WORD do_edit(const char *doc);           /* EDIT.PRG on doc, if there is one */
 void win_rebld(WNODE *pw);
 /* The listing entry an item object shows, or 0. */
 FNODE FAR *win_fnode(WNODE *pw, WORD obj);
@@ -339,6 +340,7 @@ void do_wfull(WORD wh);
 void cmd_init(void);                    /* greys the item on a DOS without */
 void cmd_run(const char *line);         /* run it, and show the output */
 WORD cmd_file(const char *path, const char *title);   /* show a document */
+WORD cmd_edit(void);                    /* Return in it: EDIT.PRG on the file */
 WORD cmd_print(const char *path);       /* ...or send it to PRN: */
 WORD cmd_msg(const WORD *msg);          /* TRUE: the message was its window's */
 void cmd_exit(void);

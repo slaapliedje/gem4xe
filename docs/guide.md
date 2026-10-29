@@ -156,8 +156,9 @@ the way the card has them: `GEM.COM`, `DESKTOP.PRG`, `DESKTOP.RSC`,
 `CLOCK.ACC`, `CLOCK.RSC`, `CONTROL.ACC`, `CPANEL.RSC`, `CALC.ACC`,
 `CALC.RSC`, `GENERAL.CPX`, `GENERAL.RSC`, `COLOR.CPX`, `COLOR.RSC` into
 `\GEM\`; `HELLO.PRG`, `CALC.PRG`, `CALC.RSC`, `CLOCK.PRG`, `CLOCK.RSC`,
-`G4BENCH.PRG`, `GEMARC.PRG`, `GEMARC.RSC`, `QED.PRG`, `QED.RSC`,
-`QED.TXT`, `QEDLGPL.TXT`, `QEDAPACH.TXT` into `\APPS\`.
+`G4BENCH.PRG`, `GEMARC.PRG`, `GEMARC.RSC`, `EDIT.PRG`, `EDIT.RSC`,
+`QED.PRG`, `QED.RSC`, `QED.TXT`, `QEDLGPL.TXT`, `QEDAPACH.TXT` into
+`\APPS\`.
 
 If what you have is a **loader that reads FAT** -- a SIDE3, an AVGCART
 -- or an SDrive-MAX, a FujiNet or a real drive, then a floppy is what
@@ -219,6 +220,8 @@ whatever name it is given:
 | `G4BENCH.PRG` | a benchmark: lines, boxes, circles, text, blits, dialogs, windows and a Mandelbrot, timed on this machine, shown in a window and written to G4BENCH.TXT beside it -- a number to compare with somebody else's machine |
 | `GEMARC.PRG` | ARC archives: lists one, takes its files out and makes new ones -- the archives the Atari's ARC, SEA's ARC and PKARC write.  Drop an .ARC on it to open it |
 | `GEMARC.RSC` | its menus, alerts and words |
+| `EDIT.PRG` | a small text editor, for a CONFIG.SYS, a batch file or a README: Show a document from the desktop and press Return.  Atari files keep their $9B line ends and are drawn in the Atari's own characters; ST and PC files keep theirs.  Up to 32 KB |
+| `EDIT.RSC` | its menus, alerts and words |
 | `CLOCK.ACC` | THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside GEM.COM, with CLOCK.RSC, and it appears in the Desk menu: the AES loads it once at start-up and it stays there, ticking, through every program the desktop runs. An accessory goes in the system's own directory, never in \APPS\ -- it is not something the desktop launches |
 | `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: the settings that belong to the machine rather than to a program, and a host for the extensions below.  Beside GEM.COM with CPANEL.RSC |
 | `CPANEL.RSC` | its panel and the list it shows the extensions in |
@@ -307,7 +310,10 @@ screen the desktop's icons are in **colour** (`DESKICON.RSC`, below).
 
 Beside the desktop: three **desk accessories** -- the Control Panel, a
 calculator and a clock -- and, in `\APPS\`, the calculator and clock as
-programs.  **QED**, a GEM text editor ported from the ST, is on the card
+programs.  **EDIT**, a small text editor, edits a document the desktop
+is showing when you press Return, in the Atari's own characters and with
+its line ends kept (`docs/edit.md`).  **QED**, a GEM text editor ported
+from the ST, is on the card
 and on its own disk (`gem-qed.atr`): it opens, edits and saves text,
 cuts and pastes, finds, and quits back to the desktop.
 
@@ -372,6 +378,8 @@ Besides those:
   *Show*, *Print* or *Cancel*, as the ST's does; Print sends the file to
   `PRN:` byte for byte, which is what you want for text and what any DOS
   would do.  That is the plain-character path and it needs no driver.
+  Return in Show's window edits the file, when `EDIT.PRG` is in `\APPS\`
+  on any drive (docs/edit.md).
 
   Separately, the VDI has a *graphics* printer device — 640 x 800 dots,
   which `v_updwk` writes out as PCL 5 or PostScript to wherever

@@ -73,7 +73,7 @@ CAR_SYS = os.path.abspath(os.path.join(ROOT, "build", "gem4xe-sys.car"))
 FLOPPY = os.path.abspath(os.path.join(ROOT, "build", "cart-floppy.atr"))
 FLOPPY_HELLO = os.path.join(ROOT, "tests", "fixtures", "out.txt")
 CD_HASDOS = 0x060C                          # src/cartd.s
-CARTWLEN, CARTWSUM = 0x06B0, 0x06B2         # src/cart.s cart_wtest
+CARTWLEN, CARTWSUM = 0x06B4, 0x06B6         # src/cart.s cart_wtest
 STEP_WRITTEN, STEP_READBACK = 20, 21
 # What cart_wtest writes, written down here from what it is for rather than
 # read out of the ROM: a line, EOL and all.

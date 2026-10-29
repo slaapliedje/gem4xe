@@ -40,7 +40,8 @@
 #include "desk.h"
 
 #define CMD_BUF     16384L              /* the far buffer: title, then text */
-#define CMD_TEXT    (LEN_ZCMD + 4)      /* where the text starts in it */
+#define CMD_PATH    (LEN_ZCMD + 4)      /* the file shown, "" for a command */
+#define CMD_TEXT    (CMD_PATH + LEN_ZPATH)  /* where the text starts in it */
 #define CMD_COLS    80                  /* a line is shown to this width */
 #define CMD_ROWS    12                  /* the window opens this many high */
 #define CMD_STYLE   (NAME | CLOSER | FULLER | MOVER | SIZER | \
@@ -345,6 +346,21 @@ static WORD cmd_show(const char *line)
     return TRUE;
 }
 
+/* The file shown, kept for Edit; "" for a command's output.  Through a
+ * pointer of its own: cmd_buf lives in the direct page, and a VARIABLE
+ * index through a far pointer there is compiled as `sta (dp),y` -- 16
+ * bits, the data bank's -- where a constant one is `sta [dp],y`
+ * (tools/ccbug B26).  The path went to bank $00. */
+static void cmd_path(const char *path)
+{
+    char FAR *b = cmd_buf + CMD_PATH;
+    WORD i;
+
+    for (i = 0; i < LEN_ZPATH - 1 && path[i]; i++)
+        b[i] = path[i];
+    b[i] = 0;
+}
+
 /* Whether the DOS has a command processor to hand a line to, asked once
  * at start: the item is greyed when it has not. */
 void cmd_init(void)
@@ -366,6 +382,7 @@ void cmd_run(const char *line)
         }
         cmd_buf = (char FAR *)a;
     }
+    cmd_path("");                               /* not a file: no Edit */
     desk_busy(TRUE);
     n = Psystem(line, cmd_buf + CMD_TEXT, CMD_BUF - CMD_TEXT);
     desk_busy(FALSE);
@@ -414,8 +431,33 @@ WORD cmd_file(const char *path, const char *title)
     if (n < 0)
         n = 0;
     cmd_len = (UWORD)n;
+    cmd_path(path);
     cmd_count();
     return cmd_show(title);
+}
+
+/* RETURN IN THE VIEWER edits what it shows: EDIT.PRG runs on the file
+ * (deskwin.c do_edit, docs/edit.md).  Only while the viewer is the top
+ * window and holds a file -- a command's output is nobody's to edit --
+ * and only where there is an EDIT.PRG; without one Return does nothing,
+ * which is what it did before.  TRUE when it ran. */
+WORD cmd_edit(void)
+{
+    char doc[LEN_ZPATH];
+    const char FAR *b;
+    WORD topw = 0, i, d;
+
+    if (!cmd_id)
+        return FALSE;
+    b = cmd_buf + CMD_PATH;                     /* a pointer of its own: B26 */
+    if (!b[0])
+        return FALSE;
+    wind_get(0, WF_TOP, &topw, &d, &d, &d);
+    if (topw != cmd_id)
+        return FALSE;
+    for (i = 0; i < LEN_ZPATH; i++)
+        doc[i] = b[i];
+    return do_edit(doc);
 }
 
 /* PRINT A FILE: GEMDOS handle 3 is PRN:, which every program gets open

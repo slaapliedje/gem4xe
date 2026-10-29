@@ -1496,6 +1496,31 @@ WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name)
     return run_prog(prog, dir, doc, pw, curr);
 }
 
+/* EDIT.PRG on a document, from the viewer (deskcmd.c cmd_edit): looked
+ * for in \APPS\ of the document's own drive first, then of every other
+ * drive the DOS has -- the applications floppy may be in any of them.
+ * FALSE when there is none. */
+WORD do_edit(const char *doc)
+{
+    char prog[] = "A:\\APPS\\EDIT.PRG";
+    UWORD map = (UWORD)Dsetdrv(Dgetdrv());
+    WORD d, first = (WORD)(doc[0] - 'A'), i;
+    LONG h;
+
+    for (i = -1; i < 16; i++) {
+        d = i < 0 ? first : i;
+        if ((i >= 0 && d == first) || d < 0 || d > 15 || !(map & (1U << d)))
+            continue;
+        prog[0] = (char)('A' + d);
+        h = Fopen(prog, 0);
+        if (h >= 0) {
+            Fclose((WORD)h);
+            return run_prog(prog, 8, doc, 0, 0);    /* "A:\APPS\" */
+        }
+    }
+    return FALSE;
+}
+
 /* Is this listing entry a program -- the extension says so? */
 WORD win_isprog(const FNODE FAR *pf)
 {

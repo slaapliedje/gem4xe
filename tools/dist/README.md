@@ -183,7 +183,10 @@ screen the desktop's icons are in **colour** (`DESKICON.RSC`, below).
 
 Beside the desktop: three **desk accessories** -- the Control Panel, a
 calculator and a clock -- and, in `\APPS\`, the calculator and clock as
-programs.  **QED**, a GEM text editor ported from the ST, is on the card
+programs.  **EDIT**, a small text editor, edits a document the desktop
+is showing when you press Return, in the Atari's own characters and with
+its line ends kept (`docs/edit.md`).  **QED**, a GEM text editor ported
+from the ST, is on the card
 and on its own disk (`gem-qed.atr`): it opens, edits and saves text,
 cuts and pastes, finds, and quits back to the desktop.
 
@@ -248,6 +251,8 @@ Besides those:
   *Show*, *Print* or *Cancel*, as the ST's does; Print sends the file to
   `PRN:` byte for byte, which is what you want for text and what any DOS
   would do.  That is the plain-character path and it needs no driver.
+  Return in Show's window edits the file, when `EDIT.PRG` is in `\APPS\`
+  on any drive (docs/edit.md).
 
   Separately, the VDI has a *graphics* printer device — 640 x 800 dots,
   which `v_updwk` writes out as PCL 5 or PostScript to wherever
