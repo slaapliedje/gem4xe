@@ -59,10 +59,10 @@ class TestFloppy(unittest.TestCase):
 
     def test_it_carries_no_dos(self):
         """The whole reason it can be given away: no boot file, and the
-        boot sectors are the blank disk's stub, not somebody's DOS."""
+        boot sectors are gem4xe's own message, not somebody's DOS."""
         self.assertEqual(self.fs.boot_file_map, 0)
-        self.assertEqual(self.img.read_sector(2)[:len(atr.Sdfs.BOOT1)],
-                         atr.Sdfs.BOOT1)
+        boot = self.img.read_sector(2) + self.img.read_sector(3)
+        self.assertIn(mkfloppy.NO_DOS[0].encode("ascii"), boot)
         names = {e.filename for e in self.fs.entries("")}
         self.assertFalse({n for n in names if n.endswith(".DOS")
                           or n.endswith(".SYS")}, names)

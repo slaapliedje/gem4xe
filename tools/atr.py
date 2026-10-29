@@ -851,6 +851,45 @@ class Sdfs:
              + bytes(22) + bytes([0x60]))                                   # +42.., +64 RTS
     BOOT1 = bytes([0xA9, 0x60, 0x8D, 0x40, 0x07, 0x38, 0x60])
 
+    def say_no_dos(self, lines):
+        """Boot sectors that SAY this disk has no DOS, in place of the blank
+        stub's silent failure -- which the OS answers with BOOT ERROR, over
+        and over, and an emulator that checks its SIO traffic reported as a
+        sector out of range.  `lines` (ASCII, each under 40 characters) go
+        to the screen editor through CIO, IOCB 0, which the OS has open
+        while it boots (its own BOOT ERROR comes that way), and the machine
+        then waits: the person changes the disk or the machine.
+
+        Only the three-boot-sector shape of a floppy.  Sector 1 keeps every
+        byte of the file system's and its boot header -- 3 sectors to $3000,
+        DOSINI $0740, JMP $3080 -- so a SpartaDOS X that mounts the disk sees
+        no difference; it never runs a disk's boot sectors.  The code is in
+        sector 2, at $3080, and the text after it, into sector 3."""
+        if self.img.sector_len(1) != 128 or self._superblock()[1] != 3:
+            raise ATRError("say_no_dos: not a floppy's three boot sectors")
+        text = b"\x9b" + b"".join(ln.encode("ascii") + b"\x9b" for ln in lines)
+        at = 0x3080
+        code = bytearray([
+            0xA9, 0x60, 0x8D, 0x40, 0x07,   # LDA #$60 / STA $0740: DOSINI an RTS
+            0xA2, 0x00,                     # LDX #0: IOCB 0, E:
+            0xA9, 0x0B, 0x9D, 0x42, 0x03,   # ICCOM: put characters
+            0xA9, 0x00, 0x9D, 0x44, 0x03,   # ICBAL (patched below)
+            0xA9, 0x00, 0x9D, 0x45, 0x03,   # ICBAH
+            0xA9, 0x00, 0x9D, 0x48, 0x03,   # ICBLL
+            0xA9, 0x00, 0x9D, 0x49, 0x03,   # ICBLH
+            0x20, 0x56, 0xE4,               # JSR CIOV
+            0x4C, 0x00, 0x00])              # JMP * : wait for a new disk
+        msg = at + len(code)
+        code[13], code[18] = msg & 0xFF, msg >> 8
+        code[23], code[28] = len(text) & 0xFF, len(text) >> 8
+        here = at + len(code) - 3
+        code[-2], code[-1] = here & 0xFF, here >> 8
+        body = bytes(code) + text
+        if len(body) > 256:
+            raise ATRError(f"say_no_dos: {len(body)} bytes, two sectors hold 256")
+        self.img.write_sector(2, body[:128])
+        self.img.write_sector(3, body[128:])
+
     @classmethod
     def format(cls, img, volname="GEM4XE"):
         """Lay a blank SDFS on `img`, the way Altirra's disk explorer does

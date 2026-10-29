@@ -627,6 +627,36 @@ def apps_disk(check):
     print(f"  {', '.join(sorted(on_disk | root))}")
 
 
+def no_dos(check):
+    """gem-sdx.atr booted the way a machine WITHOUT SpartaDOS X boots it --
+    an emulator's default, or the wrong disk in the drive: it must say it
+    has no DOS and what to boot instead (tools/mkfloppy.py NO_DOS), where
+    it used to fail with BOOT ERROR over and over.  Reported from
+    AltirraSDL as a sector error at the bootloader."""
+    import mkfloppy
+    from m14_sparta import screen
+    name = "gem-sdx.atr"
+    emu = launch(tag="nodos", memsize="1088K",
+                 extra_args=["--disk", os.path.join(BUILD, name)])
+    b = emu.bridge
+    try:
+        b.ok("COLD_RESET")
+        lines = []
+        for _ in range(20):
+            b.frames(100)
+            lines = screen(b)
+            if any(mkfloppy.NO_DOS[-1] in ln for ln in lines):
+                break
+    finally:
+        emu.stop()
+    shown = [ln.strip() for ln in lines]
+    print(f"{name} with no SpartaDOS X: {[ln for ln in shown if ln]}")
+    check(all(want in shown for want in mkfloppy.NO_DOS),
+          f"{name} booted with no SpartaDOS X does not say it has no DOS")
+    check(not any("BOOT ERROR" in ln for ln in shown),
+          f"{name} booted with no SpartaDOS X still says BOOT ERROR")
+
+
 def main(argv):
     keep = "--shot" in argv
     only = [a for a in argv if not a.startswith("--")]
@@ -649,6 +679,8 @@ def main(argv):
             keep, check)
     if not only or any("apps" in o for o in only):
         apps_disk(check)
+    if not only or any("sdx" in o for o in only):
+        no_dos(check)
     print(f"{'FAIL' if fails else 'PASS'}: the product disks boot into the "
           f"desktop with nothing typed -- the loader switches the CPU "
           f"itself, {len(fails)} problem(s)")

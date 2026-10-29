@@ -57,6 +57,15 @@ SECTOR = 256
 SECTORS = 1440                                   # DSDD, as an XF551 writes
 
 
+# What these disks say when the machine boots them with no SpartaDOS X:
+# they carry no DOS, and the blank stub's answer to that was BOOT ERROR
+# repeated, which told a tester in AltirraSDL nothing (atr.py say_no_dos).
+NO_DOS = ["gem4xe: this disk has no DOS on it.",
+          "Boot it with SpartaDOS X in the",   # the editor shows 38 columns
+          "machine (a cartridge, or U1MB flash),",
+          "or boot gem-boot.atr: GEM on DOS 2."]
+
+
 def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
           dirs=("GEM",), volname="GEM4XE", sectors=SECTORS):
     """The system floppy by default; build_apps() for the other."""
@@ -72,6 +81,7 @@ def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
             data = f.read()
         fs.add_file(name, data)
         print(f"{out}: {name} <- {path} ({len(data)} bytes)")
+    fs.say_no_dos(NO_DOS)
     if boot:
         fs.add_file("AUTOEXEC.BAT", mkcf.batch(boot))
     if install:

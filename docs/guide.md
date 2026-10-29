@@ -183,7 +183,7 @@ Two things to know.  **Reading 165 KB out of the ROM through CIO takes about twe
 
 ### `disks/gem-sdx.atr`
 
-A double-sided double-density SDFS floppy, 360 KB, with **no DOS on it**: the system -- the card's `\GEM\`, without the desk accessory -- an `AUTOEXEC.BAT` that changes into `\GEM\` and runs GEM, and `INSTALL.BAT`.  It boots under **SpartaDOS X** -- from a cartridge or from Ultimate 1MB flash -- which is the one DOS that lives in the machine rather than on the disk, and that is why this floppy can be given away where the other two cannot.  Put it in D1: and turn the machine on.  Its other half is `disks/gem-apps.atr`.
+A double-sided double-density SDFS floppy, 360 KB, with **no DOS on it**: the system -- the card's `\GEM\`, without the desk accessory -- an `AUTOEXEC.BAT` that changes into `\GEM\` and runs GEM, and `INSTALL.BAT`.  It boots under **SpartaDOS X** -- from a cartridge or from Ultimate 1MB flash -- which is the one DOS that lives in the machine rather than on the disk, and that is why this floppy can be given away where the other two cannot.  Put it in D1: and turn the machine on.  Its other half is `disks/gem-apps.atr`.  Booted without SpartaDOS X -- an emulator's default setup -- it says so and names `gem-boot.atr`, the disk that boots anywhere.
 
 ### `disks/gem-apps.atr`
 

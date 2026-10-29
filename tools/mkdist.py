@@ -104,7 +104,9 @@ DISKS = [
      "cartridge or from Ultimate 1MB flash -- which is the one DOS that "
      "lives in the machine rather than on the disk, and that is why this "
      "floppy can be given away where the other two cannot.  Put it in D1: "
-     "and turn the machine on.  Its other half is `disks/gem-apps.atr`."),
+     "and turn the machine on.  Its other half is `disks/gem-apps.atr`.  "
+     "Booted without SpartaDOS X -- an emulator's default setup -- it "
+     "says so and names `gem-boot.atr`, the disk that boots anywhere."),
     ("gem-apps.atr", "disks/gem-apps.atr", "sdfs",
      "The applications: the calculator, the clock and a hello-world "
      "program in `\\APPS\\`, and the clock desk accessory in `\\GEM\\`, on "
