@@ -73,6 +73,7 @@ int main(void)
         case 8: far_owner = (uint8_t)a; break;
         case 9: r = far_largest((uint16_t)a); break;
         case 10: r = far_alloc_top(a); break;
+        case 11: r = far_claim(a, b); break;
         }
         fm_out[k] = r;
         if (!fm_bad && !table_ok())

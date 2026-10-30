@@ -99,6 +99,20 @@ class Heap:
             return self._insert(i, a, n)
         return 0
 
+    def claim(self, at, n):
+        """far_claim: exactly at..at+n, or 0 if any of it is not free."""
+        if n == 0:
+            return 0
+        end = at + n
+        at &= ~3
+        for i in range(len(self.blocks) + 1):
+            if self.gap_hi(i) <= at:
+                continue
+            if self.gap_lo(i) > at or end > self.gap_hi(i):
+                return 0
+            return self._insert(i, at, end - at)
+        return 0
+
     def alloc_page(self, n, limit):
         return self._take(n, 2, limit)
 

@@ -700,6 +700,28 @@ CLOCK_OBJS = $(G4A_LIB) build/apps/clock.o build/apps/clockapp.o
 $(eval $(call g4a,calc,$(CALC_OBJS),1536,256,512,,))
 $(eval $(call g4a,clock,$(CLOCK_OBJS),1536,256,512,,))
 
+# Spectre GS (src/spectre, docs/spectre.md): Apple IIGS Toolbox programs
+# run on gem4xe.  An ordinary program -- the IIGS program's bank $00 (its
+# 4 KB direct page and stack, QuickDraw II's three pages) is an arena in
+# its own near bss, so gem4xe sees one program whose stack is its own.
+# It draws with gem4xe's 8x8 font, linked in far.
+build/spectre/%.o: src/spectre/%.c src/spectre/sg.h src/app/gem.h
+	@mkdir -p build/spectre
+	$(CC) $(CFLAGS) -I src/app -o $@ $<
+
+build/spectre/%.o: src/spectre/%.s
+	@mkdir -p build/spectre
+	$(AS) -o $@ $<
+
+build/spectre/font8x8.o: src/vdi/font8x8.c
+	@mkdir -p build/spectre
+	$(CC) $(CFLAGS) -o $@ $<
+
+SPECTRE_OBJS = $(G4A_LIB) build/spectre/spectre.o build/spectre/sgtools.o \
+               build/spectre/sgqd.o build/spectre/sgomf.o build/spectre/sgabi.o \
+               build/spectre/font8x8.o
+$(eval $(call g4a,spectre,$(SPECTRE_OBJS),8960,512,1024,,))
+
 # G4BENCH (src/apps/g4bench.c, docs/roadmap-0.9.md): no resource, a
 # window, and a memory form of up to 1 KB for its blit test -- which a
 # form must have in bank $$00, so it is near bss here.
@@ -1800,7 +1822,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-edit test-boot test-fdos test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-edit test-boot test-fdos test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-sg1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2170,6 +2192,26 @@ build/m47-boot.atr: build/gem.xex build/m47_parent.g4a build/m47_child.g4a build
 test-m47: build/m47-boot.atr build/m47_parent.sym
 	python3 tests/emu/m47_stack.py
 
+# Spectre GS's first gate (docs/spectre.md): an Apple IIGS Toolbox program,
+# built from tests/iigs/sghello.c with ORCA/C, run by SPECTRE.PRG on gem4xe
+# and by Apple's own Toolbox on MAME's apple2gs, the two screens compared.
+# HELLO.S16 carries ORCA/C's runtime, so it is built here (tools/orca.sh)
+# and never committed; no Golden Gate, no MAME or no apple2gs ROM set is a
+# SKIP, which the gate says.
+build/iigs/HELLO.S16: tests/iigs/sghello.c tools/orca.sh
+	@mkdir -p build/iigs
+	tools/orca.sh $< $@ || { test $$? = 2 && rm -f $@ && echo "no ORCA/C: test-sg1 will skip"; }
+
+build/sg1-boot.atr: build/gem.xex build/spectre.g4a build/iigs/HELLO.S16 build/lang.rsc build/816.com
+	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
+	    --add build/spectre.g4a DESKTOP.PRG --add build/iigs/HELLO.S16 HELLO.S16 \
+	    --add build/lang.rsc LANG.RSC --add build/816.com 816.COM
+
+test-sg1: build/sg1-boot.atr build/spectre.sym build/iigs/HELLO.S16
+	python3 tests/emu/sg1_hello.py
+
 test-m22: build/m22-boot.atr build/calc.sym build/clock.sym
 	python3 tests/emu/m22_apps.py
 
@@ -2418,4 +2460,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-edit test-boot test-fdos test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-gemarc test-edit test-boot test-fdos test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-sg1 vstress sd demo movie bench emu-stop clean

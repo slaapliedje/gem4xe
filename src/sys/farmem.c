@@ -593,6 +593,32 @@ uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
     return take(bytes, 2, limit);
 }
 
+/* Exactly at..at+bytes, or 0 if any of it is taken or outside the heap:
+ * for memory a foreign program finds by ADDRESS, not by asking -- an Apple
+ * IIGS program calls the Toolbox at $E1:0000 and draws at $E1:2000
+ * (Spectre GS, Mclaim in src/sys/gemdos.c).  `at` is rounded down and the
+ * end up to 4, as every block's are. */
+uint32_t far_claim(uint32_t at, uint32_t bytes)
+{
+    uint16_t i;
+    uint32_t end;
+
+    if (!far_table || bytes == 0)
+        return 0;
+    end = at + bytes;
+    at &= ~3UL;
+    if (end < at)
+        return 0;
+    for (i = 0; i <= far_blocks; i++) {
+        if (gap_hi(i) <= at)
+            continue;
+        if (gap_lo(i) > at || end > gap_hi(i))
+            return 0;
+        return fb_insert(i, at, end - at);
+    }
+    return 0;
+}
+
 /* ...and at the TOP of the highest gap it fits, which may cross banks:
  * for a block that lives only a moment -- the span a squeezed program is
  * unpacked into (src/sys/app.c, phase 94) -- so that what is placed while

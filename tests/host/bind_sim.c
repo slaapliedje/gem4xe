@@ -332,6 +332,7 @@ int main(void)
     Tgettimeofday(&tv, 0);
     Psystem(path, 0, 0L);
     Dprobe();
+    Mclaim(0xE10000L, 0xA000L);
     Tsettime(0);
     Fgetdta();
     Sversion();

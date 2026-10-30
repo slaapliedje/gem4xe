@@ -32,7 +32,7 @@ import check as ccbug                      # noqa: E402  (the simulator driver)
 import farref                              # noqa: E402
 
 FIRST, LAST = 2, 9                         # eight banks
-ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP = range(1, 11)
+ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP, CLAIM = range(1, 12)
 
 # (op, a, b); a FREE or SHRINK's `a` is the index of an earlier step
 SCRIPT = [
@@ -77,6 +77,15 @@ SCRIPT = [
     (FREE, 34, 0),              # 38
     (FREE, 23, 0),              # 39 $06 and $07 free together
     (TOP, 0x18000, 0),          # 40 across the bank: $068000
+    (FREE, 40, 0),              # 41 banks $06-$07 free again
+    (CLAIM, 0x06A000, 0x8000),  # 42 exactly there: $06A000-$071FFF
+    (CLAIM, 0x06C000, 0x100),   # 43 inside the last: refused
+    (CLAIM, 0x069F00, 0x200),   # 44 runs into it: refused
+    (CLAIM, 0x069F00, 0x100),   # 45 ends where it starts: fits
+    (CLAIM, 0x0B0000, 0x100),   # 46 above the heap: refused
+    (CLAIM, 0x07BFFE, 0x4),     # 47 rounded down: $07BFFC
+    (FREE, 42, 0),              # 48
+    (ALLOC, 0x3000, 0),         # 49 still the lowest gap first
 ]
 
 
@@ -105,6 +114,8 @@ def model():
             r = h.largest(a)
         elif op == TOP:
             r = h.alloc_top(a)
+        elif op == CLAIM:
+            r = h.claim(a, b)
         out.append(r)
     return out
 
@@ -168,6 +179,11 @@ class TestFarAlloc(unittest.TestCase):
         self.assertEqual(w[13], w[10], "a freed hole is used again")
         self.assertEqual(w[21], 0, "more banks than there are: refused")
         self.assertIn(0, w[23:30], "the heap does run out")
+        self.assertEqual(w[42], 0x06A000, "a claim lands exactly where asked")
+        self.assertEqual((w[43], w[44], w[46]), (0, 0, 0),
+                         "a claim over a block, or past the heap, is refused")
+        self.assertEqual(w[45], 0x069F00, "a claim may end where a block starts")
+        self.assertEqual(w[47], 0x07BFFC, "a claim's start rounds down to 4")
 
 
 if __name__ == "__main__":

@@ -1220,6 +1220,13 @@ LONG Psystem(const char FAR *line, void FAR *out, LONG max);
  * person who asked (the desktop's Install devices).  EINVFN before 0.13. */
 LONG Dprobe(void);
 
+/* gem4xe's own (0x1F2): the `len` bytes at `addr` exactly, from the far
+ * heap, the program's until it ends -- `addr` back (rounded down to 4), or
+ * ENSMEM if any of it is not free heap.  For memory a program must find at
+ * a fixed address; Spectre GS takes bank $E1 with it.  EINVFN on 0.13 and
+ * earlier. */
+LONG Mclaim(LONG addr, LONG len);
+
 /* The C functions, through the ST's standard handles: 0 and 1 the
  * console, a VT-52 on GEM's screen; 2 aux:, with nothing behind it here;
  * 3 prn:, the printer GEM4XE.CFG names.  Fforce points one at a file or

@@ -2052,6 +2052,11 @@ static LONG gd_nopath(WORD fn)
     case GD_DPROBE:
         r = gd_dprobe();
         break;
+    case GD_MCLAIM:
+        r = (LONG)far_claim((uint32_t)arg_l(6), (uint32_t)arg_l(10));
+        if (!r)
+            r = GD_ENSMEM;
+        break;
     case GD_PSYSTEM:                    /* the DOS's command processor: it
                                          * is lent the pool above its cursor,
                                          * so nothing of ours is taken first */

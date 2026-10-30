@@ -110,6 +110,12 @@
  * the map Dsetdrv returns from then on (gemdos.c gd_dprobe).  Dprobe in
  * src/app/gem.h. */
 #define GD_DPROBE    0x1F1
+/* ...and memory at a fixed address: the far heap's own blocks, the
+ * caller's from now on and freed when it ends (farmem.c far_claim).  For a
+ * program that must have a range where a foreign machine put it -- Spectre
+ * GS takes bank $E1 for the Apple IIGS Toolbox's entry and screen.  Mclaim
+ * in src/app/gem.h. */
+#define GD_MCLAIM    0x1F2
 #define GD_FGETDTA   0x2F
 #define GD_SVERSION  0x30
 #define GD_PTERMRES  0x31

@@ -1662,6 +1662,13 @@ LONG Dprobe(void)
     return dos(0x1F1);
 }
 
+LONG Mclaim(LONG addr, LONG len)
+{
+    dl(6, addr);
+    dl(10, len);
+    return dos(0x1F2);
+}
+
 LONG Psystem(const char FAR *line, void FAR *out, LONG max)
 {
     dl(6, (LONG)(uint32_t)line);
