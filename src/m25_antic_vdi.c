@@ -17,6 +17,7 @@
 #include "vdi/font.h"
 #include "vdi/vdidev.h"    /* which device this program is about */
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"
 
 #define STATUS ((volatile unsigned char *) 0x0600)
 

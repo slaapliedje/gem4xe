@@ -12,7 +12,7 @@
 #include "../vdi/vdi.h"
 #include "../vbxe/vbxe.h"   /* VB_WIDE_*: the width index SCREENW keeps */
 #include "../vdi/pointer.h"
-#include "farmem.h"         /* HIGHRAM= goes straight into its limits */
+#include "hiprobe.h"         /* HIGHRAM= goes straight into its limits */
 
 /* SCREENW's default is NAMED and not left to the zero the rest of the
  * struct starts as: VB_WIDE_NARROW is 0, so an unset SCREENW would have

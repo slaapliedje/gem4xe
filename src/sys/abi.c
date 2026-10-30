@@ -52,6 +52,7 @@
 #include "sys/cio.h"
 #include "sys/gemdos.h"
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"
 #include "sys/app.h"
 #include "sys/zwin.h"
 

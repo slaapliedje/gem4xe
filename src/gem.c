@@ -48,6 +48,7 @@
 #include "aes/aes.h"
 #include "aes/proc.h"
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"
 #include "sys/rapidus.h"
 #include "sys/abi.h"
 #include "sys/irq.h"

@@ -365,18 +365,13 @@ void rs_fixit(uint32_t base)
  * ICONBLK's cannot be asked for that way -- the application is given the
  * ICONBLK and reads the wide field itself.
  *
- * THE FAR BYTES COME BACK AT rs_free WHEN THEY ARE THE TOP OF THE HEAP.
- * The far heap is a bump allocator (src/sys/farmem.h), so a block can be
- * given back only while nothing has been taken above it -- which is the
- * common case, a resource loaded, used and freed with no Malloc between.
- * Then rs_free winds the heap back to where it stood before the load
- * (the mark BEFORE far_alloc, since far_alloc may have skipped to a bank
- * boundary), and a dialog resource loaded and freed per use costs
- * nothing that lasts.  When something IS above it the block stays, and
- * app_free reclaims it with the rest of the program's far memory: with
- * 14 MB that is a note rather than a leak.  The reclaim records are PER
- * SLOT -- a nested resource freed first must not take the outer one's
- * with it -- while rs_imbase/rs_cibase answer for the last load placed. */
+ * THE FAR BYTES COME BACK AT rs_free, wherever they are: the far heap
+ * frees any block, not only its top (src/sys/farmem.c, phase 79; it was a
+ * bump allocator before, and could give a block back only while nothing
+ * lay above it).  So a dialog resource loaded and freed per use costs
+ * nothing that lasts.  The records are PER SLOT -- a nested resource
+ * freed first must not take the outer one's with it -- while
+ * rs_imbase/rs_cibase answer for the last load placed (rs_farback). */
 typedef struct {
     uint32_t base;              /* the block, 0 if none */
 } FARBLK;

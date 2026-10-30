@@ -24,6 +24,7 @@
 #include "sys/irq.h"
 #include "sys/rapidus.h"
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"
 #include "sys/dos.h"
 #include "sys/config.h"
 #include "sys/clock.h"

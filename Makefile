@@ -74,7 +74,7 @@ M2_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 # out of abi.s for the way a context enters its program, and the runner's
 # own stubs for the engine that is deliberately not linked.
 M27_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m27_ctx.o \
-             build/ctx.o build/ctxs.o build/farmem.o build/abis.o build/seis.o
+             build/ctx.o build/ctxs.o build/farmem.o build/hiprobe.o build/abis.o build/seis.o
 # The ANTIC surface milestone: no VBXE object at all, which is the point
 M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m24_antic.o build/antic.o build/font8x8.o
 # The VDI on the ANTIC device: the same vdi.c, compiled for the other
@@ -82,7 +82,7 @@ M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/clib.o build/m25_antic_vdi.o \
              build/vdi.o build/dev_antic.o build/dev_print.o build/emit.o build/antic.o build/pointer.o \
              build/font8x8.o build/font6x6.o build/fillpat.o build/sintbl.o build/font.o \
-             build/farmem.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
+             build/farmem.o build/hiprobe.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
              build/cio.o build/cios.o build/dos.o build/m25_stub.o \
              build/graf.o build/objc.o build/grlib.o build/event.o \
              build/proc.o build/appl.o build/ctx.o build/ctxs.o \
@@ -96,14 +96,14 @@ M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o buil
 M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/clib.o build/m30_print.o \
              build/vdi.o build/dev_print.o build/emit.o build/pointer.o \
              build/font8x8.o build/fillpat.o build/sintbl.o build/font.o \
-             build/farmem.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
+             build/farmem.o build/hiprobe.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
              build/cio.o build/cios.o build/dos.o build/m25_stub.o \
              build/graf.o build/objc.o build/grlib.o build/event.o \
              build/proc.o build/appl.o build/ctx.o build/ctxs.o \
              build/wind.o build/ctrl.o build/menu.o build/form.o \
              build/alert.o build/gemdata.o build/lang.o build/lang_rsc.o \
              build/rsrc.o build/apppool.o
-M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/nibs.o build/g4z.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
+M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/nibs.o build/g4z.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/hiprobe.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
 
 # GEM.COM, the product (src/gem.c): the runner's objects with the runner
 # itself and its compiled-in test application taken out, linked on the
@@ -302,6 +302,10 @@ build/clib.o: src/sys/clib.c
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
 build/farmem.o: src/sys/farmem.c src/sys/farmem.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src -o $@ $<
+
+build/hiprobe.o: src/sys/hiprobe.c src/sys/hiprobe.h src/sys/farmem.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 

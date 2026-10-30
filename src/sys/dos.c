@@ -13,6 +13,7 @@
 #include "cio.h"
 #include "app.h"
 #include "farmem.h"
+#include "hiprobe.h"
 #include "gemdos.h"
 #include "vbxe/vbxe.h"
 

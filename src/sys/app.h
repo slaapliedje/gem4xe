@@ -9,10 +9,10 @@
  * the far heap, copies, patches, and records where everything went.
  * app_exec() calls the application's entry as a far subroutine
  * (src/sys/abi.s) and returns what its main() returned.  app_free() gives
- * both regions back: the pool and the far heap are bump allocators, so an
- * application is released by winding them back to where they were --
- * which is also why applications are released in the reverse order of
- * their loading, or all together.
+ * both regions back.  The pool is a bump allocator, wound back to where it
+ * was -- which is why applications are released in the reverse order of
+ * their loading, or all together.  The far heap frees by owner, in any
+ * order (src/sys/farmem.c, since phase 79).
  *
  * The pool is also the AES's own bank-$00 allocator, for what it must
  * address near and cannot give a static home in a 7.9 KB bank $00: a

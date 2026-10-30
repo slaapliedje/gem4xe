@@ -7,9 +7,9 @@
  * parks its state in between programs -- is nothing the AES reads itself;
  * it is memory it lends the applications, across their lifetimes.  So it
  * lives in far memory, taken from the far allocator ONCE, at AES start-up
- * and before any application is loaded: far_alloc is a bump allocator that
- * app_free winds back to where app_load found it, and anything taken
- * after an application would go with it.  The environment is the one
+ * and as the system's (owner 0), which no program's exit frees.  (It was
+ * a bump allocator then, wound back by app_free, which is why this is
+ * done before any application is loaded.)  The environment is the one
  * exception, a constant in bank $00, because shel_envrn hands out a
  * pointer INTO it and an application's pointers are 16 bits.
  *
@@ -274,9 +274,11 @@ WORD sh_find(char *pspec)
  * first program, and never freed.  Both halves of that sentence are
  * load-bearing.
  *
- * BEFORE THE FIRST PROGRAM, because both allocators are bump allocators
- * that app_free winds back to where app_load found them (src/sys/app.h:
- * "applications are released in the reverse order of their loading").
+ * BEFORE THE FIRST PROGRAM, because bank $00's application pool is a bump
+ * allocator that app_free winds back to where app_load found it
+ * (src/sys/app.h: "applications are released in the reverse order of their
+ * loading").  The far heap frees by owner and would not mind; the pool
+ * does (docs/memory-plan.md, step 2).
  * An accessory taken BEFORE the desktop is below the desktop's mark, so
  * every return to the desktop leaves it standing; one taken after would
  * be freed underneath itself the first time a program exited.  The same
@@ -543,7 +545,9 @@ static void sh_auto(void)
  * and this is before the keep mark so keeping it costs nothing extra.
  *
  * WHY NOT ON DEMAND, which is what a control panel would rather do.
- * Both allocators are bump allocators.  Memory taken while the desktop
+ * Bank $00's application pool is a bump allocator (the far heap is not,
+ * since phase 79, and step 2 of docs/memory-plan.md takes the pool the
+ * same way).  Pool memory taken while the desktop
  * is up sits ABOVE the desktop's own mark, and app_free winds back to
  * that mark the moment the desktop exits to run a program -- so a module
  * the panel loaded when you opened it would be freed out from under it

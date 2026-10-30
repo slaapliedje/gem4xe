@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include "sys/ctx.h"
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"
 
 #define STATUS ((volatile unsigned char *) 0x0600)
 

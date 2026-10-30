@@ -25,6 +25,7 @@
 #include "vdi/vdidev.h"
 #include "vdi/print.h"
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"
 #include "sys/dos.h"
 #include "sys/irq.h"
 #include "sys/rapidus.h"
