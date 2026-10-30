@@ -1,6 +1,7 @@
 # Memory: what GS/OS teaches gem4xe
 
-A plan, being built: step 1 is done ([phase116.md](phase116.md)).  The Apple IIGS runs the same CPU on the same kind
+A plan, being built: steps 1 and 2 are done ([phase116.md](phase116.md),
+[phase117.md](phase117.md)).  The Apple IIGS runs the same CPU on the same kind
 of memory -- one scarce bank $00, many plentiful banks above -- and its
 Memory Manager (*Apple IIGS Toolbox Reference*, volume 1 chapter 12, volume
 3 chapter 36; *GS/OS Reference*, chapters 2 and 8) solved the problems
@@ -72,11 +73,19 @@ stale bump-heap comments corrected.  Nothing changes behaviour.
 ### 2. Bank $00 as blocks, freed in any order
 
 The pool becomes a small block allocator of its own, on GS/OS's bank $00
-rules: page-granular, every block owned, freed by owner in any order.
-Permanent blocks -- the system's, the accessories' -- are placed from the
-**bottom**, a program's from the **top**, GS/OS's "fixed low, movable
-high", so a program's exit leaves no island.  The mark and the "load
-before the first program" rule go.
+rules: every block owned, freed by owner in any order.
+
+**Done** in [phase117.md](phase117.md), with two changes from this plan,
+both from reading the pool's nineteen callers.  Thirteen give back in the
+call they took in, which is a stack, so those keep a top-of-pool request
+and a mark (`pool_alloc`, `pool_release`), and only the lifetimes take
+from holes (`pool_take`).  And blocks are not page-granular: most are
+small, and a page each would cost about 128 bytes a block in a 14 KB
+pool; a program's near region is page-aligned, as it was.  Nor are a
+program's blocks placed from the top: the DOS command is lent the
+memory from the pool's top to MEMTOP (`src/sys/dos.c`), and a desktop at
+the top would leave it none.  A program goes in the lowest gap it fits,
+so a freed program's hole is the next one's.
 
 What it makes possible, each a step of its own after:
 

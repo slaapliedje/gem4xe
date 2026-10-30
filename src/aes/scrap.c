@@ -15,9 +15,8 @@
  *
  * It lives in far memory for the same reason shel.c's buffers do: it is
  * state the AES holds on the applications' behalf, across their
- * lifetimes, and far_alloc is a bump allocator that app_free winds back
- * to where app_load found it.  So it is taken ONCE, at start-up, before
- * any application is loaded -- anything taken after one would go with it.
+ * lifetimes.  So it is taken ONCE, at start-up, as the system's (owner 0),
+ * which no program's exit frees (src/sys/farmem.c).
  */
 #include "portab.h"
 #include <string.h>

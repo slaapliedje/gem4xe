@@ -9,43 +9,16 @@
  * the far heap, copies, patches, and records where everything went.
  * app_exec() calls the application's entry as a far subroutine
  * (src/sys/abi.s) and returns what its main() returned.  app_free() gives
- * both regions back.  The pool is a bump allocator, wound back to where it
- * was -- which is why applications are released in the reverse order of
- * their loading, or all together.  The far heap frees by owner, in any
- * order (src/sys/farmem.c, since phase 79).
- *
- * The pool is also the AES's own bank-$00 allocator, for what it must
- * address near and cannot give a static home in a 7.9 KB bank $00: a
- * resource file's objects (src/aes/rsrc.c), the file selector's tree and
- * its work while it is up (src/aes/fsel.c).  Same bump discipline:
- * pool_mark(), take, pool_release() to the mark.
- *
- * WHY A BUMP ALLOCATOR AND NOT A HEAP, since the question is a fair one.
- * Of the nineteen places that take from the pool, thirteen release in the
- * same call they took in -- GEMDOS's slices and directory cache, the
- * selector's working set, an alert's tree -- which is a stack, not a
- * heap.  The other six are lifetimes: a program's near region and its
- * resource, an accessory's, the process records.  With one program
- * running at a time those nest, so a free list would put a header on
- * every one of the nineteen and add fragmentation to serve a case that
- * does not arise.  What DID arise is lifetimes going wrong quietly, and
- * that is what the floor is for:
- *
- *   pool_keep_mark()   everything taken so far is permanent
- *   pool_release(m)    refused, and counted, if m is below that
- *
- * The far heap had the same pair until phase 79, and now has owners
- * instead (src/sys/farmem.c): a program's far blocks are freed by owner
- * at app_free, in any order, and what the system and the accessories took
- * is permanent because nothing frees their owners.  The shell sets the
- * pool's floor once, after the accessories have started and before the
- * first program (src/aes/shel.c).
+ * both regions back, by the program's owner, in any order: the far heap
+ * since phase 79 (src/sys/farmem.c), the pool since phase 117
+ * (src/sys/pool.h, which is also where the pool's rules are).
  */
 #ifndef GEM4XE_APP_H
 #define GEM4XE_APP_H
 
 #include "portab.h"
 #include <stdint.h>
+#include "sys/pool.h"
 
 #define APP_OK        0
 #define APP_E_MAGIC  -1     /* not a G4A, or a version this loader lacks */
@@ -70,27 +43,14 @@ typedef struct {
     uint16_t link_near;     /* the link-time bases, so a symbol from the */
     uint8_t  link_bank;     /* link's map translates: addr - link + base */
     uint16_t fixups;        /* patched bytes, all four lists */
-    uint16_t pool_mark;     /* what app_free() winds back to */
+    uint16_t pool_mark;     /* the pool's top before the load: a
+                             * failure part-way releases to it */
     uint32_t vars_addr;     /* a packed program's far variables (format 5), */
     uint8_t  vars_link;     /* and the bank they were linked in; 0 if none */
     uint16_t owner;         /* whose its far blocks are: app_free frees them
                              * (src/sys/farmem.c, phase 79) */
 } APP;
 
-uint16_t pool_mark(void);                          /* the cursor         */
-void    *pool_alloc(uint16_t size, uint16_t align); /* 0 when it will not fit */
-void     pool_release(uint16_t mark);
-uint16_t pool_room(void);
-
-/* Everything taken so far is permanent: no later pool_release() may go
- * below it.  The accessories call it once they have started and taken
- * what they need (src/aes/shel.c), which is what turns "an accessory is
- * loaded before the first program" from an arrangement into a rule the
- * machine keeps.  pool_refused counts the releases turned away -- a
- * number nobody should ever see. */
-void     pool_keep_mark(void);
-uint16_t pool_floor(void);
-extern uint16_t pool_refused;
 
 /* Where the last program app_load() placed its near region.  Only a
  * diagnostic -- nothing in the engine reads it -- but the gates need it
@@ -106,8 +66,8 @@ void    app_free(const APP *app);
 
 /* A whole file, by its CIO name, into far memory: where it starts, with
  * its length in *len, or 0 when it would not open or read to its end --
- * and then nothing is kept.  It is taken from the far heap, so what
- * app_free() winds back to decides who owns it.  The file is read
+ * and then nothing is kept.  It is taken from the far heap as far_owner,
+ * so the owner decides when it goes.  The file is read
  * through a slice of the pool, which is given back before returning. */
 /* APP_OK with *addr and *len set; or APP_E_FILE (it would not open),
  * APP_E_READ (a read failed partway), APP_E_FAR (far memory ran out)

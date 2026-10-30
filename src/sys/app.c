@@ -10,11 +10,6 @@
 #include "sys/farmem.h"
 #include "sys/ctx.h"
 
-/* The pool's bounds, from the linker (src/sys/apppool.s). */
-extern const uint16_t app_pool_lo, app_pool_hi;
-
-static uint16_t pool_brk;       /* 0 until the first take: then the cursor */
-
 /* Where the last program's near region went.  A gate that wants to read a
  * program's own variables has to know where the loader put them, and it
  * used to be able to assume the bottom of the pool -- the first thing
@@ -33,69 +28,6 @@ uint16_t app_near;
 uint32_t app_far;
 uint32_t app_vars;
 uint8_t  app_vlink;
-
-/* THE FLOOR.  Nothing may be released below this, and what puts things
- * under it is pool_keep_mark(): "everything taken so far is permanent."
- *
- * It exists because the pool's discipline was a rule in a comment and
- * the machine had no way to keep it.  An accessory is loaded before the
- * first program precisely so that the program's exit -- which winds the
- * pool back to where the program's load found it -- cannot take the
- * accessory with it (src/aes/shel.c).  That is correct, and it was also
- * unenforced: load an accessory a moment later and the first program to
- * exit would free it, silently, and the machine would run on with a
- * process whose variables belonged to somebody else.
- *
- * Now a release that would cross the floor is refused and counted.
- * pool_refused is a number nobody should ever see; test-boot reads it. */
-static uint16_t pool_low;
-uint16_t pool_refused;
-
-uint16_t pool_mark(void)
-{
-    if (!pool_brk) {
-        pool_brk = app_pool_lo;
-        pool_low = app_pool_lo;
-    }
-    return pool_brk;
-}
-
-/* Everything taken so far is permanent. */
-void pool_keep_mark(void)
-{
-    pool_low = pool_mark();
-}
-
-uint16_t pool_floor(void)
-{
-    (void)pool_mark();
-    return pool_low;
-}
-
-void *pool_alloc(uint16_t size, uint16_t align)
-{
-    uint16_t base = pool_mark();
-    uint16_t mask = (uint16_t)(align - 1);
-    base = (uint16_t)((base + mask) & ~mask);
-    if (base < pool_brk || (uint32_t)base + size > app_pool_hi)
-        return 0;
-    pool_brk = (uint16_t)(base + size);
-    return (void *)base;
-}
-
-void pool_release(uint16_t mark)
-{
-    if (mark < pool_floor()) {
-        pool_refused++;         /* somebody else's memory: see pool_low */
-        return;
-    }
-    pool_brk = mark;
-}
-
-uint16_t pool_room(void)
-{
-    return (uint16_t)(app_pool_hi - pool_mark());
-}
 
 #define HDR_SIZE 32
 
@@ -153,8 +85,10 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
     far_owner = own;
     st = app_load_as(blob, len, app, own);
     far_owner = keep;
-    if (st != APP_OK)
-        far_free_owner(own);
+    if (st != APP_OK) {
+        pool_free_owner(own);       /* a near region in a hole is below */
+        far_free_owner(own);        /* the mark the failure released to */
+    }
     return st;
 }
 
@@ -197,7 +131,7 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
         return APP_E_SHORT;
 
     app->pool_mark = pool_mark();
-    near = pool_alloc(near_size, 0x100);
+    near = pool_take(near_size, 0x100);
     if (!near)
         return APP_E_POOL;
     app->near_base = (uint16_t)near;
@@ -206,7 +140,7 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
     code = far_alloc_page(code_size, 0xD500UL);
     vars = vars_size ? far_alloc_page(vars_size, 0x10000UL) : 0;
     if (!code || (vars_size && !vars)) {
-        pool_release(app->pool_mark);
+        pool_free(near);
         return APP_E_FAR;               /* app_load frees the owner's blocks */
     }
     app->far_addr = code;
@@ -368,7 +302,7 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
      * failure part-way leaves nothing taken. */
     app->pool_mark = pool_mark();
     app->owner = own;
-    near = pool_alloc(near_size, 0x100);
+    near = pool_take(near_size, 0x100);
     if (!near)
         return APP_E_POOL;
     app->near_base = (uint16_t)near;
@@ -376,7 +310,7 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
     app->near_size = near_size;
     bank = far_alloc_banks(far_banks);
     if (!bank) {
-        pool_release(app->pool_mark);
+        pool_free(near);
         return APP_E_FAR;
     }
     app->far_addr = ((uint32_t)bank << 16) | far_off;
@@ -464,16 +398,14 @@ void app_free(const APP *app)
 {
     gemdos_release();               /* its handles, searches and DTA */
     vdi_close_virtuals();           /* its workstations */
-    pool_release(app->pool_mark);
+    pool_free_owner((uint8_t)app->owner); /* its near region, its resource */
     far_free_owner((uint8_t)app->owner); /* and everything it Malloc'd */
 }
 
 /* The file, in pieces the size of a slice of the pool (2 KB when the pool
  * has it, sixty-four bytes of stack when it does not -- src/sys/gemdos.c
- * reads the same way), each piece taken from the far heap as it arrives:
- * the heap is a bump allocator and the pieces are whole multiples of its
- * alignment, so they make one extent, which is checked rather than
- * assumed.  CIO hands back fewer bytes than asked only at the end of the
+ * reads the same way), each piece put into one far extent taken up front
+ * (below) and shrunk to the file at the end.  CIO hands back fewer bytes than asked only at the end of the
  * file, and a status of EOF there still delivers the bytes before it
  * (src/sys/cio.h).  It says why as well as whether (src/sys/app.h): a
  * file that opened and then failed partway used to come back as the
@@ -583,7 +515,9 @@ int16_t app_load_file(const char *gemname, APP *app)
         far_free(blob);
     }
     far_owner = keep;
-    if (st != APP_OK)
-        far_free_owner(own);
+    if (st != APP_OK) {
+        pool_free_owner(own);       /* a near region in a hole is below */
+        far_free_owner(own);        /* the mark the failure released to */
+    }
     return st;
 }

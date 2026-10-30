@@ -20,9 +20,11 @@
  * is, so one call does everything.
  *
  * The pool is why there is one resource at a time: rsrc_load takes from
- * the bump allocator and rsrc_free winds it back, which is only right
- * while nothing else was taken above it -- the file selector's tree,
- * which is taken and released inside one call, is the only other user.
+ * its top and rsrc_free releases to the mark it took there, which gives
+ * back what the CALLER took above the mark (src/sys/pool.h: a release is
+ * one owner's) -- right while that owner took nothing else above it that
+ * should stay.  The file selector's work, taken and released inside one
+ * call, is the only other user.
  * The selector's tree is a .RSC too, built into the far image
  * (tools/fselrsc.py), so the fixup takes the header it works on as a
  * parameter, rs_fixit(), rather than the one resource the library holds.

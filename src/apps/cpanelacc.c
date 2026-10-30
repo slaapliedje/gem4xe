@@ -12,9 +12,8 @@
  * FROM the desktop like anything else: docs/phase47.md.)
  *
  * Everything else is src/apps/clockacc.c's shape, for its reasons: the
- * resource is taken at start-up and never freed, because an accessory is
- * loaded before the first program and both allocators are bump allocators
- * that a program's exit winds back (src/aes/shel.c's pool_keep_mark); and
+ * resource is taken at start-up and never freed: it is the accessory's
+ * own, and nothing frees an accessory (src/aes/shel.c); and
  * the title is a static because menu_register keeps the POINTER, not a
  * copy.  The two leading spaces are the donor's convention, lining the
  * name up under the desktop's own "About".

@@ -66,8 +66,12 @@ def main(argv=()):
         # banks published a zeroed result and the gate announced "no
         # linear RAM found" about a machine that has 12 banks of it.  A
         # buffer that is not ready holds nothing; say so instead.
+        # The ceiling is generous because it costs nothing when the runner
+        # is ready early: the plain 65C816 loads M3.COM over SIO at the
+        # stock speed, and by phase 117 that took 1,850 frames -- exactly
+        # the old ceiling, which the runner's growth had used up.
         ready = False
-        for _ in range(400):
+        for _ in range(1000):
             st = bytes(b.memdump(STATUS, 3))
             if st[:2] == b"VD" and st[2] == 1:
                 ready = True

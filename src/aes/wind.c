@@ -112,8 +112,7 @@ WINDOW         gl_win[NUM_WIN];
  * what the shell's buffers and GEMDOS's state already do: there is no far
  * bss in src/gem4xe.scm and adding one to hold a single array would be a
  * second way of doing the same thing.  It is taken ONCE, at AES start-up,
- * because far_alloc is a bump allocator that app_free winds back -- the
- * same rule the shell and the accessories live by. */
+ * as the system's (owner 0), which no program's exit frees. */
 static ORECT FAR *gl_olist;
 static ORECT FAR *gl_rul;         /* the free rectangles */
 static ORECT   gl_mkrect;           /* the rectangle newrect is breaking:

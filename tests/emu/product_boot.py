@@ -543,8 +543,14 @@ def one(name, progname, how, batches, cart, keep, check):
         # the accessories, their queues and resources, the process
         # records, the shell's own buffers (src/aes/shel.c).
         floor = b.peek16(syms["pool_low"])
+        blocks = b.peek16(syms["pool_blocks"])
         print(f"  the pool has {room} bytes left for GEMDOS's slices; "
-              f"permanent up to ${floor:04X}")
+              f"permanent up to ${floor:04X}; {blocks} block(s) held")
+        # The pool's table (src/sys/pool.h) never ran out: a take refused
+        # for that would read as no memory to whoever asked.
+        check(b.peek16(syms["pool_full"]) == 0,
+              f"{name}: {b.peek16(syms['pool_full'])} pool take(s) refused "
+              f"for a full table")
         # Nothing should ever have tried to free below what the shell
         # marked permanent -- the accessories, the process records, the
         # shell's own buffers (src/sys/app.c).  A refusal here is a

@@ -17,9 +17,8 @@
  * to hold across an AC_CLOSE either.
  *
  * Everything else is src/apps/clockacc.c's shape, for its reasons: the
- * resource is taken at start-up and never freed, because an accessory is
- * loaded before the first program and both allocators are bump allocators
- * that a program's exit winds back (src/aes/shel.c's pool_keep_mark); and
+ * resource is taken at start-up and never freed: it is the accessory's
+ * own, and nothing frees an accessory (src/aes/shel.c); and
  * the title is a static because menu_register keeps the POINTER, not a
  * copy -- which since 2026-09-19 it keeps whole, all 24 bits of it, so a
  * large-data accessory's far title survives (src/aes/menu.c).

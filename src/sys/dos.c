@@ -213,7 +213,7 @@ uint16_t dos_wildcmp(const char *pattern, const char *filename)
  * says so and the item stays grey.
  *
  * THE ROOM.  XCOMLI loads COMMAND.COM (~3.6 KB) at MEMLO and a program
- * above it, so for the call MEMLO is raised to the pool's cursor and
+ * above it, so for the call MEMLO is raised to the pool's top and
  * the MEMAC window is closed: from there to the DOS's screen at $9C00
  * -- the pool's free top, the window's 4 KB and the idle $9000-$9BFF --
  * is the command's, ten KB or so with the product resident

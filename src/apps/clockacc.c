@@ -5,13 +5,12 @@
  * AES is starting up, register a name in the Desk menu, then an
  * indefinite message loop that never exits.
  *
- * THE RESOURCE IS TAKEN HERE, at start-up, and never freed.  That is not
- * tidiness, it is the rule: an accessory is loaded before the first
- * program, and both of gem4xe's allocators are bump allocators that
- * app_free winds back to where app_load found them.  Anything an
- * accessory takes AFTER a program has loaded is freed underneath it the
- * first time that program exits.  So everything comes first, and nothing
- * goes back.
+ * THE RESOURCE IS TAKEN HERE, at start-up, and never freed.  Until phase
+ * 117 that was the rule: both of gem4xe's allocators were bump allocators
+ * that app_free wound back, and anything an accessory took after a
+ * program had loaded was freed underneath it when that program exited.
+ * Both free by owner now, and what an accessory takes is its own whenever
+ * it takes it; taking it here is still the simple way.
  *
  * THE TITLE IS A STATIC for a related reason: menu_register keeps the
  * POINTER, not a copy -- the AES puts it straight into the Desk box's

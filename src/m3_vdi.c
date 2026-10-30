@@ -33,6 +33,7 @@
  * ST_VC_GO and ST_VC_DONE, against the emulator's cycle counter.
  */
 #include "portab.h"
+#include <string.h>
 #include "vdi/vdi.h"
 #include "vdi/pointer.h"
 #include "vdi/font.h"
@@ -548,6 +549,47 @@ static void sys_op(WORD op)
         for (i = 0; i < 8; i++)
             intout[7 + i] = butlog[i];
         c4 = 15;
+        break;
+    }
+    /* 20: PROGRAMS LOADED AND FREED IN ANY ORDER (phase 117).  Four slots,
+     * each the packed test program loaded by the real loader and not run:
+     * intin[0] 0 loads slot intin[1], 1 frees it.  What comes back is the
+     * load's status, where its near region went, its owner, and the pool's
+     * top, room and block count after.  The APP records live in far
+     * memory, so the gate costs bank $00 nothing. */
+    case 20: {
+        static uint32_t slots;
+        static APP app;             /* not on the stack: this function's frame
+                                     * is under every Pexec the runner makes */
+        WORD n = intin[1] & 3;
+        int16_t st = 0;
+        if (!slots) {
+            slots = far_alloc(4 * (uint32_t)sizeof(APP));
+            if (slots)
+                far_fill(slots, 0, 4 * (uint16_t)sizeof(APP));
+        }
+        memset(&app, 0, sizeof app);
+        if (slots) {
+            uint32_t at = slots + (uint32_t)n * sizeof(APP);
+            if (intin[0] == 0) {
+                st = app_load(app_blob, app_blob_len, &app);
+                if (st != APP_OK)
+                    memset(&app, 0, sizeof app);
+            } else {
+                far_get((uint8_t *)&app, at, (uint16_t)sizeof app);
+                if (app.owner)
+                    app_free(&app);
+                memset(&app, 0, sizeof app);
+            }
+            far_put(at, (const uint8_t *)&app, (uint16_t)sizeof app);
+        }
+        intout[6] = st;
+        intout[7] = (WORD)app.near_base;
+        intout[8] = (WORD)app.owner;
+        intout[9] = (WORD)pool_mark();
+        intout[10] = (WORD)pool_room();
+        intout[11] = (WORD)pool_blocks;
+        c4 = 12;
         break;
     }
     default:
