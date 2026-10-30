@@ -1,13 +1,13 @@
--- shrdump.lua -- MAME apple2gs autoboot script for the Spectre GS gates.
+-- shrdump.lua -- MAME apple2gs autoboot script for the GSlayer gates.
 --
--- Waits for the program under test to write "SGDONE" at $E1:9DF0, then
+-- Waits for the program under test to write "GSDONE" at $E1:9DF0, then
 -- writes the whole Super Hi-Res area, $E1:2000-$E1:9FFF (pixels, SCBs and
--- palettes), to $SG_OUT and exits.  Gives up after $SG_LIMIT emulated
--- seconds (default 120) and writes SG_OUT..".timeout" instead, so the
+-- palettes), to $GS_OUT and exits.  Gives up after $GS_LIMIT emulated
+-- seconds (default 120) and writes GS_OUT..".timeout" instead, so the
 -- gate can tell "never finished" from "never started".
-local out   = os.getenv("SG_OUT") or "shr.bin"
-local limit = tonumber(os.getenv("SG_LIMIT") or "120")
-local sig   = "SGDONE"
+local out   = os.getenv("GS_OUT") or "shr.bin"
+local limit = tonumber(os.getenv("GS_LIMIT") or "120")
+local sig   = "GSDONE"
 
 local function space()
   return manager.machine.devices[":maincpu"].spaces["program"]
@@ -42,7 +42,7 @@ emu.register_frame_done(function()
     end
   elseif now >= limit then
     local f = io.open(out .. ".timeout", "w")
-    if f then f:write(string.format("no SGDONE after %d s\n", limit)); f:close() end
+    if f then f:write(string.format("no GSDONE after %d s\n", limit)); f:close() end
     manager.machine:exit()
   end
 end)

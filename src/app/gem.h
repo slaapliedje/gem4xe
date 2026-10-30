@@ -1223,7 +1223,7 @@ LONG Dprobe(void);
 /* gem4xe's own (0x1F2): the `len` bytes at `addr` exactly, from the far
  * heap, the program's until it ends -- `addr` back (rounded down to 4), or
  * ENSMEM if any of it is not free heap.  For memory a program must find at
- * a fixed address; Spectre GS takes bank $E1 with it.  EINVFN on 0.13 and
+ * a fixed address; GSlayer takes bank $E1 with it.  EINVFN on 0.13 and
  * earlier. */
 LONG Mclaim(LONG addr, LONG len);
 

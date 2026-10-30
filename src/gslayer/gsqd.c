@@ -1,4 +1,4 @@
-/* sgqd.c -- QuickDraw II ($04), the part milestone 1 draws with.
+/* gsqd.c -- QuickDraw II ($04), the part milestone 1 draws with.
  *
  * Everything is drawn into the Super Hi-Res screen at $E1:2000 exactly as
  * the IIGS lays it out (Hardware Reference, "Super Hi-Res graphics"), so
@@ -13,9 +13,9 @@
  * TEXT is drawn in gem4xe's 8x8 font (EmuTOS's, GPL), not Shaston 8:
  * Shaston is Apple's, in Apple's ROM, and its system-font handle does not
  * hold the font record volume 2 documents.  The gate compares everything
- * else byte for byte and the text by where it is (docs/spectre.md).
+ * else byte for byte and the text by where it is (docs/gslayer.md).
  */
-#include "sg.h"
+#include "gs.h"
 
 extern const uint8_t FAR font8x8[2048];
 
@@ -53,17 +53,17 @@ static int16_t width(void) { return qd_640 ? 640 : 320; }
 static void plot(int16_t x, int16_t y, uint8_t c)
 {
     uint32_t a;
-    uint16_t b, sh, m;                  /* words: B23 (sgomf.c's super) */
+    uint16_t b, sh, m;                  /* words: B23 (gsomf.c's super) */
 
-    if (x < 0 || y < 0 || x >= width() || y >= SG_LINES)
+    if (x < 0 || y < 0 || x >= width() || y >= GS_LINES)
         return;
     if (qd_640) {
-        a = SG_SHR + (uint32_t)y * SG_LINE + (uint16_t)x / 4;
+        a = GS_SHR + (uint32_t)y * GS_LINE + (uint16_t)x / 4;
         sh = (uint16_t)(6 - 2 * (x & 3));
         m = (uint16_t)(3 << sh);
         c = (uint8_t)((c & 3) << sh);
     } else {
-        a = SG_SHR + (uint32_t)y * SG_LINE + (uint16_t)x / 2;
+        a = GS_SHR + (uint32_t)y * GS_LINE + (uint16_t)x / 2;
         sh = (uint16_t)((x & 1) ? 0 : 4);
         m = (uint16_t)(15 << sh);
         c = (uint8_t)((c & 15) << sh);
@@ -92,8 +92,8 @@ static void get_rect(uint32_t a, QRect *r)
     r->h2 = rdw(a + 6);
 }
 
-/* QDStartUp's effect on the screen, also what Spectre starts with. */
-void sg_qd_reset(void)
+/* QDStartUp's effect on the screen, also what GSlayer starts with. */
+void gs_qd_reset(void)
 {
     pen_h = 0;
     pen_v = 0;
@@ -108,11 +108,11 @@ static void startup(uint8_t scb)
 
     qd_640 = (uint8_t)(scb & 0x80);
     for (i = 0; i < 256; i++)           /* every byte of the SCB page, as */
-        wr8(SG_SCB + i, scb);           /* Apple's leaves it (sg1_hello.py) */
+        wr8(GS_SCB + i, scb);           /* Apple's leaves it (gs1_hello.py) */
     t = qd_640 ? std640 : std320;
     for (i = 0; i < 16; i++)
-        wrw(SG_PAL + i * 2, (int16_t)t[i]);
-    sg_qd_reset();
+        wrw(GS_PAL + i * 2, (int16_t)t[i]);
+    gs_qd_reset();
 }
 
 static void draw_char(uint8_t ch)
@@ -128,7 +128,7 @@ static void draw_char(uint8_t ch)
     pen_h = (int16_t)(pen_h + 8);
 }
 
-uint16_t sg_qd(uint8_t fn, uint8_t *p)
+uint16_t gs_qd(uint8_t fn, uint8_t *p)
 {
     QRect r;
     uint32_t a;
@@ -136,39 +136,39 @@ uint16_t sg_qd(uint8_t fn, uint8_t *p)
 
     switch (fn) {
     case 0x02:                          /* QDStartUp(dPage, SCB, maxWidth, ID) */
-        sg_pop = 8;
-        startup((uint8_t)SG_W(p, 4));
+        gs_pop = 8;
+        startup((uint8_t)GS_W(p, 4));
         return 0;
     case 0x03:                          /* QDShutDown */
         return 0;
     case 0x15:                          /* ClearScreen(colorWord) */
-        sg_pop = 2;
-        w = SG_W(p, 0);
-        for (a = SG_SHR; a < SG_SCB; a += 2) {
+        gs_pop = 2;
+        w = GS_W(p, 0);
+        for (a = GS_SHR; a < GS_SCB; a += 2) {
             wr8(a, (uint8_t)w);
             wr8(a + 1, (uint8_t)(w >> 8));
         }
         return 0;
     case 0x37:                          /* SetSolidPenPat(colorNum) */
-        sg_pop = 2;
-        pen_colour = (uint8_t)SG_W(p, 0);
+        gs_pop = 2;
+        pen_colour = (uint8_t)GS_W(p, 0);
         return 0;
     case 0x3A:                          /* MoveTo(h, v) */
-        sg_pop = 4;
-        pen_v = (int16_t)SG_W(p, 0);
-        pen_h = (int16_t)SG_W(p, 2);
+        gs_pop = 4;
+        pen_v = (int16_t)GS_W(p, 0);
+        pen_h = (int16_t)GS_W(p, 2);
         return 0;
     case 0x4A:                          /* SetRect(rect, left, top, right, bottom) */
-        sg_pop = 12;
-        a = SG_L(p, 8);
-        wrw(a, (int16_t)SG_W(p, 4));    /* v1: top */
-        wrw(a + 2, (int16_t)SG_W(p, 6)); /* h1: left */
-        wrw(a + 4, (int16_t)SG_W(p, 0)); /* v2: bottom */
-        wrw(a + 6, (int16_t)SG_W(p, 2)); /* h2: right */
+        gs_pop = 12;
+        a = GS_L(p, 8);
+        wrw(a, (int16_t)GS_W(p, 4));    /* v1: top */
+        wrw(a + 2, (int16_t)GS_W(p, 6)); /* h1: left */
+        wrw(a + 4, (int16_t)GS_W(p, 0)); /* v2: bottom */
+        wrw(a + 6, (int16_t)GS_W(p, 2)); /* h2: right */
         return 0;
     case 0x53:                          /* FrameRect(rect): inside its edge */
-        sg_pop = 4;
-        get_rect(SG_L(p, 0), &r);
+        gs_pop = 4;
+        get_rect(GS_L(p, 0), &r);
         if (r.h2 <= r.h1 || r.v2 <= r.v1)
             return 0;
         fill(r.h1, r.v1, r.h2, (int16_t)(r.v1 + 1), pen_colour);
@@ -177,18 +177,18 @@ uint16_t sg_qd(uint8_t fn, uint8_t *p)
         fill((int16_t)(r.h2 - 1), r.v1, r.h2, r.v2, pen_colour);
         return 0;
     case 0x54:                          /* PaintRect(rect) */
-        sg_pop = 4;
-        get_rect(SG_L(p, 0), &r);
+        gs_pop = 4;
+        get_rect(GS_L(p, 0), &r);
         fill(r.h1, r.v1, r.h2, r.v2, pen_colour);
         return 0;
     case 0xA6:                          /* DrawCString(cString) */
-        sg_pop = 4;
-        a = SG_L(p, 0);
+        gs_pop = 4;
+        a = GS_L(p, 0);
         while ((c = rd8(a)) != 0) {
             draw_char((uint8_t)c);
             a++;
         }
         return 0;
     }
-    return SG_NOTYET;
+    return GS_NOTYET;
 }

@@ -1,14 +1,14 @@
-/* sghello.c -- Spectre GS milestone 1: the first Toolbox program.
+/* gshello.c -- GSlayer milestone 1: the first Toolbox program.
  *
  * Built with ORCA/C (Golden Gate) as a GS/OS S16 application.  The same
  * binary runs twice: on MAME's apple2gs against Apple's own Toolbox, and
- * on gem4xe under Spectre GS.  The gate compares the two Super Hi-Res
+ * on gem4xe under GSlayer.  The gate compares the two Super Hi-Res
  * screens byte for byte, so everything drawn here is deterministic.
  *
  * Tool sets used: Tool Locator (1), Memory Manager (2), Misc Tools (3),
  * QuickDraw II (4).  Nothing else, on purpose.
  *
- * When the drawing is done, "SGDONE" is written to $E1:9DF0, in the unused
+ * When the drawing is done, "GSDONE" is written to $E1:9DF0, in the unused
  * bytes between the SCBs ($E1:9D00-$9DC7) and the palettes ($E1:9E00).
  * That is the harness's signal on both machines, and the only direct
  * hardware write in the program.
@@ -23,7 +23,7 @@
 
 static void done(void)
 {
-    static char sig[] = "SGDONE";
+    static char sig[] = "GSDONE";
     unsigned char *p = (unsigned char *) 0xE19DF0L;
     int i;
 
@@ -56,7 +56,7 @@ int main(void)
     FrameRect(&r);
 
     MoveTo(320, 60);
-    DrawCString("Spectre GS");
+    DrawCString("GSlayer");
 
     MoveTo(320, 80);
     DrawCString("Hello, Toolbox");

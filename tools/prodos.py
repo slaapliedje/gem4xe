@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """prodos.py -- read and write files on a ProDOS volume image (.po/.hdv).
 
-Just enough ProDOS for the Spectre GS gates: list a directory, read a file,
+Just enough ProDOS for the GSlayer gates: list a directory, read a file,
 and put a file (replacing one of the same name) with its file type and aux
 type.  The image is a plain run of 512-byte blocks in ProDOS order, which is
 what MAME's apple2gs takes as a hard disk (.hdv) and what a .po is.

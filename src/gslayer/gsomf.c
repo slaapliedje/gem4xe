@@ -1,4 +1,4 @@
-/* sgomf.c -- load a GS/OS load file (OMF version 2) for Spectre GS.
+/* gsomf.c -- load a GS/OS load file (OMF version 2) for GSlayer.
  *
  * Object Module Format is the GS/OS Reference's appendix F.  A load file
  * is a run of segments, each a header and a body of records: data
@@ -7,7 +7,7 @@
  * SUPER).  This loads every static segment into memory from gem4xe, two
  * passes -- place them all, then fill and fix them, since a record in one
  * may point into another -- and leaves the first code segment's entry in
- * sg_go.
+ * gs_go.
  *
  * Not yet, and refused rather than guessed: dynamic code segments (they
  * need the jump table, loaded on first call), references into other load
@@ -15,11 +15,11 @@
  * and a file over 64 KB.  The ~ExpressLoad segment ORCA's linker writes
  * first is a speed-up for GS/OS's loader only and is skipped.
  */
-#include "sg.h"
+#include "gs.h"
 
 #define SEG_MAX     32
 
-extern uint16_t sg_stage;           /* spectre.c: the harness reads it */
+extern uint16_t gs_stage;           /* gslayer.c: the harness reads it */
 
 static uint32_t buf;                /* the file, read whole */
 static uint32_t seg_at[SEG_MAX];    /* where segment n went (0: not loaded) */
@@ -117,7 +117,7 @@ static int16_t super(uint32_t at, uint32_t len, uint16_t type, uint32_t base)
     /* Words, not bytes: with `c` a byte, cc65816 -O2 tested its bit 7 in
      * the high half of a stack word and then took `c + 1` from the LOW
      * half -- a stray byte -- so every count was wrong and the patches
-     * went astray (B23's family, docs/spectre.md). */
+     * went astray (B23's family, docs/gslayer.md). */
     uint16_t c, seg, is = (uint16_t)(type - 1);  /* INTERSEG number */
 
     if (type >= 2 && is >= 2 && is <= 12)
@@ -240,7 +240,7 @@ static int16_t body(uint32_t at, uint32_t base)
     }
 }
 
-int16_t sg_load(const char *path)
+int16_t gs_load(const char *path)
 {
     LONG fd, size;
     uint32_t at, end, base;
@@ -250,27 +250,27 @@ int16_t sg_load(const char *path)
     fd = Fopen(path, 0);
     if (fd < 0)
         return -1;
-    sg_stage = 0x20;
+    gs_stage = 0x20;
     size = Fseek(0, (WORD)fd, 2);
-    sg_stage = 0x21;
+    gs_stage = 0x21;
     Fseek(0, (WORD)fd, 0);
-    sg_stage = 0x22;
+    gs_stage = 0x22;
     if (size <= 0 || size > 0xFF00L) {
         Fclose((WORD)fd);
         return -1;
     }
     buf = (uint32_t)Malloc(size);
-    sg_stage = 0x23;
+    gs_stage = 0x23;
     if (!buf || Fread((WORD)fd, size, (void FAR *)buf) != size) {
         Fclose((WORD)fd);
         return -1;
     }
     Fclose((WORD)fd);
-    sg_stage = 0x24;
+    gs_stage = 0x24;
 
     end = buf + (uint32_t)size;
     for (pass = 0; pass < 2; pass++) {
-        sg_stage = (uint16_t)(0x30 + pass);
+        gs_stage = (uint16_t)(0x30 + pass);
         for (at = buf; at < end; at += h.bytecnt) {
             header(at, &h);
             if (h.bytecnt == 0 || h.version != 2 || h.numsex != 0)
@@ -280,18 +280,18 @@ int16_t sg_load(const char *path)
             if (express(at, &h))
                 continue;
             if ((h.kind & 0x1F) == 0x12)
-                continue;               /* direct page/stack: sg_alloc'd by main */
+                continue;               /* direct page/stack: gs_alloc'd by main */
             if ((h.kind & 0x8000) && (h.kind & 0x1F) == 0x00)
                 return -1;              /* a dynamic code segment: not yet */
             if (pass == 0) {
                 attr = (h.align > 1) ? 0x0004 : 0;
-                base = sg_alloc(h.length + h.resspc, attr, 0);
+                base = gs_alloc(h.length + h.resspc, attr, 0);
                 if (!base)
                     return -1;
                 seg_at[h.segnum] = base;
-                sg_handle(base, h.length + h.resspc, sg_userid);
+                gs_handle(base, h.length + h.resspc, gs_userid);
                 if (first && (h.kind & 0x1F) == 0x00) {
-                    sg_go = base + h.entry;
+                    gs_go = base + h.entry;
                     first = 0;
                 }
             } else if (body(at + h.dispdata, seg_at[h.segnum]) < 0) {

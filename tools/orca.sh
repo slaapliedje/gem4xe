@@ -1,5 +1,5 @@
 #!/bin/sh
-# orca.sh -- build an Apple IIGS program with ORCA/C, for the Spectre GS gates.
+# orca.sh -- build an Apple IIGS program with ORCA/C, for the GSlayer gates.
 #
 #   tools/orca.sh SRC.c OUT
 #

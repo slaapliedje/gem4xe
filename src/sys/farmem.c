@@ -596,7 +596,7 @@ uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
 /* Exactly at..at+bytes, or 0 if any of it is taken or outside the heap:
  * for memory a foreign program finds by ADDRESS, not by asking -- an Apple
  * IIGS program calls the Toolbox at $E1:0000 and draws at $E1:2000
- * (Spectre GS, Mclaim in src/sys/gemdos.c).  `at` is rounded down and the
+ * (GSlayer, Mclaim in src/sys/gemdos.c).  `at` is rounded down and the
  * end up to 4, as every block's are. */
 uint32_t far_claim(uint32_t at, uint32_t bytes)
 {
