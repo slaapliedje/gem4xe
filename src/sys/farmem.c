@@ -186,7 +186,8 @@ void far_copy_span(uint32_t dst, uint32_t src, uint32_t len)
  * gates place the desktop with, held to this file by test_farmem.py.
  */
 #define FB_MAX      256                 /* blocks; the table is 2 KB */
-#define FB_ADDR     0x00FFFFFFUL
+#define FB_ADDR     0x00FFFFFCUL        /* every block is 4-aligned, so */
+#define FB_PURGE    0x00000003UL        /* the low bits are its purge level */
 #define FB_LEN      0x00FFFFFFUL        /* the tag is len's top byte */
 
 typedef struct {
@@ -196,6 +197,8 @@ typedef struct {
 } FBLK;
 
 uint8_t  far_owner;
+ZWIN uint16_t far_purged;               /* blocks purged, ever: the gates */
+ZWIN void (*far_purge_hook)(uint32_t addr);     /* zwin: LoRAM's floor */
 ZWIN uint8_t far_tag;                   /* zwin: LoRAM is at its floor */
 uint16_t far_blocks;
 uint32_t far_table;
@@ -298,7 +301,65 @@ static uint32_t fit(uint32_t lo, uint32_t hi, uint32_t bytes, uint16_t how,
     return a;
 }
 
-static uint32_t take(uint32_t bytes, uint16_t how, uint32_t limit)
+/* PURGING (phase 120).  A block's purge level is 0, never purged -- every
+ * block unless somebody says otherwise -- or 1 to 3, GS/OS's: memory that
+ * is worth keeping only while nobody needs the room, 3 the first to go.
+ * When a request does not fit, every block of level 3 is purged and the
+ * request tried again, then every block of level 2, then level 1, and only
+ * then is it refused.  Each purged block is named to far_purge_hook, so
+ * that whoever kept it as a cache forgets it: there are no handles here
+ * to set to nil, and an address that is gone may be given out again.
+ *
+ * A level at a time rather than a block at a time, as GS/OS does it:
+ * which block of a level to give up first would be a guess, and the
+ * levels are the owner's own say in the matter. */
+static uint16_t purge_level(uint16_t level)
+{
+    uint16_t i = 1, n = 0;
+
+    while (i < far_blocks) {
+        uint32_t at = FB(i).at;
+        if ((uint16_t)(at & FB_PURGE) == level) {
+            fb_remove(i);
+            n++;
+            far_purged++;
+            if (far_purge_hook)
+                far_purge_hook(at & FB_ADDR);
+        } else {
+            i++;
+        }
+    }
+    return n;
+}
+
+/* The next level down that had anything to purge, purged: 1 if a request
+ * is worth trying again.  *level starts at 4. */
+static uint16_t purge_next(uint16_t *level)
+{
+    while (*level > 1) {
+        (*level)--;
+        if (purge_level(*level))
+            return 1;
+    }
+    return 0;
+}
+
+uint16_t far_set_purge(uint32_t addr, uint16_t level)
+{
+    uint16_t i;
+    uint32_t at;
+
+    for (i = 1; i < far_blocks; i++)
+        if (fb_start(i) == addr) {
+            at = FB(i).at;
+            at = (at & ~FB_PURGE) | (level & FB_PURGE);
+            FB(i).at = at;
+            return 1;
+        }
+    return 0;
+}
+
+static uint32_t take1(uint32_t bytes, uint16_t how, uint32_t limit)
 {
     uint16_t i;
     uint32_t a;
@@ -315,6 +376,16 @@ static uint32_t take(uint32_t bytes, uint16_t how, uint32_t limit)
     return 0;
 }
 
+static uint32_t take(uint32_t bytes, uint16_t how, uint32_t limit)
+{
+    uint16_t level = 4;
+    uint32_t a;
+
+    while (!(a = take1(bytes, how, limit)) && purge_next(&level))
+        ;
+    return a;
+}
+
 uint32_t far_alloc(uint32_t bytes)       { return take(bytes, 0, 0); }
 uint32_t far_alloc_span(uint32_t bytes)  { return take(bytes, 1, 0); }
 uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
@@ -327,7 +398,19 @@ uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
  * IIGS program calls the Toolbox at $E1:0000 and draws at $E1:2000
  * (GSlayer, Mclaim in src/sys/gemdos.c).  `at` is rounded down and the
  * end up to 4, as every block's are. */
+static uint32_t claim1(uint32_t at, uint32_t bytes);
+
 uint32_t far_claim(uint32_t at, uint32_t bytes)
+{
+    uint16_t level = 4;
+    uint32_t a;
+
+    while (!(a = claim1(at, bytes)) && purge_next(&level))
+        ;
+    return a;
+}
+
+static uint32_t claim1(uint32_t at, uint32_t bytes)
 {
     uint16_t i;
     uint32_t end;
@@ -355,7 +438,19 @@ uint32_t far_claim(uint32_t at, uint32_t bytes)
  * every boot-time program above it and left the hole under them when it
  * went (test-m37: the boot past three banks).  Data only, never code, so
  * the SDRAM cache worry below does not reach it. */
+static uint32_t top1(uint32_t bytes);
+
 uint32_t far_alloc_top(uint32_t bytes)
+{
+    uint16_t level = 4;
+    uint32_t a;
+
+    while (!(a = top1(bytes)) && purge_next(&level))
+        ;
+    return a;
+}
+
+static uint32_t top1(uint32_t bytes)
 {
     uint16_t i;
     uint32_t lo, hi, a;
@@ -380,7 +475,18 @@ uint32_t far_alloc_top(uint32_t bytes)
  * way: on a Rapidus the top of the heap is SDRAM, behind a cache that no
  * gate here can say is coherent for code the loader writes and then runs
  * (docs/rapidus-cache.md), and the first megabyte is SRAM. */
+static uint16_t banks1(uint16_t n);
+
 uint16_t far_alloc_banks(uint16_t n)
+{
+    uint16_t level = 4, b;
+
+    while (!(b = banks1(n)) && purge_next(&level))
+        ;
+    return b;
+}
+
+static uint16_t banks1(uint16_t n)
 {
     uint16_t i;
     uint32_t bytes = (uint32_t)n << 16, a;

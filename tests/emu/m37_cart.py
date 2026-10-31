@@ -367,7 +367,25 @@ def small_machines():
             runs = b.peek16(syms["sh_runs"])
             if runs:
                 break
-        b.frames(600)
+        # SETTLED, not a fixed wait: the desktop at its first wait, its
+        # calls still for two reads running.  On this machine -- a 65C816
+        # at 1.79 MHz -- it is still loading its resources 600 frames in,
+        # and a resource being read from its kept copy is unpurgeable for
+        # that moment (src/aes/rsrc.c, phase 120): a heap read then is a
+        # heap in the middle of a load, not the boot's.
+        # ...and no resource being read at that moment: on this machine one
+        # rsrc_load of DESKICON.RSC is a single call long enough to look
+        # like a settled desktop.  rs_src is the copy being read, 0 between
+        # loads -- in zwin, which nothing banks over on a cartridge.
+        n, still = b.peek16(syms["app_calls"]), 0
+        for _ in range(80):
+            b.frames(250)
+            now = b.peek16(syms["app_calls"])
+            loading = int.from_bytes(bytes(b.memdump(syms["rs_src"], 4)), "little")
+            still = still + 1 if now == n and not loading else 0
+            n = now
+            if still >= 2 and now:
+                break
         fm = bytes(b.memdump(syms["farmem"], 4))
         print(f"    banks ${fm[1]:02X}-${fm[2]:02X}; the shell has run "
               f"{b.peek16(syms['sh_runs'])} program(s), "

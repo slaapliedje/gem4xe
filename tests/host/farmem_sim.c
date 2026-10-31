@@ -31,7 +31,7 @@ static uint16_t table_ok(void)
     const FBLK FAR *t = (const FBLK FAR *)far_table;
 
     for (i = 0; i < far_blocks; i++) {
-        uint32_t a = t[i].at & 0xFFFFFFUL, n = t[i].len & 0xFFFFFFUL;
+        uint32_t a = t[i].at & 0xFFFFFCUL, n = t[i].len & 0xFFFFFFUL;
         if (a < end)
             return 0;
         end = a + ((n + 3) & ~3UL);
@@ -39,9 +39,22 @@ static uint16_t table_ok(void)
     return 1;
 }
 
+/* What the allocator said it purged, in order. */
+uint32_t fm_hooked[16];
+uint16_t fm_nhook;
+
+static void hook(uint32_t addr)
+{
+    if (fm_nhook < 16)
+        fm_hooked[fm_nhook] = addr;
+    fm_nhook++;
+}
+
 int main(void)
 {
     uint16_t k;
+
+    far_purge_hook = hook;
 
     farmem.kind = FARMEM_RAPIDUS;
     farmem.first_bank = FIRST;
@@ -69,6 +82,8 @@ int main(void)
         case 12: far_tag = (uint8_t)a; break;
         case 13: far_free_sub((uint8_t)a, (uint8_t)b); break;
         case 14: r = far_size(fm_out[a]); break;
+        case 15: r = far_set_purge(fm_out[a], (uint16_t)b); break;
+        case 16: r = far_purged; break;
         }
         fm_out[k] = r;
         if (!fm_bad && !table_ok())

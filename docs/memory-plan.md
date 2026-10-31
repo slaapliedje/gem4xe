@@ -1,8 +1,8 @@
 # Memory: what GS/OS teaches gem4xe
 
-A plan, being built: steps 1, 2 and 3 are done ([phase116.md](phase116.md),
+A plan, being built: steps 1 to 4 are done ([phase116.md](phase116.md),
 [phase117.md](phase117.md), [phase118.md](phase118.md),
-[phase119.md](phase119.md)).  The Apple IIGS runs the same CPU on the same kind
+[phase119.md](phase119.md), [phase120.md](phase120.md)).  The Apple IIGS runs the same CPU on the same kind
 of memory -- one scarce bank $00, many plentiful banks above -- and its
 Memory Manager (*Apple IIGS Toolbox Reference*, volume 1 chapter 12, volume
 3 chapter 36; *GS/OS Reference*, chapters 2 and 8) solved the problems
@@ -124,6 +124,12 @@ loaded again, and the fonts.
 
 *Gate:* a model test of the order; an emulator gate that fills the far heap
 with purgeable blocks and shows a fixed allocation still succeeding.
+
+**Done** in [phase120.md](phase120.md).  The first users are the
+desktop's program file (level 1) and the bytes of the desktop's resource
+files (level 2), which also does much of step 5's work: a return to the
+desktop no longer reads DESKTOP.RSC from the disk.  The fonts were not a
+user after all -- the VDI loads its one extra face once and keeps it.
 
 ### 5. The desktop kept, dormant
 

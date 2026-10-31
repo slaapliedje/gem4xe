@@ -5,6 +5,8 @@ import copy
 
 import farref
 
+RC_LEVEL = 2                    # src/aes/rsrc.c
+
 
 def far_heap(b, syms):
     """The target's far heap, as the model holds one: the banks it spans
@@ -17,7 +19,13 @@ def far_heap(b, syms):
     ents = [(int.from_bytes(raw[i * 8:i * 8 + 4], "little"),
              int.from_bytes(raw[i * 8 + 4:i * 8 + 8], "little"))
             for i in range(n)]
-    return farref.Heap.from_table(fm[1], fm[2], ents)
+    h = farref.Heap.from_table(fm[1], fm[2], ents)
+    # Purge level 2 is the AES's copies of the desktop's resource files
+    # (src/aes/rsrc.c, phase 120): a cache, taken at the top of the heap so
+    # that nothing the models place moves, and not one of their blocks.
+    # The desktop's own program file is level 1 and stays.
+    h.blocks = [blk for blk in h.blocks if (blk[2] >> 16) & 3 != RC_LEVEL]
+    return h
 
 
 def heap_then(before, after, desk_len, kept=()):

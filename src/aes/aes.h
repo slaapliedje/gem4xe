@@ -912,6 +912,11 @@ uint32_t sh_cpxtable(void);     /* the flat table, for appl_getinfo */
 WORD     sh_cpxstride(void);    /* one entry's size */
 uint32_t sh_cpxhdr(WORD i);
 extern WORD sh_cpxdrops;                /* freed after boot-init */
+/* The desktop's resource files, kept purgeable (src/aes/rsrc.c, phase 120):
+ * forgotten when purged, thrown away whole on any write. */
+void     rs_cache_purged(uint32_t addr);
+void     rs_cache_flush(void);
+extern uint16_t rc_hits, rc_fills;
 int32_t  sh_cpxload(WORD i, WORD on);   /* Cpxload: GEMDOS 0x1F3 */
 
 /* The shell loop: the desktop (DESKTOP.PRG on the default drive), the

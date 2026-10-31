@@ -36,6 +36,7 @@
 #include "sys/app.h"
 #include "sys/cio.h"
 #include "sys/farmem.h"
+#include "sys/zwin.h"
 
 /* The running process's resource and the pool mark before it: see
  * src/aes/proc.h for why these belong to a process and not to this file.
@@ -529,9 +530,179 @@ static uint32_t rd_long(uint32_t far)   /* a 68000 LONG, from far memory */
          | ((uint32_t)b[2] << 8) | b[3];
 }
 
-/* `fd` is positioned just past the rsh_rssize bytes already in `h`.
- * 1 on success; 0 and nothing of the pool kept on any failure. */
-static WORD rs_cicons(int16_t fd, const RSHDR *h, uint32_t rbase, uint16_t size)
+/* ---- the file, or a copy of it (phase 120) -------------------------------
+ *
+ * THE DESKTOP'S RESOURCES ARE KEPT, PURGEABLE.  Every return to the desktop
+ * read DESKTOP.RSC from the disk again -- 10 KB, which on a floppy is
+ * seconds -- and every dialog it puts up reads PREFS.RSC.  So the bytes of
+ * a resource file the desktop loads are kept in far memory after it is
+ * loaded, at purge level 2 (src/sys/farmem.h): a copy to load from next
+ * time, given up the moment anything needs the room.
+ *
+ * ONLY THE DESKTOP'S, which is to say only the system directory's: a
+ * program's resource may be on a floppy the person is about to change,
+ * and nothing here would know.  The desktop's disk is the one gem4xe runs
+ * from.  And any GEMDOS write, delete or rename, or a DOS command, throws
+ * the whole cache away (rs_cache_flush, from src/sys/gemdos.c), because a
+ * copy that might be older than the file is worse than no copy.
+ *
+ * WHAT IS KEPT IS THE FILE, not the loaded resource: rs_fixit and the
+ * program change a loaded resource -- every pointer, every ob_state -- and
+ * rsrc_load must hand out a fresh one.  So the copy is read through as a
+ * file would be, by rs_rd, and loading from it is a far-to-far copy and
+ * the same fixups. */
+#define RC_MAX      4
+#define RC_LEVEL    2                   /* purge level: before the desktop's
+                                         * own program file, which is 1 */
+
+/* THE INDEX IS 32 BYTES OF ZWIN, not a table in far memory: an address and
+ * a hash of the CIO name for each copy.  The names that ever go in are the
+ * desktop's own two or three; a 32-bit FNV-1a of each is as good as the
+ * name.  And a table block would have been one more far block for every
+ * gate's model of the heap to place (tools/farref.py) -- the copies
+ * themselves are taken at the TOP of the heap for the same reason, as
+ * phase 94's unpack span is, so that nothing the models place low moves. */
+ZWIN static uint32_t rc_addr[RC_MAX], rc_hash[RC_MAX];
+ZWIN static uint16_t rc_next;           /* the one to give up when full */
+ZWIN uint16_t rc_hits, rc_fills;        /* loads from a copy, and copies made */
+
+ZWIN static int16_t  rs_fd;             /* the file, when there is no copy */
+ZWIN static uint32_t rs_src, rs_pos, rs_len;     /* ...and the copy */
+
+static uint32_t rc_name(const char *cio)
+{
+    uint32_t h = 0x811C9DC5UL;
+    while (*cio) {
+        h ^= (uint8_t)*cio++;
+        h *= 0x01000193UL;
+    }
+    return h ? h : 1;                   /* 0 is an empty entry */
+}
+
+static uint32_t rc_get(const char *cio)
+{
+    uint32_t h = rc_name(cio);
+    uint16_t i;
+
+    for (i = 0; i < RC_MAX; i++)
+        if (rc_addr[i] && rc_hash[i] == h)
+            return rc_addr[i];
+    return 0;
+}
+
+/* The file read whole into a copy of its own, the system's -- it outlives
+ * the program that asked -- at the top of the heap; or 0 when there is no
+ * room or no file. */
+static uint32_t rc_fill(const char *cio)
+{
+    uint8_t keep = far_owner, keept = far_tag;
+    uint32_t low = 0, len = 0, top;
+    uint16_t i;
+
+    far_owner = 0;
+    far_tag = 0;
+    if (far_read_file(cio, &low, &len) != APP_OK)
+        low = 0;
+    top = low ? far_alloc_top(len) : 0;
+    if (top) {                          /* moved up, out of the way */
+        far_copy_span(top, low, len);
+        far_free(low);
+        low = top;
+    }
+    far_owner = keep;
+    far_tag = keept;
+    if (!low)
+        return 0;
+    for (i = 0; i < RC_MAX && rc_addr[i]; i++)
+        ;
+    if (i == RC_MAX) {                  /* full: the oldest goes */
+        i = rc_next;
+        rc_next = (uint16_t)((rc_next + 1) % RC_MAX);
+        far_free(rc_addr[i]);
+    }
+    rc_addr[i] = low;
+    rc_hash[i] = rc_name(cio);
+    rc_fills++;
+    return low;
+}
+
+/* far_purge_hook's, through the shell's (src/aes/shel.c): a copy that was
+ * purged is forgotten, since its address may be given out again. */
+void rs_cache_purged(uint32_t addr)
+{
+    uint16_t i;
+
+    for (i = 0; i < RC_MAX; i++)
+        if (rc_addr[i] == addr)
+            rc_addr[i] = 0;
+}
+
+void rs_cache_flush(void)
+{
+    uint16_t i;
+
+    for (i = 0; i < RC_MAX; i++) {
+        if (rc_addr[i])
+            far_free(rc_addr[i]);
+        rc_addr[i] = 0;
+    }
+}
+
+/* Open the resource: its copy, kept from before or made now if it is the
+ * desktop's, else the file.  The copy is set unpurgeable while it is being
+ * read, since loading takes far memory and must not purge its own source. */
+static WORD rs_open(const char *cio)
+{
+    rs_src = 0;
+    if (OWN_KIND(far_tag) == OWN_DESK) {
+        rs_src = rc_get(cio);
+        if (rs_src)
+            rc_hits++;
+        else
+            rs_src = rc_fill(cio);
+    }
+    if (rs_src) {
+        rs_len = far_size(rs_src);
+        far_set_purge(rs_src, 0);
+        rs_pos = 0;
+        return 1;
+    }
+    rs_fd = cio_open(cio, CIO_A_READ, 0);
+    return rs_fd >= 0;
+}
+
+static void rs_close(void)
+{
+    if (rs_src)
+        far_set_purge(rs_src, RC_LEVEL);
+    else
+        cio_close(rs_fd);
+    rs_src = 0;
+}
+
+/* cio_read's answers, from whichever it is. */
+static uint8_t rs_rd(void *buf, uint16_t n, uint16_t *got)
+{
+    uint32_t left;
+
+    if (!rs_src)
+        return cio_read(rs_fd, buf, n, got);
+    left = rs_len - rs_pos;
+    if ((uint32_t)n > left)
+        n = (uint16_t)left;
+    /* _span: the copy is far_read_file's, which may cross a bank, and a
+     * far pointer's own arithmetic wraps to the foot of its bank there --
+     * DESKICON.RSC's colour icons read as nonsense and the walk over them
+     * never ended (test-m18). */
+    far_copy_span((uint32_t)(uint16_t)buf, rs_src + rs_pos, n);
+    rs_pos += n;
+    *got = n;
+    return rs_pos < rs_len ? CIO_OK : CIO_OK_EOF;
+}
+
+/* The resource is positioned just past the rsh_rssize bytes already in
+ * `h`.  1 on success; 0 and nothing of the pool kept on any failure. */
+static WORD rs_cicons(const RSHDR *h, uint32_t rbase, uint16_t size)
 {
     uint8_t ext[8], st;
     uint16_t got, n, i, mark, slice, k, bytes;
@@ -539,7 +710,7 @@ static WORD rs_cicons(int16_t fd, const RSHDR *h, uint32_t rbase, uint16_t size)
     CICON_NEAR *near;
     uint8_t *buf;
 
-    if (cio_read(fd, ext, sizeof ext, &got) != CIO_OK || got != sizeof ext)
+    if (rs_rd(ext, sizeof ext, &got) != CIO_OK || got != sizeof ext)
         return 0;
     true_len = ((uint32_t)ext[0] << 24) | ((uint32_t)ext[1] << 16) | ((uint32_t)ext[2] << 8) | ext[3];
     tab      = ((uint32_t)ext[4] << 24) | ((uint32_t)ext[5] << 16) | ((uint32_t)ext[6] << 8) | ext[7];
@@ -570,7 +741,7 @@ static WORD rs_cicons(int16_t fd, const RSHDR *h, uint32_t rbase, uint16_t size)
     remaining = ext_len - sizeof ext;
     while (remaining) {
         k = remaining > slice ? slice : (uint16_t)remaining;
-        st = cio_read(fd, buf, k, &got);
+        st = rs_rd(buf, k, &got);
         if ((st != CIO_OK && st != CIO_OK_EOF) || got == 0) {
             pool_release(mark);
             return 0;
@@ -681,7 +852,6 @@ WORD rs_load(const char *name, WORD wants_far)
     RSHDR hdr, raw;
     char cio[CIO_NAME_MAX + 1];
     uint16_t got, size, mark;
-    int16_t fd;
     uint8_t *mem;
     uint32_t base;
     WORD ok, gofar, far = 0;
@@ -689,18 +859,17 @@ WORD rs_load(const char *name, WORD wants_far)
     if (rs_1 && rs_2)               /* one resident and one nested is all */
         return 0;
     sh_cioname(name, cio);          /* A:\X.RSC -> D1:X.RSC */
-    fd = cio_open(cio, CIO_A_READ, 0);
-    if (fd < 0)
+    if (!rs_open(cio))
         return 0;
-    if (cio_read(fd, &raw, sizeof raw, &got) != CIO_OK || got != sizeof raw) {
-        cio_close(fd);
+    if (rs_rd(&raw, sizeof raw, &got) != CIO_OK || got != sizeof raw) {
+        rs_close();
         return 0;
     }
     hdr = raw;                      /* the file's header, read for its size */
     swap_words(&hdr, sizeof hdr / 2);
     size = hdr.rsh_rssize;
     if (size < sizeof hdr) {
-        cio_close(fd);
+        rs_close();
         return 0;
     }
     /* WHERE A RESOURCE GOES, and why the pool is the second choice rather
@@ -732,9 +901,9 @@ WORD rs_load(const char *name, WORD wants_far)
         base = (uint32_t)(uint16_t)mem;
         memcpy(mem, &raw, sizeof raw);  /* rs_fixit takes the file as it is */
         {
-            uint8_t st = cio_read(fd, mem + sizeof raw, (uint16_t)(size - sizeof raw), &got);
+            uint8_t st = rs_rd(mem + sizeof raw, (uint16_t)(size - sizeof raw), &got);
             if ((st != CIO_OK && st != CIO_OK_EOF) || got != size - sizeof raw) {
-                cio_close(fd);
+                rs_close();
                 pool_release(mark);
                 return 0;
             }
@@ -753,7 +922,7 @@ WORD rs_load(const char *name, WORD wants_far)
 
         base = far_alloc(size);
         if (!base) {
-            cio_close(fd);
+            rs_close();
             return 0;
         }
         far_put(base, (const uint8_t *)&raw, sizeof raw);
@@ -762,9 +931,9 @@ WORD rs_load(const char *name, WORD wants_far)
         while (left) {
             uint8_t st;
             n = left < sizeof buf ? left : (uint16_t)sizeof buf;
-            st = cio_read(fd, buf, n, &got);
+            st = rs_rd(buf, n, &got);
             if ((st != CIO_OK && st != CIO_OK_EOF) || got != n) {
-                cio_close(fd);
+                rs_close();
                 far_free(base);
                 return 0;
             }
@@ -774,7 +943,7 @@ WORD rs_load(const char *name, WORD wants_far)
         }
         far = 1;
     } else {
-        cio_close(fd);
+        rs_close();
         return 0;
     }
     if (rs_1) {                     /* nested: rs_cur now answers with it */
@@ -786,14 +955,14 @@ WORD rs_load(const char *name, WORD wants_far)
     ok = 1;
     if (!far)
         rs_imfar(mem, hdr.rsh_imdata, size);
-    /* the colour icons, if the file has the extension for them: the fd
-     * is still positioned just past the rsh_rssize bytes */
+    /* the colour icons, if the file has the extension for them: it is
+     * still positioned just past the rsh_rssize bytes */
     if (hdr.rsh_vrsn & NEW_FORMAT_RSC) {
         RSHDR nh;
         hdr_get(base, &nh);             /* native, as rs_fixit left it */
-        ok = rs_cicons(fd, &nh, base, size);
+        ok = rs_cicons(&nh, base, size);
     }
-    cio_close(fd);
+    rs_close();
     if (!ok) {                      /* refused whole: nothing half-loaded */
         WORD slot = rs_2 ? 2 : 1;
         if (rs_2)

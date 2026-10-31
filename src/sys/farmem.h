@@ -68,6 +68,13 @@ uint16_t far_keep(uint32_t addr);       /* ...and the system's from now on */
 void     far_free_owner(uint8_t owner); /* every block of one owner */
 void     far_free_sub(uint8_t owner, uint8_t sub); /* ...of one sub-pool, 1-15 */
 uint16_t far_shrink(uint32_t addr, uint32_t bytes);  /* smaller, in place */
+/* PURGE LEVELS (phase 120): 0 never, 1-3 given up when a request would
+ * otherwise fail -- level 3 first, then 2, then 1, each tried again after
+ * -- and named to far_purge_hook as they go, so a cache forgets them.  A
+ * block in use is set to 0 first and back after. */
+uint16_t far_set_purge(uint32_t addr, uint16_t level);   /* 1 if a block */
+extern void (*far_purge_hook)(uint32_t addr);
+extern uint16_t far_purged;             /* blocks purged, for the gates */
 uint32_t far_size(uint32_t addr);       /* a block's length, 0 if none */
 uint32_t far_largest(uint16_t span);    /* the biggest request that fits */
 uint8_t  far_new_owner(void);           /* an owner with no blocks yet */

@@ -969,6 +969,41 @@ static void sh_accs(void)
  * desktop costs a copy, not a disk read. */
 static uint32_t sh_desk_blob, sh_desk_len;
 
+/* KEPT, AND PURGEABLE (phase 120).  The file above is worth keeping only
+ * while nothing else wants the room, and it can always be read again: so
+ * it is purge level 1, the last to go (src/sys/farmem.h), and when it has
+ * gone the next return to the desktop reads it from the disk and keeps it
+ * again.  The system's, whoever is running when it is read. */
+static WORD sh_desk_cache(void)
+{
+    char cio[CIO_NAME_MAX + 1];
+    uint8_t keep = far_owner, keept = far_tag;
+    WORD rs;
+
+    if (sh_desk_blob)
+        return APP_OK;
+    sh_cioname(SH_DESKNAME, cio);
+    far_owner = 0;
+    far_tag = 0;
+    rs = far_read_file(cio, &sh_desk_blob, &sh_desk_len);
+    far_owner = keep;
+    far_tag = keept;
+    if (rs != APP_OK)
+        sh_desk_blob = 0;
+    else
+        far_set_purge(sh_desk_blob, 1);
+    return rs;
+}
+
+/* far_purge_hook: whatever the shell and the AES kept that has just been
+ * purged is forgotten, since its address may be given out again. */
+static void sh_purged(uint32_t addr)
+{
+    if (addr == sh_desk_blob)
+        sh_desk_blob = 0;
+    rs_cache_purged(addr);
+}
+
 WORD sh_runs;                   /* programs started, the desktop included */
 WORD sh_lastret;                /* what the last one's main() returned */
 WORD sh_lastrc;                 /* the last load's status (APP_*) */
@@ -1007,10 +1042,13 @@ static WORD sh_ldapp(void)
          * program that asked for another gets it from the file. */
         far_strget(cmd, sh_desk_far, SH_DESKLEN);
         app_kind = OWN_DESK;
-        if (sh_desk_blob && !strcmp(cmd, SH_DESKNAME))
+        if (!strcmp(cmd, SH_DESKNAME) && sh_desk_cache() == APP_OK) {
+            far_set_purge(sh_desk_blob, 0);     /* not while it is read */
             st = app_load((const uint8_t FAR *)sh_desk_blob, sh_desk_len, &app);
-        else
+            far_set_purge(sh_desk_blob, 1);
+        } else {
             st = app_load_file(cmd, &app);
+        }
     } else {
         far_strget(cmd, sh_cmd_far, SH_CMDLEN);
         sh_next = SH_DESKTOP;
@@ -1066,11 +1104,9 @@ WORD sh_main(void)
 
     if (!sh_cmd_far)
         return APP_E_POOL;
-    if (!sh_desk_blob) {
-        char cio[CIO_NAME_MAX + 1];
-        WORD rs;
-        sh_cioname(SH_DESKNAME, cio);
-        rs = far_read_file(cio, &sh_desk_blob, &sh_desk_len);
+    far_purge_hook = sh_purged;
+    {
+        WORD rs = sh_desk_cache();
         if (rs != APP_OK) {
             sh_lastrc = rs;             /* the desktop's own load, too */
             return rs;

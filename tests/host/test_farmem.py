@@ -33,7 +33,7 @@ import farref                              # noqa: E402
 
 FIRST, LAST = 2, 9                         # eight banks
 (ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP, CLAIM,
- TAG, FREE_SUB, SIZE) = range(1, 15)
+ TAG, FREE_SUB, SIZE, PURGE, PURGED) = range(1, 17)
 
 # (op, a, b); a FREE or SHRINK's `a` is the index of an earlier step
 SCRIPT = [
@@ -106,12 +106,41 @@ SCRIPT = [
     (SIZE, 59, 0),              # 65 ...and owner 10's sub-pool 3
     (FREE_OWNER, 9, 0),         # 66 the owner, whatever the tags
     (SIZE, 52, 0),              # 67 gone
+    # PURGING (phase 120): everything freed but the table, the heap filled
+    # with whole banks, four of them marked purgeable, then more asked for
+    (FREE_OWNER, 7, 0),         # 68
+    (FREE_OWNER, 10, 0),        # 69 only the table is left, in bank 2
+    (OWNER, 11, 0),             # 70
+    (TAG, 0, 0),                # 71
+    (ALLOC, 0x10000, 0),        # 72 bank 3
+    (ALLOC, 0x10000, 0),        # 73 4
+    (ALLOC, 0x10000, 0),        # 74 5
+    (ALLOC, 0x10000, 0),        # 75 6
+    (ALLOC, 0x10000, 0),        # 76 7
+    (ALLOC, 0x10000, 0),        # 77 8
+    (ALLOC, 0x10000, 0),        # 78 9
+    (ALLOC, 0x10000, 0),        # 79 none left
+    (PURGE, 73, 3),             # 80 two banks the first to go
+    (PURGE, 75, 3),             # 81
+    (PURGE, 74, 2),             # 82 one after them
+    (PURGE, 76, 1),             # 83 and one last of all
+    (PURGE, 77, 0),             # 84 (0: not purgeable)
+    (ALLOC, 0x10000, 0),        # 85 no room: level 3 goes, then it fits
+    (PURGED, 0, 0),             # 86 2
+    (ALLOC, 0x10000, 0),        # 87 the other level-3 bank: no purge
+    (ALLOC, 0x10000, 0),        # 88 no room again: level 2 goes
+    (PURGED, 0, 0),             # 89 3
+    (SIZE, 76, 0),              # 90 level 1 is still there
+    (BANKS, 2, 0),              # 91 two banks: everything purgeable
+                                #    goes, and they are still not there
+    (PURGED, 0, 0),             # 92 4: the level-1 bank went too
 ]
 
 
 def model():
     h = farref.Heap(FIRST, LAST)
     out = []
+    model.heap = h
     for op, a, b in SCRIPT:
         r = 0
         if op == ALLOC:
@@ -143,6 +172,10 @@ def model():
         elif op == SIZE:
             i = h._find(out[a])
             r = h.blocks[i][1] if i else 0
+        elif op == PURGE:
+            r = h.set_purge(out[a], b)
+        elif op == PURGED:
+            r = len(h.purged)
         out.append(r)
     return out
 
@@ -181,8 +214,9 @@ class TestFarAlloc(unittest.TestCase):
         elf = os.path.join(out, "farmem.elf")
         subprocess.run([ld, "-g", scm] + objs + ["-o", elf, "clib-lc-sd.a",
                         "--rtattr", "exit=simplified"], check=True)
-        names = (["fm_bad", "fm_crossed"]
-                 + [f"fm_out[{i}]" for i in range(len(SCRIPT))])
+        names = (["fm_bad", "fm_crossed", "fm_nhook"]
+                 + [f"fm_out[{i}]" for i in range(len(SCRIPT))]
+                 + [f"fm_hooked[{i}]" for i in range(16)])
         cls.v = ccbug.simulate(db, elf, names)
         cls.want = model()
 
@@ -198,6 +232,12 @@ class TestFarAlloc(unittest.TestCase):
     def test_the_table_stays_sorted_and_whole(self):
         self.assertEqual(self.v["fm_bad"], 0,
                          f"the table was wrong after step {self.v['fm_bad'] - 1}")
+
+    def test_the_hook_is_told_what_went_in_order(self):
+        purged = model.heap.purged
+        got = [self.v[f"fm_hooked[{i}]"] for i in range(min(self.v["fm_nhook"], 16))]
+        self.assertEqual(self.v["fm_nhook"], len(purged))
+        self.assertEqual(got, purged[:16])
 
     def test_no_block_crosses_a_bank(self):
         self.assertEqual(self.v["fm_crossed"], 0)
@@ -224,6 +264,16 @@ class TestFarAlloc(unittest.TestCase):
                          "the owner's own block and another owner's sub-pool 3 "
                          "outlive the free of this owner's sub-pool 3")
         self.assertEqual(w[67], 0, "freeing the owner frees it whatever the tag")
+        self.assertEqual(w[78], 0x090000, "whole banks to the top")
+        self.assertEqual(w[79], 0, "the heap did run out of whole banks")
+        self.assertEqual(w[85], w[73], "the request lands where level 3 was")
+        self.assertEqual(w[86], 2, "both level-3 banks went, and nothing else")
+        self.assertEqual(w[87], w[75])
+        self.assertEqual((w[88], w[89]), (w[74], 3), "then level 2, alone")
+        self.assertEqual(w[90], 0x10000, "level 1 outlives levels 3 and 2")
+        self.assertEqual((w[91], w[92]), (0, 4),
+                         "a request nothing can satisfy purges level 1 too, "
+                         "and is still refused; level 0 is never purged")
 
 
 if __name__ == "__main__":

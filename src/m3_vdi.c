@@ -592,6 +592,73 @@ static void sys_op(WORD op)
         c4 = 12;
         break;
     }
+    /* 21: the AES's resource copies and the far heap's purges (phase 120),
+     * read here rather than by the gate: they live in zwin, which a DOS
+     * banks over while it works, and a poll from the host can catch the
+     * DOS's bank instead (src/sys/zwin.h). */
+    case 21:
+        intout[6] = (WORD)rc_hits;
+        intout[7] = (WORD)rc_fills;
+        intout[8] = (WORD)far_purged;
+        c4 = 9;
+        break;
+    /* 22: PURGING UNDER PRESSURE (phase 120).  intin[0] 0 fills the far
+     * heap with 256 KB spans of an owner of its own until it refuses --
+     * big enough that memory runs out before the table does -- and marks
+     * the last four purge level 3 and the four before them level 1; 1 asks
+     * for 512 KB, which no gap left can hold; 2 frees the owner.
+     * Answers: how many blocks, what the request got, the purges it cost,
+     * and how many of the level-1 and level-3 blocks are still there. */
+    case 22: {
+        static uint32_t keep[8];
+        static uint8_t own;
+        static uint16_t n;
+        uint32_t got = 0;
+        uint16_t i, k1 = 0, k3 = 0, before = far_purged;
+        if (intin[0] == 0) {
+            uint8_t ko = far_owner, kt = far_tag;
+            own = far_new_owner();
+            far_owner = own;
+            far_tag = 0;
+            for (n = 0; ; n++) {
+                uint32_t a = far_alloc_span(0x40000UL);
+                if (!a)
+                    break;
+                for (i = 0; i < 7; i++)
+                    keep[i] = keep[i + 1];
+                keep[7] = a;
+            }
+            far_owner = ko;
+            far_tag = kt;
+            for (i = 0; i < 8; i++)
+                far_set_purge(keep[i], (uint16_t)(i < 4 ? 1 : 3));
+        } else if (intin[0] == 1) {
+            uint8_t ko = far_owner;
+            far_owner = own;
+            got = far_alloc_span(0x80000UL);
+            far_owner = ko;
+        } else {
+            far_free_owner(own);
+        }
+        for (i = 0; i < 8; i++)         /* (the request may start where a
+                                         * purged span did: not that one) */
+            if (keep[i] != got && far_size(keep[i])) {
+                if (i < 4)
+                    k1++;
+                else
+                    k3++;
+            }
+        intout[6] = (WORD)n;
+        intout[7] = (WORD)(got >> 16);
+        intout[8] = (WORD)got;
+        intout[9] = (WORD)(far_purged - before);
+        intout[10] = (WORD)k1;
+        intout[11] = (WORD)k3;
+        intout[12] = (WORD)(keep[4] >> 16);
+        intout[13] = (WORD)keep[4];
+        c4 = 14;
+        break;
+    }
     default:
         break;
     }

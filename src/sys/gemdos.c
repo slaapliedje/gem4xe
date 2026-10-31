@@ -626,6 +626,8 @@ static LONG gd_open(LONG fname, uint8_t aux1)
 
     if (d < 0)
         return d;
+    if (aux1 != CIO_A_READ)
+        rs_cache_flush();               /* a copy may be older than the file */
     if (dos.kind == DOS_SPARTA && aux1 == CIO_A_READ
         && gd_split(gw->full) > 3 && !gd_in_dir())
         return GD_EFILNF;               /* not the root's, in its place */
@@ -2073,6 +2075,10 @@ static LONG gd_nopath(WORD fn)
     case GD_PSYSTEM:                    /* the DOS's command processor: it
                                          * is lent the pool above its top,
                                          * so nothing of ours is taken first */
+        if (arg_l(6))                   /* a command may write anything; */
+            rs_cache_flush();           /* no line only asks if there is a
+                                         * processor, which the desktop does
+                                         * at every start (deskcmd.c) */
         r = dos_command((uint32_t)arg_l(6), (uint32_t)arg_l(10),
                         (uint32_t)arg_l(14));
         break;
@@ -2469,6 +2475,7 @@ void gemdos_call(uint32_t pb)
                                       ? CIO_A_READ : CIO_A_UPDATE);
         break;
     case GD_FDELETE:
+        rs_cache_flush();
         r = gd_xio(CIO_X_DELETE, arg_l(6), 0);
         if (r == GD_EFILNF) {
             /* SpartaDOS erases around a protected file and reports
@@ -2503,6 +2510,7 @@ void gemdos_call(uint32_t pb)
         r = gd_fsnext();
         break;
     case GD_FRENAME:
+        rs_cache_flush();
         r = gd_rename(arg_l(8), arg_l(12));
         break;
     case GD_FSEEK:

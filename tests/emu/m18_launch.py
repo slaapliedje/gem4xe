@@ -551,6 +551,17 @@ def main(argv):
               f"the pool after: mark ${mark2:04X}, {room2} free; was ${mark:04X}, {room}")
         diff = heap_then(brk, brk2, desk_len, kept)
         check(diff is None, f"the far heap after the desktop: {diff}")
+        # THE DESKTOP'S RESOURCE CAME BACK FROM ITS COPY (phase 120): the
+        # first desktop's rsrc_load read DESKTOP.RSC and kept the bytes,
+        # purgeable; the second's loaded from them and not from the disk.
+        # read by the runner (sys op 3021), not polled: zwin is under the
+        # window a DOS banks over (src/sys/zwin.h)
+        rc = r.run([(3021, (), ())])[0][2:]
+        hits, fills = rc[6] & 0xFFFF, rc[7] & 0xFFFF
+        print(f"  the desktop's resources: {fills} copied, {hits} loaded from a copy")
+        check(fills >= 1 and hits >= 1,
+              f"{fills} resource copies made and {hits} used: the second "
+              f"desktop read its resource from the disk again")
         lw = low_water(b)
         used, size = stk_hi + 1 - lw, stk_hi - stk_lo + 1
         print(f"stack:  {used} of {size} bytes used at the low-water mark (${lw:04X})")

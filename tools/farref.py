@@ -8,7 +8,9 @@ one script of requests through this and through farmem.c in the
 compiler's simulator, and the two must agree on every address.
 
 A block is (address, length, owner), the table sorted by address; free
-space is what lies between.  Block 0 is the table itself, at the foot of
+space is what lies between.  The owner is the whole ID -- main | tag << 8
+(phase 119) -- with the block's purge level in bits 16-17 (phase 120),
+which farmem.c keeps in the address's low two bits.  Block 0 is the table itself, at the foot of
 the heap, 2 KB, the system's.
 """
 
@@ -27,6 +29,7 @@ class Heap:
         self.hi = (last_bank + 1) << 16
         self.owner = 0                  # far_owner: the main ID
         self.tag = 0                    # far_tag: kind << 4 | sub-pool
+        self.purged = []                # what far_purge_hook was told
         self.blocks = [(self.lo, TABLE, 0)]
 
     @classmethod
@@ -35,7 +38,8 @@ class Heap:
         with the owner in at's top byte and its tag in len's, as farmem.c
         keeps them.  A block's owner here is the whole ID, main | tag << 8."""
         h = cls(first_bank, last_bank)
-        h.blocks = [(at & 0xFFFFFF, ln & 0xFFFFFF, (at >> 24) | (ln >> 24) << 8)
+        h.blocks = [(at & 0xFFFFFC, ln & 0xFFFFFF,
+                     (at >> 24) | (ln >> 24) << 8 | (at & 3) << 16)
                     for at, ln in entries]
         return h
 
@@ -81,14 +85,61 @@ class Heap:
                 return self._insert(i, a, n)
         return 0
 
+    # -- purging (phase 120) ---------------------------------------------
+    def set_purge(self, addr, level):
+        i = self._find(addr)
+        if not i:
+            return 0
+        a, n, o = self.blocks[i]
+        self.blocks[i] = (a, n, (o & 0xFFFF) | (level & 3) << 16)
+        return 1
+
+    def _purge_level(self, level):
+        keep, n = [self.blocks[0]], 0
+        for b in self.blocks[1:]:
+            if (b[2] >> 16) & 3 == level:
+                self.purged.append(b[0])
+                n += 1
+            else:
+                keep.append(b)
+        self.blocks = keep
+        return n
+
+    def _reclaiming(self, fn, *args):
+        """A request, then GS/OS's order: level 3 purged and tried again,
+        then 2, then 1, then refused."""
+        level = 4
+        while True:
+            r = fn(*args)
+            if r:
+                return r
+            while level > 1:
+                level -= 1
+                if self._purge_level(level):
+                    break
+            else:
+                return 0
+
     # -- the calls -------------------------------------------------------
     def alloc(self, n):
-        return self._take(n, 0)
+        return self._reclaiming(self._take, n, 0)
 
     def alloc_span(self, n):
-        return self._take(n, 1)
+        return self._reclaiming(self._take, n, 1)
+
+    def alloc_page(self, n, limit):
+        return self._reclaiming(self._take, n, 2, limit)
 
     def alloc_top(self, n):
+        return self._reclaiming(self._top1, n)
+
+    def claim(self, at, n):
+        return self._reclaiming(self._claim1, at, n)
+
+    def alloc_banks(self, k):
+        return self._reclaiming(self._banks1, k)
+
+    def _top1(self, n):
         """far_alloc_top: the top of the highest gap it fits."""
         if n == 0:
             return 0
@@ -102,7 +153,7 @@ class Heap:
             return self._insert(i, a, n)
         return 0
 
-    def claim(self, at, n):
+    def _claim1(self, at, n):
         """far_claim: exactly at..at+n, or 0 if any of it is not free."""
         if n == 0:
             return 0
@@ -116,10 +167,7 @@ class Heap:
             return self._insert(i, at, end - at)
         return 0
 
-    def alloc_page(self, n, limit):
-        return self._take(n, 2, limit)
-
-    def alloc_banks(self, k):
+    def _banks1(self, k):
         n = k << 16
         if k == 0:
             return 0
