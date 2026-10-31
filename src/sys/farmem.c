@@ -5,6 +5,7 @@
  * of the machine beyond FARMEM's first and last bank. */
 #include "portab.h"
 #include "farmem.h"
+#include "zwin.h"
 
 /* Calypsi wants the address-space qualifier AFTER the base type in a
  * declarator: `uint8_t FAR *p`, not `FAR uint8_t *p`.  The latter parses
@@ -186,13 +187,16 @@ void far_copy_span(uint32_t dst, uint32_t src, uint32_t len)
  */
 #define FB_MAX      256                 /* blocks; the table is 2 KB */
 #define FB_ADDR     0x00FFFFFFUL
+#define FB_LEN      0x00FFFFFFUL        /* the tag is len's top byte */
 
 typedef struct {
     uint32_t at;                        /* owner << 24 | address */
+    /* len:  tag << 24 | length (phase 119) -- a block is never 16 MB */
     uint32_t len;
 } FBLK;
 
 uint8_t  far_owner;
+ZWIN uint8_t far_tag;                   /* zwin: LoRAM is at its floor */
 uint16_t far_blocks;
 uint32_t far_table;
 
@@ -209,7 +213,7 @@ static uint32_t fb_start(uint16_t i)
 
 static uint32_t fb_end(uint16_t i)
 {
-    uint32_t len = FB(i).len;
+    uint32_t len = FB(i).len & FB_LEN;
     return fb_start(i) + ((len + 3) & ~3UL);
 }
 
@@ -230,7 +234,7 @@ static uint32_t fb_insert(uint16_t i, uint32_t at, uint32_t len)
         FB(k) = e;
     }
     e.at = at | ((uint32_t)far_owner << 24);
-    e.len = len;
+    e.len = len | ((uint32_t)far_tag << 24);
     FB(i) = e;
     far_blocks++;
     return at;
@@ -256,16 +260,18 @@ void far_heap_clear(void)
 
 void far_heap_init(void)
 {
-    uint8_t keep = far_owner;
+    uint8_t keep = far_owner, keept = far_tag;
 
     far_blocks = 0;
     far_table = 0;
     far_owner = 0;
+    far_tag = 0;
     if (!farmem.banks)
         return;
     far_table = heap_lo();
     fb_insert(0, far_table, (uint32_t)FB_MAX * sizeof(FBLK));
     far_owner = keep;
+    far_tag = keept;
 }
 
 /* Where a request of `bytes` fits in [lo, hi), or 0.
@@ -425,6 +431,9 @@ uint16_t far_keep(uint32_t addr)
     at = FB(i).at;
     at &= FB_ADDR;
     FB(i).at = at;
+    at = FB(i).len;                     /* ...and no kind or sub-pool */
+    at &= FB_LEN;
+    FB(i).len = at;
     return 1;
 }
 
@@ -443,6 +452,25 @@ void far_free_owner(uint8_t owner)
     }
 }
 
+/* One sub-pool of an owner: its blocks whose tag says `sub`.  Sub-pool 0
+ * is the owner's own memory and is not a sub-pool -- far_free_owner is
+ * how that goes. */
+void far_free_sub(uint8_t owner, uint8_t sub)
+{
+    uint16_t i = 1;
+
+    if (!owner || !sub)
+        return;
+    while (i < far_blocks) {
+        uint32_t at = FB(i).at, len = FB(i).len;
+        if ((uint8_t)(at >> 24) == owner
+            && OWN_SUB((uint8_t)(len >> 24)) == sub)
+            fb_remove(i);
+        else
+            i++;
+    }
+}
+
 uint16_t far_shrink(uint32_t addr, uint32_t bytes)
 {
     uint16_t i = fb_find(addr);
@@ -451,9 +479,9 @@ uint16_t far_shrink(uint32_t addr, uint32_t bytes)
     if (i == 0xFFFF || i == 0)
         return 0;
     len = FB(i).len;
-    if (bytes == 0 || bytes > len)
+    if (bytes == 0 || bytes > (len & FB_LEN))
         return 0;
-    FB(i).len = bytes;
+    FB(i).len = bytes | (len & ~FB_LEN);    /* the tag stays */
     return 1;
 }
 
@@ -465,7 +493,7 @@ uint32_t far_size(uint32_t addr)
     if (i == 0xFFFF)
         return 0;
     len = FB(i).len;
-    return len;
+    return len & FB_LEN;
 }
 
 /* The biggest request of kind `span` (0: inside a bank, 1: may cross) that

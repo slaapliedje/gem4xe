@@ -386,6 +386,16 @@ def main(argv):
         print("  Pexec: the child read its tail, wrote through the handle it was "
               "given, and ended with Pterm(5); everything it took came back")
 
+        # Sub-pools (phase 119): Mpool(3), Malloc, Mpool back, Malloc,
+        # Mfreepool(3) -- the first block gone, the second still the
+        # program's to free.
+        want(61, 1, "Mpool(3) answered 0 and both Mallocs a block (1 = yes)")
+        want(62, 0, "Mfreepool(3)")
+        want(63, 3, "after Mfreepool(3): its block gone, the program's own not "
+                    "(3 = both)")
+        print("  sub-pools: Mfreepool(3) freed sub-pool 3's block and not the "
+              "program's own")
+
         # ---- Pterm -----------------------------------------------------------
         b.key("SPACE")
         t = poll(b, runs, 3)

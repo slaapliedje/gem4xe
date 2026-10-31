@@ -31,7 +31,7 @@ static uint16_t table_ok(void)
     const FBLK FAR *t = (const FBLK FAR *)far_table;
 
     for (i = 0; i < far_blocks; i++) {
-        uint32_t a = t[i].at & 0xFFFFFFUL, n = t[i].len;
+        uint32_t a = t[i].at & 0xFFFFFFUL, n = t[i].len & 0xFFFFFFUL;
         if (a < end)
             return 0;
         end = a + ((n + 3) & ~3UL);
@@ -66,6 +66,9 @@ int main(void)
         case 9: r = far_largest((uint16_t)a); break;
         case 10: r = far_alloc_top(a); break;
         case 11: r = far_claim(a, b); break;
+        case 12: far_tag = (uint8_t)a; break;
+        case 13: far_free_sub((uint8_t)a, (uint8_t)b); break;
+        case 14: r = far_size(fm_out[a]); break;
         }
         fm_out[k] = r;
         if (!fm_bad && !table_ok())

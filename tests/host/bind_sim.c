@@ -22,7 +22,7 @@
  */
 #include "gem.h"
 
-#define NREC   260
+#define NREC   300
 #define RECW   6                /* kind, then five words of the block */
 
 WORD bind_n;
@@ -334,6 +334,8 @@ int main(void)
     Dprobe();
     Mclaim(0xE10000L, 0xA000L);
     Cpxload(1, 1);
+    Mpool(3);
+    Mfreepool(3);
     Tsettime(0);
     Fgetdta();
     Sversion();

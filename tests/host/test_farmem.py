@@ -32,7 +32,8 @@ import check as ccbug                      # noqa: E402  (the simulator driver)
 import farref                              # noqa: E402
 
 FIRST, LAST = 2, 9                         # eight banks
-ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP, CLAIM = range(1, 12)
+(ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP, CLAIM,
+ TAG, FREE_SUB, SIZE) = range(1, 15)
 
 # (op, a, b); a FREE or SHRINK's `a` is the index of an earlier step
 SCRIPT = [
@@ -86,6 +87,25 @@ SCRIPT = [
     (CLAIM, 0x07BFFE, 0x4),     # 47 rounded down: $07BFFC
     (FREE, 42, 0),              # 48
     (ALLOC, 0x3000, 0),         # 49 still the lowest gap first
+    # SUB-POOLS (phase 119): the tag rides in len's top byte
+    (OWNER, 9, 0),              # 50
+    (TAG, 0x10, 0),             # 51 a program, its own memory
+    (ALLOC, 0x100, 0),          # 52
+    (TAG, 0x13, 0),             # 53 ...its sub-pool 3
+    (ALLOC, 0x100, 0),          # 54
+    (ALLOC, 0x200, 0),          # 55
+    (SHRINK, 55, 0x80),         # 56 smaller, and still sub-pool 3
+    (SIZE, 55, 0),              # 57 the length, without the tag
+    (OWNER, 10, 0),             # 58 another program's sub-pool 3
+    (ALLOC, 0x100, 0),          # 59
+    (FREE_SUB, 9, 3),           # 60 owner 9's sub-pool 3 goes...
+    (TAG, 0x10, 0),             # 61
+    (ALLOC, 0x100, 0),          # 62 ...so its hole is the lowest again
+    (FREE_SUB, 9, 0),           # 63 sub-pool 0 is not one: nothing
+    (SIZE, 52, 0),              # 64 owner 9's own block is there
+    (SIZE, 59, 0),              # 65 ...and owner 10's sub-pool 3
+    (FREE_OWNER, 9, 0),         # 66 the owner, whatever the tags
+    (SIZE, 52, 0),              # 67 gone
 ]
 
 
@@ -116,6 +136,13 @@ def model():
             r = h.alloc_top(a)
         elif op == CLAIM:
             r = h.claim(a, b)
+        elif op == TAG:
+            h.tag = a
+        elif op == FREE_SUB:
+            h.free_sub(a, b)
+        elif op == SIZE:
+            i = h._find(out[a])
+            r = h.blocks[i][1] if i else 0
         out.append(r)
     return out
 
@@ -127,9 +154,16 @@ class TestFarAlloc(unittest.TestCase):
         if not os.path.exists(cc):
             raise unittest.SkipTest("Calypsi not installed")
         ld, db = (os.path.join(CALYPSI, "bin", t) for t in ("ln65816", "db65816"))
-        scm = os.path.join(CALYPSI, "example", "minimal", "linker.scm")
         out = os.path.join(ROOT, "build", "farmem")
         os.makedirs(out, exist_ok=True)
+        # the minimal example's map, with somewhere for farmem.c's zwin
+        with open(os.path.join(CALYPSI, "example", "minimal", "linker.scm")) as f:
+            scm_text = f.read().replace("(section stack data zdata heap)",
+                                        "(section stack data zdata heap zwin)")
+        assert "zwin" in scm_text
+        scm = os.path.join(out, "linker.scm")
+        with open(scm, "w") as f:
+            f.write(scm_text)
         with open(os.path.join(out, "farmem_script.h"), "w") as f:
             f.write(f"#define STEPS {len(SCRIPT)}\n#define FIRST {FIRST}\n"
                     f"#define LAST {LAST}\n"
@@ -184,6 +218,12 @@ class TestFarAlloc(unittest.TestCase):
                          "a claim over a block, or past the heap, is refused")
         self.assertEqual(w[45], 0x069F00, "a claim may end where a block starts")
         self.assertEqual(w[47], 0x07BFFC, "a claim's start rounds down to 4")
+        self.assertEqual(w[57], 0x80, "a shrunk block's length has no tag in it")
+        self.assertEqual(w[62], w[54], "a freed sub-pool's hole is used again")
+        self.assertEqual((w[64], w[65]), (0x100, 0x100),
+                         "the owner's own block and another owner's sub-pool 3 "
+                         "outlive the free of this owner's sub-pool 3")
+        self.assertEqual(w[67], 0, "freeing the owner frees it whatever the tag")
 
 
 if __name__ == "__main__":

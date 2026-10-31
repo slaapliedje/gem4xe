@@ -1939,6 +1939,9 @@ static LONG gd_settime(UWORD v, WORD date)
  * (src/aes/graf.c).  test-m32 found it. */
 #define GD_PATHCALL 0x7FFFFFFFL         /* no call here answers this */
 
+static LONG gd_mpool(WORD sub);
+static LONG gd_mfreepool(WORD sub);
+
 static LONG gd_nopath(WORD fn)
 {
     LONG r;
@@ -2055,6 +2058,12 @@ static LONG gd_nopath(WORD fn)
         break;
     case GD_CPXLOAD:                    /* a control panel module, by index */
         r = sh_cpxload(arg_w(6), arg_w(8));
+        break;
+    case GD_MPOOL:
+        r = gd_mpool(arg_w(6));
+        break;
+    case GD_MFREEPOOL:
+        r = gd_mfreepool(arg_w(6));
         break;
     case GD_MCLAIM:
         r = (LONG)far_claim((uint32_t)arg_l(6), (uint32_t)arg_l(10));
@@ -2334,6 +2343,29 @@ LONG gd_run(void *app, const char *name, uint32_t tail, WORD keep,
     sh_pop(save);
     far_free(save);
     return r;
+}
+
+/* Mpool and Mfreepool (gemdos.h): a sub-pool is the low nibble of the
+ * running program's tag, which its context carries (src/sys/ctx.h) so
+ * that a switch away and back keeps it. */
+static LONG gd_mpool(WORD sub)
+{
+    uint8_t was = OWN_SUB(far_tag);
+
+    if (sub < 0 || sub > 15 || !far_owner)
+        return GD_ERANGE;
+    far_tag = OWN_TAG(OWN_KIND(far_tag), (uint8_t)sub);
+    ctx_cur->owner = (uint16_t)(far_owner | ((uint16_t)far_tag << 8));
+    return was;
+}
+
+static LONG gd_mfreepool(WORD sub)
+{
+    if (sub < 1 || sub > 15 || !far_owner)
+        return GD_ERANGE;
+    far_free_sub(far_owner, (uint8_t)sub);
+    pool_free_sub(far_owner, (uint8_t)sub);
+    return 0;
 }
 
 /* Room on the engine stack for a child's calls: see GD_PEXEC_STACK. */

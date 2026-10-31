@@ -1235,6 +1235,16 @@ LONG Mclaim(LONG addr, LONG len);
  * its vtable reads 0 until this loads it.  EINVFN on 0.13 and earlier. */
 LONG Cpxload(WORD i, WORD on);
 
+/* gem4xe's own (0x1F4, 0x1F5): SUB-POOLS, GS/OS's aux user IDs.  After
+ * Mpool(n), 1 to 15, what the program takes -- Malloc and Mxalloc, a
+ * resource, anything gem4xe takes on its behalf -- is in its sub-pool n,
+ * and Mfreepool(n) frees all of that at once; Mpool(0) goes back to its
+ * own memory.  Mpool answers the sub-pool before; both answer ERANGE for a
+ * number outside 0-15 (Mfreepool: 1-15).  A program's exit frees every
+ * sub-pool it had.  EINVFN on 0.13 and earlier. */
+LONG Mpool(WORD sub);
+LONG Mfreepool(WORD sub);
+
 /* The C functions, through the ST's standard handles: 0 and 1 the
  * console, a VT-52 on GEM's screen; 2 aux:, with nothing behind it here;
  * 3 prn:, the printer GEM4XE.CFG names.  Fforce points one at a file or

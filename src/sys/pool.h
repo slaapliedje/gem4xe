@@ -22,7 +22,8 @@
  *                      left included: the lifetime's kind.  Given back by
  *                      pool_free() or pool_free_owner(), not by a mark.
  *
- * EVERY BLOCK HAS AN OWNER, far_owner's at the time it was taken -- the
+ * EVERY BLOCK HAS AN OWNER, far_owner's at the time it was taken, and
+ * far_tag's kind and sub-pool with it (phase 119) -- the
  * far heap's owners (src/sys/farmem.c), so a program's blocks in both
  * allocators are one owner's, and src/sys/ctx.c keeps far_owner right at
  * every switch.  pool_release(mark) gives back only the CURRENT owner's
@@ -62,6 +63,7 @@ void    *pool_take(uint16_t size, uint16_t align);  /* ...nor in any hole */
 void     pool_release(uint16_t mark);
 uint16_t pool_free(void *block);    /* 1 if it was a block, 0 if not */
 void     pool_free_owner(uint8_t owner);            /* 0, the system: no-op */
+void     pool_free_sub(uint8_t owner, uint8_t sub); /* one sub-pool, 1-15 */
 uint16_t pool_room(void);           /* above the top: what pool_alloc has */
 
 void     pool_keep_mark(void);

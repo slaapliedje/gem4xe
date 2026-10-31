@@ -317,7 +317,7 @@ def main(argv, extra_modules=(), want_floor=False):
         # A program launched from the desktop takes the desktop's place:
         # the biggest page-aligned run the pool has with the desktop gone.
         gaps, lo = [], base
-        for at, n, _ in p.blocks:
+        for at, n, *_ in p.blocks:
             gaps.append(at - ((lo + 0xFF) & ~0xFF))
             lo = at + n
         gaps.append(p.hi - ((lo + 0xFF) & ~0xFF))

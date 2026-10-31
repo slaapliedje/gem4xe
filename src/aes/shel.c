@@ -325,6 +325,7 @@ static WORD sh_ldacc(const char *name)
     p = proc_new(q, ACC_MSGS);
     if (!p)
         return FALSE;
+    app_kind = OWN_ACC;                 /* its blocks say what it is */
     if (app_load_file(name, &app) != APP_OK || !ctx_make(&p->p_ctx, app.entry)) {
         proc_drop(p);
         return FALSE;
@@ -422,6 +423,7 @@ static void sh_ldauto(const char *path, const char *name)
     WORD st;
     RSHOLD held;
 
+    app_kind = OWN_AUTO;
     if (app_load_file(path, &app) != APP_OK)
         return;                         /* a bad one is skipped, not fatal */
     proc_name(proc_app, name);
@@ -675,6 +677,7 @@ static void sh_ldcpx(const char *path, const char *name)
     RSHOLD   held;
 
     (void)name;
+    app_kind = OWN_CPX;
     if (app_load_file(path, &app) != APP_OK) {
         sh_cpxbad++;
         return;
@@ -876,6 +879,7 @@ int32_t sh_cpxload(WORD i, WORD on)
     far_strget(name, e + CPXE_FILE, CPXE_FILELEN);
     sh_cioname(name, cio);
     near = app_near;
+    app_kind = OWN_CPX;
     st = app_load_cio(cio, &app);
     if (st != APP_OK) {
         app_near = near;
@@ -1002,6 +1006,7 @@ static WORD sh_ldapp(void)
          * far memory holds one desktop, read before the keep mark, and a
          * program that asked for another gets it from the file. */
         far_strget(cmd, sh_desk_far, SH_DESKLEN);
+        app_kind = OWN_DESK;
         if (sh_desk_blob && !strcmp(cmd, SH_DESKNAME))
             st = app_load((const uint8_t FAR *)sh_desk_blob, sh_desk_len, &app);
         else

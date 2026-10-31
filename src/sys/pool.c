@@ -14,6 +14,7 @@ extern const uint16_t app_pool_lo, app_pool_hi;
 ZWIN uint16_t pb_at[POOL_MAX];
 ZWIN uint16_t pb_len[POOL_MAX];
 ZWIN uint8_t  pb_own[POOL_MAX];
+ZWIN uint8_t  pb_tag[POOL_MAX];         /* far_tag's: kind and sub-pool */
 ZWIN uint16_t pool_blocks;          /* zwin too: LoRAM is at its floor */
 ZWIN uint16_t pool_full;
 
@@ -56,10 +57,12 @@ static void *pb_insert(uint16_t i, uint16_t at, uint16_t len)
         pb_at[k] = pb_at[k - 1];
         pb_len[k] = pb_len[k - 1];
         pb_own[k] = pb_own[k - 1];
+        pb_tag[k] = pb_tag[k - 1];
     }
     pb_at[i] = at;
     pb_len[i] = len;
     pb_own[i] = far_owner;
+    pb_tag[i] = far_tag;
     pool_blocks++;
     pool_settle();
     return (void *)at;
@@ -72,6 +75,7 @@ static void pb_remove(uint16_t i)
         pb_at[i] = pb_at[i + 1];
         pb_len[i] = pb_len[i + 1];
         pb_own[i] = pb_own[i + 1];
+        pb_tag[i] = pb_tag[i + 1];
     }
     pool_settle();
 }
@@ -185,6 +189,18 @@ void pool_free_owner(uint8_t owner)
         return;                     /* the system's: never, as far_free_owner */
     for (i = pool_blocks; i > 0; i--)
         if (pb_own[i - 1] == owner)
+            pb_remove((uint16_t)(i - 1));
+}
+
+/* One sub-pool of an owner (src/sys/farmem.h, far_free_sub). */
+void pool_free_sub(uint8_t owner, uint8_t sub)
+{
+    uint16_t i;
+
+    if (!owner || !sub)
+        return;
+    for (i = pool_blocks; i > 0; i--)
+        if (pb_own[i - 1] == owner && OWN_SUB(pb_tag[i - 1]) == sub)
             pb_remove((uint16_t)(i - 1));
 }
 

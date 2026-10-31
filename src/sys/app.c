@@ -9,6 +9,7 @@
 #include "vdi/vdi.h"
 #include "sys/farmem.h"
 #include "sys/ctx.h"
+#include "sys/zwin.h"
 
 /* Where the last program's near region went.  A gate that wants to read a
  * program's own variables has to know where the loader put them, and it
@@ -28,6 +29,13 @@ uint16_t app_near;
 uint32_t app_far;
 uint32_t app_vars;
 uint8_t  app_vlink;
+
+/* What the next load is (src/sys/farmem.h, OWN_*): the program's owner
+ * carries it in its tag, and so does every block it takes.  The loader
+ * reads it and puts it back to 0, which means OWN_APP, so a caller that
+ * does not say is loading a program.  zwin, which is bss and so starts
+ * 0: LoRAM is at its floor. */
+ZWIN uint8_t app_kind;
 
 #define HDR_SIZE 32
 
@@ -75,16 +83,21 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
  * app_free gives every piece back at once (phase 79). */
 int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
 {
-    uint8_t own = far_new_owner(), keep = far_owner;
+    uint8_t own = far_new_owner(), keep = far_owner, keept = far_tag;
+    uint8_t tag = OWN_TAG(app_kind ? app_kind : OWN_APP, 0);
     int16_t st;
 
+    app_kind = 0;                       /* for this load only */
     if (!own) {
         memset(app, 0, sizeof *app);
         return APP_E_FAR;
     }
     far_owner = own;
+    far_tag = tag;
     st = app_load_as(blob, len, app, own);
+    app->owner = (uint16_t)(own | ((uint16_t)tag << 8));
     far_owner = keep;
+    far_tag = keept;
     if (st != APP_OK) {
         pool_free_owner(own);       /* a near region in a hole is below */
         far_free_owner(own);        /* the mark the failure released to */
@@ -384,6 +397,7 @@ int16_t app_exec(const APP *app)
 
     ctx_cur->owner = app->owner;
     far_owner = (uint8_t)app->owner;
+    far_tag = (uint8_t)(app->owner >> 8);
     /* the stack's floor is this program's while it runs, and its
      * parent's again after -- Pexec runs a child in the same context */
     ctx_cur->floor = (uint16_t)(app->near_base + CTX_FLOOR);
@@ -391,6 +405,7 @@ int16_t app_exec(const APP *app)
     ctx_cur->floor = keep_floor;
     ctx_cur->owner = keep;
     far_owner = (uint8_t)keep;
+    far_tag = (uint8_t)(keep >> 8);
     return r;
 }
 
@@ -505,13 +520,16 @@ int16_t app_load_file(const char *gemname, APP *app)
 int16_t app_load_cio(const char *cio, APP *app)
 {
     uint32_t blob, len;
-    uint8_t own = far_new_owner(), keep = far_owner;
+    uint8_t own = far_new_owner(), keep = far_owner, keept = far_tag;
+    uint8_t tag = OWN_TAG(app_kind ? app_kind : OWN_APP, 0);
     int16_t st;
 
+    app_kind = 0;                       /* for this load only */
     memset(app, 0, sizeof *app);
     if (!own)
         return APP_E_FAR;
     far_owner = own;
+    far_tag = tag;
     st = far_read_file(cio, &blob, &len);
     if (st == APP_OK) {
         st = app_load_as((const uint8_t FAR *)blob, len, app, own);
@@ -520,7 +538,9 @@ int16_t app_load_cio(const char *cio, APP *app)
          * program's end, which the bump heap could not do. */
         far_free(blob);
     }
+    app->owner = (uint16_t)(own | ((uint16_t)tag << 8));
     far_owner = keep;
+    far_tag = keept;
     if (st != APP_OK) {
         pool_free_owner(own);       /* a near region in a hole is below */
         far_free_owner(own);        /* the mark the failure released to */

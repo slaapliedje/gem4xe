@@ -1,7 +1,8 @@
 # Memory: what GS/OS teaches gem4xe
 
-A plan, being built: steps 1 and 2 are done ([phase116.md](phase116.md),
-[phase117.md](phase117.md)).  The Apple IIGS runs the same CPU on the same kind
+A plan, being built: steps 1, 2 and 3 are done ([phase116.md](phase116.md),
+[phase117.md](phase117.md), [phase118.md](phase118.md),
+[phase119.md](phase119.md)).  The Apple IIGS runs the same CPU on the same kind
 of memory -- one scarce bank $00, many plentiful banks above -- and its
 Memory Manager (*Apple IIGS Toolbox Reference*, volume 1 chapter 12, volume
 3 chapter 36; *GS/OS Reference*, chapters 2 and 8) solved the problems
@@ -109,6 +110,10 @@ sub-pools are its main ID with an aux; freeing by the main frees them all.
 
 *Gate:* `test_farmem` extended -- an owner's aux blocks freed by its main,
 another program's untouched -- and the suite.
+
+**Done** in [phase119.md](phase119.md): the kind and the sub-pool are a
+tag beside the owner, in a far block's spare length byte and a pool
+array; `Mpool` and `Mfreepool` give a program its sub-pools.
 
 ### 4. Purgeable blocks, and a reclaim order
 

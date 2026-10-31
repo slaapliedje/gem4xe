@@ -65,7 +65,8 @@ typedef struct {
     uint16_t depth;
     /* whose far blocks the program running here takes (src/sys/farmem.c):
      * a switch makes it far_owner, so an accessory's rsrc_load is the
-     * accessory's and not whoever ran last */
+     * accessory's and not whoever ran last; the high byte is far_tag,
+     * the owner's kind and current sub-pool (phase 119) */
     uint16_t owner;
     /* THE LOWEST its program's stack may go: CTX_FLOOR past its near
      * region's start, which is its direct page -- the compiler's pseudo

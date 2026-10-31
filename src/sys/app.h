@@ -60,6 +60,10 @@ extern uint32_t app_far;           /* its far image: large-data globals   */
 extern uint32_t app_vars;          /* ...a packed one's far variables (v5) */
 extern uint8_t  app_vlink;         /* ...and the bank they were linked in  */
 
+/* The kind of program the next app_load or app_load_file loads, OWN_* in
+ * src/sys/farmem.h; read once and put back to 0, which is OWN_APP. */
+extern uint8_t app_kind;
+
 int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app);
 int16_t app_exec(const APP *app);
 void    app_free(const APP *app);

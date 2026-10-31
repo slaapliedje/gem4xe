@@ -83,6 +83,20 @@ def run(window):
             n, drops = b.peek16(syms["sh_ncpx"]), b.peek16(syms["sh_cpxdrops"])
             check(n > 0 and drops == n, f"{drops} of {n} module(s) freed "
                                         f"after boot")
+            # ...and every block says what owns it (phase 119): the
+            # desktop's near region is the desktop's kind, and each
+            # accessory's near region an accessory's -- the tag's top
+            # nibble (src/sys/farmem.h, OWN_*).
+            nb = b.peek16(syms["pool_blocks"])
+            at = b.memdump(syms["pb_at"], 2 * nb)
+            tg = b.memdump(syms["pb_tag"], nb)
+            kinds = {at[2 * i] | at[2 * i + 1] << 8: tg[i] >> 4 for i in range(nb)}
+            desk = kinds.get(b.peek16(syms["app_near"]))
+            accs = sum(1 for k in kinds.values() if k == 2)
+            check(desk == 4, f"the desktop's near region is of kind {desk} "
+                             f"(4 is OWN_DESK)")
+            check(accs >= 3, f"{accs} pool block(s) of kind 2, OWN_ACC (the "
+                             f"disk has three accessories)")
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, OUT)
         if not window:

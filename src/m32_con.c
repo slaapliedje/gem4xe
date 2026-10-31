@@ -196,6 +196,22 @@ int main(void)
     m32_res[57] = (WORD)Pexec(PE_LOADGO, "NOPE.PRG", "\0", 0);
     m32_res[58] = (WORD)Pexec(3, "M32KID.PRG", "\0", 0);
 
+    /* -- sub-pools (phase 119): a block in sub-pool 3, one in the
+     * program's own memory, and Mfreepool(3) takes only the first ------- */
+    {
+        WORD was = (WORD)Mpool(3);
+        LONG a = Malloc(200L), k;
+
+        Mpool(was);
+        k = Malloc(200L);
+        m32_res[61] = (WORD)(was == 0 && a > 0 && k > 0);
+        m32_res[62] = (WORD)Mfreepool(3);
+        /* 2: freeing the sub-pool's block again fails, it is gone;
+         * 1: the program's own block is still its to free */
+        m32_res[63] = (WORD)((Mfree((void FAR *)a) != 0 ? 2 : 0)
+                             + (Mfree((void FAR *)k) == 0 ? 1 : 0));
+    }
+
     /* -- the clock: Tgettimeofday and clock() across an evnt_timer ------
      * The gate wants the pair before and after a 500 ms wait, so it can
      * see the seconds and microseconds monotonic and the span right, and

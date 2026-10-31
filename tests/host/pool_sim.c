@@ -13,7 +13,7 @@
 #include "pool_script.h"        /* STEPS, script[STEPS][3], LO, HI */
 
 const uint16_t app_pool_lo = LO, app_pool_hi = HI;
-uint8_t far_owner;
+uint8_t far_owner, far_tag;
 
 uint16_t pl_out[STEPS];
 uint16_t pl_top[STEPS];
@@ -54,6 +54,8 @@ int main(void)
         case 10: r = pool_refused; break;
         case 11: r = pool_full; break;
         case 12: pool_release(a); break;    /* a mark given as a number */
+        case 13: far_tag = (uint8_t)a; break;
+        case 14: pool_free_sub((uint8_t)a, (uint8_t)b); break;
         }
         pl_out[k] = r;
         pl_top[k] = pool_mark();

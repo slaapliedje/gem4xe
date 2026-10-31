@@ -28,7 +28,7 @@ import poolref                             # noqa: E402
 
 LO, HI = 0x4800, 0x6000
 (ALLOC, TAKE, MARK, RELEASE, FREE, FREE_OWNER, OWNER, KEEP, ROOM, REFUSED,
- FULL, RELEASE_AT) = range(1, 13)
+ FULL, RELEASE_AT, TAG, FREE_SUB) = range(1, 15)
 SLOTS = 32                                 # POOL_MAX (src/sys/pool.h)
 
 # (op, a, b); RELEASE's and FREE's `a` is the index of an earlier step
@@ -77,6 +77,15 @@ SCRIPT = [
     (FREE, 17, 0),              # 41 a refused take's 0 is no block: 0
     (ALLOC, 0, 0x100),          # 42 a zero size is a place: the top, aligned
     (ROOM, 0, 0),               # 43 ...and took nothing
+    # SUB-POOLS (phase 119)
+    (OWNER, 9, 0),              # 44
+    (TAG, 0x15, 0),             # 45 owner 9's sub-pool 5
+    (ALLOC, 64, 2),             # 46 $5B64
+    (TAG, 0x10, 0),             # 47
+    (ALLOC, 64, 2),             # 48 $5BA4, its own
+    (FREE_SUB, 9, 5),           # 49 sub-pool 5 goes; the top stays
+    (FREE, 46, 0),              # 50 ...so 46 is no block now: 0
+    (FREE, 48, 0),              # 51 ...and 48 still is: 1
 ]
 # ...and then the table runs out
 SCRIPT += [(ALLOC, 2, 2)] * SLOTS + [(FULL, 0, 0), (ROOM, 0, 0)]
@@ -112,6 +121,10 @@ def model():
             r = p.full
         elif op == RELEASE_AT:
             p.release(a)
+        elif op == TAG:
+            p.tag = a
+        elif op == FREE_SUB:
+            p.free_sub(a, b)
         out.append(r)
         tops.append(p.top())
     return out, tops
@@ -195,6 +208,10 @@ class TestPool(unittest.TestCase):
         self.assertEqual(w[41], 0, "freeing what is not a block")
         self.assertEqual((w[42], w[43]), (0x5C00, HI - 0x5B64))
         self.assertGreater(w[-2], 0, "the table runs out, and says so")
+        self.assertEqual((w[46], w[48]), (0x5B64, 0x5BA4))
+        self.assertEqual(t[49], 0x5BE4, "a sub-pool freed below the top")
+        self.assertEqual((w[50], w[51]), (0, 1),
+                         "the sub-pool's block went, the owner's own stayed")
 
 
 if __name__ == "__main__":

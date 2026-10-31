@@ -1676,6 +1676,18 @@ LONG Cpxload(WORD i, WORD on)
     return dos(0x1F3);
 }
 
+LONG Mpool(WORD sub)
+{
+    dw(6, sub);
+    return dos(0x1F4);
+}
+
+LONG Mfreepool(WORD sub)
+{
+    dw(6, sub);
+    return dos(0x1F5);
+}
+
 LONG Psystem(const char FAR *line, void FAR *out, LONG max)
 {
     dl(6, (LONG)(uint32_t)line);

@@ -253,6 +253,14 @@ extern uint16_t gd_termres;
  * (on 0), for CONTROL.ACC -- src/aes/shel.c sh_cpxload.  Cpxload in
  * src/app/gem.h. */
 #define GD_CPXLOAD   0x1F3
+/* ...and a program's SUB-POOLS (phase 119): Mpool(n) puts what it takes
+ * from now on -- Malloc, a resource, anything taken on its behalf -- in
+ * sub-pool n of its owner, 1 to 15, or back in its own memory with 0,
+ * and answers the one before; Mfreepool(n) frees every block of sub-pool
+ * n at once.  Its exit frees them all, whatever it did.  GS/OS's aux user
+ * IDs.  In src/app/gem.h. */
+#define GD_MPOOL     0x1F4
+#define GD_MFREEPOOL 0x1F5
 
 /* A loaded program run as Pexec runs a child, kept when `keep` and it
  * ends with Ptermres (*kept says so), freed by its owner otherwise.  The

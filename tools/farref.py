@@ -25,15 +25,18 @@ class Heap:
     def __init__(self, first_bank, last_bank):
         self.lo = first_bank << 16
         self.hi = (last_bank + 1) << 16
-        self.owner = 0
+        self.owner = 0                  # far_owner: the main ID
+        self.tag = 0                    # far_tag: kind << 4 | sub-pool
         self.blocks = [(self.lo, TABLE, 0)]
 
     @classmethod
     def from_table(cls, first_bank, last_bank, entries):
         """The target's own table, read out of its memory: [(at, len)]
-        with the owner in at's top byte, as farmem.c keeps it."""
+        with the owner in at's top byte and its tag in len's, as farmem.c
+        keeps them.  A block's owner here is the whole ID, main | tag << 8."""
         h = cls(first_bank, last_bank)
-        h.blocks = [(at & 0xFFFFFF, ln, at >> 24) for at, ln in entries]
+        h.blocks = [(at & 0xFFFFFF, ln & 0xFFFFFF, (at >> 24) | (ln >> 24) << 8)
+                    for at, ln in entries]
         return h
 
     # -- gaps ------------------------------------------------------------
@@ -50,7 +53,7 @@ class Heap:
     def _insert(self, i, a, n):
         if len(self.blocks) >= FB_MAX:
             return 0
-        self.blocks.insert(i, (a, n, self.owner))
+        self.blocks.insert(i, (a, n, self.owner | self.tag << 8))
         return a
 
     @staticmethod
@@ -152,9 +155,17 @@ class Heap:
         return 1
 
     def free_owner(self, owner):
+        """Every block whose main ID is `owner`, whatever its tag."""
         if owner:
             self.blocks = [self.blocks[0]] + [b for b in self.blocks[1:]
-                                              if b[2] != owner]
+                                              if b[2] & 0xFF != owner]
+
+    def free_sub(self, owner, sub):
+        """far_free_sub: one sub-pool, 1-15, of one owner."""
+        if owner and sub:
+            self.blocks = [self.blocks[0]] + [
+                b for b in self.blocks[1:]
+                if not (b[2] & 0xFF == owner and (b[2] >> 8) & 0x0F == sub)]
 
     def shrink(self, addr, n):
         i = self._find(addr)
