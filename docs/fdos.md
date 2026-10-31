@@ -49,6 +49,17 @@ Two things follow from being DOS 2-shaped:
   root's wins, then the first folder's.  The disks have one: `CALC.RSC`
   in both `\APPS\` and `\GEM\`, the same file.
 
+### BASIC
+
+Off, always.  `G4DOS.SYS`'s DOSINI banks an XL's BASIC out (PORTB bit 1)
+and sets `BASICF`, so the OS finds no cartridge and goes through DOSVEC to
+the loader, and a warm start keeps it out.  Without that, the machine
+came up at BASIC's `READY` whenever OPTION was not held at a cold start --
+and gem4xe's loader makes one: switching a Rapidus to its 65C816 is a
+cold start, long after anybody let go of OPTION.  `test-fdos` found it
+when a few frames' difference put that second cold start outside the
+window in which the emulator holds OPTION for `--nobasic`.
+
 ### Reading
 
 Through the OS's SIO routine, never a driver of its own: one loader

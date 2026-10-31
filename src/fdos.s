@@ -56,6 +56,8 @@ DOSVEC:       .equ    0x000a
 RUNAD:        .equ    0x02e0
 INITAD:       .equ    0x02e2
 COLDSV:       .equ    0xe477
+PORTB:        .equ    0xd301
+BASICF:       .equ    0x03f8          ; the XL OS's: non-zero, BASIC is off
 
 ;;; SIO's device control block and the OS's entry.
 DDEVIC:       .equ    0x0300
@@ -147,8 +149,23 @@ fd_base:      jmp     fd_install      ; $0700: DOSINI
 ;;; ---------------------------------------------------------------------------
 ;;; fd_install -- D: into HATABS, and the machine's vectors.  DOSINI, so it
 ;;; runs again after every RESET, when the OS has put HATABS back.
+;;;
+;;; AND BASIC OFF, whatever OPTION said.  The OS runs a cartridge rather
+;;; than DOSVEC when it finds one after DOSINI, and an XL's BASIC is one
+;;; unless OPTION was held at the cold start.  gem4xe's loader switches a
+;;; Rapidus to its 65C816, which is a COLD start, long after anybody let
+;;; go of OPTION -- and the machine came up at BASIC's READY instead of
+;;; loading GEM again.  So the bank comes out here (PORTB bit 1 set), and
+;;; BASICF says so, which keeps it out across a warm start too.  Nothing
+;;; on this disk wants BASIC.  (phase 119; test-fdos found it when the
+;;; emulator's held OPTION stopped covering the second cold start)
 ;;; ---------------------------------------------------------------------------
-fd_install:   ldx     #0
+fd_install:   lda     PORTB
+              ora     #0x02
+              sta     PORTB
+              lda     #1
+              sta     BASICF
+              ldx     #0
 10$:          lda     HATABS,x
               beq     30$             ; a free slot
               cmp     #'D'
