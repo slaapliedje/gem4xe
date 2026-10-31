@@ -90,7 +90,7 @@ so a freed program's hole is the next one's.
 What it makes possible, each a step of its own after:
 
 - **a Control Panel module loaded when the panel opens it** and freed when
-  it closes;
+  it closes -- **done** in [phase118.md](phase118.md);
 - **an accessory added or removed** without a reboot;
 - **room measured honestly**: a program that does not fit is told how much
   it needs.

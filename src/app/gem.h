@@ -1227,6 +1227,14 @@ LONG Dprobe(void);
  * earlier. */
 LONG Mclaim(LONG addr, LONG len);
 
+/* gem4xe's own (0x1F3), for a control panel: module i of
+ * appl_getinfo(AES_CPX)'s table loaded again (on 1) -- run, so its slot's
+ * vtable is live -- or freed (on 0), unless its header says CPX_RESIDENT.
+ * 0, or a GEMDOS error: ENSMEM for no room, EPLFMT for a module that
+ * declined.  A module that is not CPX_RESIDENT is freed after boot and
+ * its vtable reads 0 until this loads it.  EINVFN on 0.13 and earlier. */
+LONG Cpxload(WORD i, WORD on);
+
 /* The C functions, through the ST's standard handles: 0 and 1 the
  * console, a VT-52 on GEM's screen; 2 aux:, with nothing behind it here;
  * 3 prn:, the printer GEM4XE.CFG names.  Fforce points one at a file or

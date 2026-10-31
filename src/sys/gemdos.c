@@ -1564,8 +1564,9 @@ static LONG gd_term(WORD code)
  * program.  Saying that plainly beats honouring a number that cannot
  * mean here what it means there.
  *
- * WHO ACTS ON IT: the shell, and only for a program it ran out of the
- * AUTO folder before the keep mark (src/aes/shel.c, sh_auto).  A program
+ * WHO ACTS ON IT: the shell, for a program it ran out of the AUTO folder
+ * before the keep mark (src/aes/shel.c, sh_auto) and for a control panel
+ * module, at boot or when the panel opens it (gd_run's `keep`).  A program
  * launched from the desktop is freed by its owner when it ends, whatever
  * this says -- so gd_termres is cleared
  * before every run and a late caller is simply ignored rather than
@@ -2052,6 +2053,9 @@ static LONG gd_nopath(WORD fn)
     case GD_DPROBE:
         r = gd_dprobe();
         break;
+    case GD_CPXLOAD:                    /* a control panel module, by index */
+        r = sh_cpxload(arg_w(6), arg_w(8));
+        break;
     case GD_MCLAIM:
         r = (LONG)far_claim((uint32_t)arg_l(6), (uint32_t)arg_l(10));
         if (!r)
@@ -2240,7 +2244,7 @@ void gemdos_release(void)
 #define PE_LOADGO       0
 #define GD_PEXEC_STACK  1024
 
-static LONG gd_loaderr(WORD st)
+LONG gd_loaderr(WORD st)
 {
     if (st == APP_E_FILE)
         return GD_EFILNF;
@@ -2251,35 +2255,38 @@ static LONG gd_loaderr(WORD st)
     return GD_EPLFMT;
 }
 
-static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
+/* A LOADED CHILD, RUN as Pexec runs one: the shell's words and a DTA of
+ * its own, its parent's standard handles, its own resource slots, its
+ * own gem_api_sp; and at its end every file it opened closed, the
+ * parent's state put back, and -- unless `keep` and it ended with
+ * Ptermres -- everything it took freed, by its owner, in both
+ * allocators.  *kept says which.  The answer is its main()'s or its
+ * Pterm's code, or ENSMEM with nothing run and the child freed.
+ *
+ * keep is the control panel's (sh_cpxload in src/aes/shel.c): a module
+ * loaded when the panel opens it is RUN, so that its crt installs its
+ * data, and stays because it ends with Ptermres -- the AUTO folder's
+ * machinery, from inside a call. */
+LONG gd_run(void *app, const char *name, uint32_t tail, WORD keep,
+            WORD *kept)
 {
+    APP *child = (APP *)app;
     PROC *p = rlr;
-    APP child;
     uint32_t std, dup, save, pdta;
     uint8_t rows[GD_STDS + GD_DUPS];
-    uint16_t owned, ateof, near, api_sp, vwk;
+    uint16_t owned, ateof, api_sp, vwk;
     RSHOLD held;
-    WORD depth, i, st;
+    WORD depth, i;
     LONG r;
 
-    if (mode != PE_LOADGO)
-        return GD_EINVFN;
-    if ((uint16_t)(void *)&depth < (uint16_t)(ctx_stack_lo + GD_PEXEC_STACK))
-        return GD_ENSMEM;
-    r = gd_name(fname);
-    if (r < 0)
-        return r;
+    *kept = 0;
     save = far_alloc(SH_SAVELEN + DTA_SIZE);    /* the shell's words, the child's DTA */
-    if (!save)
+    if (!save) {
+        pool_free_owner((uint8_t)child->owner);
+        far_free_owner((uint8_t)child->owner);
         return GD_ENSMEM;
-    near = app_near;
-    st = app_load_file(gw->full, &child);
-    if (st != APP_OK) {
-        far_free(save);
-        app_near = near;
-        return gd_loaderr(st);
     }
-    sh_push(save, gw->full, (uint32_t)tail);
+    sh_push(save, name, tail);
 
     /* The parent's, kept; the child's made. */
     std = gd_std();
@@ -2304,7 +2311,10 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     p->p_gdateof = 0;
     p->p_gddta = save + SH_SAVELEN;
 
-    r = (LONG)app_exec(&child);
+    gd_termres = 0;                     /* it has to ask, every time */
+    r = (LONG)app_exec(child);
+    *kept = (WORD)(keep && gd_termres);
+    gd_termres = 0;
 
     /* The child's gone; the parent's back. */
     gem_api_sp = api_sp;
@@ -2315,12 +2325,45 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     p->p_gdowned = owned;
     p->p_gdateof = ateof;
     p->p_gddta = pdta;
-    rs_unclaim(&held);
-    vdi_close_virtuals_but(vwk);
-    pool_free_owner((uint8_t)child.owner); /* the child's, every block */
-    far_free_owner((uint8_t)child.owner);  /* in both allocators */
+    rs_unclaim(&held);                  /* what a kept one loaded stays */
+    if (!*kept) {
+        vdi_close_virtuals_but(vwk);
+        pool_free_owner((uint8_t)child->owner); /* the child's, every block */
+        far_free_owner((uint8_t)child->owner);  /* in both allocators */
+    }
     sh_pop(save);
     far_free(save);
+    return r;
+}
+
+/* Room on the engine stack for a child's calls: see GD_PEXEC_STACK. */
+WORD gd_room_to_run(void)
+{
+    WORD here;
+    return (uint16_t)(void *)&here >= (uint16_t)(ctx_stack_lo + GD_PEXEC_STACK);
+}
+
+static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
+{
+    APP child;
+    uint16_t near;
+    WORD st, kept;
+    LONG r;
+
+    if (mode != PE_LOADGO)
+        return GD_EINVFN;
+    if (!gd_room_to_run())
+        return GD_ENSMEM;
+    r = gd_name(fname);
+    if (r < 0)
+        return r;
+    near = app_near;
+    st = app_load_file(gw->full, &child);
+    if (st != APP_OK) {
+        app_near = near;
+        return gd_loaderr(st);
+    }
+    r = gd_run(&child, gw->full, (uint32_t)tail, 0, &kept);
     app_near = near;
     return r;
 }

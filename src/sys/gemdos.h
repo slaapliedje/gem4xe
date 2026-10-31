@@ -243,10 +243,24 @@ extern uint16_t gemdos_bad;     /* of which EINVFN */
 
 /* Set by Ptermres, cleared by whoever is about to run a program.  It is
  * all or nothing here: a gem4xe program is a near region and a far image,
- * each taken whole from a bump allocator, so there is no `keep` byte
- * count to honour (src/sys/gemdos.c says the rest).  Only the shell's
- * AUTO folder acts on it -- everything else runs above the keep mark,
- * where the allocators wind back regardless. */
+ * each taken whole, so there is no `keep` byte count to honour
+ * (src/sys/gemdos.c says the rest).  The shell's AUTO folder and the
+ * control panel's modules act on it; every other program is freed by its
+ * owner when it ends, regardless. */
 extern uint16_t gd_termres;
+
+/* gem4xe's own (0x1F3): control panel module i loaded (on 1) or freed
+ * (on 0), for CONTROL.ACC -- src/aes/shel.c sh_cpxload.  Cpxload in
+ * src/app/gem.h. */
+#define GD_CPXLOAD   0x1F3
+
+/* A loaded program run as Pexec runs a child, kept when `keep` and it
+ * ends with Ptermres (*kept says so), freed by its owner otherwise.  The
+ * APP is src/sys/app.h's; void * here so this header needs neither it
+ * nor the AES's. */
+int32_t gd_run(void *child, const char *name, uint32_t tail, int16_t keep,
+               int16_t *kept);
+int16_t gd_room_to_run(void);           /* enough engine stack for one */
+int32_t gd_loaderr(int16_t app_status); /* an APP_E_* as a GEMDOS error */
 
 #endif /* GEM4XE_GEMDOS_H */

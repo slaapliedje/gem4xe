@@ -56,18 +56,16 @@
  *
  * THE ST PUTS THE HEADER IN THE FILE so XCONTROL can list every module
  * without loading any -- it reads 512 bytes and closes the file again.
- * That buys nothing here, because every module IS loaded, at boot,
- * before the keep mark (src/aes/shel.c, sh_cpx).  And it has to be:
- * both of gem4xe's allocators are bump allocators, so memory taken
- * while the desktop is up sits ABOVE the desktop's own mark and
- * app_free reclaims it the moment the desktop exits to run a program.
- * A module loaded on demand would be freed out from under the panel by
- * the next thing the user launched, silently.
+ * Here every module is RUN once at boot instead (src/aes/shel.c, sh_cpx),
+ * which fills its header into the AES's table, lets the panel boot-init
+ * it, and then -- unless it is CPX_RESIDENT -- frees it again.  The panel
+ * lists modules from the table and has a module loaded when it is opened
+ * and freed when it closes (Cpxload in gem.h), as XCONTROL does.
  *
- * So: loaded when the accessories are, kept as long as they are, and a
- * header that travels in the module rather than in front of it -- which
- * also means the loader needs no special case and a CPX is a .G4A the
- * ordinary tools already build.
+ * So the header travels in the module rather than in front of it, which
+ * means the loader needs no special case and a CPX is a .G4A the
+ * ordinary tools already build.  What it costs is that boot runs every
+ * module once.
  */
 #define CPX_MAGIC    0x6811         /* 'CPX' for this machine: not $601A,
                                      * which is a 68000 `bra.s` and would
@@ -77,7 +75,7 @@
 /* cpxhead flags */
 #define CPX_SETONLY   0x0001        /* no dialog: it acts and returns */
 #define CPX_BOOTINIT  0x0002        /* wants its init run at start-up */
-#define CPX_RESIDENT  0x0004        /* stay loaded once opened */
+#define CPX_RESIDENT  0x0004        /* never freed: loaded from boot on */
 
 /* THE HEADER IS 512 BYTES AND EVERY OFFSET IS ATARI'S.  Do not measure it
  * with sizeof in a constant expression -- this compiler answers two

@@ -247,6 +247,7 @@ EXPECT = [
     ("Psystem",  DOS, 0x1F0, 0, 0, 0, 0),
     ("Dprobe",   DOS, 0x1F1, 0, 0, 0, 0),
     ("Mclaim",   DOS, 0x1F2, 0, 0, 0, 0),
+    ("Cpxload",  DOS, 0x1F3, 0, 0, 0, 0),
     ("Tsettime", DOS, 0x2D, 0, 0, 0, 0),
     ("Fgetdta",  DOS, 0x2F, 0, 0, 0, 0),
     ("Sversion", DOS, 0x30, 0, 0, 0, 0),

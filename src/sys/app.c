@@ -497,6 +497,13 @@ int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len)
 int16_t app_load_file(const char *gemname, APP *app)
 {
     char cio[CIO_NAME_MAX + 1];
+
+    dos_cioname(gemname, cio);
+    return app_load_cio(cio, app);
+}
+
+int16_t app_load_cio(const char *cio, APP *app)
+{
     uint32_t blob, len;
     uint8_t own = far_new_owner(), keep = far_owner;
     int16_t st;
@@ -504,7 +511,6 @@ int16_t app_load_file(const char *gemname, APP *app)
     memset(app, 0, sizeof *app);
     if (!own)
         return APP_E_FAR;
-    dos_cioname(gemname, cio);
     far_owner = own;
     st = far_read_file(cio, &blob, &len);
     if (st == APP_OK) {

@@ -38,6 +38,7 @@
 #include "sys/ctx.h"
 #include "sys/abi.h"                    /* app_run: a CPX is run, not exec'd */
 #include "aes/proc.h"
+#include "sys/zwin.h"
 #include "lang_rsc.h"
 
 #define SH_CMDLEN   128         /* MAXPATHLEN: the command, NUL-terminated */
@@ -536,20 +537,21 @@ static void sh_auto(void)
 
 /* ---- the control panel's extensions ------------------------------------
  *
- * \GEM\*.CPX, loaded here beside the accessories and for the same
- * reasons: a module is a .G4A, it is kept for the life of the machine,
- * and this is before the keep mark so keeping it costs nothing extra.
+ * \GEM\*.CPX, loaded here beside the accessories: each one RUN once at
+ * boot, so that it fills in its header and the panel can boot-init it
+ * (CPX_BOOTINIT), and then -- unless its header says CPX_RESIDENT --
+ * FREED again before the keep mark (sh_cpxdropall), its header, its file
+ * name and its settings kept in the table.  The panel lists modules from
+ * the headers, and when you open one it asks for it to be loaded again
+ * (Cpxload, sh_cpxload below) and freed when you close it: the ST's
+ * rule, and phase 118's.  A module costs the pool nothing while it is
+ * closed.
  *
- * WHY NOT ON DEMAND, which is what a control panel would rather do.
- * Until phase 117 bank $00's application pool was a bump allocator: pool
- * memory taken while the desktop was up sat ABOVE the desktop's own mark,
- * and app_free wound back to that mark the moment the desktop exited to
- * run a program -- so a module the panel loaded when you opened it would
- * have been freed out from under it by the next thing you launched.  The
- * pool frees by owner now (src/sys/pool.h), and a module loaded on
- * demand would keep its blocks until it is freed; doing that is the next
- * step of docs/memory-plan.md, and until it is built the modules load
- * here, as accessories do.
+ * ON DEMAND became possible in phase 117.  Until then bank $00's pool
+ * was a bump allocator, and a module loaded while the desktop was up sat
+ * above the desktop's mark and would have been freed out from under the
+ * panel the moment the desktop exited to run a program.  Both allocators
+ * free by owner now, and a module is an owner of its own.
  *
  * WHAT THE SHELL DOES AND DOES NOT DO.  It finds them, loads them, calls
  * each one's entry, and keeps the vtable and the header.  It does not
@@ -563,7 +565,10 @@ static void sh_auto(void)
 WORD sh_ncpx;                           /* modules loaded */
 WORD sh_cpxbad;                         /* ...and found but refused: the gate */
 WORD sh_cpxcfgs;                        /* settings files found and read */
-static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD) */
+ZWIN WORD sh_cpxdrops;                  /* ...freed after boot-init, for the gate;
+                                         * zwin: LoRAM is at its floor */
+static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD),
+                                         * then CPX_MAX owners (CPXE_OWN) */
 
 /* One entry of the table, laid out by hand because this file must agree
  * with src/app/cpx.h without including it -- the AES is small-data and
@@ -578,6 +583,11 @@ static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD) */
 #define CPXE_HDR    20                  /* CPX_HDR_SIZE bytes of header    */
 #define CPX_HDR_SZ  512
 #define CPXE_SIZE   (CPXE_HDR + CPX_HDR_SZ)
+/* Each loaded module's owner, a byte a slot after the slots themselves,
+ * where the panel's stride never reaches: what frees it.  0: not loaded. */
+#define CPXE_OWN(i) (sh_cpx_far + CPX_MAX * CPXE_SIZE + (uint32_t)(i))
+#define CPXH_FLAGS  2                   /* the header's flags word */
+#define CPXF_RESIDENT 0x0004            /* src/app/cpx.h CPX_RESIDENT */
 /* Where a module's settings live inside its header, and how many.  The
  * panel reaches them through XCPB's `buffer` and writes them back with
  * CPX_Save; the shell reads them off the disk below.  Atari's offsets
@@ -693,7 +703,8 @@ static void sh_ldcpx(const char *path, const char *name)
     }
     gd_termres = 0;
     sh_cpxcfg(e, name);                 /* what it saved last time */
-    sh_ncpx++;                          /* kept, as an accessory is */
+    far_write8(CPXE_OWN(sh_ncpx), (uint8_t)app.owner);
+    sh_ncpx++;                          /* kept, until sh_cpxdropall */
 }
 
 /* The scan, in a frame of its own, for sh_autoscan's reason: sh_ldcpx
@@ -738,14 +749,14 @@ WORD sh_cpxscan(void)
     if (!n)
         return 0;                       /* no modules: nothing is taken */
     if (!sh_cpx_far) {
-        sh_cpx_far = far_alloc(CPX_MAX * CPXE_SIZE);
+        sh_cpx_far = far_alloc(CPX_MAX * CPXE_SIZE + CPX_MAX);
         sh_xcpb    = far_alloc(XCPB_SIZE);
         if (sh_xcpb)
             far_fill(sh_xcpb, 0, XCPB_SIZE);
     }
     if (!sh_cpx_far || !sh_xcpb)
         return 0;
-    far_fill(sh_cpx_far, 0, CPX_MAX * CPXE_SIZE);
+    far_fill(sh_cpx_far, 0, CPX_MAX * CPXE_SIZE + CPX_MAX);
     for (i = 0; i < n; i++)             /* the name, until it fills it */
         far_strput(sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR,
                    names[i], ACC_NAMELEN);
@@ -788,6 +799,108 @@ uint32_t sh_cpxhdr(WORD i)
     if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
         return 0;
     return sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR;
+}
+
+/* MODULE i FREED, unless it asked to stay: its owner's blocks in both
+ * allocators, which is its near region, its far image and whatever it
+ * loaded -- its resource included.  The slot keeps the header, the file
+ * name and the settings, which is all the panel lists it from, and its
+ * vtable goes to 0, which is how the panel knows to ask for it again.
+ * 1 if it was freed. */
+static WORD sh_cpxdrop(WORD i)
+{
+    uint32_t e = sh_cpx_far + (uint32_t)i * CPXE_SIZE;
+    uint32_t zero = 0;
+    uint8_t  own;
+    UWORD    flags = 0;
+
+    if (sh_cpxinfo(i) == 0)
+        return 0;
+    far_get((uint8_t *)&flags, e + CPXE_HDR + CPXH_FLAGS, 2);
+    if (flags & CPXF_RESIDENT)
+        return 0;
+    own = far_read8(CPXE_OWN(i));
+    if (!own)
+        return 0;                       /* never the system's */
+    pool_free_owner(own);
+    far_free_owner(own);
+    far_put(e + CPXE_INFO, (const uint8_t *)&zero, 4);
+    far_write8(CPXE_OWN(i), 0);
+    return 1;
+}
+
+/* After the panel has boot-initialised them (it runs as an accessory,
+ * before this), every module that did not ask to stay goes. */
+static void sh_cpxdropall(void)
+{
+    WORD i;
+
+    for (i = 0; i < sh_ncpx; i++)
+        sh_cpxdrop(i);
+    sh_cpxdrops = 0;
+    for (i = 0; i < sh_ncpx; i++)
+        if (!sh_cpxinfo(i))
+            sh_cpxdrops++;
+}
+
+/* Cpxload (GEMDOS 0x1F3, src/sys/gemdos.h): module i loaded again, or
+ * freed.  0 when it is loaded (or freed) now, a GEMDOS error when not.
+ *
+ * LOADING IS RUNNING IT, as at boot and for the same reason (sh_ldcpx,
+ * "why it is run rather than called"): its crt installs its data and its
+ * cpx_init builds its dialog and publishes its vtable.  It is run through
+ * gd_run, Pexec's own machinery, because this is a call from inside the
+ * panel's process and the module makes calls of its own; it is kept
+ * because it ends with Ptermres.  Its saved settings are laid over its
+ * header again after, as at boot. */
+int32_t sh_cpxload(WORD i, WORD on)
+{
+    uint32_t e, info = 0;
+    char     name[CPXE_FILELEN], cio[CIO_NAME_MAX + 1];
+    uint8_t  tail[5];
+    uint16_t near;
+    APP      app;
+    WORD     st, kept;
+
+    if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
+        return GD_ERANGE;
+    if (!on) {
+        sh_cpxdrop(i);
+        return 0;
+    }
+    if (sh_cpxinfo(i))
+        return 0;                       /* resident, or still open */
+    if (!gd_room_to_run())
+        return GD_ENSMEM;
+    e = sh_cpx_far + (uint32_t)i * CPXE_SIZE;
+    far_strget(name, e + CPXE_FILE, CPXE_FILELEN);
+    sh_cioname(name, cio);
+    near = app_near;
+    st = app_load_cio(cio, &app);
+    if (st != APP_OK) {
+        app_near = near;
+        return gd_loaderr(st);
+    }
+    tail[0] = 3;                        /* the ST's tail: a length, then it */
+    tail[1] = (uint8_t)(e & 0xFF);
+    tail[2] = (uint8_t)((e >> 8) & 0xFF);
+    tail[3] = (uint8_t)((e >> 16) & 0xFF);
+    tail[4] = 0x0D;
+    (void)gd_run(&app, name, (uint32_t)(uint16_t)tail, 1, &kept);
+    app_near = near;
+    far_get((uint8_t *)&info, e + CPXE_INFO, 4);
+    if (!kept || !info) {
+        if (kept) {                     /* stayed, and published nothing */
+            pool_free_owner((uint8_t)app.owner);
+            far_free_owner((uint8_t)app.owner);
+        }
+        info = 0;
+        far_put(e + CPXE_INFO, (const uint8_t *)&info, 4);
+        return GD_EPLFMT;
+    }
+    sh_cpxcfg(e, name);                 /* what it saved last time */
+    far_write8(CPXE_OWN(i), (uint8_t)app.owner);
+    return 0;
 }
 
 static void sh_cpx(void)
@@ -977,6 +1090,7 @@ WORD sh_main(void)
     sh_auto();
     sh_cpx();                   /* ...so the panel can boot-init them */
     sh_accs();
+    sh_cpxdropall();            /* ...and then they go, until opened */
     /* The AUTO programs and the modules ran in the application's record
      * (they are programs, run through app_run), so their calls were
      * counted as the application's.  They are not the desktop's: start

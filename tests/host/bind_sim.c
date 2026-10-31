@@ -333,6 +333,7 @@ int main(void)
     Psystem(path, 0, 0L);
     Dprobe();
     Mclaim(0xE10000L, 0xA000L);
+    Cpxload(1, 1);
     Tsettime(0);
     Fgetdta();
     Sversion();

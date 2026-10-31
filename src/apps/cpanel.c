@@ -50,9 +50,11 @@ static const LONG cp_ms[N_MN] = { 0L, 100L, 200L, 400L };
 
 /* ---- the extensions -----------------------------------------------------
  *
- * The AES loads a module at boot and keeps it (src/aes/shel.c, sh_cpx);
- * this panel asks what is there, shows the titles, and calls the one the
- * user picks.  That split is the whole shape of a CPX: the HOST owns the
+ * The AES runs every module once at boot, so its header is in the AES's
+ * table, and frees the ones that are not CPX_RESIDENT after this panel
+ * has boot-initialised them (src/aes/shel.c, sh_cpx); this panel asks
+ * what is there, shows the titles, and has the one the user picks loaded
+ * again for as long as it is open (cp_opencpx).  That split is the whole shape of a CPX: the HOST owns the
  * window and the event loop, the MODULE owns the dialog.
  *
  * THE TITLES ARE COPIED, not pointed at.  A row's ob_spec has to be an
@@ -215,6 +217,8 @@ static CPXPB cp_pb;
 
 static void cp_xcpb_init(void);
 static void cp_findcpx(void);
+static WORD cp_callcpx(CPXSLOT FAR *sl, WORD i, WORD x, WORD y, WORD w,
+                       WORD h);
 
 /* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT is opened
  * once at start-up with xcpb->booting set, so it can put back what it
@@ -328,16 +332,37 @@ static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)
  * published when it loaded.  A separately linked module reached by a
  * runtime long-indirect call -- which is safe because every entry in a
  * CPXINFO is `saveds` and sets up its own direct page and data bank
- * (src/app/cpx.h).  0 from cpx_call means it declined to open. */
+ * (src/app/cpx.h).  0 from cpx_call means it declined to open.
+ *
+ * LOADED FOR THE OPEN, FREED AFTER IT.  The AES frees every module that
+ * is not CPX_RESIDENT once this panel has boot-initialised it, so a
+ * slot's vtable is 0 until Cpxload runs the module again (src/aes/shel.c
+ * sh_cpxload) -- the ST's rule, and what lets a closed module cost bank
+ * $00 nothing.  A module that will not load says so with the canned
+ * memory alert, which is what it nearly always is. */
 static WORD cp_opencpx(WORD i, WORD x, WORD y, WORD w, WORD h)
 {
     CPXSLOT FAR *sl;
-    CPXINFO FAR *info;
-    GRECT r;
+    WORD ret;
 
     if (i < 0 || i >= cpx_n || !cpx_table)
         return 0;
     sl = cpx_slot(cpx_table, cpx_stride, i);
+    if (!sl->info && Cpxload(i, 1) != 0) {
+        cp_xcpb.alert = XAL_MEM_ERR;
+        cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
+        return 0;
+    }
+    ret = cp_callcpx(sl, i, x, y, w, h);
+    Cpxload(i, 0);                      /* kept only if CPX_RESIDENT */
+    return ret;
+}
+
+static WORD cp_callcpx(CPXSLOT FAR *sl, WORD i, WORD x, WORD y, WORD w, WORD h)
+{
+    CPXINFO FAR *info;
+    GRECT r;
+
     if (!sl->info)
         return 0;
     info = (CPXINFO FAR *)sl->info;

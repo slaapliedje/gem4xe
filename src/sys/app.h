@@ -81,4 +81,9 @@ int16_t far_read_file(const char *cioname, uint32_t *addr, uint32_t *len);
  * back with them at app_free(). */
 int16_t app_load_file(const char *gemname, APP *app);
 
+/* ...and on a CIO name, for a caller that has made it itself -- the
+ * shell, for a file in the system's own directory whatever the default
+ * one is now (src/aes/shel.c sh_cpxload). */
+int16_t app_load_cio(const char *cioname, APP *app);
+
 #endif /* GEM4XE_APP_H */

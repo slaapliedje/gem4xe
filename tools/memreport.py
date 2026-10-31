@@ -33,6 +33,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mkg4a                                # noqa: E402
+import poolref                              # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 BUILD = os.path.join(ROOT, "build")
@@ -237,11 +238,14 @@ def main(argv, extra_modules=(), want_floor=False):
 
     def modules(*names):
         """(name, near) for each control panel module that loads.  The AES
-        loads *.CPX BEFORE the accessories (src/aes/shel.c) and keeps
-        each one's near region for good; a module has no process and no
-        queue, and its resource goes far (it is large-data).  Left out
-        until phase 69, which is how a second module nearly took the room
-        QED is launched in without this tool noticing."""
+        loads *.CPX BEFORE the accessories (src/aes/shel.c), and since
+        phase 118 frees each one again once the panel has boot-initialised
+        it -- none the product ships is CPX_RESIDENT -- leaving a hole
+        below the accessories that the desktop is then placed in.  A module
+        has no process and no queue, and its resource goes far (it is
+        large-data).  Left out until phase 69, which is how a second module
+        nearly took the room QED is launched in without this tool
+        noticing."""
         out = []
         for name in names:
             p = os.path.join(BUILD, name + ".g4a")
@@ -250,59 +254,85 @@ def main(argv, extra_modules=(), want_floor=False):
         return out
 
     def walk(base, pool, accs, title, loud, mods=()):
-        """The bump allocator, in the order the machine runs it: proc_init,
-        then each accessory (queue, near region, resource), then the
-        desktop.  A PROGRAM's near region is page-aligned (app.c:
-        pool_alloc(near_size, 0x100)) and everything else is word-aligned,
-        so this is a simulation of pool_alloc rather than a sum -- which is
-        what makes it agree with the figure test-boot reads off the live
-        machine instead of being close to it.
+        """The pool, in the order the machine takes from it, by
+        tools/poolref.py -- the rules src/sys/pool.c is held to
+        (tests/host/test_pool.py), so this places blocks exactly as the
+        machine does rather than summing them: proc_init; each module's
+        near region (pool_take: the lowest gap); each accessory's queue
+        (pool_alloc: the top), near region and resource; the modules freed
+        again; the floor; then the desktop, by pool_take, which puts it in
+        the lowest gap it fits -- the modules' hole, when it fits there.
+        A PROGRAM's near region is page-aligned (app.c) and everything
+        else word-aligned.
 
-        Returns (free, worst) where `worst` is the smallest the pool ever
-        gets, counting each resource's TRANSIENT peak: rs_load holds the
-        whole file before rs_fixit moves the icons far, so the moment of
-        loading is tighter than anything the resident figures show.
+        Returns (free, worst): what is left above the top, which is what
+        GEMDOS's read slices get, and the smallest that ever gets counting
+        each resource's TRANSIENT peak: rs_load holds the whole file before
+        rs_fixit moves the icons far, so the moment of loading is tighter
+        than anything the resident figures show.
         """
-        brk, top, worst = base, base + pool, pool
+        p = poolref.Pool(base, base + pool)
+        worst = [pool]
 
-        def take(n, align, what, peak=None):
-            nonlocal brk, worst
-            at = (brk + align - 1) & ~(align - 1)
-            brk = at + n
-            worst = min(worst, top - (at + (peak if peak else n)))
+        def take(n, align, what, peak=None, lifetime=False, owner=0):
+            p.owner = owner
+            at = p.take(n, align) if lifetime else p.alloc(n, align)
+            if not at:
+                worst[0] = min(worst[0], -n)
+                return 0
+            # a resource at the top peaks above what it keeps
+            extra = (peak - n) if peak and at + n == p.top() else 0
+            worst[0] = min(worst[0], p.room() - extra)
             if loud:
                 note = f"   (peaks at {peak})" if peak and peak != n else ""
                 say(f"  {what:<34} {-n:6d}   ${at:04X}{note}")
+            return at
 
         if loud:
             say("")
             say(title)
             say(f"  {'pool':<34} {pool:6d}   ${base:04X}")
         take(PROC_STORE, 2, "process records")
+        own = 1
         for nm, near in mods:
-            take(near, 0x100, nm + " near region")
+            take(near, 0x100, nm + " near region", lifetime=True, owner=own)
+            own += 1
         for nm, near, pr, pk in accs:
             take(ACC_QUEUE, 2, nm + " message queue")
-            take(near, 0x100, nm + " near region")
+            take(near, 0x100, nm + " near region", lifetime=True, owner=own)
             if pr:
-                take(pr, 2, nm + " resource", pk)
+                take(pr, 2, nm + " resource", pk, owner=own)
+            own += 1
+        for k in range(1, len(mods) + 1):
+            p.free_owner(k)
+        if loud and mods:
+            say(f"  {'...the modules freed again':<34} {'':6}   "
+                f"(boot-initialised: src/aes/shel.c)")
         # Where the shell marks the floor: everything permanent is below it
-        # and no program's exit may wind back past it (src/sys/app.c).  The
-        # desktop and its resource are above it, and come and go with it.
+        # (src/sys/pool.h).  The desktop and its resource come and go.
+        p.keep_mark()
+        brk = p.top()
         if loud:
             say(f"  {'-- permanent below here':<34} {'':6}   ${brk:04X}")
-        room[title] = top - ((brk + 0xFF) & ~0xFF)
+        # A program launched from the desktop takes the desktop's place:
+        # the biggest page-aligned run the pool has with the desktop gone.
+        gaps, lo = [], base
+        for at, n, _ in p.blocks:
+            gaps.append(at - ((lo + 0xFF) & ~0xFF))
+            lo = at + n
+        gaps.append(p.hi - ((lo + 0xFF) & ~0xFF))
+        room[title] = max(gaps)
         floors[title] = brk
-        take(desk, 0x100, "the desktop")
+        take(desk, 0x100, "the desktop", lifetime=True, owner=own)
         if desk_rsc:
-            take(desk_rsc, 2, "its resource", desk_peak)
-        free = top - brk
+            take(desk_rsc, 2, "its resource", desk_peak, owner=own)
+        free = p.room()
         if loud:
             say(f"  {'= free':<34} {free:6d}   "
                 f"({desk_far} bytes of resource are far, not here)")
-            say(f"  {'= free while it was loading':<34} {worst:6d}   "
+            say(f"  {'= free while it was loading':<34} {worst[0]:6d}   "
                 f"(rs_load holds the whole file: src/aes/rsrc.c)")
-        return free, worst
+        return free, worst[0]
 
     # BOTH LAYOUTS, because the one that binds is not the product's.
     # GEM.COM gives the pool the whole banked window; the conformance

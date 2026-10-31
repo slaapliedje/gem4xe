@@ -1669,6 +1669,13 @@ LONG Mclaim(LONG addr, LONG len)
     return dos(0x1F2);
 }
 
+LONG Cpxload(WORD i, WORD on)
+{
+    dw(6, i);
+    dw(8, on);
+    return dos(0x1F3);
+}
+
 LONG Psystem(const char FAR *line, void FAR *out, LONG max)
 {
     dl(6, (LONG)(uint32_t)line);

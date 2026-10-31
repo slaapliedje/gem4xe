@@ -76,6 +76,13 @@ def run(window):
             got = b.peek16(syms["pool_low"])
             check(got == want, f"the pool's permanent floor: the machine's "
                                f"${got:04X}, tools/memreport.py's ${want:04X}")
+            # ...and every module this disk carries was freed once the
+            # panel had boot-initialised it: none is CPX_RESIDENT, and the
+            # panel loads one again when it is opened (phase 118), which
+            # is what the tour below does with General and Color.
+            n, drops = b.peek16(syms["sh_ncpx"]), b.peek16(syms["sh_cpxdrops"])
+            check(n > 0 and drops == n, f"{drops} of {n} module(s) freed "
+                                        f"after boot")
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, OUT)
         if not window:

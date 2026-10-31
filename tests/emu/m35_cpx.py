@@ -1,4 +1,4 @@
-"""A control panel extension: loaded, entered, published, kept.
+"""A control panel extension: loaded, entered, published, then freed.
 
 A CPX is the shape XCONTROL made: the HOST owns the window and the event
 loop, the MODULE owns the dialog, and they meet at a vtable the module
@@ -20,11 +20,15 @@ WHAT IT CHECKS, and why each would otherwise be invisible:
   whatever was in that memory before.  The pointer call compiles to a
   proper long-indirect jsl and would have looked like it worked.
 
-  IT STAYED.  The permanent floor moved by the module's whole near
-  region, measured against the same system with no module on the disk.
-  A module that was loaded, entered and then released would pass every
-  check above and leave a vtable pointing into memory the next program
-  takes.
+  IT WENT, AND LEFT ITS HEADER.  Since phase 118 a module that is not
+  CPX_RESIDENT is freed once the panel has boot-initialised it, and the
+  panel loads it again when it is opened (src/aes/shel.c sh_cpxload).
+  So its slot's vtable is 0 -- a vtable left pointing into freed memory
+  is what the next program would overwrite -- the header is still there
+  for the panel to list it from, sh_cpxdrops is 1, and the desktop's
+  near region lands exactly where it does on the same system with no
+  module on the disk: nothing of the module's was kept.  Loading it again
+  is test-m44's, which opens General and Color from the panel.
 
 WHAT IT DOES NOT CHECK YET, said here rather than left to be assumed:
 calling back INTO the module through the published vtable.  That needs
@@ -92,7 +96,7 @@ def start(b):
 
 def main():
     print("gem4xe-m35: a control panel extension")
-    for s in ("sh_ncpx", "sh_cpxbad", "app_near"):
+    for s in ("sh_ncpx", "sh_cpxbad", "app_near", "sh_cpxdrops"):
         if s not in SYMS:
             print(f"  FAIL: build/m3.sym has no {s}")
             return 1
@@ -125,8 +129,14 @@ def main():
         check(title == WANT_TITLE,
               f"the title in the slot is {title!r}, not {WANT_TITLE!r}")
 
+        info = b.peek24(hdr) if hdr else -1
+        drops = b.peek16(SYMS["sh_cpxdrops"])
+        print(f"  its vtable reads ${info:06X}; {drops} module(s) freed after boot")
+        check(info == 0, f"the slot's vtable is ${info:06X}, not 0: the "
+                         f"module was not freed, or left a pointer behind")
+        check(drops == 1, f"sh_cpxdrops is {drops}, not 1")
         floor = b.peek16(SYMS["app_near"])
-        print(f"  the permanent floor is ${floor:04X}")
+        print(f"  the desktop's near region is at ${floor:04X}")
     finally:
         emu.stop()
 
@@ -143,11 +153,10 @@ def main():
         base_floor = b.peek16(SYMS["app_near"])
         print(f"  without a module: {n0} loaded, floor ${base_floor:04X}")
         check(n0 == 0, f"the disk with no module loaded {n0}")
-        moved = floor - base_floor
-        print(f"  the floor moved {moved} bytes, which is the module kept")
-        check(moved >= 1536,
-              f"the floor moved {moved} bytes: the module did not stay "
-              f"(its near region is 1536 by the Makefile)")
+        print(f"  without a module: the desktop at ${base_floor:04X}")
+        check(floor == base_floor,
+              f"the desktop is at ${floor:04X} with the module freed and "
+              f"${base_floor:04X} with none: something of the module's stayed")
     finally:
         emu.stop()
 

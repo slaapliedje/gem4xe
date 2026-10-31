@@ -911,6 +911,8 @@ uint32_t sh_cpxinfo(WORD i);
 uint32_t sh_cpxtable(void);     /* the flat table, for appl_getinfo */
 WORD     sh_cpxstride(void);    /* one entry's size */
 uint32_t sh_cpxhdr(WORD i);
+extern WORD sh_cpxdrops;                /* freed after boot-init */
+int32_t  sh_cpxload(WORD i, WORD on);   /* Cpxload: GEMDOS 0x1F3 */
 
 /* The shell loop: the desktop (DESKTOP.PRG on the default drive), the
  * programs it asks for, until a shutdown.  Returns how many programs it
