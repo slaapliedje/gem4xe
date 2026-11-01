@@ -84,7 +84,8 @@ Keeping a copy costs the first boot something: each of the desktop's
 resource files is read low, moved to the top of the heap a byte at a
 time, and read through a byte at a time, and gem4xe's far copies are C
 loops through far pointers, about forty cycles a byte.  On test-m37's
-machine -- a 65C816 at 1.79 MHz with 960 KB, a cartridge -- from the shell
+machine -- a 65C816 with 960 KB and no accelerator, so at the Atari's own
+bus clock (1.77 MHz on PAL), booting a cartridge -- from the shell
 starting the desktop to its first wait:
 
 | | frames |
@@ -92,8 +93,9 @@ starting the desktop to its first wait:
 | no copies | 1,060 |
 | copies | 1,210 |
 
-Three seconds on the first boot of the slowest machine gem4xe runs on; a
-Rapidus does the same work several times faster.  What it buys is every
+Three seconds on the first boot of a 65C816 that runs at the bus clock --
+an Antonia-class board, if any run that slowly; a Rapidus's 65C816 runs at
+about 20 MHz and does the same work in a fraction of a second.  What it buys is every
 later return to the desktop without the disk read, which on a floppy is
 the slow part.
 
