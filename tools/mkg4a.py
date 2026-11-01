@@ -414,7 +414,8 @@ def apply_v5(f, near_at, code_at, vars_at):
 
 
 def write_v5(out, packed, nb, near_size, fb, far_size, entry,
-             near_img, far_img, b_syms, syms_out, c_out, c_name, squeezed):
+             near_img, far_img, b_syms, syms_out, c_out, c_name, squeezed,
+             stack=(0, 0)):
     """Format 5 (src/sys/app.c reads it):
 
       0  'G4A' 5
@@ -423,7 +424,11 @@ def write_v5(out, packed, nb, near_size, fb, far_size, entry,
      14  u8  code_bank, u8 vars_bank       where each was linked
      16  u32 entry
      20  u16 vars_off, u16 0, u32 vars_size   no bytes: the crt makes them
-     28  20 bytes of 0
+     28  u16 stack linked, u16 stack asked for   0, 0 unless --stack: the
+                                  stack is LAST in the near region (src/app/
+                                  gemapp.scm app-layout-ns), so the loader
+                                  may give it more (phase 121)
+     32  16 bytes of 0
      48  near bytes, code bytes, then the fourteen lists (V5_LISTS above)
     """
     (n_np, n_cb, n_cp, n_vb, n_vp, f_np, f_cb, f_cp, f_vb, f_vp) = packed["lists"]
@@ -435,7 +440,7 @@ def write_v5(out, packed, nb, near_size, fb, far_size, entry,
     hdr = MAGIC_V5 + struct.pack("<HHHIBBIHHI", nb, near_size, fb & 0xFFFF,
                                  far_size, fb >> 16, vb >> 16, entry,
                                  vb & 0xFFFF, 0, vs)
-    hdr += bytes(20)
+    hdr += struct.pack("<HH", *stack) + bytes(16)
     assert len(hdr) == HDR_V5, len(hdr)
     body = near_img + far_img + b"".join(v5_encode(l) for l in lists)
     blob = hdr + body
@@ -472,6 +477,7 @@ def main(argv):
     syms_out = c_out = c_name = None
     pack = None
     squeezed = True
+    stack = (0, 0)
     i = 4
     while i < len(argv):
         if argv[i] == "--syms":
@@ -480,6 +486,10 @@ def main(argv):
         elif argv[i] == "--pack":
             pack = argv[i + 1:i + 4]
             i += 4
+        elif argv[i] == "--stack":
+            linked, asked = (int(x, 0) for x in argv[i + 1].split(":"))
+            stack = (linked, asked)
+            i += 2
         elif argv[i] == "--no-squeeze":
             squeezed = False
             i += 1
@@ -555,10 +565,27 @@ def main(argv):
                               far_banks, near_hi, far_hi, near_bank, far_bank)
         except SystemExit as why:
             print(f"{out}: not packed -- {why}")
+    if stack != (0, 0):
+        # THE STACK ASKED FOR (phase 121) is only honoured where it can be:
+        # a packed program, whose start-up begins `tsc tay ldx ##top` (src/
+        # app/crt_gemapp.s) with that top at the near region's very end --
+        # which is what says the stack was linked LAST and that room added
+        # above it is more stack (src/sys/app.c app_load_v5 moves the top).
+        # `.sectionEnd` is the stack's LAST byte, and the region's end is
+        # rounded up to a page after it, so the top is the unrounded end
+        # less one.
+        if not packed:
+            raise SystemExit(f"{out}: --stack wants a packed program (format 5)")
+        o = entry - fb
+        top = far_img[o + 3] | far_img[o + 4] << 8
+        if far_img[o:o + 3] != bytes((0x3B, 0xA8, 0xA2)) or top != ne - 1:
+            raise SystemExit(f"{out}: --stack: the start-up does not set the stack "
+                             f"to the near region's last byte (${top:04X}, last "
+                             f"${ne - 1:04X}): was it linked with app-layout-ns?")
     if packed:
         return write_v5(out, packed, nb, near_size, fb, far_size, entry,
                         near_img, far_img, b_syms, syms_out, c_out, c_name,
-                        squeezed)
+                        squeezed, stack)
 
     # v3 unless the far image needs more room than its offsets have. Every
     # program in this tree but GACS's shell is v3.

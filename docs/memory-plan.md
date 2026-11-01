@@ -1,9 +1,10 @@
 # Memory: what GS/OS teaches gem4xe
 
-A plan, being built: steps 1 to 5 are done ([phase116.md](phase116.md),
+Steps 1 to 6 are done ([phase116.md](phase116.md),
 [phase117.md](phase117.md), [phase118.md](phase118.md),
 [phase119.md](phase119.md), [phase120.md](phase120.md),
-[phase121.md](phase121.md)).  The Apple IIGS runs the same CPU on the same kind
+[phase121.md](phase121.md), [phase122.md](phase122.md)); step 7 waits
+for a need.  The Apple IIGS runs the same CPU on the same kind
 of memory -- one scarce bank $00, many plentiful banks above -- and its
 Memory Manager (*Apple IIGS Toolbox Reference*, volume 1 chapter 12, volume
 3 chapter 36; *GS/OS Reference*, chapters 2 and 8) solved the problems
@@ -159,6 +160,10 @@ rather than found.
 
 *Gate:* the stack check (test-m47) with a program that asks for more and
 one that asks for less.
+
+**Done** in [phase122.md](phase122.md), with the stack moved to the top
+of the near region for a program that asks: the kit had it directly above
+the direct page, where no loader can add room.
 
 ### 7. Handles -- only if fragmentation shows
 

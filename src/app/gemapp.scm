@@ -144,28 +144,68 @@
 (define (app-layout-n near far bss bits cbanks fbanks)
   (app-layout-v near far (+ far (* cbanks #x10000)) bss bits cbanks fbanks))
 
+;;; THE STACK LAST (phase 121, step 6 of docs/memory-plan.md): the same
+;;; layout with the `stack` section taken out of AppBss and given a memory
+;;; of its own ABOVE everything else, `stack` bytes at the top of the near
+;;; region.  A stack at the bottom grows down into the direct page, so no
+;;; loader can give it more room; one at the top grows down into nothing
+;;; but more stack, so the loader can add room above it and move the top
+;;; (src/sys/app.c app_load_v5).  A program asks for this, and for how
+;;; much stack it wants, in its build (the Makefile's g4a, argument 11),
+;;; and tools/mkg4a.py's --stack writes the request into the .G4A.
+(define (app-layout-ns near far bss bits cbanks fbanks stack)
+  (app-layout-vs near far (+ far (* cbanks #x10000)) bss bits cbanks fbanks
+                 stack))
+
+(define (app-layout-vs near far vars bss bits cbanks fbanks stack)
+  (app-layout-any near far vars bss bits cbanks fbanks stack))
+
+(define (app-layout-v near far vars bss bits cbanks fbanks)
+  (app-layout-any near far vars bss bits cbanks fbanks 0))
+
+;;; The near memories: the direct page, then -- with `stack` 0, as every
+;;; program before phase 121 -- the stack at the foot of AppBss and the
+;;; data above it; or, with a stack size, the data first and the stack in
+;;; AppStack on top.
+(define (app-near near bss bits stack)
+  (if (= stack 0)
+      (list
+        (list 'memory 'AppBss
+              (list 'address (cons (+ near #x100) (+ near #xff bss)))
+              '(section stack data zdata heap near znear))
+        (list 'memory 'AppBits
+              (list 'address (cons (+ near #x100 bss) (+ near #xff bss bits)))
+              '(section cdata idata data_init_table inear)))
+      (list
+        (list 'memory 'AppBss
+              (list 'address (cons (+ near #x100) (+ near #xff bss)))
+              '(section data zdata heap near znear))
+        (list 'memory 'AppBits
+              (list 'address (cons (+ near #x100 bss) (+ near #xff bss bits)))
+              '(section cdata idata data_init_table inear))
+        (list 'memory 'AppStack
+              (list 'address (cons (+ near #x100 bss bits)
+                                   (+ near #xff bss bits stack)))
+              '(section stack)))))
+
 ;;; ...or wherever `vars` says: tools/mkg4a.py links a program with its
 ;;; code and its far variables moved APART -- the code down a bank, either
 ;;; up a page -- to find which bytes refer to which, so that the loader can
 ;;; place each where there is room (a .G4A of format 5, phase 80).
-(define (app-layout-v near far vars bss bits cbanks fbanks)
+(define (app-layout-any near far vars bss bits cbanks fbanks stack)
   (append
   (list
     (list 'memory 'AppDP
           (list 'address (cons near (+ near #xff)))
-          '(section (registers ztiny)))
-    ;; `near`, `znear` and `inear` are the bank-$00 sections of a program
-    ;; compiled --data-model=LARGE: there, a global goes far unless it is
-    ;; declared __near, and a program that hands the AES a tree or a
-    ;; string must declare those, since the ABI takes only bank $00
-    ;; (src/sys/abi.c, near_of).  A small-data program has none of them
-    ;; and loses nothing by their being named.
-    (list 'memory 'AppBss
-          (list 'address (cons (+ near #x100) (+ near #xff bss)))
-          '(section stack data zdata heap near znear))
-    (list 'memory 'AppBits
-          (list 'address (cons (+ near #x100 bss) (+ near #xff bss bits)))
-          '(section cdata idata data_init_table inear))
+          '(section (registers ztiny))))
+  ;; `near`, `znear` and `inear` are the bank-$00 sections of a program
+  ;; compiled --data-model=LARGE: there, a global goes far unless it is
+  ;; declared __near, and a program that hands the AES a tree or a
+  ;; string must declare those, since the ABI takes only bank $00
+  ;; (src/sys/abi.c, near_of).  A small-data program has none of them
+  ;; and loses nothing by their being named.
+  (app-near near bss bits stack)
+  (list
     ;; Two far memories, either side of the bank's $D5 page: the emulator's
     ;; native-mode branch reads a wrong-page address folded into bank $00,
     ;; and $D5xx there is cartridge control (src/gem4xe.scm, THE HOLE).

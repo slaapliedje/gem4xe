@@ -387,6 +387,7 @@ link enforces every one:
 | `BSS` (2048) | near memory with no initial value: your stack and your uninitialised data |
 | `BITS` (256) | near memory with one: constants, and the initial values of data |
 | `STACK` (256) | how much of `BSS` is stack |
+| `STACK_ASK` (unset) | gem4xe 0.15 and later: how much stack to **ask** for. Set, the stack is linked last, `STACK` bytes on top of `BSS` and `BITS`; gem4xe gives the program `STACK_ASK`, adding room above when it is more, and stops it if its stack goes below what it asked for. An older gem4xe gives it `STACK` |
 | code | a far bank of its own -- 64 KB, and not part of the above |
 
 The near part comes out of **the application pool**, which is

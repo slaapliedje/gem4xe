@@ -40,6 +40,12 @@
 #   BITS   bytes that do -- constants, the initial values of data.
 #   STACK  of BSS, how much is stack.  The AES calls back into your
 #          program (a redraw inside form_do, say), so leave room.
+#   STACK_ASK  (gem4xe 0.15 and later) how much stack to ASK for.  Set it
+#          and the stack is linked LAST, on top of BSS and BITS rather than
+#          at the foot of BSS, STACK bytes of it -- and gem4xe gives the
+#          program STACK_ASK, adding room above when it is more, and stops
+#          it if its stack goes below what it asked for.  An older gem4xe
+#          gives it STACK.  Unset, nothing changes.
 #
 # All of it comes out of the application pool: 14,336 bytes in bank $00
 # for the WHOLE machine, shared with the desktop, every desk accessory
@@ -169,16 +175,31 @@ $(B)/mul32.o: lib/mul32.s | $(B)
 
 $(foreach s,$(ASM),$(eval $(B)/$(basename $(notdir $(s))).o: $(s) | $(B) ; $$(AS) -o $$@ $$<))
 
+# The stack last, when it is asked for (STACK_ASK above).
+ifdef STACK_ASK
+  LAYOUT_N = app-layout-ns
+  LAYOUT_V = app-layout-vs
+  LAYOUT_N_TAIL = 1 1 $(STACK)
+  LAYOUT_V_TAIL = 1 1 $(STACK)
+  G4A_STACK = --stack $(STACK):$(STACK_ASK)
+else
+  LAYOUT_N = app-layout
+  LAYOUT_V = app-layout-v
+  LAYOUT_N_TAIL =
+  LAYOUT_V_TAIL = 1 1
+  G4A_STACK =
+endif
+
 # At the placeholders, then a page up, then a bank up.
 $(B)/$(NAME).elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ --list-file $(B)/$(NAME).map \
-	    --memories-expression "(app-layout #x1000 #x020000 $(BSS) $(BITS))"
+	    --memories-expression "($(LAYOUT_N) #x1000 #x020000 $(BSS) $(BITS) $(LAYOUT_N_TAIL))"
 $(B)/$(NAME)-near.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
-	    --memories-expression "(app-layout #x1100 #x020000 $(BSS) $(BITS))"
+	    --memories-expression "($(LAYOUT_N) #x1100 #x020000 $(BSS) $(BITS) $(LAYOUT_N_TAIL))"
 $(B)/$(NAME)-far.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
-	    --memories-expression "(app-layout #x1000 #x030000 $(BSS) $(BITS))"
+	    --memories-expression "($(LAYOUT_N) #x1000 #x030000 $(BSS) $(BITS) $(LAYOUT_N_TAIL))"
 
 # ...and three more, so that a small program can be PACKED: the code a
 # bank down and a page up, the far variables a page up, each with the
@@ -189,13 +210,13 @@ $(B)/$(NAME)-far.elf: $(OBJS) lib/gemapp.scm
 # gem4xe can load: format 5 is refused there.)
 $(B)/$(NAME)-cdown.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
-	    --memories-expression "(app-layout-v #x1000 #x010000 #x030000 $(BSS) $(BITS) 1 1)"
+	    --memories-expression "($(LAYOUT_V) #x1000 #x010000 #x030000 $(BSS) $(BITS) $(LAYOUT_V_TAIL))"
 $(B)/$(NAME)-cpage.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
-	    --memories-expression "(app-layout-v #x1000 #x020100 #x030000 $(BSS) $(BITS) 1 1)"
+	    --memories-expression "($(LAYOUT_V) #x1000 #x020100 #x030000 $(BSS) $(BITS) $(LAYOUT_V_TAIL))"
 $(B)/$(NAME)-vpage.elf: $(OBJS) lib/gemapp.scm
 	$(LD) $(LDOPT) -o $@ \
-	    --memories-expression "(app-layout-v #x1000 #x020000 #x030100 $(BSS) $(BITS) 1 1)"
+	    --memories-expression "($(LAYOUT_V) #x1000 #x020000 #x030100 $(BSS) $(BITS) $(LAYOUT_V_TAIL))"
 
 # The file is then SQUEEZED -- .G4A format 6, the whole of it packed, about
 # half the size -- so it reads off a disk in half the time and the loader
@@ -208,7 +229,7 @@ $(NAME).g4a: $(B)/$(NAME).elf $(B)/$(NAME)-near.elf $(B)/$(NAME)-far.elf \
 	python3 tools/mkg4a.py $(B)/$(NAME).elf $(B)/$(NAME)-near.elf \
 	    $(B)/$(NAME)-far.elf $@ --syms $(B)/$(NAME).sym \
 	    --pack $(B)/$(NAME)-cdown.elf $(B)/$(NAME)-cpage.elf $(B)/$(NAME)-vpage.elf \
-	    $(if $(filter 0,$(SQUEEZE)),--no-squeeze)
+	    $(if $(filter 0,$(SQUEEZE)),--no-squeeze) $(G4A_STACK)
 
 clean:
 	rm -rf build $(NAME).g4a

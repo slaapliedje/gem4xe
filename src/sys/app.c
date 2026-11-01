@@ -124,6 +124,7 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
 static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
 {
     uint16_t near_size, code_off, vars_off, k, l, n, o;
+    uint16_t stk_linked, stk_asked, extra = 0;
     uint32_t code_size, vars_size, entry, code, vars, at, end;
     uint8_t  code_link, vars_link, first, second, d[5];
     uint8_t *near;
@@ -139,17 +140,27 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
     entry          = rd32(b + 16) & 0xFFFFFFUL;
     vars_off       = rd16(b + 20);
     vars_size      = rd32(b + 24);
+    stk_linked     = rd16(b + 28);
+    stk_asked      = rd16(b + 30);
     if ((uint32_t)HDR_V5 + near_size + code_size > len
         || code_size > 0xD500UL || vars_size > 0x10000UL)
         return APP_E_SHORT;
+    /* THE STACK IT ASKED FOR (phase 121, tools/mkg4a.py --stack).  Zero
+     * for every program built before, and for any that did not ask.  One
+     * that did was linked with its stack LAST, at the top of its near
+     * region, so room added above it is more stack: the region grows by
+     * the difference, in pages, and the start-up's stack top moves up by
+     * as much (below, once the code is relocated). */
+    if (stk_linked && stk_asked > stk_linked)
+        extra = (uint16_t)((stk_asked - stk_linked + 0xFFU) & ~0xFFU);
 
     app->pool_mark = pool_mark();
-    near = pool_take(near_size, 0x100);
+    near = pool_take((uint16_t)(near_size + extra), 0x100);
     if (!near)
         return APP_E_POOL;
     app->near_base = (uint16_t)near;
     app_near = app->near_base;
-    app->near_size = near_size;
+    app->near_size = (uint16_t)(near_size + extra);
     code = far_alloc_page(code_size, 0xD500UL);
     vars = vars_size ? far_alloc_page(vars_size, 0x10000UL) : 0;
     if (!code || (vars_size && !vars)) {
@@ -217,6 +228,30 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
         app->fixups = (uint16_t)(app->fixups + n);
     }
     app->entry = entry + ((uint32_t)d[1] << 16) + ((uint32_t)d[2] << 8);
+    /* The stack top moved, where it was asked for: `tsc tay ldx ##top` is
+     * how crt_gemapp.s begins, mkg4a checked it before writing the
+     * request, and the immediate is relocated by now -- so `extra` is
+     * simply added to it.  And the floor is the bottom of the stack the
+     * program asked for -- above the old rule's, CTX_FLOOR into the
+     * region, since its direct page and its data are below its stack now
+     * and a stack that leaves its own room is into them. */
+    app->stack_floor = 0;
+    if (stk_linked && far_read8(app->entry) == 0x3B
+        && far_read8(app->entry + 1) == 0xA8
+        && far_read8(app->entry + 2) == 0xA2) {
+        /* the immediate is the stack's last byte (`.sectionEnd stack`) */
+        uint16_t t = (uint16_t)(far_read8(app->entry + 3)
+                                | ((uint16_t)far_read8(app->entry + 4) << 8));
+        uint16_t want = stk_asked ? stk_asked : stk_linked;
+        if (extra) {
+            t = (uint16_t)(t + extra);
+            far_write8(app->entry + 3, (uint8_t)t);
+            far_write8(app->entry + 4, (uint8_t)(t >> 8));
+        }
+        if (want > (uint16_t)(stk_linked + extra))
+            want = (uint16_t)(stk_linked + extra);  /* never below what it has */
+        app->stack_floor = (uint16_t)(t + 1 - want);
+    }
     return APP_OK;
 }
 
@@ -400,7 +435,8 @@ int16_t app_exec(const APP *app)
     far_tag = (uint8_t)(app->owner >> 8);
     /* the stack's floor is this program's while it runs, and its
      * parent's again after -- Pexec runs a child in the same context */
-    ctx_cur->floor = (uint16_t)(app->near_base + CTX_FLOOR);
+    ctx_cur->floor = app->stack_floor ? app->stack_floor
+                                      : (uint16_t)(app->near_base + CTX_FLOOR);
     r = app_run(app->entry);
     ctx_cur->floor = keep_floor;
     ctx_cur->owner = keep;

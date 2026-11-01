@@ -81,8 +81,18 @@ def main():
         ret = b.peek16(psym["m47_result"] - link_near + base)
         pex = s16(b.peek16(psym["m47_pexec"] - link_near + base))
         fault = b.peek(g["irq_fault"])
+        big = s16(b.peek16(psym["m47_big"] - link_near + base))
+        small = s16(b.peek16(psym["m47_small"] - link_near + base))
         print(f"  gem_stack_stops {stops}, Pexec {pex}, result {ret}, irq_fault {fault}")
-        check(stops == 1, f"the child was stopped once (gem_stack_stops {stops})")
+        print(f"  a stack asked for (phase 121): BIG.PRG {big}, SMALL.PRG {small}")
+        # CHILD.PRG and SMALL.PRG stopped, BIG.PRG not
+        check(stops == 2, f"two children were stopped (gem_stack_stops {stops})")
+        check(big == 7, f"BIG.PRG, linked with 384 bytes of stack and asking "
+                        f"for 4096, ran its twelve levels to the end: Pexec "
+                        f"{big}, not 7")
+        check(small == -9, f"SMALL.PRG, linked with 1024 and asking for 256, "
+                           f"was stopped at the floor of what it asked for: "
+                           f"Pexec {small}, not -9")
         check(pex == -9, f"Pexec gave the parent GEM_STOPPED (-9), not {pex}")
         check(ret & 2 == 2, "the parent's twenty calls after it were served")
         check(fault == 0, f"nothing faulted (irq_fault {fault})")

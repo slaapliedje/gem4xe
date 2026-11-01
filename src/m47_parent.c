@@ -13,6 +13,7 @@
 volatile WORD m47_result;
 volatile WORD m47_done;
 volatile LONG m47_pexec;
+volatile LONG m47_big, m47_small;   /* phase 121: a stack asked for */
 
 int main(void)
 {
@@ -22,6 +23,8 @@ int main(void)
     m47_pexec = Pexec(0, "CHILD.PRG", "\0", 0);
     if (m47_pexec == -9)
         r |= 1;
+    m47_big = Pexec(0, "BIG.PRG", "\0", 0);       /* 7: it ran to its end */
+    m47_small = Pexec(0, "SMALL.PRG", "\0", 0);   /* -9: stopped */
     for (i = 0; i < 20; i++) {
         graf_handle(&w, &h, &bw, &bh);
         calls++;

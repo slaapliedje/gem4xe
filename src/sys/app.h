@@ -47,6 +47,9 @@ typedef struct {
                              * failure part-way releases to it */
     uint32_t vars_addr;     /* a packed program's far variables (format 5), */
     uint8_t  vars_link;     /* and the bank they were linked in; 0 if none */
+    uint16_t stack_floor;   /* the bottom of the stack it asked for, 0 for
+                             * the old rule, CTX_FLOOR into its near region
+                             * (src/sys/app.c app_load_v5, phase 121) */
     uint16_t owner;         /* whose its far blocks are: app_free frees them
                              * (src/sys/farmem.c, phase 79) */
 } APP;

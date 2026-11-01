@@ -592,13 +592,13 @@ define g4a
 build/$(1).elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
 	    --list-file build/$(1).map --stack-size $(5) \
-	    --memories-expression "(app-layout-n #x1000 #x020000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --memories-expression "(app-layout-n$(if $(11),s) #x1000 #x020000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 build/$(1)-near.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
-	    --stack-size $(5) --memories-expression "(app-layout-n #x1100 #x020000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --stack-size $(5) --memories-expression "(app-layout-n$(if $(11),s) #x1100 #x020000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 build/$(1)-far.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
-	    --stack-size $(5) --memories-expression "(app-layout-n #x1000 #x030000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --stack-size $(5) --memories-expression "(app-layout-n$(if $(11),s) #x1000 #x030000 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 # ...and three more, for a program small enough to be PACKED (phase 80):
 # the code moved down a bank and up a page, and the far variables up a
 # page, each with the other left where it was -- so that mkg4a can tell a
@@ -607,24 +607,25 @@ build/$(1)-far.elf: $(2) src/app/gemapp.scm
 # fit is written as format 3 or 4, whole banks, as before.
 build/$(1)-cdown.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
-	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x010000 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --stack-size $(5) --memories-expression "(app-layout-v$(if $(11),s) #x1000 #x010000 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 build/$(1)-cpage.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
-	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x020100 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --stack-size $(5) --memories-expression "(app-layout-v$(if $(11),s) #x1000 #x020100 (+ #x020000 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 build/$(1)-vpage.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
-	    --stack-size $(5) --memories-expression "(app-layout-v #x1000 #x020000 (+ #x020100 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --stack-size $(5) --memories-expression "(app-layout-v$(if $(11),s) #x1000 #x020000 (+ #x020100 (* $(if $(9),$(9),1) #x10000)) $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 # ...and one more that nothing builds but tests/host/test_pack.py: the
 # program linked where a loader might PUT it, code and variables apart at
 # odd pages, for the format 5 fixups to be checked against byte for byte.
 build/$(1)-at.elf: $(2) src/app/gemapp.scm
 	$$(LD) src/app/gemapp.scm $(2) $(if $(8),$(8),$$(LIB)) --rtattr exit=simplified --override _Mul32 --cstartup gemapp -o $$@ \
-	    --stack-size $(5) --memories-expression "(app-layout-v #x1300 #x050300 #x0a0600 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1))"
+	    --stack-size $(5) --memories-expression "(app-layout-v$(if $(11),s) #x1300 #x050300 #x0a0600 $(3) $(4) $(if $(9),$(9),1) $(if $(10),$(10),1)$(if $(11), $(5)))"
 build/$(1).g4a build/$(1).sym $(7): build/$(1).elf build/$(1)-near.elf build/$(1)-far.elf \
 	    build/$(1)-cdown.elf build/$(1)-cpage.elf build/$(1)-vpage.elf tools/mkg4a.py
 	python3 tools/mkg4a.py build/$(1).elf build/$(1)-near.elf build/$(1)-far.elf \
 	        build/$(1).g4a --syms build/$(1).sym \
-	        --pack build/$(1)-cdown.elf build/$(1)-cpage.elf build/$(1)-vpage.elf $(6)
+	        --pack build/$(1)-cdown.elf build/$(1)-cpage.elf build/$(1)-vpage.elf $(6) \
+	        $(if $(11),--stack $(5):$(11))
 endef
 
 build/app/%.o: src/app/%.s
@@ -681,6 +682,21 @@ M47P_OBJS = $(G4A_LIB) build/app/m47_parent.o
 M47C_OBJS = $(G4A_LIB) build/app/m47_child.o
 $(eval $(call g4a,m47_parent,$(M47P_OBJS),1152,160,384,,))
 $(eval $(call g4a,m47_child,$(M47C_OBJS),1152,160,384,,))
+# ...and two more children (phase 121), the same source at a depth that
+# fits or does not, linked with the stack LAST (the g4a's eleventh
+# argument, src/app/gemapp.scm app-layout-ns): BIG.PRG is linked with 384
+# bytes and asks for 4096, and its twelve levels need about 2.8 KB; SMALL
+# is linked with 1024 and asks for 256, and its three need about 700.
+build/app/m47_big.o: src/m47_child.c src/app/gem.h
+	@mkdir -p build/app
+	$(CC) $(CFLAGS) -DM47_LEVELS=12 -I src/app -o $@ $<
+build/app/m47_small.o: src/m47_child.c src/app/gem.h
+	@mkdir -p build/app
+	$(CC) $(CFLAGS) -DM47_LEVELS=3 -I src/app -o $@ $<
+M47B_OBJS = $(G4A_LIB) build/app/m47_big.o
+M47S_OBJS = $(G4A_LIB) build/app/m47_small.o
+$(eval $(call g4a,m47_big,$(M47B_OBJS),1152,160,384,,,,,,4096))
+$(eval $(call g4a,m47_small,$(M47S_OBJS),1152,160,1024,,,,,,256))
 
 # The window gate accessory (src/m45_acc.c, test-m45): seven copies of it
 # on one disk, so it is as small as an accessory can be built.
@@ -2191,11 +2207,12 @@ test-m45: build/m45-boot.atr build/m45_acc.sym build/calc.sym build/desktop.sym
 
 # A program whose stack leaves its own memory is stopped at its next GEM
 # call, and its parent carries on (src/sys/abi.c, docs/phase114.md).
-build/m47-boot.atr: build/gem.xex build/m47_parent.g4a build/m47_child.g4a build/lang.rsc build/816.com
+build/m47-boot.atr: build/gem.xex build/m47_parent.g4a build/m47_child.g4a build/m47_big.g4a build/m47_small.g4a build/lang.rsc build/816.com
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
 	    --add build/m47_parent.g4a DESKTOP.PRG --add build/m47_child.g4a CHILD.PRG \
+	    --add build/m47_big.g4a BIG.PRG --add build/m47_small.g4a SMALL.PRG \
 	    --add build/lang.rsc LANG.RSC --add build/816.com 816.COM
 test-m47: build/m47-boot.atr build/m47_parent.sym
 	python3 tests/emu/m47_stack.py
