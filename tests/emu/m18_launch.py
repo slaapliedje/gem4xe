@@ -326,7 +326,7 @@ def main(argv):
             check(n == first, f"{what} is in call {n}, not its first wait {first}")
             return t
 
-        def catch(k, what, limit=4000):
+        def catch(k, what, limit=4000, required=True):
             painted[0] = False      # each run's loader zeroes the region
                                     # again, so the last run's paint is gone
             """Frames until the counter says the desktop is in call `k`
@@ -343,6 +343,14 @@ def main(argv):
                 check(False, f"{what} did not reach its rsrc_load (call {read()})")
                 return None
             if n != k:
+                if not required:
+                    # A REVIVED DESKTOP (phase 121) loads its resource from
+                    # the copy phase 120 keeps, and the call can begin and
+                    # end inside one frame: nothing to catch, so nothing is
+                    # painted and its low water is not read.
+                    print(f"  {what} went past its rsrc_load {k} inside a "
+                          f"frame (call {n}): its stack is not painted")
+                    return -1
                 check(False, f"{what} was caught in call {n}, past its rsrc_load {k}")
                 return None
             return t
@@ -445,6 +453,8 @@ def main(argv):
                 b.frames(1)
             else:
                 check(False, f"{what} did not reach its appl_exit (call {read()})")
+            if not painted[0]:
+                return
             lw = desk_low_water(b)
             used, size = dstk_hi + 1 - lw, dstk_hi - dstk_lo + 1
             print(f"  {what}'s stack: {used} of {size} bytes used at the low-water "
@@ -482,12 +492,13 @@ def main(argv):
         print(f"  {PROGRAM} ran and returned {got}; the desktop's second run "
               f"{t} frames after the double-click")
         check(d1.near == d2.near, "the second desktop's near region moved")
-        t = catch(offset + rsrc_load(d2), "the desktop again")
+        t = catch(offset + rsrc_load(d2), "the desktop again", required=False)
         if t is None:
             stall("the desktop again")
             return 1
-        app_s = paint_desk()
-        print(f"  the desktop again in its rsrc_load {t} frames later, S ${app_s:04X}")
+        if t >= 0:
+            app_s = paint_desk()
+            print(f"  the desktop again in its rsrc_load {t} frames later, S ${app_s:04X}")
         t = reach(offset + d2.waits[0], "the desktop again")
         if t is None:
             stall("the desktop again")
@@ -562,6 +573,15 @@ def main(argv):
         check(fills >= 1 and hits >= 1,
               f"{fills} resource copies made and {hits} used: the second "
               f"desktop read its resource from the disk again")
+        # ...AND THE DESKTOP ITSELF CAME BACK FROM ITS KEPT IMAGE (phase
+        # 121): not unpacked, not relocated -- the shell kept its code and
+        # variables dormant while the program ran (src/aes/shel.c).  The
+        # pictures and G above cannot tell: a load from the file lands at
+        # the same addresses, freed blocks being reused lowest first.
+        revived = rc[9] & 0xFFFF
+        print(f"  the desktop run again from its kept image {revived} time(s)")
+        check(revived == 1, f"the second desktop was loaded, not revived "
+                            f"({revived} revival(s))")
         lw = low_water(b)
         used, size = stk_hi + 1 - lw, stk_hi - stk_lo + 1
         print(f"stack:  {used} of {size} bytes used at the low-water mark (${lw:04X})")

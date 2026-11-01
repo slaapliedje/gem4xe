@@ -61,6 +61,7 @@ uint16_t pool_mark(void);           /* the top of the highest block */
 void    *pool_alloc(uint16_t size, uint16_t align); /* 0 when it will not fit */
 void    *pool_take(uint16_t size, uint16_t align);  /* ...nor in any hole */
 void     pool_release(uint16_t mark);
+void    *pool_claim(uint16_t at, uint16_t size);    /* exactly there, or 0 */
 uint16_t pool_free(void *block);    /* 1 if it was a block, 0 if not */
 void     pool_free_owner(uint8_t owner);            /* 0, the system: no-op */
 void     pool_free_sub(uint8_t owner, uint8_t sub); /* one sub-pool, 1-15 */

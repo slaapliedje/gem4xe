@@ -995,13 +995,47 @@ static WORD sh_desk_cache(void)
     return rs;
 }
 
+/* THE DESKTOP, DORMANT (phase 121).  When the desktop ends to run a
+ * program, its image -- code and variables, unpacked and relocated -- is
+ * kept at purge level 1 instead of freed (src/sys/app.c app_keep), and
+ * when the program ends the desktop is run again from it (app_revive):
+ * no unpacking, no relocating, no reading.  Its record is here, in zwin
+ * rather than a block of far memory, so that no gate's model of the heap
+ * has one more block to place.  sh_dorm is 0 when there is nothing kept,
+ * or when what was kept has been purged. */
+ZWIN static APP  sh_dorm_app;
+ZWIN static uint32_t sh_dorm_near;      /* its near region, saved */
+ZWIN static uint8_t sh_dorm;
+ZWIN uint16_t sh_revived;               /* desktops run from a kept image */
+
 /* far_purge_hook: whatever the shell and the AES kept that has just been
  * purged is forgotten, since its address may be given out again. */
 static void sh_purged(uint32_t addr)
 {
     if (addr == sh_desk_blob)
         sh_desk_blob = 0;
+    if (sh_dorm && (addr == sh_dorm_app.far_addr || addr == sh_dorm_near
+                    || (sh_dorm_app.vars_addr && addr == sh_dorm_app.vars_addr)))
+        sh_dorm = 0;                    /* a level is purged whole: all go */
     rs_cache_purged(addr);
+}
+
+/* The kept desktop made runnable again, if there is one: APP_OK and *app
+ * ready, or not, and then nothing is kept any more. */
+static WORD sh_revive(APP *app)
+{
+    WORD st;
+
+    if (!sh_dorm)
+        return APP_E_FILE;
+    sh_dorm = 0;
+    *app = sh_dorm_app;
+    st = app_revive(app, sh_dorm_near);
+    if (st != APP_OK)
+        app_forget(&sh_dorm_app, sh_dorm_near);
+    else
+        sh_revived++;
+    return st;
 }
 
 WORD sh_runs;                   /* programs started, the desktop included */
@@ -1042,7 +1076,10 @@ static WORD sh_ldapp(void)
          * program that asked for another gets it from the file. */
         far_strget(cmd, sh_desk_far, SH_DESKLEN);
         app_kind = OWN_DESK;
-        if (!strcmp(cmd, SH_DESKNAME) && sh_desk_cache() == APP_OK) {
+        if (!strcmp(cmd, SH_DESKNAME) && sh_revive(&app) == APP_OK) {
+            app_kind = 0;               /* nothing was loaded to use it */
+            st = APP_OK;
+        } else if (!strcmp(cmd, SH_DESKNAME) && sh_desk_cache() == APP_OK) {
             far_set_purge(sh_desk_blob, 0);     /* not while it is read */
             st = app_load((const uint8_t FAR *)sh_desk_blob, sh_desk_len, &app);
             far_set_purge(sh_desk_blob, 1);
@@ -1082,7 +1119,15 @@ static WORD sh_ldapp(void)
     proc_input = proc_app;
     mn_cleanup();
     proc_drain(ACC_ROUNDS);
-    app_free(&app);
+    /* The default desktop, ending to run a program it will come back
+     * from: kept, dormant (sh_revive above).  Anything else is freed. */
+    if (was == SH_DESKTOP && sh_doexec == 1 && !strcmp(cmd, SH_DESKNAME)
+        && app_keep(&app, &sh_dorm_near)) {
+        sh_dorm_app = app;
+        sh_dorm = 1;
+    } else {
+        app_free(&app);
+    }
     /* A desktop that returns without asking for anything has nothing
      * left to do: that is a shutdown, not the desktop again forever. */
     if (was == SH_DESKTOP && sh_doexec == -1)

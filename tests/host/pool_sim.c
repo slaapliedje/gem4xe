@@ -56,6 +56,7 @@ int main(void)
         case 12: pool_release(a); break;    /* a mark given as a number */
         case 13: far_tag = (uint8_t)a; break;
         case 14: pool_free_sub((uint8_t)a, (uint8_t)b); break;
+        case 15: r = (uint16_t)pool_claim(a, b); break;
         }
         pl_out[k] = r;
         pl_top[k] = pool_mark();

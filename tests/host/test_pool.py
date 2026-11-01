@@ -28,7 +28,7 @@ import poolref                             # noqa: E402
 
 LO, HI = 0x4800, 0x6000
 (ALLOC, TAKE, MARK, RELEASE, FREE, FREE_OWNER, OWNER, KEEP, ROOM, REFUSED,
- FULL, RELEASE_AT, TAG, FREE_SUB) = range(1, 15)
+ FULL, RELEASE_AT, TAG, FREE_SUB, CLAIM) = range(1, 16)
 SLOTS = 32                                 # POOL_MAX (src/sys/pool.h)
 
 # (op, a, b); RELEASE's and FREE's `a` is the index of an earlier step
@@ -86,6 +86,11 @@ SCRIPT = [
     (FREE_SUB, 9, 5),           # 49 sub-pool 5 goes; the top stays
     (FREE, 46, 0),              # 50 ...so 46 is no block now: 0
     (FREE, 48, 0),              # 51 ...and 48 still is: 1
+    # CLAIM (phase 121): a dormant program's near region, exactly where
+    (CLAIM, 0x4A58, 0x2C),      # 52 the gap between 40's take and $4A84
+    (CLAIM, 0x4A58, 0x2C),      # 53 ...and now it is taken: 0
+    (CLAIM, 0x4A00, 0x100),     # 54 across a block: 0
+    (CLAIM, 0x5F00, 0x80),      # 55 a free stretch below the top: fits
 ]
 # ...and then the table runs out
 SCRIPT += [(ALLOC, 2, 2)] * SLOTS + [(FULL, 0, 0), (ROOM, 0, 0)]
@@ -125,6 +130,8 @@ def model():
             p.tag = a
         elif op == FREE_SUB:
             p.free_sub(a, b)
+        elif op == CLAIM:
+            r = p.claim(a, b)
         out.append(r)
         tops.append(p.top())
     return out, tops
@@ -212,6 +219,9 @@ class TestPool(unittest.TestCase):
         self.assertEqual(t[49], 0x5BE4, "a sub-pool freed below the top")
         self.assertEqual((w[50], w[51]), (0, 1),
                          "the sub-pool's block went, the owner's own stayed")
+        self.assertEqual((w[53], w[54]), (0, 0), "a claim over a block is refused")
+        self.assertEqual((w[52], w[55]), (0x4A58, 0x5F00),
+                         "a claim of free memory lands exactly, a gap filled to the byte")
 
 
 if __name__ == "__main__":

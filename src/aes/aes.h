@@ -917,6 +917,7 @@ extern WORD sh_cpxdrops;                /* freed after boot-init */
 void     rs_cache_purged(uint32_t addr);
 void     rs_cache_flush(void);
 extern uint16_t rc_hits, rc_fills;
+extern uint16_t sh_revived;             /* the desktop run from its kept image */
 int32_t  sh_cpxload(WORD i, WORD on);   /* Cpxload: GEMDOS 0x1F3 */
 
 /* The shell loop: the desktop (DESKTOP.PRG on the default drive), the

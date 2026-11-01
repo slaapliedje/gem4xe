@@ -409,6 +409,108 @@ int16_t app_exec(const APP *app)
     return r;
 }
 
+/* KEEPING A PROGRAM, DORMANT (phase 121, step 5 of docs/memory-plan.md).
+ *
+ * app_free, except that the program's image -- its code, and a packed
+ * program's variables -- is not freed but handed to the system, tagged
+ * with the program's kind, at purge level 1: kept while nothing needs the
+ * room (src/sys/farmem.h).  Everything else it had goes as app_free's
+ * would: its near region, its resource, its Malloc blocks, its files.
+ *
+ * What makes a kept image worth anything is that it can be RUN again
+ * without loading: it was relocated for its far blocks, which do not
+ * move, and for its near region, which app_revive takes back at the same
+ * address -- and its crt initialises every data section from the image at
+ * every start (src/app/crt_gemapp.s, __initialize_sections), so a second
+ * run starts as clean as a first.  Only a program whose image is whole
+ * blocks can be kept: a packed one (format 5), whose code and variables
+ * are each a block of their own starting at far_addr and vars_addr.
+ *
+ * AND ITS NEAR REGION, saved.  The region itself is freed -- the next
+ * program needs the pool -- but a small-data program keeps its constants,
+ * its data initialisers and its init table in it (src/app/gemapp.scm,
+ * AppBits), and the next program writes over them: test-m16's stand-in
+ * desktop came back drawing the wrong colours and then stopped.  So the
+ * whole region goes into a far block at the top of the heap, *near_save,
+ * with the image's tag and level, and app_revive puts it back.
+ * 1 if it was kept; 0, and the program is not freed, if it cannot be. */
+uint16_t app_keep(const APP *app, uint32_t *near_save)
+{
+    uint8_t tag = OWN_TAG(OWN_KIND((uint8_t)(app->owner >> 8)), 0);
+    uint8_t keep = far_owner, keept = far_tag;
+    uint32_t save;
+
+    if (!app->far_addr || !far_size(app->far_addr)
+        || (app->vars_addr && !far_size(app->vars_addr)))
+        return 0;
+    far_owner = 0;                      /* the system's, the image's tag */
+    far_tag = tag;
+    save = far_alloc_top(app->near_size);
+    far_owner = keep;
+    far_tag = keept;
+    if (!save)
+        return 0;
+    far_put(save, (const uint8_t *)app->near_base, app->near_size);
+    far_set_purge(save, 1);
+    *near_save = save;
+    gemdos_release();
+    vdi_close_virtuals();
+    far_adopt(app->far_addr, 0, tag);
+    far_set_purge(app->far_addr, 1);
+    if (app->vars_addr) {
+        far_adopt(app->vars_addr, 0, tag);
+        far_set_purge(app->vars_addr, 1);
+    }
+    pool_free_owner((uint8_t)app->owner);
+    far_free_owner((uint8_t)app->owner);
+    return 1;
+}
+
+/* ...and run again: a new owner, the image adopted back unpurgeable, the
+ * near region claimed where it was.  APP_OK, the record ready for
+ * app_exec; or APP_E_POOL when the near region's place is taken, or
+ * APP_E_FAR when there is no owner to give -- and then the image is the
+ * caller's to give back (app_forget) and the program is loaded instead. */
+int16_t app_revive(APP *app, uint32_t near_save)
+{
+    uint8_t own = far_new_owner(), tag = (uint8_t)(app->owner >> 8);
+    uint8_t keep = far_owner, keept = far_tag;
+    void *near;
+
+    if (!own)
+        return APP_E_FAR;
+    far_owner = own;
+    far_tag = tag;
+    near = pool_claim(app->near_base, app->near_size);
+    far_owner = keep;
+    far_tag = keept;
+    if (!near)
+        return APP_E_POOL;
+    far_get((uint8_t *)near, near_save, app->near_size);
+    far_free(near_save);
+    far_adopt(app->far_addr, own, tag);
+    far_set_purge(app->far_addr, 0);
+    if (app->vars_addr) {
+        far_adopt(app->vars_addr, own, tag);
+        far_set_purge(app->vars_addr, 0);
+    }
+    app->owner = (uint16_t)(own | ((uint16_t)tag << 8));
+    app_near = app->near_base;
+    app_far = app->far_addr;
+    app_vars = app->vars_addr;
+    app_vlink = app->vars_link;
+    return APP_OK;
+}
+
+/* A kept image given back without being run. */
+void app_forget(const APP *app, uint32_t near_save)
+{
+    far_free(near_save);
+    far_free(app->far_addr);
+    if (app->vars_addr)
+        far_free(app->vars_addr);
+}
+
 void app_free(const APP *app)
 {
     gemdos_release();               /* its handles, searches and DTA */

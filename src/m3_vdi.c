@@ -600,7 +600,8 @@ static void sys_op(WORD op)
         intout[6] = (WORD)rc_hits;
         intout[7] = (WORD)rc_fills;
         intout[8] = (WORD)far_purged;
-        c4 = 9;
+        intout[9] = (WORD)sh_revived;   /* desktops run from a kept image */
+        c4 = 10;
         break;
     /* 22: PURGING UNDER PRESSURE (phase 120).  intin[0] 0 fills the far
      * heap with 256 KB spans of an owner of its own until it refuses --

@@ -6,9 +6,10 @@ import copy
 import farref
 
 RC_LEVEL = 2                    # src/aes/rsrc.c
+OWN_DESK = 4                    # src/sys/farmem.h
 
 
-def far_heap(b, syms):
+def far_heap(b, syms, everything=False):
     """The target's far heap, as the model holds one: the banks it spans
     and every block in its table, read out of its memory
     (src/sys/farmem.c, far_table/far_blocks; tools/farref.py)."""
@@ -20,11 +21,21 @@ def far_heap(b, syms):
              int.from_bytes(raw[i * 8 + 4:i * 8 + 8], "little"))
             for i in range(n)]
     h = farref.Heap.from_table(fm[1], fm[2], ents)
+    if everything:
+        # the heap as the allocator sees it, for a model of what it will
+        # place next: the cached blocks below take room like any other
+        return h
     # Purge level 2 is the AES's copies of the desktop's resource files
     # (src/aes/rsrc.c, phase 120): a cache, taken at the top of the heap so
     # that nothing the models place moves, and not one of their blocks.
     # The desktop's own program file is level 1 and stays.
     h.blocks = [blk for blk in h.blocks if (blk[2] >> 16) & 3 != RC_LEVEL]
+    # ...and a dormant desktop's image and saved near region (phase 121):
+    # the system's, with the desktop's kind in the tag.  Kept while a
+    # program runs; the models place a desktop as if loaded, which is
+    # where a revived one is.
+    h.blocks = [blk for blk in h.blocks
+                if not (blk[2] & 0xFF == 0 and (blk[2] >> 12) & 0x0F == OWN_DESK)]
     return h
 
 

@@ -73,6 +73,7 @@ uint16_t far_shrink(uint32_t addr, uint32_t bytes);  /* smaller, in place */
  * -- and named to far_purge_hook as they go, so a cache forgets them.  A
  * block in use is set to 0 first and back after. */
 uint16_t far_set_purge(uint32_t addr, uint16_t level);   /* 1 if a block */
+uint16_t far_adopt(uint32_t addr, uint8_t owner, uint8_t tag);  /* ...too */
 extern void (*far_purge_hook)(uint32_t addr);
 extern uint16_t far_purged;             /* blocks purged, for the gates */
 uint32_t far_size(uint32_t addr);       /* a block's length, 0 if none */

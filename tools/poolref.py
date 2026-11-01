@@ -14,6 +14,7 @@ rules, as src/sys/pool.h states them:
   free_owner(o)  every block of o; o == 0 is the system's and does nothing
   free_sub(o, s) every block of o in sub-pool s, 1-15 (the tag's low
                  nibble: far_tag, src/sys/farmem.h)
+  claim(at, n)   exactly at..at+n if all of it is free, else 0
   room()         above the top
 
 A zero-sized alloc or take is a place, not a block.
@@ -64,6 +65,18 @@ class Pool:
             base = self._fit(lo, hi, n, a)
             if base:
                 return self._insert(i, base, n)
+            if i < len(self.blocks):
+                lo = self.blocks[i][0] + self.blocks[i][1]
+        return 0
+
+    def claim(self, at, n):
+        if not n or at < self.lo or at + n > self.hi:
+            return 0
+        lo = self.lo
+        for i in range(len(self.blocks) + 1):
+            hi = self.blocks[i][0] if i < len(self.blocks) else self.hi
+            if at >= lo and at + n <= hi:
+                return self._insert(i, at, n)
             if i < len(self.blocks):
                 lo = self.blocks[i][0] + self.blocks[i][1]
         return 0

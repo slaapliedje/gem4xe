@@ -232,7 +232,8 @@ def main(argv):
         b.frames(30)
         # the far heap as the memory calls will find it: the program is
         # waiting in Cnecin, and nothing between here and them allocates
-        heap_q = far_heap(b, syms)
+        heap_q = far_heap(b, syms, everything=True)   # what Malloc finds,
+                                                      # the dormant desktop too
         b.key("Q")                          # Cconis, then Cnecin
         reached(7, "after Q")
         if not reached(8, "the handles and the memory"):

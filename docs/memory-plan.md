@@ -1,8 +1,9 @@
 # Memory: what GS/OS teaches gem4xe
 
-A plan, being built: steps 1 to 4 are done ([phase116.md](phase116.md),
+A plan, being built: steps 1 to 5 are done ([phase116.md](phase116.md),
 [phase117.md](phase117.md), [phase118.md](phase118.md),
-[phase119.md](phase119.md), [phase120.md](phase120.md)).  The Apple IIGS runs the same CPU on the same kind
+[phase119.md](phase119.md), [phase120.md](phase120.md),
+[phase121.md](phase121.md)).  The Apple IIGS runs the same CPU on the same kind
 of memory -- one scarce bank $00, many plentiful banks above -- and its
 Memory Manager (*Apple IIGS Toolbox Reference*, volume 1 chapter 12, volume
 3 chapter 36; *GS/OS Reference*, chapters 2 and 8) solved the problems
@@ -143,6 +144,11 @@ The most visible change in the plan.
 
 *Gate:* `test-boot`'s desk compared as now; a timed return to the desktop
 from a program, before and after, in `bench-desk`.
+
+**Done** in [phase121.md](phase121.md).  The gate is test-m18's instead of
+bench-desk's: it counts the revival, which a picture or a timing on a
+Rapidus cannot tell from a load (phase 120 had already taken the disk
+read away).
 
 ### 6. A program's direct page and stack sized by the program
 

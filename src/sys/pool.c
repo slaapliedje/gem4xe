@@ -146,6 +146,27 @@ void *pool_take(uint16_t size, uint16_t align)
     return 0;
 }
 
+/* Exactly at..at+size, if all of it is free: a dormant program's near
+ * region taken back where its code was relocated for (src/sys/app.c
+ * app_revive, phase 121).  The block or 0. */
+void *pool_claim(uint16_t at, uint16_t size)
+{
+    uint16_t i, lo;
+
+    pool_start();
+    if (!size || at < app_pool_lo || (uint32_t)at + size > app_pool_hi)
+        return 0;
+    lo = app_pool_lo;
+    for (i = 0; i <= pool_blocks; i++) {
+        uint16_t hi = i < pool_blocks ? pb_at[i] : app_pool_hi;
+        if (at >= lo && (uint32_t)at + size <= hi)
+            return pb_insert(i, at, size);
+        if (i < pool_blocks)
+            lo = pb_end(i);
+    }
+    return 0;
+}
+
 /* The current owner's blocks above `mark` go, and one that straddles it
  * ends there: what winding the cursor back did, for one owner. */
 void pool_release(uint16_t mark)

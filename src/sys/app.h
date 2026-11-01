@@ -67,6 +67,13 @@ extern uint8_t app_kind;
 int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app);
 int16_t app_exec(const APP *app);
 void    app_free(const APP *app);
+/* A program kept dormant and run again without loading (phase 121): see
+ * app.c.  app_keep frees all but the image (1 if it could); app_revive
+ * makes it runnable again (APP_OK) or says why not, and then app_forget
+ * gives the image back. */
+uint16_t app_keep(const APP *app, uint32_t *near_save);
+int16_t  app_revive(APP *app, uint32_t near_save);
+void     app_forget(const APP *app, uint32_t near_save);
 
 /* A whole file, by its CIO name, into far memory: where it starts, with
  * its length in *len, or 0 when it would not open or read to its end --

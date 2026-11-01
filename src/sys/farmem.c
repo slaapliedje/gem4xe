@@ -344,6 +344,27 @@ static uint16_t purge_next(uint16_t *level)
     return 0;
 }
 
+/* The block at addr becomes `owner`'s, with `tag`: a dormant desktop's
+ * image handed to the system and back (src/sys/app.c app_keep, phase
+ * 121).  Its purge level stays as it was.  1 if it was a block. */
+uint16_t far_adopt(uint32_t addr, uint8_t owner, uint8_t tag)
+{
+    uint16_t i;
+    uint32_t v;
+
+    for (i = 1; i < far_blocks; i++)
+        if (fb_start(i) == addr) {
+            v = FB(i).at;
+            v = (v & ~0xFF000000UL) | ((uint32_t)owner << 24);
+            FB(i).at = v;
+            v = FB(i).len;
+            v = (v & FB_LEN) | ((uint32_t)tag << 24);
+            FB(i).len = v;
+            return 1;
+        }
+    return 0;
+}
+
 uint16_t far_set_purge(uint32_t addr, uint16_t level)
 {
     uint16_t i;
