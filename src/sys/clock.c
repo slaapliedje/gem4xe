@@ -237,6 +237,28 @@ static uint8_t dos_clock(CLOCK *c)
  * can cut the search short: CLOCK=DOS skips the chips and CLOCK=NONE
  * skips everything, which is what somebody wants when they are finding
  * out what stops their machine. */
+/* NOT THE SIDE'S ADDRESS WHEN gem4xe IS THE CARTRIDGE.  The SIDE's clock
+ * is in the cartridge control page, and so is the AtariMax mapper gem4xe's
+ * own cartridge is built for (src/cart.s) -- which, on the real board,
+ * switches bank on ANY access to $D500-$D5FF, a read included, and turns
+ * the cartridge OFF for $D580-$D5FF.  Reading $D5E2 to look for a SIDE
+ * takes the cartridge, and the D1: handler running from it, out from under
+ * the system: on the MiSTer core, which banks as the board does, gem4xe
+ * booted from its cartridge never reached the desktop.  Altirra's AtariMax
+ * model leaves reads alone, so no gate there can see it.  With gem4xe in
+ * the slot there is no SIDE in it.
+ * The cartridge's own signature says so -- 'G','4' at $0600, written when
+ * it ran (src/cart.s CARTSIG) -- with TRIG3 saying a cartridge is there. */
+#define CARTSIG  0x0600
+#define TRIG3    0xD013
+
+static uint8_t own_cartridge(void)
+{
+    return (uint8_t)((*(volatile uint8_t *)TRIG3 & 1)
+                     && *(volatile uint8_t *)CARTSIG == 'G'
+                     && *(volatile uint8_t *)(CARTSIG + 1) == '4');
+}
+
 static void clock_probe(void)
 {
     static const uint16_t where[2] = { RTC_U1MB, RTC_SIDE };
@@ -250,6 +272,8 @@ static void clock_probe(void)
     if (clock_how == CLOCK_HOW_NONE)
         return;
     for (i = 0; clock_how != CLOCK_HOW_DOS && i < 2; i++) {
+        if (where[i] == RTC_SIDE && own_cartridge())
+            continue;
         if (!looks_like_rtc(where[i]))
             continue;
         rtc = (volatile uint8_t *)where[i];
