@@ -276,41 +276,52 @@ here depends on that, and nothing here has to serve it.
    was looked for first.  The loader closes after a refusal now, which is
    what a DOS does anyway.
 
-## 9. What it costs, which is twenty-six seconds
+## 9. What it costs, which is six seconds
 
 Measured, and printed by the gate every run so that a change in it is
 seen rather than discovered:
 
-    165 KB of system, off the ROM        1,325 frames -- 26 seconds
+    165 KB of system, off the ROM          300 frames --  6 seconds
+    (before burst reads, 2026-11-02)     1,325 frames -- 26 seconds
 
-**That is not the cartridge being slow, it is the CPU being slow.**  A
-Rapidus comes up with `MCR = $FF` -- every 16 KB window on the 1.79 MHz
-motherboard bus -- and nothing raises that until gem4xe's own
-`rapidus_speedup()` runs, which is after the load.  So 165 KB goes
-through CIO's byte-at-a-time GET and the handler at 1.79 MHz: about 280
-cycles a byte, of which roughly a third is CIO's loop in ROM and the rest
-is `src/cartd.s`.
+**It was never the ROM that was slow.**  CIO's GET CHARACTERS calls the
+handler once a byte, and a byte at a time cost about 280 cycles at the
+1.79 MHz a Rapidus runs at until gem4xe's own `rapidus_speedup()`: a
+third of it CIO's loop in ROM, the rest `src/cartd.s`.
 
-It is not worse than what it replaces -- a floppy reading the same 165 KB
-through SIO is the same order -- and the bootstrap now prints a dot per
-segment, because twenty-six seconds of an unchanging screen is
-indistinguishable from a machine that has hung.
+Now the handler does what DOS 2 calls burst I/O.  CIO stores each byte
+the handler returns at `(ICBALZ)`, steps `ICBALZ`, counts `ICBLLZ` down,
+and at the end reports `ICBLL` less `ICBLLZ` as the bytes read -- so a
+handler may store bytes itself, as long as it moves those two on by as
+many.  `cd_getfile` copies all but the last byte CIO still wants, up to
+256 at a time and never past the window's end, straight into the
+caller's buffer, and returns the last one in A.  The copy is the stub in
+page 6 (`$0610-$0623`), because switching the bank switches out the
+handler's own code; a single byte goes through the same stub.
+`make bench-boot` measures the whole boot four ways, the cartridge one
+of them: 37.0 seconds to the desktop before, 19.0 after.
 
-Two things could be done about it, neither of them step four's:
+What is left, in the order `make bench-boot ARGS=--profile` puts it:
 
-- **A tighter `cd_get`.**  About 180 of the 280 cycles are the handler's,
-  and a good deal of that is a `jsr`/`rts` pair per byte and a 24-bit
-  decrement.  Perhaps 2x, so twenty-six seconds becomes fifteen.
+- **The OS looking for a disk.**  `$BFFD` bit 0 asks it to boot one
+  first (section 10), and on a Rapidus the CPU switch is a second cold
+  start, so with no drive it waits out SIO's timeouts twice: about four
+  seconds of the load.  It goes when G4DOS rides on the cartridge
+  (docs/fdos.md) and the OS no longer has to boot a DOS first.
+- **The unpacker** (`src/farload.s`), about a quarter.  The far image is
+  packed for the floppies; a 1 MB cartridge has room to carry it
+  unpacked.
+- **The copy itself**, about twenty cycles a byte in a 6502 loop, which
+  a 65C816's `MVN` would make seven.
 - **Rapidus fast mode in the bootstrap**, which is the 11x.  Window 0
   (`$0000-$3FFF`) is safe and is what `rapidus.c` already does; window 2
   must stay slow because the cartridge is in it; **window 3 is where CIO
   lives and must not be made fast** -- priming its SRAM copy means
   reading and writing back every byte of `$C000-$FFFF`, and `$D000-$D7FF`
   in the middle of that is hardware, so the sync would write every
-  register back with what it read.  Window 0 alone is about 2.3x.
-  It would also make the boot screen report the cartridge's `MCR` rather
-  than the firmware's, which `test-boot` reads, so it is a change with a
-  gate of its own.
+  register back with what it read.  It would also make the boot screen
+  report the cartridge's `MCR` rather than the firmware's, which
+  `test-boot` reads, so it is a change with a gate of its own.
 
 ## 10. Saving, when there is a floppy
 

@@ -66,7 +66,16 @@ Through the OS's SIO routine, never a driver of its own: one loader
 that brought its own (exec816) did not work with a SIDE2's or an
 Ultimate 1MB's drives.  Two 256-byte buffers, one for a map sector and
 one for a data sector, each tagged with its unit and sector, so a file
-read straight through costs one SIO call per sector.  Each IOCB keeps
+read straight through costs one SIO call per sector.
+
+GET CHARACTERS is a burst (`fd_burst`), as DOS 2's is: all but the last
+of the bytes CIO still wants go straight into the caller's buffer, CIO's
+pointer and count moved on by as many -- a sector wanted whole is read
+by SIO straight into it, anything less copied out of the data buffer --
+and the last byte goes back in A for CIO to store.  A byte at a time,
+G4DOS was two thirds of the boot and read GEM.COM at 74 bytes a frame;
+in bursts it reads 329, faster than DOS 2's 292, and the system floppy
+reaches the desktop in 17.6 seconds rather than 45.2 (`make bench-boot`).  Each IOCB keeps
 a ten-byte cursor -- map sector, entry, data sector, offset, bytes left
 -- and the one in use is kept in hand, so reading one file copies
 nothing.  Every OPEN reads the unit's sector 1 again, because the disk

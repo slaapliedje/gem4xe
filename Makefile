@@ -1010,7 +1010,7 @@ build/g4bench-boot.atr: build/gem.xex build/g4bench.g4a build/lang.rsc build/816
 g4bench: build/g4bench-boot.atr build/g4bench.sym
 	python3 tests/emu/g4bench.py $(ARGS)
 
-bench-boot: build/gem-boot.atr build/gem-sdx.atr
+bench-boot: build/gem-boot.atr build/gem-sdx.atr build/gem4xe-sys.car
 	python3 tests/emu/bench_boot.py --sdx="$(SRC_SDX)" $(ARGS)
 
 bench-antic: build/bench-antic.atr

@@ -60,6 +60,7 @@ MEMLO:        .equ    0x02e7
 
 ;;; CIO's copy of the IOCB it is working on, in zero page, and which IOCB.
 ICDNOZ:       .equ    0x21            ; the unit: 1 for D:, D1:
+ICCOMZ:       .equ    0x22            ; the command: bit 1 set for GET CHARACTERS
 ICBALZ:       .equ    0x24
 ICBAHZ:       .equ    0x25
 ICBLLZ:       .equ    0x28
@@ -107,15 +108,18 @@ ZP_ENT:       .equ    0xd6            ; 16-bit: the entry being compared
 ZP_IDX:       .equ    0xd8            ; 8-bit:  which entry
 ZP_SLOT:      .equ    0xd9            ; 8-bit:  the IOCB, 0..7
 ZP_T:         .equ    0xda            ; 16-bit: the DOS's table / a count
+ZP_DST:       .equ    0xdc            ; 16-bit: where the stub puts what it reads
+ZP_N:         .equ    0xde            ; 8-bit:  how many, 0 for 256
 
 ;;; ---------------------------------------------------------------------------
 ;;; PAGE 6.  The OS neither uses nor clears it once it is up, gem4xe's map
 ;;; leaves $0200-$06FF alone, and so does every DOS this has met.  Shared
-;;; with src/cart.s, which owns $0600-$060B, the loader's $0620-$0625 and
+;;; with src/cart.s, which owns $0600-$060B, the loader's $06B8-$06BD and
 ;;; the demo's listing at $06C0; the addresses are repeated there.
 ;;; ---------------------------------------------------------------------------
 CD_HASDOS:    .equ    0x060c          ; 1 if a DOS was here first (cart.s reads)
-STUB:         .equ    0x0610          ; the byte fetch, eleven bytes
+STUB:         .equ    0x0610          ; the copy, twenty bytes, to $0623
+CD_SINK:      .equ    0x06be          ; where a single byte's copy goes
 ;;; per IOCB, eight of each
 cd_mode:      .equ    0x0626          ; M_*
 cd_bank:      .equ    0x062e
@@ -237,12 +241,18 @@ cd_install:   lda     #0
               sta     MEMLO+1
 90$:          rts
 
-;;; The stub, as it is copied: X the bank, Y zero, ZP_SRC the address.
-;;; POSITION INDEPENDENT, and it has to be.  The value written to $D500,x is
-;;; ignored -- the address selects -- and the boot bank goes back before the
-;;; rts, because the rts goes back into it.
+;;; The stub, as it is copied: X the bank, ZP_N bytes (0 for 256) from
+;;; ZP_SRC in the window to ZP_DST, and the last of them in A.  POSITION
+;;; INDEPENDENT, and it has to be.  The value written to $D500,x is
+;;; ignored -- the address selects -- and the boot bank goes back before
+;;; the rts, because the rts goes back into it.
 cd_stub:      sta     CCTL,x
-              lda     (ZP_SRC),y
+              ldy     #0
+1$:           lda     (ZP_SRC),y
+              sta     (ZP_DST),y
+              iny
+              cpy     ZP_N
+              bne     1$
               ldx     #BOOT_BANK
               sta     CCTL,x
               rts
@@ -651,44 +661,145 @@ cd_getfwd:    ldy     #V_GET
 cd_getfile:   lda     cd_rem0,x
               ora     cd_rem1,x
               ora     cd_rem2,x
-              bne     10$
+              bne     5$
               ldy     #ST_EOF
               rts
-10$:          lda     cd_ptrl,x
+5$:           lda     ICCOMZ          ; GET CHARACTERS, not GET RECORD, which
+              and     #2              ; has to stop at the EOL
+              bne     10$
+;;; One byte, in A, for CIO to store itself.  (The stub's own store goes
+;;; to the sink.)
+40$:          ldx     ZP_SLOT
+              lda     #1
+              sta     ZP_T
+              sta     ZP_N
+              lda     #0
+              sta     ZP_T+1
+              lda     #.byte0 CD_SINK
+              sta     ZP_DST
+              lda     #.byte1 CD_SINK
+              sta     ZP_DST+1
+              jsr     cd_src
+              jsr     STUB            ; the byte, and the boot bank back
+              pha
+              ldx     ZP_SLOT
+              jsr     cd_adv
+              pla
+              ldy     #ST_OK
+              rts
+;;; BURST: all but the last of what CIO still wants, copied by the stub
+;;; straight into the caller's buffer, CIO's pointer and count moved on by
+;;; as much -- src/fdos.s fd_burst says why that is allowed, and what it is
+;;; worth: a byte at a time, this handler and CIO's loop around it were
+;;; four fifths of the cartridge's boot.  ZP_T: that count, then no more
+;;; than the file has less one, than the window has, or than 256.
+10$:          ldx     ZP_SLOT
+              lda     ICBLLZ
+              sec
+              sbc     #1
+              sta     ZP_T
+              lda     ICBLHZ
+              sbc     #0
+              sta     ZP_T+1
+              bcc     40$
+              lda     cd_rem2,x
+              bne     15$
+              lda     cd_rem0,x
+              sec
+              sbc     #1
+              tay
+              lda     cd_rem1,x
+              sbc     #0
+              bcc     40$
+              cmp     ZP_T+1
+              bcc     12$
+              bne     15$
+              cpy     ZP_T
+              bcs     15$
+12$:          sty     ZP_T
+              sta     ZP_T+1
+15$:          lda     #0              ; the window: $C000 less the pointer
+              sec
+              sbc     cd_ptrl,x
+              tay
+              lda     #0xc0
+              sbc     cd_ptrh,x
+              cmp     ZP_T+1
+              bcc     17$
+              bne     18$
+              cpy     ZP_T
+              bcs     18$
+17$:          sty     ZP_T
+              sta     ZP_T+1
+18$:          lda     ZP_T+1          ; 256 and up: 256, the stub's Y
+              beq     19$
+              lda     #0
+              sta     ZP_T
+              lda     #1
+              sta     ZP_T+1
+19$:          lda     ZP_T
+              ora     ZP_T+1
+              bne     20$
+              jmp     40$
+20$:          lda     ZP_T
+              sta     ZP_N            ; 0 for 256
+              lda     ICBALZ
+              sta     ZP_DST
+              lda     ICBAHZ
+              sta     ZP_DST+1
+              jsr     cd_src
+              jsr     STUB
+              lda     ICBALZ
+              clc
+              adc     ZP_T
+              sta     ICBALZ
+              lda     ICBAHZ
+              adc     ZP_T+1
+              sta     ICBAHZ
+              lda     ICBLLZ
+              sec
+              sbc     ZP_T
+              sta     ICBLLZ
+              lda     ICBLHZ
+              sbc     ZP_T+1
+              sta     ICBLHZ
+              ldx     ZP_SLOT
+              jsr     cd_adv
+              jmp     10$
+
+;;; cd_src -- the stub's source from IOCB X's pointer, and X its bank.
+cd_src:       lda     cd_ptrl,x
               sta     ZP_SRC
               lda     cd_ptrh,x
               sta     ZP_SRC+1
               lda     cd_bank,x
               tax
-              ldy     #0
-              jsr     STUB            ; the byte, and the boot bank back
-              pha
-;;; ...and on to the next byte.  A page past the end of the window is the
-;;; next bank, which is what makes a file longer than 8 KB work at all.
-              ldx     ZP_SLOT
-              inc     cd_ptrl,x
-              bne     20$
-              inc     cd_ptrh,x
-              lda     cd_ptrh,x
-              cmp     #0xc0
-              bcc     20$
-              lda     #WINDOW_HI
-              sta     cd_ptrh,x
-              inc     cd_bank,x
-20$:          sec
-              lda     cd_rem0,x
-              sbc     #1
-              sta     cd_rem0,x
-              bcs     30$
-              lda     cd_rem1,x
-              sbc     #0
-              sta     cd_rem1,x
-              lda     cd_rem2,x
-              sbc     #0
-              sta     cd_rem2,x
-30$:          pla
-              ldy     #ST_OK
               rts
+
+;;; cd_adv -- IOCB X's pointer and bytes left on by ZP_T, which is never
+;;; past the window's end.  A page past the end of the window is the next
+;;; bank, which is what makes a file longer than 8 KB work at all.
+cd_adv:       lda     cd_ptrl,x
+              clc
+              adc     ZP_T
+              sta     cd_ptrl,x
+              lda     cd_ptrh,x
+              adc     ZP_T+1
+              cmp     #0xc0
+              bcc     10$
+              inc     cd_bank,x
+              lda     #WINDOW_HI
+10$:          sta     cd_ptrh,x
+              lda     cd_rem0,x
+              sec
+              sbc     ZP_T
+              sta     cd_rem0,x
+              lda     cd_rem1,x
+              sbc     ZP_T+1
+              sta     cd_rem1,x
+              bcs     20$
+              dec     cd_rem2,x
+20$:          rts
 
 ;;; ---------------------------------------------------------------------------
 ;;; cd_getdir -- the ROM's listing, one character at a time, generated

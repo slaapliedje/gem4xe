@@ -85,7 +85,9 @@ IOCB1:        .equ    0x10
 
 ;;; CIO's copy of the IOCB it is working on.
 ICDNOZ:       .equ    0x21
+ICCOMZ:       .equ    0x22
 ICBALZ:       .equ    0x24
+ICBLLZ:       .equ    0x28            ; and ICBLHZ: the count still wanted
 ICAX1Z:       .equ    0x2a
 ICIDNO:       .equ    0x2e
 
@@ -297,12 +299,47 @@ fd_byte:      lda     fd_c+C_REM
               ldy     #ST_EOF
               sec
               rts
-5$:           lda     fd_c+C_SEC
+5$:           jsr     fd_need
+              bcs     99$
+              jsr     fd_data
+              bcs     99$
+              ldy     fd_c+C_POS
+              lda     fd_dbuf,y
+              pha
+              iny
+              sty     fd_c+C_POS
+              jsr     fd_secsz
+              cmp     fd_c+C_POS      ; past the sector's end: 0 for 256 (the
+              bne     50$             ; increment wrapped), $80 for 128
+              lda     #0
+              sta     fd_c+C_SEC
+              sta     fd_c+C_SEC+1
+              sta     fd_c+C_POS
+50$:          lda     fd_c+C_REM
+              sec
+              sbc     #1
+              sta     fd_c+C_REM
+              bcs     60$
+              lda     fd_c+C_REM+1
+              sbc     #0
+              sta     fd_c+C_REM+1
+              lda     fd_c+C_REM+2
+              sbc     #0
+              sta     fd_c+C_REM+2
+60$:          pla
+              clc
+99$:          rts
+
+;;; fd_need -- the cursor onto a data sector, C_SEC: the one it has, or the
+;;; next entry of the map, the map's own successor first if this one is
+;;; used up.  Carry set at a chain that ends early (Y ST_EOF) or on a
+;;; failure (Y the SIO status).
+fd_need:      lda     fd_c+C_SEC
               ora     fd_c+C_SEC+1
-              bne     40$
-;;; A data sector is wanted: the next entry of the map, the map's own
-;;; successor first if this one is used up.
-              jsr     fd_secsz        ; 0 or $80
+              beq     5$
+              clc
+              rts
+5$:           jsr     fd_secsz        ; 0 or $80
               sec
               sbc     #4
               lsr     a               ; entries per map: 126 or 62
@@ -335,32 +372,6 @@ fd_byte:      lda     fd_c+C_REM
               inc     fd_c+C_IDX
               lda     #0
               sta     fd_c+C_POS
-40$:          jsr     fd_data
-              bcs     99$
-              ldy     fd_c+C_POS
-              lda     fd_dbuf,y
-              pha
-              iny
-              sty     fd_c+C_POS
-              jsr     fd_secsz
-              cmp     fd_c+C_POS      ; past the sector's end: 0 for 256 (the
-              bne     50$             ; increment wrapped), $80 for 128
-              lda     #0
-              sta     fd_c+C_SEC
-              sta     fd_c+C_SEC+1
-              sta     fd_c+C_POS
-50$:          lda     fd_c+C_REM
-              sec
-              sbc     #1
-              sta     fd_c+C_REM
-              bcs     60$
-              lda     fd_c+C_REM+1
-              sbc     #0
-              sta     fd_c+C_REM+1
-              lda     fd_c+C_REM+2
-              sbc     #0
-              sta     fd_c+C_REM+2
-60$:          pla
               clc
 99$:          rts
 
@@ -787,17 +798,172 @@ fd_get:       jsr     fd_slot
               cmp     #M_FILE
               beq     10$
               cmp     #M_DIR
-              beq     fd_getdir
-              ldy     #ST_BADCMD
+              bne     5$
+              jmp     fd_getdir
+5$:           ldy     #ST_BADCMD
               rts
 10$:          txa
               clc
               adc     #B_FILE
               jsr     fd_use
-              jsr     fd_byte
+              lda     ICCOMZ          ; GET CHARACTERS, not GET RECORD, which
+              and     #2              ; has to stop at the EOL
+              beq     20$
+              jsr     fd_burst
+              bcs     90$
+20$:          jsr     fd_byte
               bcs     90$
               ldy     #ST_OK
 90$:          rts
+
+;;; ---------------------------------------------------------------------------
+;;; fd_burst -- all but the last of the bytes CIO still wants, straight into
+;;; the caller's buffer, before fd_byte hands back that last one in A.
+;;;
+;;; CIO's GET CHARACTERS calls the handler once a byte: it stores A at
+;;; (ICBALZ), steps ICBALZ, counts ICBLLZ down, and goes round again until
+;;; that is zero -- and at the end reports ICBLL less ICBLLZ as the bytes
+;;; read.  So a handler may store bytes itself as long as it moves ICBALZ
+;;; and ICBLLZ on by as many, which is DOS 2's burst I/O, and why DOS 2
+;;; read GEM.COM four times as fast as this did a byte at a time: G4DOS
+;;; was two thirds of the boot's time, the OS's loop most of the rest.
+;;; A whole sector, wanted whole, is read by SIO straight into the buffer;
+;;; anything less is copied out of fd_dbuf.  Carry set on a failure, with
+;;; the status in Y and the bytes before it accounted for.
+;;; ---------------------------------------------------------------------------
+fd_bdone:     clc                     ; (in branch reach of what decides)
+fd_bfail:     rts
+fd_burst:
+;;; n: CIO's count less the one fd_byte returns, and no more than the file
+;;; has less that one too.
+10$:          lda     ICBLLZ
+              sec
+              sbc     #1
+              sta     fd_n
+              lda     ICBLLZ+1
+              sbc     #0
+              sta     fd_n+1
+              bcc     fd_bdone        ; CIO wants none (it never asks so)
+              lda     fd_c+C_REM+2
+              bne     20$             ; 64 KB or more left: no limit there
+              lda     fd_c+C_REM
+              sec
+              sbc     #1
+              tax
+              lda     fd_c+C_REM+1
+              sbc     #0
+              bcc     fd_bdone        ; nothing left; fd_byte says EOF
+              cmp     fd_n+1
+              bcc     15$
+              bne     20$
+              cpx     fd_n
+              bcs     20$
+15$:          stx     fd_n
+              sta     fd_n+1
+20$:          lda     fd_n
+              ora     fd_n+1
+              beq     fd_bdone
+;;; ...and no further than this sector's end: 256 or 128 less where it is.
+              jsr     fd_need
+              bcs     fd_bfail
+              jsr     fd_secsz
+              eor     #0x80           ; 0 -> $80 (256, below), $80 -> 0 (128)
+              bne     25$
+              lda     #0x80
+              ldx     #0
+              beq     30$
+25$:          lda     #0
+              ldx     #1              ; X:A = 256
+30$:          sec
+              sbc     fd_c+C_POS
+              sta     ZP_T            ; ZP_T: bytes left in the sector
+              txa
+              sbc     #0
+              sta     ZP_T+1
+              cmp     fd_n+1
+              bcc     35$
+              bne     40$
+              lda     ZP_T
+              cmp     fd_n
+              bcs     40$
+35$:          lda     ZP_T            ; the sector ends first: that much
+              sta     fd_n
+              lda     ZP_T+1
+              sta     fd_n+1
+;;; The sector is wanted to its end.  From its start, that is all of it:
+;;; SIO puts it in the caller's buffer and fd_dbuf keeps what it had.
+40$:          lda     fd_c+C_POS
+              bne     50$
+              lda     fd_n
+              cmp     ZP_T
+              bne     50$
+              lda     fd_n+1
+              cmp     ZP_T+1
+              bne     50$
+              lda     fd_c+C_SEC
+              sta     ZP_T
+              lda     fd_c+C_SEC+1
+              sta     ZP_T+1
+              lda     ICBALZ
+              sta     ZP_P
+              lda     ICBALZ+1
+              sta     ZP_P+1
+              lda     fd_c+C_UNIT
+              sta     fd_unit
+              jsr     fd_secsz
+              jsr     fd_sio
+              bcs     99$
+              jmp     60$
+;;; Part of a sector: out of fd_dbuf.  fd_n is 255 at most here.
+50$:          jsr     fd_data
+              bcs     99$
+              ldx     fd_c+C_POS
+              ldy     #0
+55$:          lda     fd_dbuf,x
+              sta     (ICBALZ),y
+              inx
+              iny
+              cpy     fd_n
+              bne     55$
+;;; fd_n bytes are in: CIO's pointer and count, and the cursor, on by that.
+60$:          lda     ICBALZ
+              clc
+              adc     fd_n
+              sta     ICBALZ
+              lda     ICBALZ+1
+              adc     fd_n+1
+              sta     ICBALZ+1
+              lda     ICBLLZ
+              sec
+              sbc     fd_n
+              sta     ICBLLZ
+              lda     ICBLLZ+1
+              sbc     fd_n+1
+              sta     ICBLLZ+1
+              lda     fd_c+C_REM
+              sec
+              sbc     fd_n
+              sta     fd_c+C_REM
+              lda     fd_c+C_REM+1
+              sbc     fd_n+1
+              sta     fd_c+C_REM+1
+              bcs     65$
+              dec     fd_c+C_REM+2
+65$:          lda     fd_c+C_POS
+              clc
+              adc     fd_n
+              sta     fd_c+C_POS
+              lda     fd_n+1          ; 256: the whole sector, so it is done
+              bne     70$
+              jsr     fd_secsz
+              cmp     fd_c+C_POS      ; at its end: 0 (wrapped) or $80
+              bne     75$
+70$:          lda     #0
+              sta     fd_c+C_SEC
+              sta     fd_c+C_SEC+1
+              sta     fd_c+C_POS
+75$:          jmp     10$
+99$:          rts
 
 ;;; ---------------------------------------------------------------------------
 ;;; fd_getdir -- the listing, a character at a time: DOS 2's 17-character
@@ -1090,6 +1256,7 @@ fd_want:      .space  11
 fd_nameat:    .space  1
 fd_line:      .space  18
 fd_lpos:      .space  1
+fd_n:         .space  2               ; fd_burst's bytes this time round
 fd_digits:    .space  3
 ld_w:         .space  2
 ld_start:     .space  2

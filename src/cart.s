@@ -154,13 +154,14 @@ COLDSV:       .equ    0xe477          ; the OS's cold start
 ;;; uses zero page $D4-$E5 (src/farload.s) -- so these are not in zero
 ;;; page at all.  Nothing here needs indirect addressing: CIO is given
 ;;; the destination and does the storing.
-LD_W:         .equ    0x0620          ; 16-bit: the header word just read
-LD_START:     .equ    0x0622          ; 16-bit: this segment's first address
-LD_LEN:       .equ    0x0624          ; 16-bit: and how many bytes it carries
-;;; (Page 6 as a whole: $0600-$060C the flags above, $0610 the D: handler's
-;;; fetch stub -- or the staging copier, on the image with no handler --
-;;; $0620 these, $0626-$06B2 the handler's state, $06B4-$06B7 the overlay
-;;; write's test, $06C0 the demo's listing.
+LD_W:         .equ    0x06b8          ; 16-bit: the header word just read
+LD_START:     .equ    0x06ba          ; 16-bit: this segment's first address
+LD_LEN:       .equ    0x06bc          ; 16-bit: and how many bytes it carries
+;;; (Page 6 as a whole: $0600-$060C the flags above, $0610-$0623 the D:
+;;; handler's copy stub -- or the staging copier, on the image with no
+;;; handler -- $0626-$06B2 the handler's state, $06B4-$06B7 the overlay
+;;; write's test, $06B8 these, $06BE the stub's sink, $06C0 the demo's
+;;; listing.
 ;;; src/cartd.s names its half.)
 
 ;;; The unpacker's pointers, in the floating-point package's FR0/FRE/FR1.
@@ -568,13 +569,13 @@ cart_boot:    ldx     #IOCB1
               rts
 1$:           lda     #STEP_OPEN
               sta     CARTSTEP
-;;; SAY SO, AND KEEP SAYING SO.  The system is 165 KB and CIO reads it a
-;;; byte at a time through a handler on a 1.79 MHz bus, which is about
-;;; twenty-six seconds on this machine (docs/cartridge.md measures it and
-;;; says what could be done about it).  Twenty-six seconds of an unchanging
-;;; screen is indistinguishable from a machine that has hung, so there is
-;;; a dot per segment: it costs one CIO call against a hundred thousand
-;;; and it is the difference between waiting and wondering.
+;;; SAY SO, AND KEEP SAYING SO.  The system is 165 KB, read through CIO
+;;; and the handler's burst copy on a 1.79 MHz bus: about six seconds on
+;;; this machine, and it was twenty-six a byte at a time (docs/cartridge.md
+;;; measures it and says what is left).  Seconds of an unchanging screen
+;;; are indistinguishable from a machine that has hung, so there is a dot
+;;; per segment: it costs one CIO call a segment, and it is the difference
+;;; between waiting and wondering.
               ldx     #.byte0 msg_load
               ldy     #.byte1 msg_load
               lda     #msg_load_end-msg_load

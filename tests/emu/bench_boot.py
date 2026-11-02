@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""How long the product floppies take to boot, and where the time goes.
+"""How long gem4xe takes to boot, and where the time goes.
 
     make bench-boot
 
-Each product floppy is cold-booted with nothing typed, as test-boot does
-(tests/emu/product_boot.py), and three stretches are timed in frames:
+Each way in is cold-booted with nothing typed, as test-boot does
+(tests/emu/product_boot.py): the DOS 2 floppy, the system floppy on its own
+G4DOS, the same floppy under SpartaDOS X when fixtures.toml names the
+cartridge, and gem4xe's own cartridge.  Three stretches are timed in frames:
 
   A  reset to the CPU switch: the DOS boots and starts GEM.COM on the 6502,
      whose loader finds the Rapidus and switches it -- a reset, so the DOS
@@ -56,6 +58,8 @@ def phase_b_profile(b, frames):
             k = "unpacker (farload.s)"
         elif a >= 0xD800 or 0xC000 <= a < 0xD000:
             k = "OS ROM (SIO, CIO)"
+        elif 0xA000 <= a < 0xC000:
+            k = "cartridge ROM (its D1:)"
         elif a < 0x2000:
             k = "DOS and page 6-7"
         else:
@@ -67,11 +71,12 @@ def phase_b_profile(b, frames):
         print(f"        {k:28s} {100 * c / total:5.1f}%")
 
 
-def one(name, cart):
-    disk = os.path.join(BUILD, name)
+def one(label, name, cart):
+    """name is the floppy in D1, or None; cart is a .car, or None."""
     size = os.path.getsize(os.path.join(BUILD, "gem.xex"))
+    args = ["--disk", os.path.join(BUILD, name)] if name else []
     emu = launch(tag="benchboot", memsize="1088K",
-                 extra_args=["--disk", disk] + (["--cart", cart] if cart else []))
+                 extra_args=args + (["--cart", cart] if cart else []))
     b = emu.bridge
     try:
         b.ok("COLD_RESET")
@@ -99,7 +104,7 @@ def one(name, cart):
             elif now and f - last >= 100:
                 break
         c = last - a - bb
-        print(f"  {name}: A {a} + B {bb} + C {c} = {last} frames "
+        print(f"  {label}: A {a} + B {bb} + C {c} = {last} frames "
               f"({last / 50:.1f} s PAL); GEM.COM {size} bytes, "
               f"{size / max(bb, 1):.0f} bytes a frame through B")
     finally:
@@ -109,9 +114,12 @@ def one(name, cart):
 def main():
     sdx = next((a[6:] for a in sys.argv if a.startswith("--sdx=")), "")
     print("gem4xe boot time (not a gate)")
-    one("gem-boot.atr", None)
+    one("DOS 2.0S, gem-boot.atr", "gem-boot.atr", None)
+    one("G4DOS, gem-sdx.atr alone", "gem-sdx.atr", None)
     if sdx:
-        one("gem-sdx.atr", sdx)
+        one("SpartaDOS X, gem-sdx.atr", "gem-sdx.atr", sdx)
+    one("the cartridge, gem4xe-sys.car", None,
+        os.path.join(BUILD, "gem4xe-sys.car"))
     return 0
 
 
