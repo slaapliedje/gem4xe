@@ -778,6 +778,81 @@ class Sdfs:
             raise ATRError(f"{path}: not found")
         return self._read_chain(e.map, e.size)
 
+    # -- checking ------------------------------------------------------------
+    def check(self):
+        """What is wrong with this file system, as a list of sentences (empty
+        when nothing is): every sector a chain reaches -- the boot sectors,
+        the bitmap, each directory's and each file's map pages and data --
+        reached once and marked used, every other sector marked free, each
+        file's chain exactly as long as its length needs, each map page's
+        back link its predecessor, and the superblock's free count the
+        bitmap's.  Written for G4DOS's writes (tests/emu/fdos_write.py), and
+        from the format this module reads, not from G4DOS."""
+        problems, owner = [], {}
+
+        def claim(s, who):
+            if not 0 < s <= self.total:
+                problems.append(f"{who}: sector {s} is off the disk")
+            elif s in owner:
+                problems.append(f"{who}: sector {s} is {owner[s]}'s too")
+            else:
+                owner[s] = who
+
+        def chain(first, who):
+            pages = self._map_pages(first)
+            for i, p in enumerate(pages):
+                claim(p, f"{who} (map)")
+                raw = self.img.read_sector(p)
+                back = raw[2] | (raw[3] << 8)
+                if back != (pages[i - 1] if i else 0):
+                    problems.append(f"{who}: map page {p} links back to {back}")
+            data = [d for d in self._data_sectors(first) if d]
+            for d in data:
+                claim(d, who)
+            return data
+
+        boot = 1 if self.secsize >= 512 else 3
+        for s in range(1, boot + 1):
+            claim(s, "the boot sectors")
+        for i in range(self.bm_count):
+            claim(self.bm_start + i, "the bitmap")
+
+        def walk(dmap, path):
+            data = chain(dmap, path or "the root")
+            head, ents = self._read_dir(dmap)
+            if head.size > len(data) * self.secsize:
+                problems.append(f"{path or 'the root'}: {head.size} bytes long, "
+                                f"{len(data)} sectors")
+            for e in ents:
+                if not e.in_use:
+                    continue
+                name = f"{path}>{e.filename}" if path else e.filename
+                if e.is_dir:
+                    walk(e.map, name)
+                    continue
+                n = len(chain(e.map, name))
+                want = (e.size + self.secsize - 1) >> self.secshift
+                if n != want:
+                    problems.append(f"{name}: {e.size} bytes in {n} sectors, "
+                                    f"not {want}")
+
+        walk(self.root_map, "")
+        bits = self._bitmap()
+        free = 0
+        for s in range(1, self.total + 1):
+            if self._is_free(bits, s):
+                free += 1
+                if s in owner:
+                    problems.append(f"sector {s}, {owner[s]}'s, is marked free")
+            elif s not in owner:
+                problems.append(f"sector {s} is marked used and nothing uses it")
+        sb = self._superblock()
+        said = sb[13] | (sb[14] << 8)
+        if said != free:
+            problems.append(f"the superblock says {said} sectors free, "
+                            f"the bitmap {free}")
+        return problems
+
     # -- writing -------------------------------------------------------------
     @staticmethod
     def check_name(filename):
@@ -924,13 +999,13 @@ class Sdfs:
         self.img.write_sector(2, body[:128])
         self.img.write_sector(3, body[128:])
 
-    # Where tools/mkfloppy.py's read-only DOS goes (src/fdos.s, docs/fdos.md).
+    # Where tools/mkfloppy.py's DOS, G4DOS, goes (src/fdos.s, docs/fdos.md).
     FDOS_AT = 0x0700
     FDOS_NAME = "G4DOS.SYS"
     BOOT1_AT = 48                   # sector 1's tail: boot code, past the fields
 
     def boot_gem4xe(self, boot1, boot23, dos):
-        """Make this floppy boot gem4xe's own read-only DOS: `dos` (the bytes
+        """Make this floppy boot gem4xe's own DOS, G4DOS: `dos` (the bytes
         of G4DOS.SYS, linked at $0700) as a file the superblock names as its
         boot file, and src/fdboot.s as the boot code that loads it --
         `boot23` for sectors 2 and 3 ($3080), `boot1` for sector 1 from

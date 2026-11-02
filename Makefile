@@ -1413,7 +1413,7 @@ build/cartd.elf: build/cartd.o src/cartd.scm
 	$(LD) src/cartd.scm $< -o $@ --list-file build/cartd.map \
 	    --memories-expression "(cartd-layout)"
 
-# The floppies' read-only DOS (src/fdos.s, docs/fdos.md): G4DOS.SYS at
+# The floppies' DOS, G4DOS (src/fdos.s, docs/fdos.md): G4DOS.SYS at
 # $0700, and the boot sectors that load it (src/fdboot.s).
 build/fdos.o: src/fdos.s
 	@mkdir -p build
@@ -1427,6 +1427,13 @@ build/fdos.elf: build/fdos.o src/fdos.scm
 build/fdboot.elf: build/fdboot.o src/fdos.scm
 	$(LD) src/fdos.scm $< -o $@ --list-file build/fdboot.map \
 	    --memories-expression "(fdboot-layout)"
+# test-fdosw's program: CIO driven at G4DOS's write side (tests/emu/fdwtest.s)
+build/fdwtest.o: tests/emu/fdwtest.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+build/fdwtest.elf: build/fdwtest.o src/fdos.scm
+	$(LD) src/fdos.scm $< -o $@ --list-file build/fdwtest.map \
+	    --memories-expression "(fdwtest-layout)"
 
 # The step-two image: a pattern in the payload banks, which is what the
 # staging half of test-m37 checks.
@@ -1846,7 +1853,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2374,11 +2381,16 @@ test-m21: build/m3-boot.atr build/inv.fnt
 test-look: build/gem-shots.atr build/gem.sym
 	python3 tests/emu/look_cfg.py
 
-# The system floppy booted with no SpartaDOS X: its own read-only DOS
-# (src/fdos.s, docs/fdos.md) loads GEM, and the applications floppy in
-# D2: lists and runs (tests/emu/fdos_boot.py).
+# The system floppy booted with no SpartaDOS X: its own DOS, G4DOS
+# (src/fdos.s, docs/fdos.md), loads GEM, Save desktop writes, and the
+# applications floppy in D2: lists and runs (tests/emu/fdos_boot.py).
 test-fdos: build/gem-sdx.atr build/gem-apps.atr build/gem.sym
 	python3 tests/emu/fdos_boot.py
+
+# G4DOS's write side through CIO, and the disk read back by tools/atr.py
+# (tests/emu/fdos_write.py, tests/emu/fdwtest.s).
+test-fdosw: build/fdos.elf build/fdboot.elf build/fdwtest.elf tools/atr.py tools/mkfloppy.py
+	python3 tests/emu/fdos_write.py
 
 test-boot: build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-cf.img build/desktop.g4a build/desktop.sym
 	python3 tests/emu/product_boot.py --sdx="$(SRC_SDX)"
@@ -2497,4 +2509,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

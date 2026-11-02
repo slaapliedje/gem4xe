@@ -69,7 +69,7 @@ NO_DOS = ["gem4xe: this disk has no DOS on it.",
 
 
 def fdos_parts(root):
-    """The read-only DOS and its boot code, out of their links
+    """G4DOS and its boot code, out of their links
     (src/fdos.s, src/fdboot.s, src/fdos.scm): G4DOS.SYS from $0700 to
     fd_image_end, and the boot code for sector 1's tail and sectors 2-3."""
     dos_segs, syms = mkxex.read_elf(os.path.join(root, "build", "fdos.elf"))
@@ -103,7 +103,7 @@ def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
     if fdos:
         b1, b23, dos = fdos_parts(root)
         fs.boot_gem4xe(b1, b23, dos)
-        print(f"{out}: boots {Sdfs.FDOS_NAME} ({len(dos)} bytes), read-only, "
+        print(f"{out}: boots {Sdfs.FDOS_NAME} ({len(dos)} bytes) "
               f"without SpartaDOS X")
     else:
         fs.say_no_dos(NO_DOS)
@@ -113,7 +113,7 @@ def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
         fs.add_file("INSTALL.BAT", mkcf.batch(install))
     img.save(out)
     free = fs.free_count()
-    print(f"{out}: {img!r}, {fs.volname}, {"its own read-only DOS" if fdos else "no DOS"}; {free} sectors free, "
+    print(f"{out}: {img!r}, {fs.volname}, {"its own DOS, G4DOS" if fdos else "no DOS"}; {free} sectors free, "
           f"{free * (SECTOR - 2) // 1024} KB")
     return out
 

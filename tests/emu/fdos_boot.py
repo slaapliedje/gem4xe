@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The system floppy boots by itself: no SpartaDOS X, only the disk's own
-read-only DOS (src/fdos.s, src/fdboot.s, docs/fdos.md).
+DOS, G4DOS (src/fdos.s, src/fdboot.s, docs/fdos.md).
 
 build/gem-sdx.atr in D1: and build/gem-apps.atr in D2:, on a machine
 with no SDX cartridge -- an emulator's default, or a machine without one:
@@ -10,8 +10,11 @@ with no SDX cartridge -- an emulator's default, or a machine without one:
      (src/sys/dos.h), which is what makes its paths flat;
   2. D1:'s window lists the system's files -- DESKTOP.PRG and the rest
      live in \\GEM\\ on the disk, and the listing is flat;
-  3. Options > Save desktop says it could not be saved -- the disk is
-     read-only here -- and the desk carries on;
+  3. Options > Save desktop saves: no alert, and when the run is over
+     the emulator's working copy of the disk has DESKTOP.INF in its root
+     (G4DOS writes to the root, which its flat view reads first), the
+     layout gem4xe wrote, and tools/atr.py's check finds the bitmap, the
+     chains and the free count in agreement;
   4. D2:'s window lists the applications floppy, \\APPS\\ and \\GEM\\
      together, and EDIT.PRG double-clicked there RUNS: a program loaded
      off the second drive through the same handler.  EDIT given no file
@@ -19,14 +22,18 @@ with no SDX cartridge -- an emulator's default, or a machine without one:
 
     python3 tests/emu/fdos_boot.py
 """
+import hashlib
 import os
+import shutil
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..", "..")
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-from a8test.launcher import launch            # noqa: E402
+from a8test.launcher import launch, config_dir_for   # noqa: E402
+import atr                                    # noqa: E402
 import symfile                                # noqa: E402
 from sdx816 import find_text                  # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS   # noqa: E402
@@ -50,8 +57,17 @@ def main():
     print("gem4xe-fdos: the system floppy boots by itself")
     os.makedirs(OUT, exist_ok=True)
     syms = symfile.load(SYMS)
+    # A copy, written to: the emulator keeps its working copy of it by its
+    # hash in the run's configuration (tests/emu/gemarc.py does the same).
+    work = tempfile.mkdtemp(prefix="fdos-")
+    disk = os.path.join(work, "gem-sdx.atr")
+    shutil.copy(os.path.join(BUILD, "gem-sdx.atr"), disk)
+    sha = hashlib.sha256(open(disk, "rb").read()).hexdigest()
+    state = os.path.join(config_dir_for("fdos"), "disk_state", sha)
+    shutil.rmtree(state, ignore_errors=True)
+    written = os.path.join(state, "disk.atr")
     emu = launch(tag="fdos", memsize="1088K",
-                 extra_args=["--disk", os.path.join(BUILD, "gem-sdx.atr"),
+                 extra_args=["--bootrw", "--disk", disk,
                              "--disk", os.path.join(BUILD, "gem-apps.atr")])
     b = emu.bridge
     try:
@@ -77,18 +93,14 @@ def main():
         t.click(t.gadget(W_CLOSER))             # the D2: icon is under it
         t.settle()
 
-        # Read-only: Options > Save desktop must say it could not, and the
-        # desk must carry on -- not hang, not write somewhere it should not
+        # Options > Save desktop: written, so nothing to say about it
         t.choose(OPTNMENU, SAVEITEM)
         b.frames(120)
         t.settle()
         p = os.path.join(OUT, "save.png")
         b.screenshot(p)
-        check(find_text(p, "could not") is not None,
-              f"Save desktop says the desktop could not be saved ({p})")
-        b.key("RETURN")
-        b.frames(60)
-        t.settle()
+        check(find_text(p, "could not") is None,
+              f"Save desktop puts up no alert ({p})")
 
         t.dclick(t.desk_icon("DISK D2:"))
         t.click(t.gadget(W_FULLER))
@@ -110,6 +122,16 @@ def main():
             check(seen, f"EDIT.PRG ran off D2: and asked for a file ({p})")
     finally:
         emu.stop()
+    if check(os.path.exists(written), f"the emulator wrote its working copy ({written})"):
+        fs = atr.Sdfs(atr.ATRImage.load(written))
+        inf = fs.read("DESKTOP.INF") if "DESKTOP.INF" in fs.list("") else None
+        check(inf is not None and inf[:1] == b"#",
+              f"DESKTOP.INF is in the root, {len(inf or b'')} bytes of layout"
+              + (f", starting {inf[:16]!r}" if inf else ""))
+        bad = fs.check()
+        check(not bad, "the bitmap, the chains and the free count agree"
+              + ("" if not bad else ": " + "; ".join(bad[:6])))
+    shutil.rmtree(work, ignore_errors=True)
     print(f"gem4xe-fdos: {'FAIL' if problems else 'PASS'} -- the system floppy "
           f"boots by itself, {len(problems)} problem(s)")
     return 1 if problems else 0

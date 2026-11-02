@@ -59,7 +59,7 @@ class TestFloppy(unittest.TestCase):
 
     def test_it_carries_only_its_own_dos(self):
         """The whole reason it can be given away: the DOS it boots is
-        gem4xe's own read-only one (src/fdos.s), G4DOS.SYS, named as the
+        gem4xe's own (src/fdos.s), G4DOS.SYS, named as the
         superblock's boot file, and the boot sectors are src/fdboot.s --
         not somebody else's DOS."""
         g4 = next(e for e in self.fs.entries("") if e.filename == "G4DOS.SYS")
