@@ -533,6 +533,34 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
     rec = r.run([(SCRAP, (), (g.string(""),))])[0][2:]
     check(rec[7] == 0, f"scrp_clear with no scrap directory answered {rec[7]}, not FALSE")
 
+    # -- a long directory, past the read-ahead ---------------------------------------
+    # Fsfirst reads a directory ahead into a cache (GD_CACHE, src/sys/gemdos.c)
+    # and Fsnext reads on from the DOS when it runs out, so a long listing
+    # has to cross that edge: 1024 bytes are 44 raw entries and a half, and
+    # 56 DOS 2 lines and most of another.  Fifty files in a folder, made and
+    # removed for the same reason as the scrap's; on a flat DOS, 57 in the
+    # root, which with its six is a file's line across the edge.
+    where = "A:\\MANY\\" if tree else "A:\\"
+    count = 50 if tree else 57
+    if tree:
+        ret, _ = g.call("Dcreate", L(g.string("A:\\MANY")))
+        check(ret == 0, f"Dcreate MANY {ret}")
+    many = {f"F{i:02d}.DAT" for i in range(count)}
+    for n in sorted(many):
+        h, _ = g.call("Fcreate", L(g.string(where + n)), W(0))
+        check(h >= HANDLE_BASE, f"Fcreate {where}{n} {h}")
+        g.call("Fclose", W(h))
+    got, _ = g.listing(where + "F??.DAT", 0)
+    check(set(got) == many, f"{count} files in {where} list {len(got)}: "
+                            f"{sorted(many - set(got))[:4]} missing")
+    print(f"  {count} files in {where}: {len(got)} listed")
+    for n in sorted(many):
+        ret, _ = g.call("Fdelete", L(g.string(where + n)))
+        check(ret == 0, f"Fdelete {where}{n} {ret}")
+    if tree:
+        ret, _ = g.call("Ddelete", L(g.string("A:\\MANY")))
+        check(ret == 0, f"Ddelete MANY {ret}")
+
     # -- directories made and removed --------------------------------------------------
     ret, _ = g.call("Dcreate", L(g.string("A:\\NEWDIR")))
     if tree:

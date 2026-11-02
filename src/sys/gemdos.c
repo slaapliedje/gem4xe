@@ -369,7 +369,11 @@ static uint32_t gd_slot_new(void)
 
 /* Read ahead into the slot's cache through a slice of the pool: as much
  * of the directory as fits.  The IOCB is closed when the whole of it
- * came; else it stays open for Fsnext to read on, an entry at a time. */
+ * came; else it stays open for Fsnext to read on, an entry at a time.
+ * WHOLE ENTRIES: a raw directory read stops on an entry's edge, because
+ * gd_next takes a part of one at the end of the cache for the end of the
+ * directory -- 1024 bytes is 44 entries and a half, and every listing of
+ * a folder with more than 44 in it stopped at 44 (test-m15). */
 static void gd_slot_fill(uint32_t sl)
 {
     uint16_t mark = pool_mark(), room = pool_room(), n, got;
@@ -377,6 +381,8 @@ static void gd_slot_fill(uint32_t sl)
     WORD st;                            /* not a byte: B8, tools/ccbug */
 
     n = room > GD_CACHE ? GD_CACHE : (uint16_t)(room & ~1);
+    if (far_read8(sl + SL_RAW))
+        n -= n % GD_RAWENT;
     if (n < 64)
         return;
     buf = pool_alloc(n, 2);
@@ -460,13 +466,26 @@ static LONG gd_next(uint32_t sl)
                 far_get(ent, sl + SL_CACHE + cur, got);
                 cur += got;
             } else {
+                WORD eol = 0;           /* not a byte: B8 */
                 got = 0;
                 while (cur < len) {
                     uint8_t c = far_read8(sl + SL_CACHE + cur++);
-                    if (c == CIO_EOL)
+                    if (c == CIO_EOL) {
+                        eol = 1;
                         break;
+                    }
                     if (got < sizeof ent)
                         ent[got++] = c;
+                }
+                /* A line the read-ahead cut: the rest of it is the next
+                 * thing the DOS has, and is read on to its EOL here --
+                 * else both halves were dropped as no entry at all. */
+                if (!eol && iocb && got < sizeof ent) {
+                    uint16_t more = 0;
+                    cio_getrec(iocb, ent + got, (uint16_t)(sizeof ent - got), &more);
+                    if (more && ent[got + more - 1] == CIO_EOL)
+                        more--;
+                    got = (uint16_t)(got + more);
                 }
             }
             wr16(sl + SL_CUR, cur);
