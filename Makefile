@@ -103,7 +103,7 @@ M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o buil
              build/wind.o build/ctrl.o build/menu.o build/form.o \
              build/alert.o build/gemdata.o build/lang.o build/lang_rsc.o \
              build/rsrc.o build/apppool.o
-M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/nibs.o build/g4z.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/hiprobe.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/pool.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
+M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/nibs.o build/g4z.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/hiprobe.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/pool.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/sdcio.o build/sdfs.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
 
 # GEM.COM, the product (src/gem.c): the runner's objects with the runner
 # itself and its compiled-in test application taken out, linked on the
@@ -373,13 +373,23 @@ build/apppool.o: src/sys/apppool.s
 
 # The file layer's floor: CIO through the OS, the IOCB side in C and the
 # round trip into emulation mode in assembly.
-build/cio.o: src/sys/cio.c src/sys/cio.h src/sys/irq.h
+build/cio.o: src/sys/cio.c src/sys/cio.h src/sys/irq.h src/sys/sdcio.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
 build/cios.o: src/sys/cio.s
 	@mkdir -p build
 	$(AS) -o $@ $<
+
+# G4DOS's disks with folders: CIO's D: from GEMDOS's own SDFS engine
+# (docs/sdfs-plan.md), the engine being the same sdfs.c test-sdfs runs.
+build/sdcio.o: src/sys/sdcio.c src/sys/sdcio.h src/sys/sdfs.h src/sys/cio.h src/sys/dos.h src/sys/clock.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src -o $@ $<
+
+build/sdfs.o: src/sys/sdfs.c src/sys/sdfs.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src -o $@ $<
 
 # The DOS seam: which DOS booted, its path syntax, its listing's marks.
 build/dos.o: src/sys/dos.c src/sys/dos.h src/sys/cio.h
@@ -1718,6 +1728,14 @@ build/m14-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt 
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES)
 
+# The same disk with G4DOS in place of SpartaDOS 3.2 and the runner as
+# GEM.COM, which is what G4DOS loads: GEMDOS on gem4xe's own SDFS engine,
+# held to the image as m15 holds the others (docs/sdfs-plan.md, step 3).
+build/m15g-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt build/test.rsc $(SHELL_DEPS) \
+                     tools/mkspdisk.py tools/mkfloppy.py tools/atr.py build/fdos.elf build/fdboot.elf
+	@rm -f $@
+	python3 tools/mkspdisk.py --g4dos - $< $@ $(SP_SECTORS) --name GEM.COM --tree $(DISK_FILES) $(SHELL_FILES)
+
 # The AUTO folder's disk (test-m34): test-m16's, with an AUTO directory
 # holding the two builds of src/m34_auto.c.  A directory of its own
 # rather than adding it to the shared disk, because every other gate
@@ -1853,7 +1871,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-sdfs test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2116,6 +2134,9 @@ test-m15s: build/m14-boot.atr
 
 test-m15d: build/m3-boot.atr build/m12-d2.atr
 	python3 tests/emu/m15_gdos.py --dos2
+
+test-m15g: build/m15g-boot.atr
+	python3 tests/emu/m15_gdos.py --g4dos
 
 # The shell loop: sh_main runs DESKTOP.PRG, what it asks for, the desktop
 # again, until it asks to shut down -- with the harness at the keyboard
@@ -2387,6 +2408,15 @@ test-look: build/gem-shots.atr build/gem.sym
 test-fdos: build/gem-sdx.atr build/gem-apps.atr build/gem.sym
 	python3 tests/emu/fdos_boot.py
 
+# GEMDOS's SDFS engine on the host (docs/sdfs-plan.md step 1): the same
+# src/sys/sdfs.c the Atari will run, built by gcc and held to tools/atr.py.
+build/sdfs_host: src/sys/sdfs.c src/sys/sdfs.h tests/host/sdfs_host.c
+	@mkdir -p build
+	gcc -O1 -Wall -Wextra -DSDFS_HOST -I src/sys -o $@ src/sys/sdfs.c tests/host/sdfs_host.c
+
+test-sdfs: build/sdfs_host build/gem-sdx.atr build/gem-apps.atr build/m14-boot.atr tools/atr.py
+	python3 tests/host/test_sdfs.py
+
 # G4DOS's write side through CIO, and the disk read back by tools/atr.py
 # (tests/emu/fdos_write.py, tests/emu/fdwtest.s).
 test-fdosw: build/fdos.elf build/fdboot.elf build/fdwtest.elf tools/atr.py tools/mkfloppy.py
@@ -2509,4 +2539,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-sdfs test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

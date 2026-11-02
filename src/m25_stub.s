@@ -25,7 +25,16 @@ gem_depth:    .space  1
 
               .section code
               .public gem_cop, app_run
+              .public sdc_claims, sdc_open, sdc_close, sdc_xfer, sdc_xio
 gem_cop:      rti
+;;; src/sys/cio.c asks src/sys/sdcio.c whether the engine has a name or an
+;;; IOCB; with no GEMDOS here it never comes on, and sdc_claims says no --
+;;; so the other four are never called either.
+sdc_claims:
+sdc_open:
+sdc_close:
+sdc_xfer:
+sdc_xio:
 app_run:      lda     ##0
               rtl
               .end

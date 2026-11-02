@@ -6,19 +6,19 @@ build/gem-sdx.atr in D1: and build/gem-apps.atr in D2:, on a machine
 with no SDX cartridge -- an emulator's default, or a machine without one:
 
   1. the boot sectors load G4DOS.SYS, which loads GEM.COM, and the desk
-     comes up: gem4xe has started, and GEMDOS took the DOS for a DOS 2
-     (src/sys/dos.h), which is what makes its paths flat;
-  2. D1:'s window lists the system's files -- DESKTOP.PRG and the rest
-     live in \\GEM\\ on the disk, and the listing is flat;
+     comes up: gem4xe has started, GEMDOS knows the DOS for G4DOS, and
+     its disks have folders -- gem4xe's own SDFS engine serves them
+     (src/sys/sdcio.h), G4DOS's sector entry under it;
+  2. D1:'s window is the disk's root, with the system's folder GEM in it
+     and none of the system's files, and GEM opened lists DESKTOP.PRG and
+     the rest: a folder, through the engine;
   3. Options > Save desktop saves: no alert, and when the run is over
-     the emulator's working copy of the disk has DESKTOP.INF in its root
-     (G4DOS writes to the root, which its flat view reads first), the
-     layout gem4xe wrote, and tools/atr.py's check finds the bitmap, the
-     chains and the free count in agreement;
-  4. D2:'s window lists the applications floppy, \\APPS\\ and \\GEM\\
-     together, and EDIT.PRG double-clicked there RUNS: a program loaded
-     off the second drive through the same handler.  EDIT given no file
-     asks for one, so the file selector is what proves it started.
+     the emulator's working copy of the disk has DESKTOP.INF in its root,
+     the layout gem4xe wrote, and tools/atr.py's check finds the bitmap,
+     the chains and the free count in agreement -- the engine wrote it;
+  4. D2:'s window has \\APPS\\, and EDIT.PRG double-clicked in it RUNS: a
+     program loaded out of a folder on the second drive.  EDIT given no
+     file asks for one, so the file selector is what proves it started.
 
     python3 tests/emu/fdos_boot.py
 """
@@ -44,6 +44,20 @@ BUILD = os.path.abspath(os.path.join(ROOT, "build"))
 OUT = os.path.join(BUILD, "shots", "fdos")
 
 problems = []
+PAINT, STACK_MARGIN = 0xA5, 128
+
+
+def stack_range():
+    """GEM.COM's engine stack, from its link map: every application's GEM
+    call runs on it (src/sys/abi.s), so G4DOS's disks, served by the engine
+    in C (src/sys/sdcio.c), cost their depth here."""
+    stk = [ln for ln in open(os.path.join(BUILD, "gem.map"))
+           if ln.startswith("stack ")][0].split()
+    return tuple(int(x, 16) for x in stk[1].split("-"))
+
+
+def reg(v):
+    return int(v.lstrip("$"), 16) if isinstance(v, str) else int(v or 0)
 
 
 def check(ok, what):
@@ -51,6 +65,15 @@ def check(ok, what):
     if not ok:
         problems.append(what)
     return ok
+
+
+def has(t, name):
+    """Is there an item called `name` in the top window?"""
+    try:
+        t.item(name)
+        return True
+    except KeyError:
+        return False
 
 
 def main():
@@ -73,24 +96,42 @@ def main():
     try:
         boot(b, syms, OUT)
         check(True, "the desk came up from gem-sdx.atr with no SpartaDOS X")
-        kind = b.peek(syms["dos"])
-        check(kind == 0, f"GEMDOS took the floppy's DOS for a DOS 2 (kind {kind})")
+        # below S, idle in the desktop's evnt_multi, all of the engine
+        # stack is free: painted, and read back at the end
+        stk_lo, stk_hi = stack_range()
+        regs = b.ok("REGS")
+        sp = (reg(regs.get("SH", 0)) << 8) | reg(regs.get("S", 0))
+        painted = stk_lo < sp - 64 <= stk_hi
+        if painted:
+            b.memload(stk_lo, bytes([PAINT]) * (sp - 64 - stk_lo))
+        else:
+            print(f"  NOTE: S ${sp:04X} is not on the engine stack "
+                  f"${stk_lo:04X}-${stk_hi:04X}; its depth is not measured")
+        kind, caps, sep = (b.peek(syms["dos"] + i) for i in range(3))
+        check(kind == 3 and caps & 1 and sep == ord(">"),
+              f"GEMDOS knows G4DOS, with folders (kind {kind}, caps ${caps:02X}, "
+              f"separator {chr(sep)!r})")
         poke16(b, syms["ptr_state"] + 6, PTR_NONE)
         t = Tour(b, syms, OUT)
         b.frames(10)
         t.dclick(t.desk_icon("DISK D1:"))
         t.click(t.gadget(W_FULLER))
-        names = []
-        for n in ("DESKTOP.PRG", "DESKTOP.RSC", "GEM.COM", "LANG.RSC"):
-            try:
-                t.item(n)
-                names.append(n)
-            except KeyError:
-                pass
         p = os.path.join(OUT, "d1.png")
         b.screenshot(p)
-        check(len(names) == 4, f"D1:'s window lists the system flat: {names} ({p})")
-        t.click(t.gadget(W_CLOSER))             # the D2: icon is under it
+        root = [n for n in ("GEM", "G4DOS.SYS", "DESKTOP.PRG") if has(t, n)]
+        check(root == ["GEM", "G4DOS.SYS"],
+              f"D1:'s window is the root, the system in its folder: {root} ({p})")
+        if has(t, "GEM"):
+            t.dclick(t.item("GEM"))
+            t.settle()
+            p = os.path.join(OUT, "d1gem.png")
+            b.screenshot(p)
+            names = [n for n in ("DESKTOP.PRG", "DESKTOP.RSC", "GEM.COM", "LANG.RSC")
+                     if has(t, n)]
+            check(len(names) == 4, f"GEM opened lists the system: {names} ({p})")
+            t.click(t.gadget(W_CLOSER))         # back to the root ...
+            t.settle()
+        t.click(t.gadget(W_CLOSER))             # ... and the D2: icon is under it
         t.settle()
 
         # Options > Save desktop: written, so nothing to say about it
@@ -106,11 +147,14 @@ def main():
         t.click(t.gadget(W_FULLER))
         p = os.path.join(OUT, "d2.png")
         b.screenshot(p)
-        try:
-            at = t.item("EDIT.PRG")
-        except KeyError:
-            at = None
-        if check(at is not None, f"D2:'s window lists EDIT.PRG out of \\APPS\\ ({p})"):
+        at = None
+        if check(has(t, "APPS"), f"D2:'s window has the APPS folder ({p})"):
+            t.dclick(t.item("APPS"))
+            t.settle()
+            p = os.path.join(OUT, "d2apps.png")
+            b.screenshot(p)
+            at = t.item("EDIT.PRG") if has(t, "EDIT.PRG") else None
+        if check(at is not None, f"APPS opened lists EDIT.PRG ({p})"):
             t.dclick(at)
             f, p, seen = 0, None, False
             while f < 6000 and not seen:
@@ -120,6 +164,13 @@ def main():
                 b.screenshot(p)
                 seen = find_text(p, "Open a file") is not None
             check(seen, f"EDIT.PRG ran off D2: and asked for a file ({p})")
+        if painted:
+            d = b.memdump(stk_lo, sp - 64 - stk_lo)
+            low = next((stk_lo + i for i, x in enumerate(d) if x != PAINT), sp - 64)
+            print(f"  the engine stack: {stk_hi + 1 - low} of {stk_hi + 1 - stk_lo} "
+                  f"bytes used at the deepest, {low - stk_lo} to spare")
+            check(low - stk_lo >= STACK_MARGIN,
+                  f"the engine stack: {low - stk_lo} bytes to spare, wanted {STACK_MARGIN}")
     finally:
         emu.stop()
     if check(os.path.exists(written), f"the emulator wrote its working copy ({written})"):

@@ -1,6 +1,7 @@
 /* cio.c -- IOCBs filled in and CIO called.  See cio.h. */
 #include "sys/cio.h"
 #include "sys/irq.h"
+#include "sys/sdcio.h"
 
 uint16_t cio_calls;
 uint8_t  cio_last;
@@ -65,6 +66,8 @@ static int16_t open_on(int16_t n, const char *name, uint8_t aux1, uint8_t aux2)
 
     if (n < 1 || n >= CIO_IOCBS)
         return -(int16_t)CIO_E_INUSE;
+    if (sdc_claims(name))            /* G4DOS's disks: src/sys/sdcio.h */
+        return sdc_open(n, name, aux1, aux2);
     put_name(name);
     io = &CIO_IOCB[n];
     io->iccom = CIO_OPEN;
@@ -105,6 +108,8 @@ int16_t cio_reopen(int16_t iocb, const char *name, uint8_t aux1, uint8_t aux2)
 
 uint8_t cio_close(int16_t iocb)
 {
+    if (CIO_IOCB[iocb].ichid == SDC_ICHID)
+        return sdc_close(iocb);
     CIO_IOCB[iocb].iccom = CIO_CLOSE;
     return call(iocb);
 }
@@ -114,6 +119,8 @@ static uint8_t xfer(int16_t iocb, uint8_t cmd, const void *buf, uint16_t len,
 {
     volatile IOCB *io = &CIO_IOCB[iocb];
     uint8_t st;
+    if (io->ichid == SDC_ICHID)
+        return sdc_xfer(iocb, cmd, (void *)buf, len, got);
     io->iccom = cmd;
     io->icbal = (uint16_t)buf;
     io->icbll = len;
@@ -140,6 +147,8 @@ uint8_t cio_write(int16_t iocb, const void *buf, uint16_t len)
 
 uint8_t cio_status(int16_t iocb)
 {
+    if (CIO_IOCB[iocb].ichid == SDC_ICHID)
+        return CIO_OK;
     CIO_IOCB[iocb].iccom = CIO_STATUS;
     return call(iocb);
 }
@@ -147,9 +156,12 @@ uint8_t cio_status(int16_t iocb)
 uint8_t cio_xio(uint8_t cmd, const char *name, uint8_t aux1, uint8_t aux2)
 {
     volatile IOCB *io;
-    int16_t n = free_iocb();
+    int16_t n;
     uint8_t st;
 
+    if (sdc_claims(name))
+        return sdc_xio(cmd, name);
+    n = free_iocb();
     if (n < 0)
         return CIO_E_INUSE;
     put_name(name);

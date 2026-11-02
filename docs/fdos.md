@@ -27,29 +27,53 @@ Three pieces:
 | | |
 |---|---|
 | `src/fdboot.s` | the boot sectors.  The OS loads sectors 1-3 to `$3000` and calls `$3006`; this follows the superblock's boot-file map (+40, the field a SpartaDOS's own boot sectors follow) and reads `G4DOS.SYS` to `$0700`, sector by sector in the map's order.  Sector 1 is the superblock and its fields are untouched; the code is sectors 2 and 3, and sector 1 from +48, where a SpartaDOS keeps boot code too. |
-| `src/fdos.s` | `G4DOS.SYS`, 4,715 bytes at `$0700`.  A CIO `D:` handler over SDFS, reading and writing, and a loader that runs `D1:GEM.COM`.  The OS calls it as DOSINI after the boot and after every RESET, and jumps through DOSVEC to the loader. |
+| `src/fdos.s` | `G4DOS.SYS`, 4,769 bytes at `$0700`.  A CIO `D:` handler over SDFS, reading and writing, a loader that runs `D1:GEM.COM`, and a sector entry for gem4xe's own SDFS engine (*Folders*, below).  The OS calls it as DOSINI after the boot and after every RESET, and jumps through DOSVEC to the loader. |
 | `tools/atr.py`, `tools/mkfloppy.py` | `Sdfs.boot_gem4xe` writes the header, the boot code and the boot file onto a floppy; `mkfloppy.py` does it for the system disk.  The applications and QED disks keep the message instead: booted alone they say they have no DOS and name the system disk. |
 
-### What gem4xe sees
+### What a program sees
 
-A DOS 2.  `$0700` is neither SpartaDOS's `S` nor MyDOS's `M`
-(src/sys/dos.h), and DRVBYT at `$070A` says D1: and D2:.  So GEMDOS
-drops the directories from its paths, and the handler makes that work:
-a name is found in the root or in any directory one level down, root
-first, and a listing is every file of those, flat.  The system's
-`\GEM\` and the applications' `\APPS\` and `\GEM\` look like one drive
-each -- which is how the cartridge's D1: looks too.
+Through G4DOS's own handler -- a program run without GEM, and gem4xe's
+own start-up reads before GEMDOS is up -- a DOS 2's shape.  A name is
+found in the root or in any directory one level down, root first, and a
+listing is every file of those, flat.  The system's `\GEM\` and the
+applications' `\APPS\` and `\GEM\` look like one drive each -- which is
+how the cartridge's D1: looks too.  Under GEM, folders (*Folders*,
+below).
 
-Two things follow from being DOS 2-shaped:
+Two things follow from the flat view:
 
-- **A name that starts with a digit is not listed.**  DOS 2's names
-  start with a letter, and `src/sys/dos.c` reads a line that does not
-  as noise -- which is what DOS 2's own free-sectors line is.  The only
-  such file on the disks is `816.COM`, SpartaDOS X's helper, which has
-  no use here.
-- **Two files of the same name in different folders are one.**  The
-  root's wins, then the first folder's.  The disks have one: `CALC.RSC`
-  in both `\APPS\` and `\GEM\`, the same file.
+- **A name that starts with a digit is not listed** in a line listing.
+  DOS 2's names start with a letter, and `src/sys/dos.c` reads a line
+  that does not as noise -- which is what DOS 2's own free-sectors line
+  is.  The only such file on the disks is `816.COM`, SpartaDOS X's
+  helper, which has no use here.
+- **Two files of the same name in different folders are one** to a bare
+  name.  The root's wins, then the first folder's.  The disks have one:
+  `CALC.RSC` in both `\APPS\` and `\GEM\`, the same file.
+
+### Folders
+
+From `gemdos_init` on, gem4xe does not hand G4DOS's disks to G4DOS's
+handler at all.  Its own SDFS engine (`src/sys/sdfs.c`, the C that
+`test-sdfs` runs on the host) serves CIO's `D:` for everything in gem4xe
+that opens a file -- GEMDOS, the file selector, the shell, the loaders
+-- with folders to any depth, and G4DOS only reads and writes sectors
+for it, through an entry in its header:
+
+| | |
+|---|---|
+| `$0706` | `G4`: G4DOS is there, and `src/sys/dos.c` says `DOS_G4DOS` |
+| `$0708` | the unit |
+| `$0709` | bit 0 write, bit 7 a 128-byte sector; bit 6 alone asks where G4DOS's data buffer is, answered in A and X |
+| `$070B` | `JMP fd_xsec` |
+| `$070E` | the sector |
+
+`fd_xsec` reads or writes through the data buffer and keeps G4DOS's
+tags true, so the handler and the engine never disagree about what a
+buffer holds.  A bare name -- no folder in it -- still means what it
+means to the handler (the root, then one level down), because that is
+how gem4xe finds its own files.  [sdfs-plan.md](sdfs-plan.md) has the
+rest: why it is at CIO's level, what is left.
 
 ### BASIC
 
@@ -121,13 +145,13 @@ data and the map page of the file being written, and a bitmap sector.
 
 ### What it costs
 
-Bank $00 from `$0700` to `$1FFF`, MEMLO `$2000`: the handler and the
-loader, 4,715 bytes; their variables, 353; five sector buffers at
-`$1B00`.  That is the ceiling.  gem4xe's direct page is `$2000`
-(`src/gem4xe.scm`) and nothing GEM.COM loads is below `$3000`, so it
-still costs gem4xe nothing -- but the three memories in `src/fdos.scm`
-are full to within a few dozen bytes, and whatever G4DOS gains next
-(subdirectories, step 3) has to come out of what it has.  For scale: a
+Bank $00 from `$0700` to `$1FFF`, MEMLO `$2000`: the handler, the
+loader and the sector entry, 4,769 bytes; their variables, 347; five
+sector buffers at `$1B00`.  That is the ceiling.  gem4xe's direct page
+is `$2000` (`src/gem4xe.scm`) and nothing GEM.COM loads is below
+`$3000`, so it still costs gem4xe nothing -- but the three memories in
+`src/fdos.scm` are full to within four bytes, which is why the folders are
+gem4xe's and not G4DOS's.  For scale: a
 DOS 2.5 leaves MEMLO at `$1CFC`, SpartaDOS X at `$1C1D`, a SpartaDOS 3.2
 near `$2000`.
 
@@ -140,11 +164,17 @@ puts the handler back and points DOSVEC at the loader: GEM loads again.
 - `make test-fdos` (`tests/emu/fdos_boot.py`): the system floppy in D1:
   and the applications floppy in D2:, no SpartaDOS X.  The desk comes
   up, through the Rapidus switch and the reboot that follows it; GEMDOS
-  took the DOS for a DOS 2; D1:'s window lists the system flat; Save
-  desktop saves, with no alert, and afterwards the emulator's working
-  copy of the disk has `DESKTOP.INF` in its root and passes
-  `atr.Sdfs.check()`; D2:'s window lists `EDIT.PRG`, and double-clicked
-  it runs.  The same disk built without the DOS fails at the boot.
+  knows G4DOS, with folders; D1:'s window is the root, and its `GEM`
+  folder opened lists the system; Save desktop saves, with no alert, and
+  afterwards the emulator's working copy of the disk has `DESKTOP.INF`
+  in its root and passes `atr.Sdfs.check()`; D2:'s `APPS` folder opened
+  lists `EDIT.PRG`, and double-clicked it runs.  The same disk built
+  without the DOS fails at the boot.
+- `make test-m15g` (`tests/emu/m15_gdos.py --g4dos`): GEMDOS's own gate
+  on a G4DOS disk, the conformance runner as `GEM.COM` -- every call
+  against the disk image, down the tree, writes included -- and the
+  emulator's working copy checked with `atr.Sdfs.check()` afterwards.
+- `make test-sdfs` (`tests/host/test_sdfs.py`): the engine on the host.
 - `make test-fdosw` (`tests/emu/fdos_write.py`): the write side on its
   own, through CIO.  A disk made by `tools/atr.py` holds G4DOS and, as
   `GEM.COM`, `tests/emu/fdwtest.s`, a plain 6502 program the loader runs

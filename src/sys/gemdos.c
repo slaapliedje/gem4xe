@@ -12,6 +12,7 @@
 #include <string.h>
 #include "gemdos.h"
 #include "cio.h"
+#include "sdcio.h"
 #include "dos.h"
 #include "farmem.h"
 #include "clock.h"
@@ -2146,6 +2147,7 @@ void gemdos_init(void)
     far_write8(gd_far + GF_PRN, 0);
     con_reset(gd_con);
     gd_drive = 0;
+    sdc_init();                         /* G4DOS's folders: src/sys/sdcio.h */
     gd_age = 0;
 }
 

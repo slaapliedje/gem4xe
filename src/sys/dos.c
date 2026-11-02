@@ -48,12 +48,17 @@ void dos_ident(void)
         dos.caps = DOS_CAP_DIRS | DOS_CAP_RAWDIR | DOS_CAP_STAMPS;
         dos.dirsep = '>';
     }
+    /* G4DOS signs at $0706 (src/fdos.s).  It is described as it behaves
+     * until GEMDOS is up -- a DOS 2, with DOS 2's DRVBYT at $070A -- and
+     * src/sys/sdcio.c gives it folders then. */
+    if (DOSBASE[6] == 'G' && DOSBASE[7] == '4')
+        dos.kind = DOS_G4DOS;
     /* How to leave (src/crt_atari.s).  A SpartaDOS keeps its command
      * processor resident and is waiting for its loader to return, so a
      * return is what it wants.  An Atari DOS 2 may keep its in DUP.SYS,
      * at $1D00-$3306 -- memory gem4xe runs in -- so it is asked to come
      * back through DOSVEC, which reloads it. */
-    _exit_dosvec = (uint8_t)(dos.kind == DOS_2);
+    _exit_dosvec = (uint8_t)(dos.kind == DOS_2 || dos.kind == DOS_G4DOS);
 }
 
 /* SpartaDOS X: ':' in the second flag column (Programming Guide 4.50,

@@ -210,3 +210,33 @@ kb_queue:   phy
             ply
             ply
             rtl
+
+;;; ...and a control that must stay silent: sd_rename's prologue
+;;; (src/sys/sdfs.c, 2026-11-02).  The `sep #32` is followed by a call to
+;;; an outlined fragment that opens with `rep #32`, so the stores to 1,s
+;;; and 3,s after the call are 16 bits wide, and the sign test of 3,s is
+;;; of a word the function wrote whole.  A scan that carries the 8-bit
+;;; width across the call reports it.
+sd_rename:  tsc
+            sec
+            sbc     ##26
+            tcs
+            sep     #32
+            sta     26,s
+            jsl     long:`?L1645`
+            lda     dp:.tiny (_Dp+4)
+            sta     1,s
+            lda     dp:.tiny (_Dp+6)
+            sta     3,s
+            sep     #32             ; a byte operation later on ...
+            lda     #1
+            rep     #32             ; ... and the word width again
+            lda     3,s
+            bpl     `?L1020`
+            lda     1,s
+`?L1020`:   rtl
+            .section farcode,text
+`?L1645`:   rep     #32
+            lda     dp:.tiny _Dp
+            sta     dp:.tiny (_Dp+8)
+            rtl

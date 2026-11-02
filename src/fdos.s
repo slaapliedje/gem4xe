@@ -151,9 +151,12 @@ S_LOCKED:     .equ    0x01
               .section fdcode, root
 fd_base:      jmp     fd_install      ; $0700: DOSINI
               jmp     fd_run          ; $0703
-              .byte   0, 0, 0, 0      ; $0706
+              .byte   'G', '4'        ; $0706: G4DOS, to gem4xe (src/sys/dos.c)
+fd_xunit:     .byte   0               ; $0708: fd_xsec's unit
+fd_xmode:     .byte   0               ; $0709: ...and what it is to do
               .byte   3               ; $070A: DRVBYT, D1: and D2:
-              .byte   0, 0, 0, 0, 0   ; $070B
+              jmp     fd_xsec         ; $070B: a sector, for gem4xe
+fd_xsect:     .word   0               ; $070E: ...which one
 
 ;;; ---------------------------------------------------------------------------
 ;;; fd_install -- D: into HATABS, and the machine's vectors.  DOSINI, so it
@@ -1042,13 +1045,10 @@ fd_close:     jsr     fd_slot
               jmp     fd_closew
 10$:          lda     #M_CLOSED
               sta     fd_mode,x
-              ldy     #ST_OK
+fd_ok:        ldy     #ST_OK          ; STATUS, and the init vector, too
               rts
 
-fd_status:    ldy     #ST_OK
-              rts
 
-fd_initv:     rts
 
 ;;; ===========================================================================
 ;;; WRITING.  One file open for writing at a time, created -- or an existing
@@ -2200,6 +2200,48 @@ fd_rename:    jsr     fd_super
 99$:          rts
 
 ;;; ---------------------------------------------------------------------------
+;;; fd_xsec ($070B) -- one sector, read or written, for gem4xe's own SDFS
+;;; (src/sys/sdfs.c, docs/sdfs-plan.md), which runs where the DOS is this
+;;; one and does its own folders.  Unit fd_xunit, sector fd_xsect, through
+;;; fd_dbuf; fd_xmode bit 0 writes, bit 7 is a 128-byte sector -- and bit
+;;; 6 asks only where fd_dbuf is, in A and X (low, high: what gem4xe's
+;;; sdx_call hands back).  Otherwise carry set is a failure, and DSTATS
+;;; says which.
+;;; The tags stay true: fd_dbuf is that sector afterwards, and a sector
+;;; written is no longer what fd_mbuf or the bitmap buffer say they hold.
+;;; ---------------------------------------------------------------------------
+fd_xsec:      bit     fd_xmode
+              bvs     90$
+              lda     fd_xunit
+              sta     fd_unit
+              lda     fd_xsect
+              sta     fd_s
+              lda     fd_xsect+1
+              sta     fd_s+1
+              jsr     fd_dptr
+              lda     #0
+              sta     fd_dtag+1
+              sta     fd_dtag+2
+              lda     fd_xmode
+              lsr     a               ; bit 0, the direction, into carry
+              lda     fd_xmode
+              and     #0x80           ; SIO's length: $80, or 0 for 256
+              bcs     10$
+              jsr     fd_sio
+              bcs     30$
+              jmp     fd_dtagit
+10$:          jsr     fd_wsio
+              bcs     30$
+              lda     #0              ; whatever bitmap sector G4DOS had is
+              sta     fd_bmsec        ; read again when it next wants one
+              sta     fd_bmsec+1
+              jmp     fd_dtagit
+30$:          rts
+90$:          lda     #.byte0 fd_dbuf
+              ldx     #.byte1 fd_dbuf
+              rts
+
+;;; ---------------------------------------------------------------------------
 ;;; fd_run -- DOSVEC: D1:GEM.COM, loaded and run, by src/cart.s's rules
 ;;; (cart_boot): call INITAD after EVERY segment and point it at an RTS
 ;;; once it has -- gem4xe's far image is a hundred chunks, each followed by
@@ -2340,7 +2382,7 @@ boot_name:    .byte   "D1:GEM.COM", EOL
 msg_load:     .byte   EOL, "gem4xe: loading"
 msg_load_end:
 msg_dot:      .byte   "."
-msg_bad:      .byte   EOL, "gem4xe: GEM.COM did not load from D1:", EOL
+msg_bad:      .byte   EOL, "GEM.COM did not load", EOL
 msg_bad_end:
 
 ;;; ---------------------------------------------------------------------------
@@ -2350,9 +2392,9 @@ fd_table:     .word   fd_open-1
               .word   fd_close-1
               .word   fd_get-1
               .word   fd_put-1
-              .word   fd_status-1
+              .word   fd_ok-1
               .word   fd_special-1
-              jmp     fd_initv
+              jmp     fd_ok
 fd_image_end:                         ; what G4DOS.SYS carries ends here
 
 ;;; ---------------------------------------------------------------------------
@@ -2380,9 +2422,6 @@ fd_line:      .space  18
 fd_lpos:      .space  1
 fd_n:         .space  2               ; fd_burst's bytes this time round
 fd_digits:    .space  3
-ld_w:         .space  2
-ld_start:     .space  2
-ld_len:       .space  2
 ;;; per unit, low bytes at +0, high at +8 (fd_root's shape)
 fd_bms:       .space  16              ; the bitmap's first sector
 fd_tot:       .space  16              ; the disk's sectors
@@ -2416,6 +2455,11 @@ fd_dfree:     .space  2               ; fd_dfind: a free slot, or the end
 fd_hsize:     .space  2               ; fd_dfind: its length, from its header
 fd_dk:        .space  2               ; fd_dsec: which of its sectors
 fd_p:         .space  2
+;;; the loader's three words (fd_run): it only reads, and a directory is
+;;; only edited by a write, so it borrows the editing's
+ld_w:         .equ    fd_doff
+ld_start:     .equ    fd_dfree
+ld_len:       .equ    fd_dk
 fd_want2:     .space  11              ; RENAME's old name, kept
 fd_roff:      .space  2               ; RENAME: the old entry's offset
 fd_ebuf:      .space  E_LEN           ; an entry to write

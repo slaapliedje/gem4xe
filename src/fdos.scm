@@ -22,10 +22,10 @@
 (define (fdos-layout)
   (list
     (list 'memory 'FdCode
-          '(address (#x0700 . #x199e))
+          '(address (#x0700 . #x19a4))
           '(section fdcode))
     (list 'memory 'FdBss
-          '(address (#x199f . #x1aff))
+          '(address (#x19a5 . #x1aff))
           '(section fdbss))
     (list 'memory 'FdBuf
           '(address (#x1b00 . #x1fff))

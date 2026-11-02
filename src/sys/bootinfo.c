@@ -145,6 +145,7 @@ static const char FAR s_mb[]      = " MB, ";
 static const char FAR s_sdx[]     = "SpartaDOS X";
 static const char FAR s_sparta[]  = "SpartaDOS 3";
 static const char FAR s_dos2[]    = "DOS 2";
+static const char FAR s_g4dos[]   = "G4DOS";
 static const char FAR s_cfg[]     = CFG_FILE;
 static const char FAR s_lang[]    = LANG_FILE;
 static const char FAR s_antic[]   = "ANTIC";
@@ -359,6 +360,7 @@ void boot_begin(void)
 
     line(LS_BOOT_DOS, dos.kind == DOS_SDX    ? s_sdx
                     : dos.kind == DOS_SPARTA ? s_sparta
+                    : dos.kind == DOS_G4DOS  ? s_g4dos
                                              : s_dos2);
     if (config.found)
         line(LS_BOOT_CONFIG, s_cfg);

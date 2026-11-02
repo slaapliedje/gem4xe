@@ -20,16 +20,21 @@ is one open and one read whatever its length.
     python3 tests/emu/m15_gdos.py --sdx=CART SpartaDOS X 4.50 from the cartridge
     python3 tests/emu/m15_gdos.py --u1mb=ROM SpartaDOS X from an Ultimate 1MB flash image
     python3 tests/emu/m15_gdos.py --dos2     a DOS 2 (the fixture is DOS II+/D 6.4), build/m3-boot.atr
+    python3 tests/emu/m15_gdos.py --g4dos    G4DOS, its disk gem4xe's own SDFS engine (src/sys/sdcio.h),
+                                             build/m15g-boot.atr
 """
 import datetime
+import hashlib
 import os
+import shutil
 import struct
 import sys
+import tempfile
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from a8test.launcher import launch          # noqa: E402
+from a8test.launcher import launch, config_dir_for   # noqa: E402
 import symfile, atr                         # noqa: E402
 from m7_form import poke16, NOT_STARTED, STATUS, ST_GO, ST_DONE, SYMS  # noqa: E402
 from m12_file import Runner, D2, FAULT_I, FRAMES_I, SYS  # noqa: E402
@@ -40,6 +45,7 @@ GDOS, RELEASE = SYS + 12, SYS + 13
 SCRAP = SYS + 18                            # sc_write then sc_clear (src/m3_vdi.c)
 CIO_I, CALLS_I, BAD_I = 8, 9, 10            # the op's own words
 DOS2DISK = os.path.abspath(os.path.join(ROOT, "build", "m3-boot.atr"))
+G4DISK = os.path.abspath(os.path.join(ROOT, "build", "m15g-boot.atr"))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "test.txt")
 
 # src/sys/gemdos.h
@@ -56,8 +62,26 @@ ERANGE = -64                          # a seek past the end
 FA_RDONLY, FA_SUBDIR = 0x01, 0x10
 DATE0 = 0x0021
 HANDLE_BASE = 6
-DOS_2, DOS_SPARTA, DOS_SDX = 0, 1, 2
-KIND = {DOS_2: "DOS 2", DOS_SPARTA: "SpartaDOS 3.2", DOS_SDX: "SpartaDOS X"}
+DOS_2, DOS_SPARTA, DOS_SDX, DOS_G4DOS = 0, 1, 2, 3
+KIND = {DOS_2: "DOS 2", DOS_SPARTA: "SpartaDOS 3.2", DOS_SDX: "SpartaDOS X",
+        DOS_G4DOS: "G4DOS"}
+
+# The runner's stack, from the linker's map (tests/emu/m16_shell.py paints
+# it the same way): how deep a GEMDOS call goes, on each DOS.  G4DOS's is
+# the deepest -- the engine's calls nest under CIO's -- and the room left
+# under it is what this watches.
+PAINT, STACK_MARGIN = 0xA5, 256
+
+
+def stack_range():
+    stk = [ln for ln in open(os.path.join(ROOT, "build", "m3.map"))
+           if ln.startswith("stack ")][0].split()
+    return tuple(int(x, 16) for x in stk[1].split("-"))
+
+
+def reg(v):
+    return int(v.lstrip("$"), 16) if isinstance(v, str) else int(v or 0)
+
 
 # the scratch: the block, strings, the DTA, a buffer
 PB, STR, DTA, BUF = 0, 16, 208, 256
@@ -615,14 +639,16 @@ def folder_cases(g, check):
 def main(argv):
     cart = flash = None
     dos2 = "--dos2" in argv
+    g4dos = "--g4dos" in argv
     from_sub = "--from-sub" in argv
     for a in argv:
         if a.startswith("--sdx="):
             cart = a[6:]
         elif a.startswith("--u1mb="):
             flash = a[7:]
-    kind = DOS_2 if dos2 else DOS_SDX if (cart or flash) else DOS_SPARTA
-    tag = {DOS_2: "m15d", DOS_SPARTA: "m15", DOS_SDX: "m15u" if flash else "m15x"}[kind]
+    kind = DOS_2 if dos2 else DOS_G4DOS if g4dos else DOS_SDX if (cart or flash) else DOS_SPARTA
+    tag = {DOS_2: "m15d", DOS_SPARTA: "m15", DOS_G4DOS: "m15g",
+           DOS_SDX: "m15u" if flash else "m15x"}[kind]
     if from_sub:
         tag = "m15s"
     syms = symfile.load(SYMS)
@@ -637,6 +663,17 @@ def main(argv):
         disk = DOS2DISK
         fs = atr.Dos2(atr.ATRImage.load(disk))
         args = ["--disk", disk, "--disk", D2]
+    elif g4dos:
+        # A copy, written to: what the engine wrote is checked on the disk
+        # afterwards, from the emulator's working copy (tests/emu/fdos_boot.py)
+        work = tempfile.mkdtemp(prefix="m15g-")
+        disk = os.path.join(work, os.path.basename(G4DISK))
+        shutil.copy(G4DISK, disk)
+        sha = hashlib.sha256(open(disk, "rb").read()).hexdigest()
+        state = os.path.join(config_dir_for(tag), "disk_state", sha)
+        shutil.rmtree(state, ignore_errors=True)
+        fs = atr.Sdfs(atr.ATRImage.load(disk))
+        args = ["--bootrw", "--disk", disk]
     else:
         disk = SPDISK
         fs = atr.Sdfs(atr.ATRImage.load(disk))
@@ -664,6 +701,20 @@ def main(argv):
                 b.frames(4)
             if st[:2] != b"VD" or st[2] != 1:
                 st = None
+        elif g4dos:
+            # G4DOS loads D1:GEM.COM by itself -- the runner, here -- and
+            # loads it again after the switch to the 65C816, as it does
+            # the product (tests/emu/fdos_boot.py)
+            b.frames(2)
+            b.poke(0xD1FF, 0x01)
+            b.poke(0xD191, 0x00)
+            st = None
+            for _ in range(0, 8000, 50):
+                b.frames(50)
+                s = bytes(b.memdump(STATUS, 14))
+                if s[:2] == b"VD" and s[2] == 1:
+                    st = s
+                    break
         elif from_sub:
             def into_sub(bb):
                 m14_sparta.type_line(bb, "CD >SUB")
@@ -678,6 +729,17 @@ def main(argv):
                     print("   |" + ln)
             return 1
         check(st[8] == kind, f"the seam says DOS kind {st[8]}, expected {kind}")
+        # below the idle runner's S, all of it free: painted, and read back
+        # when the cases are done for the deepest any call went
+        stk_lo, stk_hi = stack_range()
+        regs = b.ok("REGS")
+        sp = (reg(regs.get("SH", 0)) << 8) | reg(regs.get("S", 0))
+        painted = stk_lo < sp - 64 <= stk_hi
+        if painted:
+            b.memload(stk_lo, bytes([PAINT]) * (sp - 64 - stk_lo))
+        else:
+            print(f"  NOTE: S ${sp:04X} is not in the stack ${stk_lo:04X}-${stk_hi:04X}; "
+                  f"its depth is not measured")
         r = Runner(b, syms)
         g = Gdos(r, check)
         if from_sub:
@@ -687,8 +749,29 @@ def main(argv):
             print("GEMDOS on CIO, against the image:")
             cases(g, r, check, fs, kind, b, clock=bool(flash),
                   dos_clock=(kind == DOS_SDX and not flash))
+        if painted:
+            d = b.memdump(stk_lo, sp - 64 - stk_lo)
+            low = next((stk_lo + i for i, x in enumerate(d) if x != PAINT), sp - 64)
+            print(f"  the stack: a call went {sp - low} bytes below the idle "
+                  f"runner, {low - stk_lo} to spare")
+            check(low - stk_lo >= STACK_MARGIN,
+                  f"the stack: {low - stk_lo} bytes to spare, wanted {STACK_MARGIN}")
     finally:
         emu.stop()
+    if g4dos:
+        written = os.path.join(state, "disk.atr")
+        if os.path.exists(written):
+            changed = sum(x != y for x, y in zip(open(written, "rb").read(),
+                                                 open(disk, "rb").read()))
+            check(changed, "the working copy is the disk as it was: the "
+                           "engine's writes never reached it")
+            bad = atr.Sdfs(atr.ATRImage.load(written)).check()
+            check(not bad, "the disk the engine wrote: " + "; ".join(bad[:6]))
+            print(f"  the disk the engine wrote: {changed} bytes changed, "
+                  f"{'consistent' if not bad else f'{len(bad)} problem(s)'}")
+        else:
+            check(False, f"the emulator wrote no working copy ({written})")
+        shutil.rmtree(work, ignore_errors=True)
 
     print(f"gem4xe-m15: {'PASS' if not fails else 'FAIL'} -- GEMDOS on {KIND[kind]}"
           + (", from a folder" if from_sub else "") + ", "

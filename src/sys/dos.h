@@ -51,6 +51,10 @@
 #define DOS_2        0          /* Atari DOS 2.x or a lookalike */
 #define DOS_SPARTA   1          /* SpartaDOS 3.x, from disk */
 #define DOS_SDX      2          /* SpartaDOS X, from a cartridge */
+#define DOS_G4DOS    3          /* G4DOS, gem4xe's own (src/fdos.s): flat
+                                   until GEMDOS is up, and then its disks
+                                   are gem4xe's own SDFS, with folders
+                                   (src/sys/sdcio.h) */
 
 /* Capabilities: what the file layer may rely on. */
 #define DOS_CAP_DIRS 0x01       /* subdirectories: paths carry them and

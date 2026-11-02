@@ -456,8 +456,21 @@ def stray_sign(path):
     wide, loaded 16 bits wide and then sign-tested (bmi/bpl) with nothing
     between that narrows or masks it -- bit 15, the byte ABOVE the slot,
     is tested.  B23 at 0,s is stack_zero(); this is the same fault at any
-    other slot, which is what kb_queue's CONTROL was (phase 107).  Yields
-    (function, line, text)."""
+    other slot, which is what kb_queue's CONTROL was (phase 107).  A call
+    to an outlined fragment leaves the width the fragment leaves: one that
+    opens with `rep #32` makes the stores after the call words, which
+    sd_rename's prologue showed (2026-11-02, the fixture's control).
+    Yields (function, line, text)."""
+    frags = _fragments(path)
+
+    def after(name, m8):
+        for op, arg, _ in frags.get(name, ()):
+            if op == "sep" and arg in ("#32", "#48", "#0x20", "#0x30"):
+                m8 = True
+            elif op == "rep" and arg in ("#32", "#48", "#0x20", "#0x30"):
+                m8 = False
+        return m8
+
     for func, body in _bodies(path):
         m8, w = False, []
         for op, arg, n in body:
@@ -465,6 +478,10 @@ def stray_sign(path):
                 m8 = True
             elif op == "rep" and arg in ("#32", "#48", "#0x20", "#0x30"):
                 m8 = False
+            elif op == "jsl":
+                f = re.search(r"`([^`]*)`", arg)
+                if f and f.group(1) in frags:
+                    m8 = after(f.group(1), m8)
             w.append((op, arg, n, m8))
         w8, w16 = set(), set()
         for op, arg, n, m8 in w:
