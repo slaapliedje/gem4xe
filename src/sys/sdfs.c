@@ -1,9 +1,10 @@
 /* sdfs.c -- SDFS in C (sdfs.h says what and why; docs/sdfs-plan.md).
  *
- * THE DISK.  Sector 1, 128 bytes even on a 256-byte disk, is the
- * superblock: +9 the root directory's first map page, +11 the sectors on
+ * THE DISK.  Sector 1, 128 bytes even on a 256-byte disk -- but 512 on a
+ * 512-byte disk, which has no short boot sectors -- is the superblock: +9 the root directory's first map page, +11 the sectors on
  * the disk, +13 how many are free, +15 how many sectors the bitmap takes,
- * +16 where it starts, +31 the sector size ($80 for 128, 0 for 256).  The
+ * +16 where it starts, +31 the sector size ($80 for 128, 0 for 256, 1 for
+ * 512).  The
  * bitmap has a bit a sector, SET when FREE: sector s at byte s/8, bit
  * $80 >> (s mod 8).  A file is a chain of MAP PAGES -- +0 the next page,
  * +2 the previous, then the data sectors in order, two bytes each, 126 to
@@ -77,9 +78,12 @@ static uint16_t secsize(SDFS FAR *s, uint8_t u)
     return (uint16_t)1 << unit_of(s, u)->shift;
 }
 
-/* sectors 1-3 are the boot sectors, 128 bytes on every floppy */
+/* sectors 1-3 are the boot sectors, 128 bytes on every floppy; a 512-byte
+ * disk's are all 512 */
 static uint16_t seclen(SDFS FAR *s, uint8_t u, uint16_t sec)
 {
+    if (unit_of(s, u)->shift == 9)
+        return 512;
     return sec <= 3 ? 128 : secsize(s, u);
 }
 
@@ -247,8 +251,8 @@ static int16_t mount(SDFS FAR *s, uint8_t u)
         if (s->slots[i].unit == u && s->slots[i].sec == 1
             && !s->slots[i].dirty)
             s->slots[i].unit = 0;
-    if (!un->mounted)
-        un->shift = 7;              /* sector 1 is 128 bytes regardless */
+    if (!un->mounted)               /* sector 1: 512 bytes, or 128 */
+        un->shift = (uint8_t)(sd_devsec(s, u) == 512 ? 9 : 7);
     i = c_get(s, u, 1, SK_SUPER, 0);
     if (i < 0) {
         sd_forget(s, u);
@@ -259,7 +263,13 @@ static int16_t mount(SDFS FAR *s, uint8_t u)
         sd_forget(s, u);
         return SD_EDRIVE;           /* not SDFS */
     }
-    shift = b[31] == 0x80 ? 7 : (b[31] == 0 ? 8 : 0);
+    shift = b[31] == 0x80 ? 7 : b[31] == 0 ? 8 : b[31] == 1 ? 9 : 0;
+    /* A 512-byte disk in a drive that said otherwise, or the other way
+     * round: sector 1 was read the wrong size.  Not a disk to touch. */
+    if (shift && !un->mounted && ((shift == 9) != (un->shift == 9))) {
+        sd_forget(s, u);
+        return SD_EDRIVE;
+    }
     root = get16(b + 9);
     total = get16(b + 11);
     bmc = b[15];

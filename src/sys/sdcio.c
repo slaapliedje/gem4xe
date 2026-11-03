@@ -21,6 +21,7 @@
 #include "clock.h"
 #include "farmem.h"
 #include "irq.h"
+#include "pool.h"
 #include "zwin.h"
 
 /* ---- G4DOS's sector entry (src/fdos.s, fd_xsec) ------------------------ */
@@ -63,6 +64,8 @@ typedef struct {
     char     to[SDC_PATH];
     char     sub[SDC_PATH];
     SD_INFO  info;
+    uint16_t devsec[SD_UNITS];      /* what each drive said its sectors are:
+                                       0 not asked, $FFFF it could not say */
     SDFS     fs;
 } SDC_STATE;
 
@@ -90,15 +93,65 @@ static uint16_t g4_call(uint8_t mode)
     return p;
 }
 
+/* A failed SIO's status as the engine's error.  A drive that did not
+ * answer is asked its geometry again next time: it may be another drive. */
+static int16_t sdc_sio_err(uint8_t unit, uint8_t st, uint8_t write)
+{
+    if (st == 0x8A || st == 0x8B) {     /* timeout, NAK: nothing there */
+        sc->devsec[unit - 1] = 0;
+        return SD_EDRIVE;
+    }
+    if (write && st == 0x90)            /* the drive would not write */
+        return SD_EWRPRO;
+    return SD_EERROR;
+}
+
+/* The drive's sector size, from its PERCOM block (bytes 6-7, high first),
+ * asked once a unit.  A drive with no PERCOM -- an 810 -- cannot say, and
+ * its sector 1 is 128 bytes as every floppy's is. */
+uint16_t sd_devsec(SDFS FAR *s, uint8_t unit)
+{
+    uint8_t pc[SIO_PERCOM_LEN];
+    uint16_t v;
+
+    (void)s;
+    if (unit < 1 || unit > SD_UNITS)
+        return 0;
+    v = sc->devsec[unit - 1];
+    if (!v) {
+        v = 0xFFFF;
+        if (dsk_percom(unit, pc) == SIO_OK)
+            v = (uint16_t)(((uint16_t)pc[6] << 8) | pc[7]);
+        sc->devsec[unit - 1] = v;
+    }
+    return v == 0xFFFF ? 0 : v;
+}
+
 /* A sector, through G4DOS's own data buffer in bank $00 -- whose address
  * G4DOS gives once and the engine's block keeps (s->dev) -- copied to or
- * from the engine's cache, which is far. */
+ * from the engine's cache, which is far.  A 512-byte sector does not fit
+ * that buffer: it goes through a slice of the pool and the OS's SIO
+ * directly, as GEMDOS's own transfers do (gemdos.c, gd_xfer) -- nothing
+ * else under GEM uses G4DOS's caches, so going round them is safe. */
 int16_t sd_dev(SDFS FAR *s, uint8_t unit, uint16_t sec, uint8_t FAR *buf,
                uint16_t len, uint8_t write)
 {
     uint8_t FAR *b;
     uint8_t st;
 
+    if (len > 256) {
+        uint16_t mark = pool_mark();
+        uint8_t *p = (uint8_t *)pool_alloc(len, 2);
+        if (!p)
+            return SD_EERROR;
+        if (write)
+            memcpy_far((uint8_t FAR *)p, buf, len);
+        st = write ? dsk_write(unit, sec, p, len) : dsk_read(unit, sec, p, len);
+        if (st == SIO_OK && !write)
+            memcpy_far(buf, (uint8_t FAR *)p, len);
+        pool_release(mark);
+        return st == SIO_OK ? 0 : sdc_sio_err(unit, st, write);
+    }
     if (!s->dev) {
         g4_call(G4_ASK);
         s->dev = sdx_ax;            /* A low, X high */
@@ -109,14 +162,8 @@ int16_t sd_dev(SDFS FAR *s, uint8_t unit, uint16_t sec, uint8_t FAR *buf,
     G4_UNIT = unit;
     G4_SECT = sec;
     if (g4_call((uint8_t)((write ? G4_WRITE : 0) | (len == 128 ? G4_SHORT : 0)))
-        & 1) {
-        st = DSTATS;
-        if (st == 0x8A || st == 0x8B)       /* timeout, NAK: nothing there */
-            return SD_EDRIVE;
-        if (write && st == 0x90)            /* the drive would not write */
-            return SD_EWRPRO;
-        return SD_EERROR;
-    }
+        & 1)
+        return sdc_sio_err(unit, DSTATS, write);
     if (!write)
         memcpy_far(buf, b, len);
     return 0;
@@ -153,6 +200,8 @@ void sdc_init(void)
     sd_init(FS);
     for (i = 0; i < CIO_IOCBS; i++)
         sc->io[i].kind = 0;
+    for (i = 0; i < SD_UNITS; i++)
+        sc->devsec[i] = 0;
     dos.caps |= DOS_CAP_DIRS | DOS_CAP_RAWDIR | DOS_CAP_STAMPS;
     /* ...and no drive map.  G4DOS's DRVBYT says D1: and D2: for what reads
      * it before GEM, but the engine reaches any unit, so Dprobe asks all

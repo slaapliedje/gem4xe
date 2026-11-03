@@ -35,6 +35,8 @@ static long nsec;
 
 static long offset_of(uint16_t sec)
 {
+    if (secsz == 512)                   /* every sector full, as a partition */
+        return 16 + (long)(sec - 1) * 512;
     if (sec <= 3)
         return 16 + (long)(sec - 1) * 128;
     if (secsz == 128)
@@ -60,6 +62,12 @@ int16_t sd_dev(SDFS *s, uint8_t unit, uint16_t sec, uint8_t *buf,
     else
         memcpy(buf, img + at, len);
     return 0;
+}
+
+uint16_t sd_devsec(SDFS *s, uint8_t unit)
+{
+    (void)s;
+    return unit == 1 ? (uint16_t)secsz : 0;
 }
 
 void sd_now(uint8_t *stamp)
@@ -106,7 +114,9 @@ int main(int argc, char **argv)
         return 2;
     }
     secsz = img[4] | (img[5] << 8);
-    nsec = secsz == 128 ? (imglen - 16) / 128 : 3 + (imglen - 16 - 384) / 256;
+    nsec = secsz == 128 ? (imglen - 16) / 128
+         : secsz == 512 ? (imglen - 16) / 512
+         : 3 + (imglen - 16 - 384) / 256;
     sd_init(s);
 
     while (fgets(line, sizeof line, stdin)) {

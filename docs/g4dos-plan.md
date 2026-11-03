@@ -186,12 +186,21 @@ Each says how it is tested.
    answers D1: and D3: alone, and D3:'s folders list as its image has
    them -- a 256-byte-sector unit beside D1:'s 128 (the check fails, as
    `0x0001`, with the drive map left in).
-3. **512-byte sectors**, which an APT partition has.  The engine first
-   (`SD_SECMAX`, `test-sdfs` on a 512-byte image), then G4DOS -- whose
-   five buffers are 256 bytes each and have no room to double.  The
-   answer is probably that G4DOS reads 512-byte sectors only into a
-   buffer gem4xe lends it once gem4xe is up, and before that only what
-   booting needs.  *Gate*: the card image's partition read by the engine.
+3. **512-byte sectors**, which an APT partition has.  **Built
+   2026-11-02 under GEM.**  The engine takes them (`SD_SECMAX` 512; a
+   512-byte volume has one boot sector and its size byte is 1), told the
+   drive's sector size before it reads sector 1 -- which is 512 bytes
+   there and 128 everywhere else -- by `sd_devsec`: on the Atari the
+   drive's PERCOM block, asked once a unit.  G4DOS's 256-byte buffers
+   cannot hold one, so gem4xe moves a 512-byte sector itself, through a
+   slice of the pool and the OS's SIO (`dsk_read`, `dsk_write`).
+   *Gates*: `test-sdfs` reads the card image's two partitions and runs
+   the by-hand and random rounds at 512; `test-m15g` mounts a 512-byte
+   disk in D4: -- found, listed, read, a file written over six sectors
+   into a folder and read back and deleted, `Dfree` agreeing with the
+   image (every check fails with the drive's answer ignored).  **Left**:
+   G4DOS itself on a 512-byte disk, before GEM is up -- what booting from
+   a partition needs (step 8).
 4. **The shell**, its command line first: the commands above over the
    engine, printing to the screen when it runs alone and into the far
    buffer XCOMLI's output goes to when gem4xe's *File -> DOS command*

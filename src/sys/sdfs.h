@@ -40,7 +40,7 @@
 #define SD_CACHE    8           /* sectors held */
 #define SD_FILES    8           /* files open at once */
 #define SD_DIRS     8           /* directories being listed at once */
-#define SD_SECMAX   256         /* the biggest sector: SDFS on a floppy */
+#define SD_SECMAX   512         /* the biggest sector: a hard disk partition's */
 #define SD_ENT      23          /* a directory entry */
 
 /* GEMDOS's error numbers, the ones the engine has a use for. */
@@ -161,6 +161,11 @@ int16_t sd_dev(SDFS FAR *s, uint8_t unit, uint16_t sec, uint8_t FAR *buf,
                uint16_t len, uint8_t write);
 /* sd_now: the time, as an entry keeps it (SD_INFO.stamp). */
 void sd_now(uint8_t FAR *stamp);
+/* sd_devsec: the size of the sectors the drive in `unit` reads -- 128,
+ * 256 or 512 -- or 0 when it cannot say.  Asked before a unit's sector 1
+ * is read, because that sector is 512 bytes on a 512-byte disk and 128
+ * on every other: the engine reads it as 512 only when told 512. */
+uint16_t sd_devsec(SDFS FAR *s, uint8_t unit);
 
 /* ---- the engine ------------------------------------------------------- */
 void    sd_init(SDFS FAR *s);

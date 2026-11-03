@@ -202,10 +202,12 @@ uint8_t cio_xio(uint8_t cmd, const char *name, uint8_t aux1, uint8_t aux2)
 #define SIO_PERCOM 0x4E         /* 'N': the drive's own geometry */
 #define SIO_STATUS 0x53         /* 'S': four bytes, from any drive there */
 #define SIO_FROM   0x40         /* DSTATS: the drive sends */
+#define SIO_TO     0x80         /* ...or is sent to */
+#define SIO_PUT    0x50         /* 'P': a write without the drive's verify */
 #define SIO_TIME   0x0F         /* DTIMLO, as the OS uses for a disk */
 
-static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
-                   uint16_t len)
+static uint8_t sio_dir(uint8_t unit, uint8_t cmd, uint8_t dir, uint16_t aux,
+                       void *buf, uint16_t len)
 {
     uint8_t st;
     volatile uint8_t *d = (volatile uint8_t *)DCB_DDEVIC;
@@ -214,7 +216,7 @@ static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
     d[DCB_DDEVIC - DCB_DDEVIC] = SIO_DISK;
     d[DCB_DUNIT - DCB_DDEVIC] = unit;
     d[DCB_DCOMND - DCB_DDEVIC] = cmd;
-    d[DCB_DSTATS - DCB_DDEVIC] = SIO_FROM;
+    d[DCB_DSTATS - DCB_DDEVIC] = dir;
     w = (volatile uint16_t *)DCB_DBUFLO;
     *w = (uint16_t)buf;
     d[DCB_DTIMLO - DCB_DDEVIC] = SIO_TIME;
@@ -228,9 +230,20 @@ static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
     return st;
 }
 
+static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
+                   uint16_t len)
+{
+    return sio_dir(unit, cmd, SIO_FROM, aux, buf, len);
+}
+
 uint8_t dsk_read(uint8_t unit, uint16_t sector, void *buf, uint16_t len)
 {
     return sio(unit, SIO_READ, sector, buf, len);
+}
+
+uint8_t dsk_write(uint8_t unit, uint16_t sector, void *buf, uint16_t len)
+{
+    return sio_dir(unit, SIO_PUT, SIO_TO, sector, buf, len);
 }
 
 /* The drive's own geometry: tracks, sectors a track, sides and the sector

@@ -684,6 +684,59 @@ def drives_g4dos(b, r, g, check):
     compare_listing(check, "C:\\APPS\\*.*", got, image_listing(fs3, "APPS"))
     print(f"  D3: lists {len(got)} in \\APPS, as the image has them")
 
+    # a 512-byte disk, as a hard disk's partition is (step 3): D4:
+    tmp = tempfile.mkdtemp(prefix="m15g-512-")
+    d4 = os.path.join(tmp, "d4.atr")
+    img = atr.ATRImage(512, 1024)
+    fs4 = atr.Sdfs.format(img, "BIGSECS")
+    fixture = open(FIXTURE, "rb").read()
+    fs4.add_file("TEST.TXT", fixture)
+    fs4.mkdir("SUB")
+    fs4.add_file("SUB>ONE.TXT", b"one\x9b")
+    img.save(d4)
+    b.mount(3, d4)
+    b.frames(10)
+    ret, _ = g.call("Dprobe")
+    print(f"  Dprobe with D4: map {ret & 0xFFFF:#06x}, {g.frames} frames")
+    check(ret == 0x0D, f"Dprobe {ret:#x}: not D1:, D3: and D4: (D4: has 512-byte sectors)")
+    fs4 = atr.Sdfs(atr.ATRImage.load(d4))
+    got, _ = g.listing("D:\\*.*", FA_SUBDIR)
+    compare_listing(check, "D:\\*.* (512)", got, image_listing(fs4))
+    got, _ = g.listing("D:\\SUB\\*.*", FA_SUBDIR)
+    compare_listing(check, "D:\\SUB\\*.* (512)", got, image_listing(fs4, "SUB"))
+    h, _ = g.call("Fopen", L(g.string("D:\\TEST.TXT")), W(0))
+    n, _ = g.call("Fread", W(h), L(BUF_ROOM), L(r.sc + BUF))
+    check(n == len(fixture) and r.read(BUF, n) == fixture,
+          f"D:\\TEST.TXT on 512-byte sectors reads {n} bytes, the fixture is {len(fixture)}")
+    g.call("Fclose", W(h))
+    # a file over seven sectors, written a kilobyte at a time and read back
+    data = bytes((i * 7 + 3) & 0xFF for i in range(3 * BUF_ROOM))
+    free0, _ = g.call("Dfree", L(r.sc + BUF), W(4))
+    free0 = struct.unpack("<l", r.read(BUF, 4))[0]
+    h, _ = g.call("Fcreate", L(g.string("D:\\SUB\\NEW.DAT")), W(0))
+    check(h >= HANDLE_BASE, f"Fcreate D:\\SUB\\NEW.DAT {h}")
+    for k in range(3):
+        r.stage(BUF, data[k * BUF_ROOM:(k + 1) * BUF_ROOM])
+        ret, _ = g.call("Fwrite", W(h), L(BUF_ROOM), L(r.sc + BUF))
+        check(ret == BUF_ROOM, f"Fwrite to a 512-byte disk {ret}")
+    check(g.call("Fclose", W(h))[0] == 0, "Fclose on a 512-byte disk")
+    h, _ = g.call("Fopen", L(g.string("D:\\SUB\\NEW.DAT")), W(0))
+    back = b""
+    for k in range(3):
+        n, _ = g.call("Fread", W(h), L(BUF_ROOM), L(r.sc + BUF))
+        back += r.read(BUF, max(n, 0))
+    g.call("Fclose", W(h))
+    check(back == data, f"NEW.DAT read back {len(back)} bytes, "
+                        f"{'the same' if back == data else 'DIFFERENT'}")
+    ret, _ = g.call("Fdelete", L(g.string("D:\\SUB\\NEW.DAT")))
+    check(ret == 0, f"Fdelete on a 512-byte disk {ret}")
+    g.call("Dfree", L(r.sc + BUF), W(4))
+    free1 = struct.unpack("<l", r.read(BUF, 4))[0]
+    check(free1 == free0 == fs4.free_count(),
+          f"Dfree on D4: {free0} before, {free1} after, the image {fs4.free_count()}")
+    print(f"  D4: 512-byte sectors: listed, read, {len(data)} bytes written over "
+          f"{len(data) // 512} sectors and read back, deleted; {free1} free")
+
 
 def main(argv):
     cart = flash = None

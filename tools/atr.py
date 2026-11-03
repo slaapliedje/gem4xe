@@ -43,7 +43,9 @@ class ATRError(Exception):
 
 class ATRImage:
     def __init__(self, sector_size=128, sector_count=720, boot_sectors_128=True):
-        if sector_size not in (128, 256):
+        # 512 is a hard disk partition's size, as an SIO emulator or the
+        # emulator serves one: every sector full, no short boot sectors
+        if sector_size not in (128, 256, 512):
             raise ATRError(f"unsupported sector size {sector_size}")
         self.sector_size = sector_size
         self.sector_count = sector_count
@@ -97,6 +99,8 @@ class ATRImage:
         boot128 = True
         if ssz == 128:
             count, boot128 = data_len // 128, False
+        elif ssz == 512:
+            count, boot128 = data_len // 512, False
         elif data_len >= 384 and (data_len - 384) % 256 == 0:
             count = 3 + (data_len - 384) // 256
         elif data_len % 256 == 0:

@@ -113,6 +113,26 @@ def apath(p):
 
 # ---- reading ----------------------------------------------------------------
 
+def card_partitions():
+    """The card image's APT partitions (tools/mkcf.py), 512-byte SDFS
+    volumes, each written out as a 512-byte ATR the harness reads: what a
+    hard disk holds, where the floppies are 128 and 256."""
+    path = os.path.join(BUILD, "gem-cf.img")
+    if not os.path.exists(path):
+        return []
+    import apt
+    img = apt.Image.load(path)
+    out, tmp = [], tempfile.mkdtemp(prefix="sdfs-cf-")
+    for i, part in enumerate(apt.read_table(img), 1):
+        a = atr.ATRImage(512, part.sector_count)
+        for n in range(1, part.sector_count + 1):
+            a.write_sector(n, part.read_sector(n))
+        f = os.path.join(tmp, f"part{i}.atr")
+        a.save(f)
+        out.append((f"gem-cf.img D{i}:", f))
+    return out
+
+
 def walk_atr(fs, path=""):
     out = {}
     for e in fs.entries(path):
@@ -129,8 +149,10 @@ def reading():
                          "m14-boot.atr", "gem-qed.atr")
              if os.path.exists(os.path.join(BUILD, p))]
     check(len(disks) >= 2, f"disks to read: {disks}")
-    for name in disks:
-        d = Disk(src=os.path.join(BUILD, name))
+    srcs = [(n, os.path.join(BUILD, n)) for n in disks]
+    srcs += card_partitions()
+    for name, src in srcs:
+        d = Disk(src=src)
         fs = d.fs()
         tree = walk_atr(fs)
         dirs = [""] + [p for p, e in tree.items() if e.is_dir]
@@ -364,9 +386,9 @@ def main():
         print(f"no {HOST}: make build/sdfs_host")
         return 1
     reading()
-    for sz in (256, 128):
+    for sz in (256, 128, 512):
         by_hand(sz)
-    for sz in (256, 128):
+    for sz in (256, 128, 512):
         for seed in (1, 2, 3):
             at_random(sz, seed)
     print(f"\ntest_sdfs: {'PASS' if not problems else 'FAIL'} -- "

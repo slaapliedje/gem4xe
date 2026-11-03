@@ -132,6 +132,10 @@ SIMPLE_CALL uint16_t cio_call(uint16_t iocb);
 #define SIO_OK        0x01
 #define SIO_PERCOM_LEN 12       /* the drive's geometry, as it reports it */
 uint8_t dsk_read(uint8_t unit, uint16_t sector, void *buf, uint16_t len);
+/* ...and written, with 'P' -- a put without the drive's verify, as G4DOS
+ * and a DOS 2.5 write.  The SDFS engine's 512-byte sectors, which G4DOS's
+ * buffers cannot hold, go this way (src/sys/sdcio.c). */
+uint8_t dsk_write(uint8_t unit, uint16_t sector, void *buf, uint16_t len);
 uint8_t dsk_percom(uint8_t unit, void *buf);   /* SIO_PERCOM_LEN bytes */
 /* The drive asked for its status, the answer thrown away: SIO_OK or the
  * error, 138 when nobody answered.  One round of the OS's retries. */
