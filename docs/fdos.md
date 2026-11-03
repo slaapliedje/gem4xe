@@ -70,7 +70,9 @@ for it, through an entry in its header:
 
 `fd_xsec` reads or writes through the data buffer and keeps G4DOS's
 tags true, so the handler and the engine never disagree about what a
-buffer holds.  A bare name -- no folder in it -- still means what it
+buffer holds.  It serves any unit, so under GEM every drive is G4DOS's:
+DRVBYT's D1: and D2: are what the desk starts with, and *Options ->
+Install devices* finds the rest.  A bare name -- no folder in it -- still means what it
 means to the handler (the root, then one level down), because that is
 how gem4xe finds its own files.  [sdfs-plan.md](sdfs-plan.md) has the
 rest: why it is at CIO's level, what is left.

@@ -175,9 +175,17 @@ Each says how it is tested.
    for a file and no desktop icon is drawn (a check shown to find one on
    the desktop's screen).  Next: GACS's and RetroWP's builds make their
    disks this way, in their own repositories.
-2. **Every drive.**  G4DOS's DRVBYT says all eight; gem4xe probes them
-   (`gd_dprobe` already does, through the OS's status command) and shows
-   the ones that answer.  *Gate*: `test-m15g` with a disk in D3:.
+2. **Every drive.**  **Built 2026-11-02.**  Nothing probes at start-up:
+   `Dsetdrv` answers D1: and D2:, and the desktop's *Options -> Install
+   devices* asks every drive with GEMDOS's `Dprobe` -- about a second for
+   each one that is not there (336 frames for six, measured), the pointer
+   busy meanwhile -- and *Save desktop* keeps the set.  `Dprobe` skipped
+   any drive G4DOS's DRVBYT did not name, which is DOS 2's rule; under
+   GEM the engine reaches any unit, so `sdc_init` drops the drive map.
+   *Gate*: `test-m15g` mounts a disk in D3: with D2: empty, `Dprobe`
+   answers D1: and D3: alone, and D3:'s folders list as its image has
+   them -- a 256-byte-sector unit beside D1:'s 128 (the check fails, as
+   `0x0001`, with the drive map left in).
 3. **512-byte sectors**, which an APT partition has.  The engine first
    (`SD_SECMAX`, `test-sdfs` on a 512-byte image), then G4DOS -- whose
    five buffers are 256 bytes each and have no room to double.  The

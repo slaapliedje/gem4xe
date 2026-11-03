@@ -54,7 +54,7 @@ FN = dict(Dsetdrv=0x0E, Dgetdrv=0x19, Fsetdta=0x1A, Tgetdate=0x2A, Fgetdta=0x2F,
           Tgettime=0x2C, Tsetdate=0x2B, Maddalt=0x14,
           Fcreate=0x3C, Fopen=0x3D, Fclose=0x3E, Fread=0x3F, Fwrite=0x40,
           Fdelete=0x41, Fseek=0x42, Fattrib=0x43, Dgetpath=0x47, Malloc=0x48,
-          Fdatime=0x57,
+          Fdatime=0x57, Dprobe=0x1F1,
           Mfree=0x49,
           Fsfirst=0x4E, Fsnext=0x4F, Frename=0x56)
 EINVFN, EFILNF, EPTHNF, EACCDN, EIHNDL, ENMFIL = -32, -33, -34, -36, -37, -49
@@ -664,6 +664,27 @@ def folder_cases(g, check):
           f"root's TEST.TXT {'opens' if keep >= HANDLE_BASE else 'is gone'}")
 
 
+def drives_g4dos(b, r, g, check):
+    """Every drive (docs/g4dos-plan.md, step 2): a disk in D3: with D2:
+    empty, Dprobe answering D1: and D3: and nothing else, and D3:'s
+    folders listed through the engine -- a second unit, of 256-byte
+    sectors where D1:'s are 128.  After the cases' exit, so the DTA is
+    the default again: set it, or the listings read the old one."""
+    g.call("Fsetdta", L(r.sc + DTA))
+    d3 = os.path.join(ROOT, "build", "gem-apps.atr")
+    b.mount(2, d3)                              # MOUNT counts from 0
+    b.frames(10)
+    ret, _ = g.call("Dprobe")
+    print(f"  Dprobe: map {ret & 0xFFFF:#06x}, {g.frames} frames for eight drives")
+    check(ret == 0x05, f"Dprobe {ret:#x}: not D1: and D3: alone (D2: is empty)")
+    fs3 = atr.Sdfs(atr.ATRImage.load(d3))
+    got, _ = g.listing("C:\\*.*", FA_SUBDIR)
+    compare_listing(check, "C:\\*.*", got, image_listing(fs3))
+    got, _ = g.listing("C:\\APPS\\*.*", FA_SUBDIR)
+    compare_listing(check, "C:\\APPS\\*.*", got, image_listing(fs3, "APPS"))
+    print(f"  D3: lists {len(got)} in \\APPS, as the image has them")
+
+
 def main(argv):
     cart = flash = None
     dos2 = "--dos2" in argv
@@ -777,6 +798,8 @@ def main(argv):
             print("GEMDOS on CIO, against the image:")
             cases(g, r, check, fs, kind, b, clock=bool(flash),
                   dos_clock=(kind == DOS_SDX and not flash))
+            if g4dos:
+                drives_g4dos(b, r, g, check)
         if painted:
             d = b.memdump(stk_lo, sp - 64 - stk_lo)
             low = next((stk_lo + i for i, x in enumerate(d) if x != PAINT), sp - 64)

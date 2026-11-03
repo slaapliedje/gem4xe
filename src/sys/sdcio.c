@@ -154,6 +154,11 @@ void sdc_init(void)
     for (i = 0; i < CIO_IOCBS; i++)
         sc->io[i].kind = 0;
     dos.caps |= DOS_CAP_DIRS | DOS_CAP_RAWDIR | DOS_CAP_STAMPS;
+    /* ...and no drive map.  G4DOS's DRVBYT says D1: and D2: for what reads
+     * it before GEM, but the engine reaches any unit, so Dprobe asks all
+     * eight and Options -> Install devices can find a D3: (gemdos.c,
+     * gd_dprobe).  Dsetdrv still answers D1: and D2: without asking. */
+    dos.caps &= (uint8_t)~DOS_CAP_DRVBYT;
     dos.dirsep = '>';
 }
 
