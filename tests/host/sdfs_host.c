@@ -199,6 +199,8 @@ int main(int argc, char **argv)
             SD_INFO info;
             static char out[64 * 1024];
             int len = 0, cnt = 0;
+            out[0] = 0;                 /* an empty folder lists nothing --
+                                           not the last folder again */
             h = sd_opendir(s, 1, k >= 2 ? a : "");
             if (h < 0) {
                 printf("err %d\n", h);
