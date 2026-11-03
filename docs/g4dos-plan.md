@@ -71,9 +71,12 @@ one implementation, two hosts.
 
 The shell needs folders, so it uses the same SDFS engine gem4xe does
 (`src/sys/sdfs.c`, in C) -- which makes it a 65C816 program to begin
-with: every machine gem4xe runs on has one.  A shell for a plain 6502
-is a later question, and the engine's portability (it builds with gcc
-for the host already) is what would answer it.
+with: every machine gem4xe runs on has one.  **6502 machines are a
+target too, later**: the feature set goes in first, on the upgraded
+machine, and is squeezed down after.  So what is portable stays plain C
+a 6502 build can take -- the engine already builds for the host with
+gcc as well as for the 65C816 -- and nothing here is 65C816-only that
+does not have to be.
 
 ## Room: the ceiling at `$2000`
 
