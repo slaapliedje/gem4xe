@@ -38,6 +38,68 @@ Both shapes are the same gem4xe on the same G4DOS; what differs is what
 is on the disk.  So the work is G4DOS being a first-class host on every
 medium, and the tools that make each shape's disk.
 
+## G4DOS, a DOS of its own
+
+G4DOS is also meant to be a DOS somebody uses without GEM: a kernel that
+bootstraps GEM, and the same kernel with a shell beside it.  Atari's DOS
+2 had this shape -- DOS.SYS resident, DUP.SYS loaded only when you asked
+for DOS -- and a disk with DOS.SYS and one program on it booted into that
+program.  G4DOS in three parts:
+
+| part | what it is | when it is in memory |
+|---|---|---|
+| `G4DOS.SYS`, the kernel | the boot, the `D:` handler, the sector entry gem4xe uses, and the loader, which runs the disk's boot file: `GEM.COM` if there is one, else `AUTORUN.SYS`, else the shell | always (and less of it under GEM: *Room*, below) |
+| the shell | a program on the disk, never resident: loaded when a program leaves to DOS, or when there is nothing else to boot | between programs |
+| gem4xe | GEM, on top, when the disk boots it | while it runs |
+
+So a disk with `G4DOS.SYS` and one program boots into that program; one
+with the shell as well is a DOS to work in; one with `\GEM\` is the
+desktop or an appliance.
+
+**The shell** has two faces over one set of operations: a menu in the
+manner of DOS 2.5's and SmartDOS's -- a letter an action, for somebody
+who wants to be led -- and a command line in SpartaDOS X's place, with
+**commands a Linux user already knows**:
+
+    ls [-l]   cd   pwd   cp   mv   rm   mkdir   rmdir   cat   more   df
+
+a program run by typing its name, `/` taken between folders as well as
+SpartaDOS's `>` and GEM's `\`, and the old names (`DIR`, `COPY`, `DEL`)
+as aliases for anybody's fingers that remember them.  The same command
+set serves gem4xe's *File -> DOS command* window and GEMDOS `Psystem`:
+one implementation, two hosts.
+
+The shell needs folders, so it uses the same SDFS engine gem4xe does
+(`src/sys/sdfs.c`, in C) -- which makes it a 65C816 program to begin
+with: every machine gem4xe runs on has one.  A shell for a plain 6502
+is a later question, and the engine's portability (it builds with gcc
+for the host already) is what would answer it.
+
+## Room: the ceiling at `$2000`
+
+G4DOS must end below `$2000` because that is where gem4xe's bank `$00`
+begins -- its direct page, then its stack and data, its code, the window
+and the application pool -- and gem4xe begins there so that one GEM.COM
+sits above every DOS it runs on (SpartaDOS X leaves MEMLO at `$1C1D`,
+DOS 2.5 at `$1CFC`).  Moving it up would cost every DOS's application
+pool, and bank `$00` is gem4xe's scarcest memory.  (exec816 went the
+other way: it is an operating system of its own, keeps its kernel and
+its file services in far banks, and refuses a resident DOS -- MEMLO must
+be at most `$0A00`.)
+
+So G4DOS gets room without moving the line:
+
+- **on the cartridge**, its code runs from the ROM, as the cartridge's
+  `D1:` handler already does, and only its buffers want RAM;
+- **on a floppy**, it is large while it boots and small under GEM: once
+  gem4xe is up the engine does the files, and what has to stay resident
+  is the sector entry, a buffer, and what RESET needs.  The rest of
+  `$0700`-`$1FFF`, about five kilobytes, becomes bank-`$00` memory for
+  gem4xe where the DOS is G4DOS -- room no other DOS can give it.  The
+  cost: gem4xe's bank-`$00` allocator takes a second region, and a
+  program run outside GEM finds G4DOS's handler gone until the kernel
+  is loaded again (which the shell, being on the disk, can do).
+
 ## What gem4xe takes from a DOS today
 
 Everything that branches on the DOS (`src/sys/dos.c`, `gemdos.c`,
@@ -48,7 +110,7 @@ Everything that branches on the DOS (`src/sys/dos.c`, `gemdos.c`,
 | files and folders: paths, listings with stamps, rename, lock, make and remove folders, free space | CIO, its own SDFS | **done**: gem4xe's engine behind CIO's `D:` | -- |
 | loading GEM.COM | `X.COM` / the command line | G4DOS's loader, `D1:GEM.COM` | -- |
 | loading programs, resources, fonts | CIO | the engine | -- |
-| a command line: GEMDOS `Psystem`, the desktop's *File -> DOS command* | XCOMLI, its command processor (`dos_command`) | **nothing** | built-in commands in gem4xe, over GEMDOS (step 4) |
+| a command line: GEMDOS `Psystem`, the desktop's *File -> DOS command* | XCOMLI, its command processor (`dos_command`) | **nothing** | the shell's command set, built into gem4xe as well (step 4) |
 | the clock | `kd_gettd` / `kd_settd`, through whichever driver is loaded | gem4xe reads the U1MB's and the SIDE's itself | the other clocks read by gem4xe too (step 6) |
 | which drives there are | probed by listing each | DRVBYT says D1: and D2: | probe D1:-D8: (step 2) |
 | sector sizes | 128, 256, 512 | 128 and 256 | 512, which APT partitions use (step 3) |
@@ -119,11 +181,14 @@ Each says how it is tested.
    answer is probably that G4DOS reads 512-byte sectors only into a
    buffer gem4xe lends it once gem4xe is up, and before that only what
    booting needs.  *Gate*: the card image's partition read by the engine.
-4. **A command line** on G4DOS: `Psystem` and *File -> DOS command*
-   served by built-in commands written in gem4xe over GEMDOS -- `DIR`,
-   `COPY`, `DEL`, `REN`, `MD`, `RD`, `TYPE`, `CD` -- printing into the
-   same far buffer XCOMLI's output goes to.  *Gate*: the desktop's
-   command window on a G4DOS disk.
+4. **The shell**, its command line first: the commands above over the
+   engine, printing to the screen when it runs alone and into the far
+   buffer XCOMLI's output goes to when gem4xe's *File -> DOS command*
+   runs them.  G4DOS's loader runs the boot file (`GEM.COM`, else
+   `AUTORUN.SYS`, else the shell) and DOSVEC loads the shell.  *Gates*:
+   a G4DOS disk with the shell boots to its prompt and a scripted session
+   is checked against the disk afterwards; the desktop's command window
+   runs the same commands.  The menu face comes after the command line.
 5. **High-speed SIO in G4DOS**, as above.  *Gate*: `make bench-boot`,
    and the floppy on the MiSTer core under both OSes.
 6. **More clocks**: FujiNet's `APETIME` and an R-Time 8, read by
@@ -135,3 +200,11 @@ Each says how it is tested.
 8. **The installed system on G4DOS**: the card image's partition booting
    G4DOS into the desktop, as it boots SpartaDOS X today (needs 3).
    *Gate*: `test-cf` on G4DOS.
+9. **Folders in G4DOS's handler**, for programs run outside GEM: a path
+   through any depth of folders (`D1:>A>B>NAME`, and `/`) where today it
+   finds a name in the root or one folder down.  Making folders stays the
+   shell's.  *Gate*: `fdwtest.s` reading and writing two folders down.
+10. **G4DOS small under GEM**: what stays resident sized exactly, and the
+    rest of `$0700`-`$1FFF` given to gem4xe's bank-`$00` allocator as a
+    second region when the DOS is G4DOS.  *Gates*: `make memcheck`
+    models it; `test-fdos` and the stack check run on it.
