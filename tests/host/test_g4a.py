@@ -92,6 +92,27 @@ def elf_bytes(path):
     return segs, syms
 
 
+class FarSpan(unittest.TestCase):
+    """mkg4a.far_span reads how far the far region reaches off the map,
+    and the header's bank count comes from it.  A far bss past a bank's
+    worth is zfar2, zfar3 ... (src/app/gemapp.scm); counting `zfar` alone
+    gave GACS four banks of the seven it uses, and the far heap handed the
+    other three to whoever asked next (the GACS session, 2026-11-03)."""
+
+    def test_the_numbered_zfar_banks_count(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".map", delete=False) as f:
+            f.write("farcode 020000-02afff  00b000  AppFar 1\n"
+                    "zfar    040000-04efff  00f000  AppFarBss 1\n"
+                    "zfar2   050000-05c00f  00c010  AppFarBss2 1\n"
+                    "zfar3   060000-06000f  000010  AppFarBss3 1\n")
+            path = f.name
+        try:
+            self.assertEqual(mkg4a.far_span(path, 0x020000), 0x060010)
+        finally:
+            os.unlink(path)
+
+
 class G4AFormat(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

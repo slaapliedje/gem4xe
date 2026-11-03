@@ -203,7 +203,11 @@ def far_span(mapfile, far_base):
         return end
     with f:
         for ln in f:
-            m = re.match(r"^(far|zfar|ifar|farcode|switch|cfar|libcode|code)\s+"
+            # zfar2, zfar3 ...: a far bss past a bank's worth
+            # (src/app/gemapp.scm), as vars_span below reads them -- this
+            # was `zfar` alone, and GACS's header asked for four banks of
+            # its seven (found by the GACS session, 2026-11-03)
+            m = re.match(r"^(far|zfar\d*|ifar|farcode|switch|cfar|libcode|code)\s+"
                          r"([0-9a-f]{6})-([0-9a-f]{6})\s", ln)
             if m and int(m.group(2), 16) >= far_base:
                 end = max(end, int(m.group(3), 16) + 1)
