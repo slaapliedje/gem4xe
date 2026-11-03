@@ -23,6 +23,10 @@ the stub every blank SDFS disk has.
                 the applications' INSTALL.BAT.  720 KB: QED does not fit
                 a 360 KB floppy, so this one is an image for what reads
                 images, not a disk for a drive.
+  --app PROGRAM AN APPLIANCE: the system without the desktop, and PROGRAM
+                as \\GEM\\DESKTOP.PRG, so the disk boots straight into
+                that one program and goes back to it when it quits;
+                --add its own files (docs/g4dos-plan.md).
 
 A floppy is where gem4xe starts, not where it lives (docs/media.md).
 Each disk's INSTALL.BAT copies what that disk holds onto a drive the
@@ -118,6 +122,26 @@ def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
     return out
 
 
+# The desktop's own files, which an appliance disk leaves out.
+DESKTOP_ONLY = {"GEM>DESKTOP.PRG", "GEM>DESKTOP.RSC", "GEM>PREFS.RSC",
+                "GEM>DESKICON.RSC"}
+
+
+def build_app(out, program, adds=(), root=None, volname=None):
+    """An appliance: a disk that boots straight into one program
+    (docs/g4dos-plan.md, step 1).  The system without the desktop, and
+    PROGRAM as \\GEM\\DESKTOP.PRG, so the shell runs it where it would
+    run the desktop -- and again when it quits.  Its own files are `adds`;
+    GEM>NAME beside it is found by a bare name under G4DOS and under
+    SpartaDOS X alike (AUTOEXEC.BAT puts SpartaDOS X there).  No
+    INSTALL.BAT: an appliance is not installed."""
+    table = [(p, n) for p, n in mkcf.SYSTEM if n not in DESKTOP_ONLY]
+    table.append((program, "GEM>DESKTOP.PRG"))
+    if volname is None:
+        volname = os.path.splitext(os.path.basename(program))[0].upper()[:8]
+    return build(out, adds, table=table, install=[], volname=volname)
+
+
 def build_apps(out, root=None):
     return build(out, (), None, root, mkcf.APPS, mkcf.INSTALL_APPS,
                  mkcf.DIRS, "GEMAPPS", fdos=False)
@@ -143,6 +167,9 @@ def main(argv=None):
                     help="the applications floppy rather than the system's")
     ap.add_argument("--qed", action="store_true",
                     help="QED's floppy (mkcf.QED)")
+    ap.add_argument("--app", metavar="PROGRAM",
+                    help="an appliance: the system with PROGRAM in the "
+                         "desktop's place, and no desktop")
     ap.add_argument("--batch", choices=("system", "apps"),
                     help="write that disk's INSTALL.BAT to OUT, and nothing else")
     ap.add_argument("--add", nargs=2, action="append", default=[],
@@ -153,7 +180,9 @@ def main(argv=None):
             f.write(mkcf.batch(mkcf.INSTALL_SYSTEM if a.batch == "system"
                                else mkcf.INSTALL_APPS))
         return 0
-    if a.qed:
+    if a.app:
+        build_app(a.out, a.app, a.add)
+    elif a.qed:
         build_qed(a.out)
     elif a.apps:
         build_apps(a.out)
