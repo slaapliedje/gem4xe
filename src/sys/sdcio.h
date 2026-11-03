@@ -50,4 +50,12 @@ uint8_t  sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len,
                  uint16_t *got);
 uint8_t  sdc_xio(uint8_t cmd, const char *name);
 
+/* GEMDOS's Psystem where the DOS is G4DOS (src/sys/dos.c dos_command):
+ * the line at the far address `line` run by the DOS's commands
+ * (src/sys/doscmd.c) and what they print -- lines ended by ATASCII's
+ * EOL -- put at `out`, `max` bytes at most.  The bytes it put there, 0
+ * for no line (the probe: there are commands), or EINVFN with the engine
+ * off. */
+int32_t  sdc_command(uint32_t line, uint32_t out, uint32_t max);
+
 #endif

@@ -52,7 +52,8 @@ DOS2 = {"open": 14, "read": 6, "dir open": 7, "dir read": 48}
 
 # -- the DOS's console, through the bridge -------------------------------------
 KEYS = {" ": ("SPACE", False), ".": ("PERIOD", False), "-": ("MINUS", False),
-        ":": ("SEMICOLON", True), ">": ("GREATER", False), "*": ("8", True)}
+        ":": ("SEMICOLON", True), ">": ("GREATER", False), "*": ("8", True),
+        "/": ("SLASH", False), "?": ("SLASH", True)}
 # > is a key of its own on the Atari; shift-period is ].  Nothing typed one
 # until tests/emu/install.py, which is how the table carried that for so long.
 

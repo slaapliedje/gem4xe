@@ -76,6 +76,7 @@ an optimiser fault, and saying which saves a vendor a bisect.
 | B18 | no | yes | yes | the compiler never finishes; `--data-model=large` is clean at every level |
 | B19 | yes | yes | yes | the same instruction in both data models; a defect only where the symbol is far |
 | B26 | yes | yes | yes | small and large data models alike; the pointer is declared `__far` |
+| B27 | yes | yes | yes | a type rule, so every level: the arms' far pointers differ only in `const` or `volatile` |
 
 `--no-inline` is a useful second axis: it clears B3 and B10, which is
 expected, and it must NOT clear anything else.  It was `--no-inline` that
@@ -1196,6 +1197,15 @@ store's opcode as its high byte and the CPU ran the variable's address,
 put it.  The store never happened, so every DOS command repeated both
 symbol lookups.  No gate could have seen it.
 
+**The small code model too.**  G4DOS's shell is built small (`src/shell/`,
+`build/sh/`), and there the compiler reaches its outlined `?Lnnn`
+fragments with `jsr`, not `jsl`.  Every check that follows a fragment
+followed only `jsl`, so the shell's first scan reported 99 joins, 41
+saved registers read unwritten and two stray sign tests, none of them
+real; following `jsr` the same way, the build scans clean.
+`mscan_small.s` is the fixture: a join through a `jsr`ed fragment that
+must be reported, the old scan silent on it, and a control beside it.
+
 The shape to write instead: take the read out of the loop into a
 function of its own that returns the byte (`an_byte_at`), and never leave
 two stores of the same byte on two ways out of a branchy test — do the
@@ -1362,3 +1372,35 @@ The shape to write instead: a local pointer (`cmd_path`,
 `src/desk/deskcmd.c`).  Only two far pointers live in the direct page:
 `cmd_buf`, fixed, and `r1_s` in `src/vdi/dev_vbxe.c`, which is only ever
 indexed by a constant (`r1_s[0]`, `r1_s[1]`).
+
+## B27 — a `?:` of two far pointers that differ only in qualifiers is near
+
+    c_cd(h, h->argc > 1 ? ARG(h, 1) : m_root);   /* src/sys/doscmd.c */
+
+with `ARG(h, 1)` a `char __far *` and `m_root` a `const char __far []`,
+compiles to
+
+    lda ##m_root            ; the low sixteen bits, and ...
+    ...
+    stz dp:.tiny (_Dp+6)    ; ... bank $00, for whichever arm was taken
+
+-- the result is `const char *`, NEAR, and both arms are cut to their
+low word.  The same arms with the same qualifiers compile right, as do
+arms whose types differ by more than qualifiers (`void __far *` against
+`const char __far *`).  It is clang's composite type: today's clang
+computes `const char *` for the shape too, and then refuses to pass it
+to a far parameter -- where cc65816, whose front end is clang 10, widens
+it to bank $00 without a word.  Every `-O` level, since it is the type.
+
+FOUND BY: the link.  `m_root` was linked above $FFFF, and its 16-bit
+relocation could not reach it ("value 120061 is out of range").  Both
+arms in bank $00 would have linked and run with the wrong bank.
+
+The shape to write instead: an `if`, or a cast that makes the arms' types
+agree.  `qscan.py` reads every `src/**/*.c` with the host's clang, `__far`
+made an address space, and reports any `?:` whose arms are far pointers
+to one type with different qualifiers; its self-test holds the shapes
+above, the three that break and three that do not, and it found the
+doscmd.c original when the line was put back.  `make qscan` runs it
+(and `make test`): 105 files, none but that one, 2026-11-03.
+

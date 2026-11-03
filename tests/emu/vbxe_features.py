@@ -27,7 +27,7 @@ import symfile                              # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
 DISK = os.path.join(BUILD, "gem-boot.atr")
-SYMS = os.path.join(BUILD, "gem.sym")
+SYMS = os.path.join(BUILD, "gem-dos2.sym")   # a DOS 2 floppy's GEM.COM
 FEATURE_CONTROL = 0xD64B
 LEFT = 0x91                                 # PXGF | XCOLOR | GTIA palette 1
 

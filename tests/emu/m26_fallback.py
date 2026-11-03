@@ -76,7 +76,7 @@ from vbxeref import (SCR_W as VB_W, SCR_H as VB_H,   # noqa: E402
                      SHOT_X0 as VB_X0, SHOT_Y0 as VB_Y0)
 
 BUILD = os.path.join(ROOT, "build")
-SYMS = os.path.join(BUILD, "gem.sym")
+SYMS = os.path.join(BUILD, "gem-dos2.sym")   # a DOS 2 floppy's GEM.COM
 SHOTDIR = os.path.join(BUILD, "shots")
 
 # The playfield's top left in a screenshot.  The two devices do not put it

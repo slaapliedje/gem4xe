@@ -103,7 +103,7 @@ M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o buil
              build/wind.o build/ctrl.o build/menu.o build/form.o \
              build/alert.o build/gemdata.o build/lang.o build/lang_rsc.o \
              build/rsrc.o build/apppool.o
-M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/nibs.o build/g4z.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/hiprobe.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/pool.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/sdcio.o build/sdfs.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
+M3_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/nibs.o build/g4z.o build/blkmove.o build/clib.o build/m3_vdi.o build/vdi.o build/dev_vbxe.o build/pointer.o build/dev_print.o build/emit.o build/objc.o build/graf.o build/event.o build/proc.o build/appl.o build/ctx.o build/ctxs.o build/grlib.o build/form.o build/alert.o build/wind.o build/ctrl.o build/menu.o build/farmem.o build/hiprobe.o build/rapidus.o build/irq.o build/irqs.o build/seis.o build/abi.o build/abis.o build/app.o build/pool.o build/apppool.o build/cio.o build/cios.o build/dos.o build/gemdos.o build/sdcio.o build/sdfs.o build/doscmd.o build/rsrc.o build/shel.o build/scrap.o build/app_blob.o build/font8x8.o build/fillpat.o build/sintbl.o build/vbxe.o build/antic.o build/fsel.o build/fsel_rsc.o build/gemdata.o build/lang.o build/lang_rsc.o build/font.o build/clock.o build/con.o build/config.o
 
 # GEM.COM, the product (src/gem.c): the runner's objects with the runner
 # itself and its compiled-in test application taken out, linked on the
@@ -383,7 +383,7 @@ build/cios.o: src/sys/cio.s
 
 # G4DOS's disks with folders: CIO's D: from GEMDOS's own SDFS engine
 # (docs/sdfs-plan.md), the engine being the same sdfs.c test-sdfs runs.
-build/sdcio.o: src/sys/sdcio.c src/sys/sdcio.h src/sys/sdfs.h src/sys/cio.h src/sys/dos.h src/sys/clock.h
+build/sdcio.o: src/sys/sdcio.c src/sys/sdcio.h src/sys/sdfs.h src/sys/doscmd.h src/sys/cio.h src/sys/dos.h src/sys/clock.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
@@ -391,8 +391,15 @@ build/sdfs.o: src/sys/sdfs.c src/sys/sdfs.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
+# The DOS's commands -- ls, cd, cp ... -- over the same engine: G4DOS's
+# command line, and File -> DOS command where the DOS is G4DOS
+# (docs/g4dos-plan.md step 4); test-doscmd runs the same file on the host.
+build/doscmd.o: src/sys/doscmd.c src/sys/doscmd.h src/sys/sdfs.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src -o $@ $<
+
 # The DOS seam: which DOS booted, its path syntax, its listing's marks.
-build/dos.o: src/sys/dos.c src/sys/dos.h src/sys/cio.h
+build/dos.o: src/sys/dos.c src/sys/dos.h src/sys/cio.h src/sys/sdcio.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
@@ -1010,7 +1017,7 @@ build/bench-antic.atr: build/bench_antic.xex
 # ARGS=--profile says where the load's time goes.  Not a gate.
 # G4BENCH as the desktop of a DOS 2 disk, so the shell runs it straight
 # after the boot (tests/emu/g4bench.py, docs/roadmap-0.9.md).
-build/g4bench-boot.atr: build/gem.xex build/g4bench.g4a build/lang.rsc build/816.com
+build/g4bench-boot.atr: build/gem-dos2.xex build/g4bench.g4a build/lang.rsc build/816.com
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
@@ -1065,6 +1072,27 @@ build/gem.elf: $(GEM_OBJS) src/gem4xe.scm
 
 build/gem.xex: build/gem.elf
 	python3 tools/mkxex.py $< $@ --entry _atari_entry --syms build/gem.sym
+
+# GEM.COM for the floppies that boot a DOS 2 -- gem-boot.atr, gem-antic.atr,
+# g4bench-boot.atr: the product less G4DOS's half of GEMDOS (the engine,
+# CIO's D: over it and the DOS's commands, ~32 KB of far code), which runs
+# only where the DOS is G4DOS and left a 720-sector disk no room for the
+# desktop's files (src/sys/nog4.c).  Its own map and symbols: the gates
+# that boot those floppies read build/gem-dos2.sym.
+GEM_DOS2_OBJS = $(filter-out build/sdcio.o build/sdfs.o build/doscmd.o,$(GEM_OBJS)) build/nog4.o
+
+build/nog4.o: src/sys/nog4.c src/sys/sdcio.h src/sys/gemdos.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -I src -o $@ $<
+
+build/gem-dos2.elf: $(GEM_DOS2_OBJS) src/gem4xe.scm
+	$(LD) src/gem4xe.scm $(GEM_DOS2_OBJS) -o $@ $(LIB) $(LDFLAGS) --list-file build/gem-dos2.map \
+	      --memories-expression "(layout #x010000 #x7fff)"
+
+build/gem-dos2.xex: build/gem-dos2.elf
+	python3 tools/mkxex.py $< $@ --entry _atari_entry --syms build/gem-dos2.sym
+
+build/gem-dos2.sym: build/gem-dos2.xex
 
 # GEMDIAG.COM: GEM.COM with a mark before every start-up step and the
 # console keys bisecting the two things only Altirra has ever run
@@ -1434,6 +1462,37 @@ build/fdboot.o: src/fdboot.s
 build/fdos.elf: build/fdos.o src/fdos.scm
 	$(LD) src/fdos.scm $< -o $@ --list-file build/fdos.map \
 	    --memories-expression "(fdos-layout)"
+# G4DOS's shell, SHELL.SYS (src/shell, docs/g4dos-plan.md step 4): the
+# DOS's commands at a prompt, what G4DOS runs when a disk has nothing else
+# to boot and what DOSVEC comes back to.  A 65C816 program in bank $00
+# alone, so the small code and data models -- and its own build of the
+# engine and the commands, which GEM.COM has in the large code model.
+SH_CFLAGS = --code-model=small --data-model=small -O2 -I src -I src/sys
+SH_OBJS   = build/sh/shstart.o build/sh/shell.o build/sh/doscmd.o build/sh/sdfs.o
+
+build/sh/shstart.o: src/shell/shstart.s
+	@mkdir -p build/sh
+	$(AS) --code-model=small --data-model=small -o $@ $<
+
+build/sh/shell.o: src/shell/shell.c src/sys/doscmd.h src/sys/sdfs.h src/portab.h
+	@mkdir -p build/sh
+	$(CC) $(SH_CFLAGS) -o $@ $<
+
+build/sh/doscmd.o: src/sys/doscmd.c src/sys/doscmd.h src/sys/sdfs.h src/portab.h
+	@mkdir -p build/sh
+	$(CC) $(SH_CFLAGS) -o $@ $<
+
+build/sh/sdfs.o: src/sys/sdfs.c src/sys/sdfs.h src/portab.h
+	@mkdir -p build/sh
+	$(CC) $(SH_CFLAGS) -o $@ $<
+
+build/shell.elf: $(SH_OBJS) src/shell/shell.scm
+	$(LD) src/shell/shell.scm $(SH_OBJS) -o $@ clib-sc-sd.a --rtattr exit=simplified \
+	    --cstartup g4sh --list-file build/shell.map
+
+build/shell.sys: build/shell.elf tools/mkxex.py
+	python3 tools/mkxex.py $< $@ --entry __program_start --syms build/shell.sym
+
 build/fdboot.elf: build/fdboot.o src/fdos.scm
 	$(LD) src/fdos.scm $< -o $@ --list-file build/fdboot.map \
 	    --memories-expression "(fdboot-layout)"
@@ -1545,7 +1604,7 @@ DOS2_FILES = --add build/desktop.g4a DESKTOP.PRG --add build/desktop.rsc DESKTOP
 # default, and the seven sectors were what File -> DOS command cost the
 # floppy's floor (docs/shipping.md section 1).  The SpartaDOS X floppy
 # and the card carry it.
-build/gem-boot.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/m11_app.g4a build/lang.rsc build/816.com
+build/gem-boot.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc build/m11_app.g4a build/lang.rsc build/816.com
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
@@ -1554,7 +1613,7 @@ build/gem-boot.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/m11_
 # The same shipped disk with the safe-mode line uncommented: what a user
 # writes from the DOS prompt when the VBXE's output is not something
 # their monitor will show (tests/emu/m26_fallback.py).
-build/gem-antic.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/m11_app.g4a build/lang.rsc build/816.com build/safe.cfg
+build/gem-antic.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc build/m11_app.g4a build/lang.rsc build/816.com build/safe.cfg
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
@@ -1670,7 +1729,7 @@ build/gem-sd.img: build/gem-cf.img build/gemdiag.com
 # it when [spartados].sdx_cart names a cartridge.
 build/gem-sdx.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc \
                    build/lang.rsc build/gem4xe.cfg build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py \
-                   build/fdos.elf build/fdboot.elf
+                   build/fdos.elf build/fdboot.elf build/shell.sys
 	@rm -f $@
 	python3 tools/mkfloppy.py $@
 
@@ -1878,7 +1937,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-sdfs test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -1893,6 +1952,13 @@ gacs-check:
 # right; a bug that has gone away is reported so its workaround can go.
 check-cc:
 	python3 tools/ccbug/check.py --calypsi $(CALYPSI)
+
+# B27 (tools/ccbug/README.md): a ?: of two far pointers that differ only
+# in const or volatile comes out NEAR.  A source scan with the host's
+# clang, since the generated code cannot tell it from a near pointer
+# widened on purpose.
+qscan:
+	python3 tools/ccbug/qscan.py
 
 # B17's scan: every source compiled alone at -O2, looking for a call the
 # compiler reaches with an 8-bit accumulator.  Not part of `make test`,
@@ -2069,14 +2135,14 @@ test-m11-os: build/m3-boot.atr build/m11_app.sym
 
 # The high RAM taken from Rapidus OS's allocator and given back (phase 112):
 # the DOS 2 floppy, which nothing frees after, run twice without a reboot.
-test-kmem: build/gem-boot.atr build/gem.sym
+test-kmem: build/gem-boot.atr build/gem-dos2.sym
 	@test -n "$(SRC_RAPIDUS_OS)" || { echo "no Rapidus OS fixture: set [rapidus].os in fixtures.toml"; exit 1; }
 	python3 tests/emu/kmem.py --os="$(SRC_RAPIDUS_OS)"
 
 # FX 1.27's FEATURE_CONTROL cleared for the desktop and given back on the
 # way out (src/vbxe/vbxe.c): the emulated VBXE is 1.27 for this one alone,
 # whatever GEM4XE_VBXE says, and needs Altirra 4.50 test26 or later.
-test-vbxefeat: build/gem-boot.atr build/gem.sym
+test-vbxefeat: build/gem-boot.atr build/gem-dos2.sym
 	python3 tests/emu/vbxe_features.py
 
 # GEM under Rapidus OS with SpartaDOS X's 65816.SYS loaded from CONFIG.SYS
@@ -2367,7 +2433,7 @@ test-m25: build/m25-boot.atr
 # and on one without, and then the safe mode -- VIDEO=ANTIC in
 # GEM4XE.CFG beating a VBXE that works.  Nothing is typed in any of the
 # three; the disks start GEM themselves.
-test-m26: build/gem-boot.atr build/gem-antic.atr build/gem.sym
+test-m26: build/gem-boot.atr build/gem-antic.atr build/gem-dos2.sym
 	python3 tests/emu/m26_fallback.py
 
 # The desktop's writes to a disk (phase 14, milestone 7; phase 19): File
@@ -2424,10 +2490,26 @@ build/sdfs_host: src/sys/sdfs.c src/sys/sdfs.h tests/host/sdfs_host.c
 test-sdfs: build/sdfs_host build/gem-sdx.atr build/gem-apps.atr build/m14-boot.atr tools/atr.py
 	python3 tests/host/test_sdfs.py
 
+# The DOS's commands on the host, over three drives -- 256-, 128- and
+# 512-byte sectors -- every line's printing written out, the disks read
+# back by tools/atr.py (tests/host/test_doscmd.py).
+build/doscmd_host: src/sys/doscmd.c src/sys/doscmd.h src/sys/sdfs.c src/sys/sdfs.h tests/host/doscmd_host.c
+	@mkdir -p build
+	gcc -O1 -Wall -Wextra -DSDFS_HOST -I src/sys -o $@ src/sys/sdfs.c src/sys/doscmd.c tests/host/doscmd_host.c
+
+test-doscmd: build/doscmd_host tools/atr.py
+	python3 tests/host/test_doscmd.py
+
 # G4DOS's write side through CIO, and the disk read back by tools/atr.py
 # (tests/emu/fdos_write.py, tests/emu/fdwtest.s).
 # An appliance disk boots straight into its program, no desktop, no SDX
 # (tests/emu/fdos_app.py, docs/g4dos-plan.md step 1).
+# G4DOS's shell: booted, a session typed at it, a program run and come back
+# from, RESET, AUTORUN.SYS before it, and GEM quitting to it
+# (tests/emu/fdos_shell.py, docs/g4dos-plan.md step 4).
+test-fdossh: build/shell.sys build/gem-sdx.atr build/gem.sym build/fdos.elf build/fdboot.elf tools/mkfloppy.py tools/atr.py
+	python3 tests/emu/fdos_shell.py
+
 test-fdosapp: build/gem-appliance.atr build/gem.sym
 	python3 tests/emu/fdos_app.py
 
@@ -2551,4 +2633,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-sdfs test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

@@ -15,6 +15,7 @@
 #include "portab.h"
 #include <string.h>
 #include "sdfs.h"
+#include "doscmd.h"
 #include "sdcio.h"
 #include "cio.h"
 #include "dos.h"
@@ -23,6 +24,7 @@
 #include "irq.h"
 #include "pool.h"
 #include "zwin.h"
+#include "gemdos.h"
 
 /* ---- G4DOS's sector entry (src/fdos.s, fd_xsec) ------------------------ */
 #define G4_UNIT   (*(volatile uint8_t *)0x0708)
@@ -39,6 +41,7 @@
 #define SDC_LINES  2                 /* a directory, as DOS 2's lines */
 #define SDC_RAW    3                 /* a directory, as its own entries */
 
+#define SDC_COLS   80                 /* the command window's width (deskcmd.c) */
 #define SDC_PATH   (CIO_NAME_MAX + 16)   /* a path, with a folder put before it */
 #define SDC_PAT    14
 
@@ -66,6 +69,11 @@ typedef struct {
     SD_INFO  info;
     uint16_t devsec[SD_UNITS];      /* what each drive said its sectors are:
                                        0 not asked, $FFFF it could not say */
+    uint32_t cout;                  /* sdc_command: where its output goes */
+    uint16_t cleft;                 /* ...and how much more there is room for */
+    DC_STATE dc;                    /* the DOS's commands, between calls: their
+                                       drive and folders persist, as a DOS's
+                                       prompt keeps them */
     SDFS     fs;
 } SDC_STATE;
 
@@ -202,6 +210,7 @@ void sdc_init(void)
         sc->io[i].kind = 0;
     for (i = 0; i < SD_UNITS; i++)
         sc->devsec[i] = 0;
+    dc_init(&sc->dc, FS, SDC_COLS, 0);
     dos.caps |= DOS_CAP_DIRS | DOS_CAP_RAWDIR | DOS_CAP_STAMPS;
     /* ...and no drive map.  G4DOS's DRVBYT says D1: and D2: for what reads
      * it before GEM, but the engine reaches any unit, so Dprobe asks all
@@ -664,4 +673,66 @@ uint8_t sdc_xio(uint8_t cmd, const char *name)
         return 0x92;                /* not something this DOS does */
     }
     return e < 0 ? sdc_st(e) : CIO_OK;
+}
+
+/* ---- the DOS's commands ---------------------------------------------------
+ * File -> DOS command and Psystem, as SpartaDOS X's XCOMLI serves them
+ * elsewhere (src/sys/dos.c): the same commands G4DOS's own shell runs at
+ * its prompt, printing into the caller's far buffer.  The window shows
+ * eighty columns (src/desk/deskcmd.c) and scrolls, so more never waits.
+ * What they cannot do under GEM is run a DOS program, which would take
+ * the machine, or start it again. */
+static const char FAR m_quitgem[] = "quit GEM to run it";
+static const char FAR m_noreboot[] = "quit GEM first";
+
+void dc_out(DC_STATE FAR *h, const char FAR *s, uint16_t n)
+{
+    uint32_t at = sc->cout;
+    uint16_t i;
+
+    (void)h;
+    if (n > sc->cleft)
+        n = sc->cleft;
+    for (i = 0; i < n; i++) {           /* by address: the buffer may
+                                         * cross a bank (farmem.h) */
+        *(uint8_t FAR *)at = (uint8_t)s[i];
+        at++;
+    }
+    sc->cout = at;
+    sc->cleft -= n;
+}
+
+int16_t dc_key(DC_STATE FAR *h)
+{
+    (void)h;
+    return -1;
+}
+
+int16_t dc_exec(DC_STATE FAR *h, uint8_t unit, const char FAR *path)
+{
+    (void)unit;
+    (void)path;
+    dc_say(h, 0, m_quitgem);
+    return SD_EACCDN;
+}
+
+int16_t dc_reboot(DC_STATE FAR *h)
+{
+    dc_say(h, 0, m_noreboot);
+    return SD_EACCDN;
+}
+
+int32_t sdc_command(uint32_t line, uint32_t out, uint32_t max)
+{
+    uint16_t room;
+
+    if (!sc)
+        return GD_EINVFN;
+    if (!line)
+        return 0;
+    room = max > 0xFFFFUL ? 0xFFFF : (uint16_t)max;
+    sc->cout = out;
+    sc->cleft = room;
+    dc_run(&sc->dc, (const char FAR *)line);
+    return (int32_t)(room - sc->cleft);
 }

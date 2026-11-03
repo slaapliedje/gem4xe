@@ -99,6 +99,15 @@ from m17_desktop import (header, listing, menu, rsc_imlen, deskicon_for,  # noqa
 BUILD = os.path.join(ROOT, "build")
 SYMS = os.path.join(BUILD, "gem.sym")
 ELF = os.path.join(BUILD, "gem.elf")
+
+
+def gem_build(name):
+    """The GEM.COM a floppy carries: a DOS 2 floppy's is the product less
+    G4DOS's half of GEMDOS (src/sys/nog4.c), with its own symbols."""
+    return "gem-dos2" if name in DOS2_DISKS else "gem"
+
+
+DOS2_DISKS = ("gem-boot.atr", "gem-antic.atr", "g4bench-boot.atr")
 # two lines now: the system lives in \GEM\ on the install disk
 BOOT_LINE = b"CD >GEM\x9bGEM\x9b"
 COLDST = 0x0244                 # the OS: non-zero at RESET means come up cold
@@ -308,10 +317,11 @@ def check_boot(name, report, gtia, b, syms, check):
 
 def one(name, progname, how, batches, cart, keep, check):
     disk = os.path.abspath(os.path.join(BUILD, name))
-    syms = symfile.load(SYMS)
-    segs, _ = mkxex.read_elf(ELF)
+    base = gem_build(name)
+    syms = symfile.load(os.path.join(BUILD, base + ".sym"))
+    segs, _ = mkxex.read_elf(os.path.join(BUILD, base + ".elf"))
     far = sorted((a, d) for a, d in segs if a > 0xFFFF)
-    chunk = symfile.load(SYMS)["_fl_end"] - symfile.load(SYMS)["_fl_buf"]
+    chunk = syms["_fl_end"] - syms["_fl_buf"]
 
     # -- the disk, before anything boots it ---------------------------------
     img = atr.ATRImage.load(disk)
@@ -338,9 +348,9 @@ def one(name, progname, how, batches, cart, keep, check):
     # Every product floppy is the system and nothing else since phase 42:
     # the applications and the desk accessory are on gem-apps.atr, which
     # apps_disk() reads (docs/media.md).
-    want = ({"GEM>GEM.COM": "gem.xex", "GEM>DESKTOP.PRG": "desktop.g4a",
+    want = ({"GEM>GEM.COM": base + ".xex", "GEM>DESKTOP.PRG": "desktop.g4a",
              "GEM>DESKTOP.RSC": "desktop.rsc", "GEM>LANG.RSC": "lang.rsc"} if sdfs else
-            {progname: "gem.xex", "DESKTOP.PRG": "desktop.g4a",
+            {progname: base + ".xex", "DESKTOP.PRG": "desktop.g4a",
              "DESKTOP.RSC": "desktop.rsc", "LANG.RSC": "lang.rsc"})
     strays = sorted(n for n in listed if n.startswith("APPS") or n.endswith(".ACC")
                     or (n.endswith(".G4A") and n not in want))

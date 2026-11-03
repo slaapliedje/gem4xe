@@ -187,7 +187,11 @@ def scan(path):
 M_IMM = re.compile(r"^\s+(lda|adc|sbc|cmp|and|ora|eor|bit)\s+(##?)", re.I)
 SEPREP = re.compile(r"^\s+(sep|rep)\s+#(\S+)", re.I)
 INSN = re.compile(r"^\s+([a-z]{3})\b", re.I)
-JSL = re.compile(r"^\s+jsl\s+(?:long:)?`?([\w?.$]+)`?", re.I)
+# a call: `jsl` in the large code model, `jsr` in the small one (the
+# shell, src/shell/, build/sh/) -- the compiler's outlined `?Lnnn`
+# fragments are reached either way
+JSL = re.compile(r"^\s+js[lr]\s+(?:long:)?`?([\w?.$]+)`?", re.I)
+CALLS = ("jsl", "jsr")
 BR = re.compile(r"^\s+(bra|beq|bne|bcc|bcs|bmi|bpl|bvc|bvs|brl|jmp)\s+"
                 r"(?:\.kbank\s+|long:)?`?([\w?.$]+)`?", re.I)
 W, N = "16", "8"
@@ -244,7 +248,7 @@ def _reach(path):
                     return None
                 elif op in ("rtl", "rts"):
                     return width
-                elif BR.match(text) or op == "jsl":
+                elif BR.match(text) or op in CALLS:
                     return None
             i += 1
         return None
@@ -280,7 +284,7 @@ def _reach(path):
             ws = {N} if sr.group(1).lower() == "sep" else {W}
         elif op == "plp":
             ws = set()                     # unknown: say nothing after it
-        elif op == "jsl":
+        elif op in CALLS:
             m = JSL.match(text)
             tgt = m.group(1) if m else ""
             if tgt.startswith("?") and tgt in at:
@@ -478,7 +482,7 @@ def stray_sign(path):
                 m8 = True
             elif op == "rep" and arg in ("#32", "#48", "#0x20", "#0x30"):
                 m8 = False
-            elif op == "jsl":
+            elif op in CALLS:
                 f = re.search(r"`([^`]*)`", arg)
                 if f and f.group(1) in frags:
                     m8 = after(f.group(1), m8)
@@ -539,7 +543,7 @@ def unset_saved(path):
     def expand(seq, depth=0):
         for op, arg, n in seq:
             m = re.search(r"`([^`]*)`", arg)
-            if op == "jsl" and m and m.group(1) in frags and depth < 3:
+            if op in CALLS and m and m.group(1) in frags and depth < 3:
                 yield from expand(frags[m.group(1)], depth + 1)
             yield op, arg, n
 

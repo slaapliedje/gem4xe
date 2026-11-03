@@ -34,7 +34,7 @@ import symfile                                # noqa: E402
 import product_boot                           # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(HERE, "..", "..", "build"))
-SYMS = symfile.load(os.path.join(BUILD, "gem.sym"))
+SYMS = {b: symfile.load(os.path.join(BUILD, b + ".sym")) for b in ("gem", "gem-dos2")}
 PROF = "--profile" in sys.argv
 STEP = 5
 
@@ -46,7 +46,7 @@ def cpu(b):
 def phase_b_profile(b, frames):
     b.ok("PROFILE_STOP")
     r = b.ok("PROFILE_DUMP top=4096")
-    lo, hi = SYMS["_fl_copy"] & 0xFFFF, 0x9B88
+    lo, hi = SYMS["gem"]["_fl_copy"] & 0xFFFF, 0x9B88
     cyc = collections.Counter()
     for h in r["hot"]:
         a = int(str(h["addr"]).lstrip("$"), 16)
@@ -73,7 +73,8 @@ def phase_b_profile(b, frames):
 
 def one(label, name, cart):
     """name is the floppy in D1, or None; cart is a .car, or None."""
-    size = os.path.getsize(os.path.join(BUILD, "gem.xex"))
+    base = product_boot.gem_build(name) if name else "gem"
+    size = os.path.getsize(os.path.join(BUILD, base + ".xex"))
     args = ["--disk", os.path.join(BUILD, name)] if name else []
     emu = launch(tag="benchboot", memsize="1088K",
                  extra_args=args + (["--cart", cart] if cart else []))
@@ -93,7 +94,7 @@ def one(label, name, cart):
         bb = f - a
         if PROF:
             phase_b_profile(b, bb)
-        calls = SYMS["app_calls"]
+        calls = SYMS[base]["app_calls"]
         n, still, last = b.peek16(calls), 0, f
         while f < 40000:
             b.frames(STEP)

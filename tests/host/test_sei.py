@@ -29,6 +29,8 @@ ALLOWED = {
     ("src/crt_atari.s", "_sys_exit"): "I is already set: irq_remove ran",
     ("src/farload.s", "fl_probe_dst"): "emulation mode, before the XCE",
     ("src/sys/cio.s", "cio_back"): "emulation mode, after the OS call",
+    ("src/shell/shstart.s", "__program_start"): "emulation mode, before the XCE",
+    ("src/shell/shstart.s", "sh_call"): "emulation mode, after the OS call",
 }
 
 SEI = re.compile(r"^\s*(?:[A-Za-z_.$0-9]+:)?\s*(sei|sep\s+#(0x)?([0-9a-fA-F]+))\b",

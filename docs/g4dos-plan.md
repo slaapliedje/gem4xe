@@ -111,19 +111,19 @@ Everything that branches on the DOS (`src/sys/dos.c`, `gemdos.c`,
 | what | SpartaDOS X gives it by | on G4DOS today | the plan |
 |---|---|---|---|
 | files and folders: paths, listings with stamps, rename, lock, make and remove folders, free space | CIO, its own SDFS | **done**: gem4xe's engine behind CIO's `D:` | -- |
-| loading GEM.COM | `X.COM` / the command line | G4DOS's loader, `D1:GEM.COM` | -- |
+| loading GEM.COM | `X.COM` / the command line | G4DOS's loader: GEM.COM, else AUTORUN.SYS, else the shell | -- |
 | loading programs, resources, fonts | CIO | the engine | -- |
-| a command line: GEMDOS `Psystem`, the desktop's *File -> DOS command* | XCOMLI, its command processor (`dos_command`) | **nothing** | the shell's command set, built into gem4xe as well (step 4) |
+| a command line: GEMDOS `Psystem`, the desktop's *File -> DOS command* | XCOMLI, its command processor (`dos_command`) | **done**: the shell's commands, built into gem4xe as well (step 4) | -- |
 | the clock | `kd_gettd` / `kd_settd`, through whichever driver is loaded | gem4xe reads the U1MB's and the SIDE's itself | the other clocks read by gem4xe too (step 6) |
-| which drives there are | probed by listing each | DRVBYT says D1: and D2: | probe D1:-D8: (step 2) |
-| sector sizes | 128, 256, 512 | 128 and 256 | 512, which APT partitions use (step 3) |
-| leaving GEM | its prompt | a cold start: the disk boots again | -- (an appliance wants exactly that) |
+| which drives there are | probed by listing each | **done**: Options -> Install devices probes D1:-D8: | -- |
+| sector sizes | 128, 256, 512 | 128, 256 and, under GEM, 512 | 512 before GEM too (step 8) |
+| leaving GEM | its prompt | **done**: the shell's prompt; an appliance, with no shell, starts its program again | -- |
 | memory | MEMLO `$1C1D`, and banks of its own | MEMLO `$2000`, every extended bank gem4xe's | -- (already better) |
 
 The pattern is the folders' one ([sdfs-plan.md](sdfs-plan.md)):
 **G4DOS keeps only what must exist before gem4xe or without it** -- the
-boot, the loader, sector I/O -- because it is full: 4,769 bytes of code
-with 4 to spare, and `$2000` is gem4xe's direct page.  Everything else
+boot, the loader, sector I/O -- because it is full: 4,763 bytes of code
+with 10 to spare, and `$2000` is gem4xe's direct page.  Everything else
 is gem4xe's, in far memory, written in C until measuring says otherwise.
 
 ## Speed
@@ -201,14 +201,29 @@ Each says how it is tested.
    image (every check fails with the drive's answer ignored).  **Left**:
    G4DOS itself on a 512-byte disk, before GEM is up -- what booting from
    a partition needs (step 8).
-4. **The shell**, its command line first: the commands above over the
-   engine, printing to the screen when it runs alone and into the far
-   buffer XCOMLI's output goes to when gem4xe's *File -> DOS command*
-   runs them.  G4DOS's loader runs the boot file (`GEM.COM`, else
-   `AUTORUN.SYS`, else the shell) and DOSVEC loads the shell.  *Gates*:
-   a G4DOS disk with the shell boots to its prompt and a scripted session
-   is checked against the disk afterwards; the desktop's command window
-   runs the same commands.  The menu face comes after the command line.
+4. **The shell**, its command line first.  **Built 2026-11-03.**  The
+   commands are `src/sys/doscmd.c`, portable C over the engine: `ls
+   [-l]`, `cd`, `pwd`, `cp`, `mv`, `rm`, `mkdir`, `rmdir`, `cat`, `more`,
+   `df`, `help`, `reboot`, and `DIR`, `COPY`, `REN`, `DEL`, `TYPE`,
+   `CHKDSK` beside them; `/`, `>` and `\` between folders, `..`, and
+   `*` and `?`.  gem4xe runs them for *File -> DOS command* and
+   `Psystem` where the DOS is G4DOS (`src/sys/sdcio.c`), printing into
+   the desktop's far buffer; `SHELL.SYS` (`src/shell/`) runs them at a
+   prompt.  G4DOS's loader runs `GEM.COM`, else `AUTORUN.SYS`, else the
+   shell, and DOSVEC the shell first (`docs/fdos.md`, *The loader*);
+   `$0703` runs the one program the shell names.  The room for that came
+   out of G4DOS itself.  Three things it cost: the commands are 12 KB of
+   GEM.COM's far code, which with the engine and the shim put the DOS 2
+   floppy past its floor -- so a DOS 2 floppy's GEM.COM is the product
+   less G4DOS's half (`src/sys/nog4.c`, `build/gem-dos2.xex`); a `?:`
+   between two far pointers that differ only in `const` turned out to be
+   near (cc65816 B27, `make qscan`); and the shell is 27 KB, loaded again
+   after every program.  *Gates*: `test-doscmd` on the host, three drives
+   of 128-, 256- and 512-byte sectors, every line's printing written out;
+   `test-fdos`, the desktop's command window; `test-fdossh`, the shell
+   booted, a session typed at it, a program run and come back from,
+   RESET, AUTORUN.SYS, and GEM quitting to it.  **Next**: the menu face;
+   the shell smaller and quicker to load; a program's command line.
 5. **High-speed SIO in G4DOS**, as above.  *Gate*: `make bench-boot`,
    and the floppy on the MiSTer core under both OSes.
 6. **More clocks**: FujiNet's `APETIME` and an R-Time 8, read by

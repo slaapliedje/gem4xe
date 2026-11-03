@@ -27,7 +27,8 @@ Three pieces:
 | | |
 |---|---|
 | `src/fdboot.s` | the boot sectors.  The OS loads sectors 1-3 to `$3000` and calls `$3006`; this follows the superblock's boot-file map (+40, the field a SpartaDOS's own boot sectors follow) and reads `G4DOS.SYS` to `$0700`, sector by sector in the map's order.  Sector 1 is the superblock and its fields are untouched; the code is sectors 2 and 3, and sector 1 from +48, where a SpartaDOS keeps boot code too. |
-| `src/fdos.s` | `G4DOS.SYS`, 4,769 bytes at `$0700`.  A CIO `D:` handler over SDFS, reading and writing, a loader that runs `D1:GEM.COM`, and a sector entry for gem4xe's own SDFS engine (*Folders*, below).  The OS calls it as DOSINI after the boot and after every RESET, and jumps through DOSVEC to the loader. |
+| `src/fdos.s` | `G4DOS.SYS`, 4,763 bytes at `$0700`.  A CIO `D:` handler over SDFS, reading and writing, a loader (*The loader*, below), and a sector entry for gem4xe's own SDFS engine (*Folders*, below).  The OS calls it as DOSINI after the boot and after every RESET, and jumps through DOSVEC to the loader. |
+| `src/shell/` | `SHELL.SYS`, G4DOS's shell: a prompt and the DOS's commands (`src/sys/doscmd.c`), over the same SDFS engine gem4xe uses -- what the loader runs when a disk has nothing else to boot, and what DOSVEC comes back to (*The shell*, below). |
 | `tools/atr.py`, `tools/mkfloppy.py` | `Sdfs.boot_gem4xe` writes the header, the boot code and the boot file onto a floppy; `mkfloppy.py` does it for the system disk.  The applications and QED disks keep the message instead: booted alone they say they have no DOS and name the system disk. |
 
 ### What a program sees
@@ -148,18 +149,69 @@ data and the map page of the file being written, and a bitmap sector.
 ### What it costs
 
 Bank $00 from `$0700` to `$1FFF`, MEMLO `$2000`: the handler, the
-loader and the sector entry, 4,769 bytes; their variables, 347; five
+loader and the sector entry, 4,763 bytes; their variables, 347; five
 sector buffers at `$1B00`.  That is the ceiling.  gem4xe's direct page
 is `$2000` (`src/gem4xe.scm`) and nothing GEM.COM loads is below
 `$3000`, so it still costs gem4xe nothing -- but the three memories in
-`src/fdos.scm` are full to within four bytes, which is why the folders are
+`src/fdos.scm` are full to within ten bytes, which is why the folders are
 gem4xe's and not G4DOS's.  For scale: a
 DOS 2.5 leaves MEMLO at `$1CFC`, SpartaDOS X at `$1C1D`, a SpartaDOS 3.2
 near `$2000`.
 
-When GEM quits there is no DOS to go back to, so DOSVEC is the OS's cold
-start and the machine boots the disk again.  RESET runs DOSINI, which
-puts the handler back and points DOSVEC at the loader: GEM loads again.
+Four bytes was not room for the loader below and its list of names; it
+was found by sharing four tails said twice and three times (a file's
+cursor rewound, a tag let go) and by clearing the variables that start
+known in one loop -- which is why `fd_mode`, the tags and the bitmap's
+are the first bytes of `fdbss`, in that order.  Ten bytes are spare now.
+
+## The loader
+
+DOSVEC goes to the loader, which runs a file in the Atari's binary format
+by `src/cart.s`'s rules -- INITAD after every segment, RUNAD at the end --
+and calls RUNAD as a subroutine, so that a program that ends in an RTS
+comes back to DOSVEC as one that jumps there does.  WHICH file:
+
+- **at a cold start**, `GEM.COM`, else `AUTORUN.SYS`, else `SHELL.SYS` --
+  the system or an appliance, a disk with one program on it as DOS 2 had,
+  a DOS to work in;
+- **through DOSVEC after that** -- a program done, GEM quit, a RESET --
+  the shell first, then the same list: a disk with no shell (an
+  appliance) starts its program again;
+- **at `$0703`**, the shell's own entry: the one file named at X and Y.
+
+A name is looked for as G4DOS looks for any: the root, then each folder
+in it.  WARMST tells `fd_install` a cold start from a RESET.  The name
+being loaded goes on the screen with a dot a segment after it; a list
+with nothing on the disk, or a file that is not a program, says `load
+failed` and stops, and RESET is the way out.
+
+## The shell
+
+`SHELL.SYS` (`src/shell/shell.c`, `shstart.s`) is the DOS's commands at a
+prompt -- the same `src/sys/doscmd.c` gem4xe runs for *File -> DOS
+command* -- a 65C816 program in bank $00 alone, small code and data
+models, entered by the loader in emulation mode and running native with
+the OS's interrupts off between its calls into the OS, as the Calypsi
+board support for the Atari does.  Its sectors go through G4DOS's sector
+entry, which keeps G4DOS's own buffers true, and a 512-byte one through
+the OS's SIO.
+
+- It **moves the OS's screen** to the top of the 48 KB first: the OS put
+  it under `$A000` at the cold start, while BASIC was in, which is where
+  the shell's variables go.  G4DOS has taken BASIC out by then, so
+  `$A000`-`$BFFF` is RAM -- tried at `$BFFF` -- and RAMTOP becomes `$C0`
+  with the editor opened again, as a boot with OPTION held leaves it.
+- A **program** is run by naming it to the loader at `$0703`, which can
+  load over the shell where the shell could not.  So it runs only if
+  G4DOS's own search would find that very file: in the root, or one
+  folder down with no file of its name in the root or an earlier folder.
+  Deeper waits for G4DOS's handler to follow paths (the plan's step 9).
+- **Where it is outlasts a program**: the drive and its folder go into
+  the cassette buffer (`$0400`) after every line, marked and summed, and
+  the shell DOSVEC loads next starts there.
+- It is **27 KB** -- the engine and the commands, built for bank $00 --
+  and loaded again after every program, as DUP.SYS was.  Making it small
+  and fast to load is for later: the features first, on the 65C816.
 
 ## The gates
 
@@ -172,6 +224,16 @@ puts the handler back and points DOSVEC at the loader: GEM loads again.
   in its root and passes `atr.Sdfs.check()`; D2:'s `APPS` folder opened
   lists `EDIT.PRG`, and double-clicked it runs.  The same disk built
   without the DOS fails at the boot.
+- `make test-fdossh` (`tests/emu/fdos_shell.py`): the shell.  A disk with
+  G4DOS and `SHELL.SYS` and no GEM.COM boots to its prompt; a session typed
+  at it -- listing, folders, a file shown, made, copied, moved and deleted,
+  the refusals -- is read off the screen line by line; a program one
+  folder down runs by its bare name, RETURNS, and the shell is back in
+  the folder it was run from; RESET comes back to it; and the working
+  copy of the disk is checked with `tools/atr.py`.  The same disk with
+  an `AUTORUN.SYS` boots that instead; and GEM's File -> Quit on the
+  system floppy comes back to the shell.  With the loader's RUNAD a jump
+  again, it fails three ways.
 - `make test-m15g` (`tests/emu/m15_gdos.py --g4dos`): GEMDOS's own gate
   on a G4DOS disk, the conformance runner as `GEM.COM` -- every call
   against the disk image, down the tree, writes included -- and the

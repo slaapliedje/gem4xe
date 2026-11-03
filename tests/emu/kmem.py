@@ -43,7 +43,7 @@ DISK = os.path.join(BUILD, "gem-boot.atr")
 FENCED = os.path.join(BUILD, "kmem-highram.atr")
 HIGHRAM = (0x10, 0x1F)
 CFG_TEXT = "HIGHRAM = $10-$1F   ; the fence\x9b".encode("latin-1")
-SYMS = os.path.join(BUILD, "gem.sym")
+SYMS = os.path.join(BUILD, "gem-dos2.sym")   # a DOS 2 floppy's GEM.COM
 LOSEGM, HISEGM = 0x024D, 0x024E
 MEMORY = "Memory"                           # the boot screen's label (LANG.RSC)
 

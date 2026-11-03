@@ -13,6 +13,7 @@
 #include "cio.h"
 #include "app.h"
 #include "farmem.h"
+#include "sdcio.h"
 #include "hiprobe.h"
 #include "gemdos.h"
 #include "vbxe/vbxe.h"
@@ -328,6 +329,8 @@ int32_t dos_command(uint32_t line, uint32_t out, uint32_t max)
     uint16_t memlo, memtop, was, i;
     uint8_t handle;
 
+    if (dos.kind == DOS_G4DOS)          /* gem4xe's own commands */
+        return sdc_command(line, out, max);
     if (!sdx_asked)
         sdx_lookup();
     if (!sdx_xcomli || !sdx_putv)

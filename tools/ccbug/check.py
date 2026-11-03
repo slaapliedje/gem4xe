@@ -293,6 +293,11 @@ def main():
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b24d.s")
     fixtures["B24 mscan finds a saved register read unwritten"] = (
         len(list(_mscan.unset_saved(_fix))), 2)
+    # ...and the small code model's: fragments reached with `jsr` (the
+    # shell's build), one join through one, a control beside it.
+    _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_small.s")
+    fixtures["B21 mscan follows a small-model fragment"] = (
+        len(_mscan.joins(_fix)), 1)
     # ...and B12's: the compiler's own -O1 assembly, one wrong-bit shift
     # and an unsigned control beside it that must stay silent.
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b12.s")

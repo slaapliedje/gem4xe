@@ -46,7 +46,7 @@ COUNTS = [200, 200, 100, 50, 50, 20, 20, 20, 20, 50, 50, 50, 50, 50, 100, 20, 10
 
 
 def run(screen):
-    gsym = symfile.load(os.path.join(BUILD, "gem.sym"))
+    gsym = symfile.load(os.path.join(BUILD, "gem-dos2.sym"))   # a DOS 2 floppy's
     bsym = symfile.load(os.path.join(BUILD, "g4bench.sym"))
     link_near, = struct.unpack("<H", mkg4a.read_file(G4A)[4:6])
     emu = launch(tag=f"g4bench-{screen}", memsize="1088K", vbxe=(screen == "vbxe"),

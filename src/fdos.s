@@ -13,8 +13,10 @@
 ;;; HOW IT GETS HERE.  The disk's boot sectors (src/fdboot.s) follow the
 ;;; sector map the superblock names as its boot file -- G4DOS.SYS, this --
 ;;; and load it to $0700.  The OS then calls DOSINI, which is fd_install,
-;;; and jumps through DOSVEC, which fd_install pointed at fd_run: the
-;;; loader, which opens D1:GEM.COM through this handler and runs it.
+;;; and jumps through DOSVEC, which fd_install pointed at fd_boot: the
+;;; loader, which runs the disk's GEM.COM, or else its AUTORUN.SYS, or else
+;;; the shell, SHELL.SYS (src/shell/shell.c) -- and from then on DOSVEC is
+;;; the shell's: a program done, or a RESET, comes back to it.
 ;;; SpartaDOS X never runs a disk's boot sectors, so under SDX the same
 ;;; floppy is the ordinary SDFS disk it always was.
 ;;;
@@ -48,11 +50,12 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
 
-              .public fd_install, fd_run, fd_top, fd_image_end
+              .public fd_install, fd_boot, fd_dos, fd_exec, fd_top, fd_image_end
 
 HATABS:       .equ    0x031a
 MEMLO:        .equ    0x02e7
 DOSVEC:       .equ    0x000a
+WARMST:       .equ    0x0008          ; 0 at a cold start, $FF at a RESET
 RUNAD:        .equ    0x02e0
 INITAD:       .equ    0x02e2
 COLDSV:       .equ    0xe477
@@ -150,7 +153,7 @@ S_LOCKED:     .equ    0x01
 ;;; ---------------------------------------------------------------------------
               .section fdcode, root
 fd_base:      jmp     fd_install      ; $0700: DOSINI
-              jmp     fd_run          ; $0703
+              jmp     fd_exec         ; $0703: the shell's: run a file
               .byte   'G', '4'        ; $0706: G4DOS, to gem4xe (src/sys/dos.c)
 fd_xunit:     .byte   0               ; $0708: fd_xsec's unit
 fd_xmode:     .byte   0               ; $0709: ...and what it is to do
@@ -171,6 +174,9 @@ fd_xsect:     .word   0               ; $070E: ...which one
 ;;; BASICF says so, which keeps it out across a warm start too.  Nothing
 ;;; on this disk wants BASIC.  (phase 119; test-fdos found it when the
 ;;; emulator's held OPTION stopped covering the second cold start)
+;;;
+;;; WHERE DOSVEC GOES: at a cold start the boot's order, at a RESET the
+;;; shell's (the loader, below).  WARMST is the OS's word for which.
 ;;; ---------------------------------------------------------------------------
 fd_install:   lda     PORTB
               ora     #0x02
@@ -194,32 +200,25 @@ fd_install:   lda     PORTB
               sta     HATABS+1,x
               lda     #.byte1 fd_table
               sta     HATABS+2,x
-              ldx     #7
-              lda     #M_CLOSED
-40$:          sta     fd_mode,x
-              dex
-              bpl     40$
+              ldx     #fd_zero_end-fd_mode-1
+              lda     #0              ; every IOCB closed (M_CLOSED is 0), no
+40$:          sta     fd_mode,x       ; sector named by either tag, none of
+              dex                     ; the bitmap in hand, nothing owed to
+              bpl     40$             ; the free count: fdbss's first bytes
+              sta     MEMLO           ; fd_top, $2000 (src/fdos.scm): A is
+              lda     #.byte1 fd_top  ; its low byte already
+              sta     MEMLO+1
               lda     #0xff
               sta     fd_cur
               sta     fd_wslot        ; nothing being written
-              lda     #0
-              sta     fd_bmsec        ; no bitmap sector in hand
-              sta     fd_bmsec+1
-              sta     fd_bmdirty
-              sta     fd_fdelta
-              sta     fd_fdelta+1
-              sta     fd_mtag+1
-              sta     fd_mtag+2
-              sta     fd_dtag+1
-              sta     fd_dtag+2
-              lda     #.byte0 fd_top
-              sta     MEMLO
-              lda     #.byte1 fd_top
-              sta     MEMLO+1
-              lda     #.byte0 fd_run
-              sta     DOSVEC
-              lda     #.byte1 fd_run
-              sta     DOSVEC+1
+              ldx     #.byte0 fd_boot
+              ldy     #.byte1 fd_boot
+              lda     WARMST
+              beq     50$
+              ldx     #.byte0 fd_dos
+              ldy     #.byte1 fd_dos
+50$:          stx     DOSVEC
+              sty     DOSVEC+1
               rts
 
 ;;; ---------------------------------------------------------------------------
@@ -332,10 +331,7 @@ fd_byte:      lda     fd_c+C_REM
               jsr     fd_secsz
               cmp     fd_c+C_POS      ; past the sector's end: 0 for 256 (the
               bne     50$             ; increment wrapped), $80 for 128
-              lda     #0
-              sta     fd_c+C_SEC
-              sta     fd_c+C_SEC+1
-              sta     fd_c+C_POS
+              jsr     fd_secdone
 50$:          lda     fd_c+C_REM
               sec
               sbc     #1
@@ -443,11 +439,7 @@ fd_opendir:   lda     fd_unit
               sta     fd_c+C_MAP
               lda     ZP_T+1
               sta     fd_c+C_MAP+1
-              lda     #0
-              sta     fd_c+C_IDX
-              sta     fd_c+C_SEC
-              sta     fd_c+C_SEC+1
-              sta     fd_c+C_POS
+              jsr     fd_rewind
               lda     #0xff
               sta     fd_c+C_REM
               sta     fd_c+C_REM+1
@@ -589,9 +581,7 @@ fd_super:     lda     #1
               sta     ZP_P
               lda     #.byte1 fd_dbuf
               sta     ZP_P+1
-              lda     #0
-              sta     fd_dtag+1       ; the data buffer is the superblock now
-              sta     fd_dtag+2
+              jsr     fd_dforget
               lda     #0x80
               jsr     fd_sio
               bcs     90$
@@ -693,11 +683,7 @@ fd_open:      jsr     fd_slot
               sta     fd_c+C_REM+1
               lda     fd_ent+E_SIZE+2
               sta     fd_c+C_REM+2
-              lda     #0
-              sta     fd_c+C_IDX
-              sta     fd_c+C_SEC
-              sta     fd_c+C_SEC+1
-              sta     fd_c+C_POS
+              jsr     fd_rewind
               ldx     ZP_SLOT
               lda     #M_FILE
               sta     fd_mode,x
@@ -936,10 +922,7 @@ fd_burst:
               jsr     fd_secsz
               cmp     fd_c+C_POS      ; at its end: 0 (wrapped) or $80
               bne     75$
-70$:          lda     #0
-              sta     fd_c+C_SEC
-              sta     fd_c+C_SEC+1
-              sta     fd_c+C_POS
+70$:          jsr     fd_secdone
 75$:          jmp     10$
 99$:          rts
 
@@ -1161,9 +1144,7 @@ fd_dread:     lda     fd_unit
               bne     10$
               clc
               rts
-10$:          lda     #0
-              sta     fd_dtag+1
-              sta     fd_dtag+2
+10$:          jsr     fd_dforget
               jsr     fd_dptr
               jsr     fd_usz
               jsr     fd_sio
@@ -1265,9 +1246,7 @@ fd_bmget:     lda     fd_bmunit
               rts
 10$:          jsr     fd_bmflush
               bcs     90$
-              lda     #0
-              sta     fd_bmsec
-              sta     fd_bmsec+1
+              jsr     fd_bforget
               lda     fd_bmwant
               sta     ZP_T
               lda     fd_bmwant+1
@@ -1434,9 +1413,7 @@ fd_sync:      jsr     fd_bmflush
               lda     fd_fdelta
               ora     fd_fdelta+1
               beq     80$
-              lda     #0              ; fd_bmbuf holds sector 1 for a moment
-              sta     fd_bmsec
-              sta     fd_bmsec+1
+              jsr     fd_bforget
               lda     #1
               sta     ZP_T
               lda     #0
@@ -2219,9 +2196,7 @@ fd_xsec:      bit     fd_xmode
               lda     fd_xsect+1
               sta     fd_s+1
               jsr     fd_dptr
-              lda     #0
-              sta     fd_dtag+1
-              sta     fd_dtag+2
+              jsr     fd_dforget
               lda     fd_xmode
               lsr     a               ; bit 0, the direction, into carry
               lda     fd_xmode
@@ -2232,9 +2207,7 @@ fd_xsec:      bit     fd_xmode
               jmp     fd_dtagit
 10$:          jsr     fd_wsio
               bcs     30$
-              lda     #0              ; whatever bitmap sector G4DOS had is
-              sta     fd_bmsec        ; read again when it next wants one
-              sta     fd_bmsec+1
+              jsr     fd_bforget
               jmp     fd_dtagit
 30$:          rts
 90$:          lda     #.byte0 fd_dbuf
@@ -2242,83 +2215,119 @@ fd_xsec:      bit     fd_xmode
               rts
 
 ;;; ---------------------------------------------------------------------------
-;;; fd_run -- DOSVEC: D1:GEM.COM, loaded and run, by src/cart.s's rules
-;;; (cart_boot): call INITAD after EVERY segment and point it at an RTS
-;;; once it has -- gem4xe's far image is a hundred chunks, each followed by
-;;; a segment that writes INITAD -- and jump through RUNAD at the end.
+;;; THE LOADER -- a file in the Atari's binary format, loaded and run, by
+;;; src/cart.s's rules (cart_boot): INITAD called after EVERY segment and
+;;; pointed at an RTS once it has -- gem4xe's far image is a hundred chunks,
+;;; each followed by a segment that writes INITAD -- and RUNAD called at
+;;; the end as a subroutine, so that a program that ends in an RTS comes
+;;; back to DOSVEC as one that jumps there does.
 ;;;
-;;; DOSVEC goes to the OS's cold start first: when gem4xe quits, there is
-;;; no DOS to go back to, and starting again from the disk is what is left.
-;;; A RESET runs DOSINI, which points DOSVEC here again: GEM reloads.
+;;; WHICH FILE.  fd_boot, DOSVEC at a cold start: GEM.COM, else AUTORUN.SYS,
+;;; else the shell -- the system or an appliance, a disk with one program
+;;; on it, a DOS to work in.  fd_dos, DOSVEC once anything has run and
+;;; after a RESET: the shell first, then the same -- a disk with no shell
+;;; boots again.  A name that will not open is passed over.  fd_exec, at
+;;; $0703, is the shell's own: the one file named at X (low) and Y.  Each
+;;; name as G4DOS finds it, in the root or a folder in it, root first.
+;;;
+;;; The name goes on the screen and a dot for each segment after it, the
+;;; only sign of life a long load gives.  Nothing to run, or a file that
+;;; is not one, says so and stops there: RESET is the way out, to the shell.
 ;;; ---------------------------------------------------------------------------
-fd_run:       lda     #.byte0 COLDSV
+ld_names:     .byte   "D:SHELL.SYS", EOL   ; fd_dos from here,
+ld_gem:       .byte   "D:GEM.COM", EOL     ; fd_boot from here
+              .byte   "D:AUTORUN.SYS", EOL
+              .byte   "D:SHELL.SYS", EOL
+ld_end:
+
+fd_boot:      ldy     #ld_gem-ld_names
+              .byte   0x2c            ; BIT abs: over the next LDY
+fd_dos:       ldy     #0
+ld_try:       sty     ld_i            ; the name at ld_names+Y
+              tya
+              clc
+              adc     #.byte0 ld_names
+              tax
+              lda     #.byte1 ld_names
+              adc     #0
+              tay
+              bne     ld_open         ; (always)
+fd_exec:      lda     #0xff           ; the shell's: one name, none after it
+              sta     ld_i
+ld_open:      stx     ICBAL+IOCB1
+              sty     ICBAH+IOCB1
+              lda     #.byte0 fd_dos
               sta     DOSVEC
-              lda     #.byte1 COLDSV
+              lda     #.byte1 fd_dos
               sta     DOSVEC+1
-              ldx     #.byte0 msg_load
-              ldy     #.byte1 msg_load
-              lda     #msg_load_end-msg_load
-              jsr     fd_print
-              ldx     #IOCB1
-              lda     #3
-              sta     ICCOM,x
-              lda     #.byte0 boot_name
-              sta     ICBAL,x
-              lda     #.byte1 boot_name
-              sta     ICBAH,x
-              lda     #4
-              sta     ICAX1,x
+              lda     #4              ; to read (AUX2 is nothing to this DOS)
+              sta     ICAX1+IOCB1
+              lda     #3              ; OPEN
+              jsr     ld_cio
+              bpl     ld_go
+              jsr     ld_close
+              ldy     ld_i
+              bmi     ld_none         ; the shell's file is not there
+10$:          iny                     ; the next name
+              lda     ld_names-1,y
+              cmp     #EOL
+              bne     10$
+              cpy     #ld_end-ld_names
+              bcc     ld_try
+ld_none:      jmp     ld_bad          ; none of them
+
+ld_go:        lda     ICBAL+IOCB1     ; the name, on the screen: PUT RECORD
+              sta     ICBAL           ; stops at its EOL
+              lda     ICBAH+IOCB1
+              sta     ICBAH
+              lda     #0x40
+              sta     ICBLL
               lda     #0
-              sta     ICAX2,x
+              sta     ICBLH
+              tax
+              lda     #9
+              sta     ICCOM
               jsr     CIOV
-              bpl     1$
-              jmp     ld_bad
-1$:           jsr     ld_arm
+              jsr     ld_arm
               lda     #0
               sta     RUNAD
               sta     RUNAD+1
               jsr     ld_word
-              bpl     5$
-2$:           jmp     ld_bad
-5$:           lda     ld_w
-              and     ld_w+1
-              cmp     #0xff
-              bne     2$
-10$:          jsr     ld_word
-              bmi     ld_done
+              bmi     ld_bad
               lda     ld_w
               and     ld_w+1
               cmp     #0xff
-              beq     10$
+              bne     ld_bad          ; not a binary file
+20$:          jsr     ld_word
+              bmi     ld_done         ; its end
+              lda     ld_w
+              and     ld_w+1
+              cmp     #0xff
+              beq     20$             ; a segment's own $FFFF
               lda     ld_w
               sta     ld_start
               lda     ld_w+1
               sta     ld_start+1
               jsr     ld_word
               bmi     ld_bad
-              sec
-              lda     ld_w
-              sbc     ld_start
-              sta     ld_len
-              lda     ld_w+1
-              sbc     ld_start+1
-              sta     ld_len+1
-              bcc     ld_bad
-              inc     ld_len
-              bne     20$
-              inc     ld_len+1
-20$:          ldx     #IOCB1
-              lda     ld_start
+              ldx     #IOCB1          ; the segment, start to end inclusive,
+              lda     ld_start        ; straight to where it goes
               sta     ICBAL,x
               lda     ld_start+1
               sta     ICBAH,x
-              lda     ld_len
+              sec
+              lda     ld_w
+              sbc     ld_start
               sta     ICBLL,x
-              lda     ld_len+1
+              lda     ld_w+1
+              sbc     ld_start+1
               sta     ICBLH,x
-              lda     #7
-              sta     ICCOM,x
-              jsr     CIOV
+              bcc     ld_bad
+              inc     ICBLL,x
+              bne     30$
+              inc     ICBLH,x
+30$:          lda     #7
+              jsr     ld_cio
               bmi     ld_bad
               ldx     #.byte0 msg_dot
               ldy     #.byte1 msg_dot
@@ -2326,20 +2335,21 @@ fd_run:       lda     #.byte0 COLDSV
               jsr     fd_print
               jsr     ld_init
               jsr     ld_arm
-              jmp     10$
-
-ld_done:      jsr     ld_close
-              lda     RUNAD
-              ora     RUNAD+1
-              beq     ld_bad
-              jmp     (RUNAD)
+              jmp     20$
 
 ld_bad:       jsr     ld_close
               ldx     #.byte0 msg_bad
               ldy     #.byte1 msg_bad
               lda     #msg_bad_end-msg_bad
               jsr     fd_print
-99$:          jmp     99$             ; nothing more to be done from here
+99$:          jmp     99$
+
+ld_done:      jsr     ld_close
+              lda     RUNAD
+              ora     RUNAD+1
+              beq     1$              ; nothing to run
+              jsr     ld_run
+1$:           jmp     (DOSVEC)
 
 ld_word:      ldx     #IOCB1
               lda     #.byte0 ld_w
@@ -2351,14 +2361,15 @@ ld_word:      ldx     #IOCB1
               lda     #0
               sta     ICBLH,x
               lda     #7
+;;; ld_cio -- CIO's command A on IOCB 1.
+ld_cio:       ldx     #IOCB1
               sta     ICCOM,x
               jmp     CIOV
 
-ld_close:     ldx     #IOCB1
-              lda     #12
-              sta     ICCOM,x
-              jmp     CIOV
+ld_close:     lda     #12
+              bne     ld_cio
 
+ld_run:       jmp     (RUNAD)
 ld_init:      jmp     (INITAD)
 
 ld_arm:       lda     #.byte0 ld_rts
@@ -2366,6 +2377,27 @@ ld_arm:       lda     #.byte0 ld_rts
               lda     #.byte1 ld_rts
               sta     INITAD+1
 ld_rts:       rts
+
+;;; fd_dforget -- the data buffer names no sector; fd_bforget -- nor does
+;;; the bitmap's.  A is 0 after either, as it was where they were inline.
+fd_dforget:   lda     #0
+              sta     fd_dtag+1
+              sta     fd_dtag+2
+              rts
+fd_bforget:   lda     #0
+              sta     fd_bmsec
+              sta     fd_bmsec+1
+              rts
+
+;;; fd_rewind -- fd_c at its file's first data sector, none in hand;
+;;; fd_secdone -- the sector in hand used up.  A is 0 after either.
+fd_rewind:    lda     #0
+              sta     fd_c+C_IDX
+fd_secdone:   lda     #0
+              sta     fd_c+C_SEC
+              sta     fd_c+C_SEC+1
+              sta     fd_c+C_POS
+              rts
 
 ;;; fd_print -- A characters at Y:X to the screen, through IOCB 0.
 fd_print:     sta     ICBLL
@@ -2378,11 +2410,8 @@ fd_print:     sta     ICBLL
               sta     ICCOM,x
               jmp     CIOV
 
-boot_name:    .byte   "D1:GEM.COM", EOL
-msg_load:     .byte   EOL, "gem4xe: loading"
-msg_load_end:
 msg_dot:      .byte   "."
-msg_bad:      .byte   EOL, "GEM.COM did not load", EOL
+msg_bad:      .byte   EOL, "load failed", EOL
 msg_bad_end:
 
 ;;; ---------------------------------------------------------------------------
@@ -2403,15 +2432,23 @@ fd_image_end:                         ; what G4DOS.SYS carries ends here
 ;;; fd_install sets what has to start known.
 ;;; ---------------------------------------------------------------------------
               .section fdbss, noinit
+;;; first, what fd_install zeroes in one loop: in this order, and fd_dtag
+;;; three bytes above fd_mtag, which fd_wsio counts on
+fd_mode:      .space  8
+fd_mtag:      .space  3               ; unit, sector
+fd_dtag:      .space  3
+fd_bmsec:     .space  2               ; the bitmap: the sector in fd_bmbuf, 0 none
+fd_bmunit:    .space  1
+fd_bmdirty:   .space  1
+fd_bmwant:    .space  2
+fd_fdelta:    .space  2               ; free sectors gained, signed
+fd_zero_end:
 fd_unit:      .space  1
 fd_cur:       .space  1               ; the block in fd_c, $FF none
 fd_c:         .space  C_SIZE
 fd_blk:       .space  C_SIZE*N_BLOCKS
-fd_mode:      .space  8
 fd_ssz:       .space  8               ; per unit: 0 for 256, $80
 fd_root:      .space  16              ; per unit: the root's map, lo then hi
-fd_mtag:      .space  3               ; unit, sector
-fd_dtag:      .space  3
 fd_w:         .space  1
 fd_ph:        .space  2
 fd_in:        .space  2
@@ -2436,12 +2473,7 @@ fd_widx:      .space  1               ; data sectors in that page so far
 fd_wpos:      .space  1               ; bytes in fd_wbuf
 fd_wsize:     .space  3
 fd_pa:        .space  1               ; PUT's byte, across fd_slot
-;;; the bitmap
-fd_bmsec:     .space  2               ; the sector in fd_bmbuf, 0 none
-fd_bmunit:    .space  1
-fd_bmdirty:   .space  1
-fd_bmwant:    .space  2
-fd_fdelta:    .space  2               ; free sectors gained, signed
+;;; the bitmap (its sector in hand: above)
 fd_hint:      .space  2               ; where the next search starts
 fd_s:         .space  2               ; a sector: fd_alloc's, fd_dsec's
 fd_k:         .space  2
@@ -2455,11 +2487,13 @@ fd_dfree:     .space  2               ; fd_dfind: a free slot, or the end
 fd_hsize:     .space  2               ; fd_dfind: its length, from its header
 fd_dk:        .space  2               ; fd_dsec: which of its sectors
 fd_p:         .space  2
-;;; the loader's three words (fd_run): it only reads, and a directory is
-;;; only edited by a write, so it borrows the editing's
+;;; the loader's words: it only reads, and a directory is only edited by a
+;;; write, so it borrows the editing's -- but the name it is trying has to
+;;; outlast an open, whose lookup is fd_dfind's, so that one is the file
+;;; being written's, which nothing is while the loader runs
 ld_w:         .equ    fd_doff
 ld_start:     .equ    fd_dfree
-ld_len:       .equ    fd_dk
+ld_i:         .equ    fd_wdir
 fd_want2:     .space  11              ; RENAME's old name, kept
 fd_roff:      .space  2               ; RENAME: the old entry's offset
 fd_ebuf:      .space  E_LEN           ; an entry to write

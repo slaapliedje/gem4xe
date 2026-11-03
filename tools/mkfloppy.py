@@ -89,8 +89,16 @@ def fdos_parts(root):
     return boot[0x3030], boot[0x3080], dos
 
 
+# G4DOS's shell (src/shell/shell.c): beside G4DOS.SYS in the root, where
+# G4DOS's loader looks for it -- what a program that is done, or GEM when
+# it quits, comes back to.  The system floppy has it; an appliance has not,
+# so that leaving the program starts it again (docs/g4dos-plan.md, step 4).
+SHELL = ("build/shell.sys", "SHELL.SYS")
+
+
 def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
-          dirs=("GEM",), volname="GEM4XE", sectors=SECTORS, fdos=True):
+          dirs=("GEM",), volname="GEM4XE", sectors=SECTORS, fdos=True,
+          shell=True):
     """The system floppy by default; build_apps() for the other."""
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     table = mkcf.SYSTEM if table is None else table
@@ -99,7 +107,8 @@ def build(out, adds=(), boot=mkcf.BOOT, root=None, table=None, install=None,
     fs = Sdfs.format(img, volname)
     for d in dirs:
         fs.mkdir(d)
-    for path, name in list(table) + list(adds):
+    extra = [SHELL] if fdos and shell else []
+    for path, name in list(table) + extra + list(adds):
         with open(os.path.join(root, path), "rb") as f:
             data = f.read()
         fs.add_file(name, data)
@@ -134,12 +143,15 @@ def build_app(out, program, adds=(), root=None, volname=None):
     run the desktop -- and again when it quits.  Its own files are `adds`;
     GEM>NAME beside it is found by a bare name under G4DOS and under
     SpartaDOS X alike (AUTOEXEC.BAT puts SpartaDOS X there).  No
-    INSTALL.BAT: an appliance is not installed."""
+    INSTALL.BAT: an appliance is not installed.  And no SHELL.SYS: when
+    the program quits, G4DOS's loader finds no shell and starts the
+    program again."""
     table = [(p, n) for p, n in mkcf.SYSTEM if n not in DESKTOP_ONLY]
     table.append((program, "GEM>DESKTOP.PRG"))
     if volname is None:
         volname = os.path.splitext(os.path.basename(program))[0].upper()[:8]
-    return build(out, adds, table=table, install=[], volname=volname)
+    return build(out, adds, table=table, install=[], volname=volname,
+                 shell=False)
 
 
 def build_apps(out, root=None):

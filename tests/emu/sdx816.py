@@ -63,9 +63,13 @@ MEMLO = 0x02E7
 OB_SIZE = 24
 W_NAME = 3                                  # the title in the frame tree
                                             # (src/aes/aes.h, W_ACTIVE[])
-CMD_TEXT = 64 + 4                           # where the text starts in the far
-                                            # buffer: its title comes first
-                                            # (src/desk/deskcmd.c)
+CMD_TEXT = 64 + 4 + 48                      # where the text starts in the far
+                                            # buffer: its title comes first,
+                                            # then a shown file's path
+                                            # (deskcmd.c: LEN_ZCMD + 4 +
+                                            # LEN_ZPATH; it read 48 bytes
+                                            # early, past the title, until
+                                            # 2026-11-03)
 
 
 def obj(b, tree, i):

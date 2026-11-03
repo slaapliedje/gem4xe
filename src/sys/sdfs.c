@@ -943,7 +943,7 @@ int16_t sd_close(SDFS FAR *s, int16_t h)
         r = d_io(s, fl->unit, fl->dmap, (uint16_t)(fl->doff + E_SIZE), ent, 3, 1);
         if (r < 0)
             e = (int16_t)r;
-        else {
+        else if (fl->grown == 1) {
             sd_now(ent + 3);
             r = d_io(s, fl->unit, fl->dmap, (uint16_t)(fl->doff + E_STAMP),
                      ent + 3, 6, 1);
@@ -968,6 +968,8 @@ int16_t sd_fstamp(SDFS FAR *s, int16_t h, uint8_t FAR *stamp, uint8_t set)
              set);
     if (r < 0)
         return (int16_t)r;
+    if (set && fl->grown)               /* close keeps it, not the time then */
+        fl->grown = 2;
     return set ? sd_sync(s, fl->unit) : 0;
 }
 

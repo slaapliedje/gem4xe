@@ -107,7 +107,9 @@ typedef struct {
     uint8_t  used;
     uint8_t  unit;
     uint8_t  mode;
-    uint8_t  grown;             /* written to: the entry's length is due */
+    uint8_t  grown;             /* written to: the entry's length is due,
+                                   and the time -- unless sd_fstamp has set
+                                   one since (2): that one stays */
     uint16_t dmap;              /* its directory's first map page */
     uint16_t doff;              /* its entry's offset in that directory */
     uint16_t first;             /* its own first map page */

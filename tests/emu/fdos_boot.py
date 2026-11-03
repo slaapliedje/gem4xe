@@ -16,7 +16,12 @@ with no SDX cartridge -- an emulator's default, or a machine without one:
      the emulator's working copy of the disk has DESKTOP.INF in its root,
      the layout gem4xe wrote, and tools/atr.py's check finds the bitmap,
      the chains and the free count in agreement -- the engine wrote it;
-  4. D2:'s window has \\APPS\\, and EDIT.PRG double-clicked in it RUNS: a
+  4. File -> DOS command runs G4DOS's own commands (src/sys/doscmd.c,
+     docs/g4dos-plan.md step 4): `ls -l` of the system's folder prints
+     exactly what tools/atr.py says the folder holds, drawn in the
+     command's window, and a `cp` writes a copy the working disk has
+     afterwards, byte for byte;
+  5. D2:'s window has \\APPS\\, and EDIT.PRG double-clicked in it RUNS: a
      program loaded out of a folder on the second drive.  EDIT given no
      file asks for one, so the file selector is what proves it started.
 
@@ -38,13 +43,21 @@ import symfile                                # noqa: E402
 from sdx816 import find_text                  # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS   # noqa: E402
 from aesref import W_FULLER, W_CLOSER         # noqa: E402
-from deskrsc import OPTNMENU, SAVEITEM        # noqa: E402
+from deskrsc import OPTNMENU, SAVEITEM, FILEMENU, CMDITEM   # noqa: E402
+from m14_sparta import KEYS                   # noqa: E402
+from m17_desktop import header, DESKTOP, DESK_SYM   # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
 OUT = os.path.join(BUILD, "shots", "fdos")
 
 problems = []
 PAINT, STACK_MARGIN = 0xA5, 128
+CMD_TEXT = 64 + 4 + 48          # the command's text in the desktop's far
+                                # buffer, after its title and the path of a
+                                # file shown (deskcmd.c: LEN_ZCMD + 4 +
+                                # LEN_ZPATH)
+LS = "ls -l >gem"               # SpartaDOS's separator: '/' is the host test's
+CP = "cp >gem>gem4xe.cfg cmd.cfg"
 
 
 def stack_range():
@@ -65,6 +78,47 @@ def check(ok, what):
     if not ok:
         problems.append(what)
     return ok
+
+
+def listing(fs, folder):
+    """What `ls -l` prints of a folder, from the disk image: a line an
+    entry, NAME.EXT (a folder's with a '/') to thirteen columns, the size
+    to seven, then the date and time (src/sys/doscmd.c, ls_entry)."""
+    out = b""
+    for e in fs.entries(folder):
+        name = e.filename + ("/" if e.is_dir else "")
+        y = e.year + (2000 if e.year < 80 else 1900)
+        out += (f"{name:13s}{e.size:7d} {y:04d}-{e.month:02d}-{e.day:02d} "
+                f"{e.hour:02d}:{e.minute:02d}"
+                .encode("latin-1") + b"\x9b")
+    return out
+
+
+def dos_command(t, b, syms, line):
+    """File -> DOS command with `line` typed and OK'd: what it printed,
+    read out of the desktop's far buffer once its window is open."""
+    link_near, _, _ = header(DESKTOP)
+    dsyms = symfile.load(DESK_SYM)
+    near = b.peek16(syms["app_near"])
+
+    def var(name):                      # a direct-page scalar of deskcmd.c
+        return near + dsyms[name] - link_near
+
+    t.choose(FILEMENU, CMDITEM)
+    b.frames(60)
+    for ch in line:
+        name, shift = KEYS.get(ch, (ch.upper(), False))
+        b.key(name, shift=shift)
+        b.frames(3)
+    b.key("RETURN")
+    for _ in range(300):
+        b.frames(10)
+        if b.peek16(var("cmd_id")):
+            break
+    t.settle()
+    n = b.peek16(var("cmd_len"))
+    buf = int.from_bytes(b.memdump(var("cmd_buf"), 3), "little")
+    return bytes(b.memdump(buf + CMD_TEXT, n)) if n and buf else b""
 
 
 def has(t, name):
@@ -143,6 +197,23 @@ def main():
         check(find_text(p, "could not") is None,
               f"Save desktop puts up no alert ({p})")
 
+        # File -> DOS command: G4DOS's commands, under GEM
+        want = listing(atr.Sdfs(atr.ATRImage.load(disk)), "GEM")
+        got = dos_command(t, b, syms, LS)
+        p = os.path.join(OUT, "command.png")
+        b.screenshot(p)
+        check(got == want, f"File -> DOS command `{LS}` printed the folder as the "
+              f"disk has it ({len(got)} bytes, {got.count(b'\x9b')} lines)"
+              + ("" if got == want else f": {got[:80]!r}, not {want[:80]!r}"))
+        check(find_text(p, "GEM.COM") is not None,
+              f"...and its window shows it ({p})")
+        t.click(t.gadget(W_CLOSER))
+        t.settle()
+        got = dos_command(t, b, syms, CP)
+        check(got == b"", f"`{CP}` printed nothing: {got[:80]!r}")
+        t.click(t.gadget(W_CLOSER))
+        t.settle()
+
         t.dclick(t.desk_icon("DISK D2:"))
         t.click(t.gadget(W_FULLER))
         p = os.path.join(OUT, "d2.png")
@@ -179,6 +250,9 @@ def main():
         check(inf is not None and inf[:1] == b"#",
               f"DESKTOP.INF is in the root, {len(inf or b'')} bytes of layout"
               + (f", starting {inf[:16]!r}" if inf else ""))
+        made = fs.read("CMD.CFG") if "CMD.CFG" in fs.list("") else None
+        check(made is not None and made == fs.read("GEM>GEM4XE.CFG"),
+              f"`{CP}` made CMD.CFG, the same {len(made or b'')} bytes")
         bad = fs.check()
         check(not bad, "the bitmap, the chains and the free count agree"
               + ("" if not bad else ": " + "; ".join(bad[:6])))

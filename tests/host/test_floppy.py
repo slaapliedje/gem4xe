@@ -61,7 +61,8 @@ class TestFloppy(unittest.TestCase):
         """The whole reason it can be given away: the DOS it boots is
         gem4xe's own (src/fdos.s), G4DOS.SYS, named as the
         superblock's boot file, and the boot sectors are src/fdboot.s --
-        not somebody else's DOS."""
+        not somebody else's DOS.  Its shell, SHELL.SYS, is gem4xe's too
+        (src/shell/), the link's bytes."""
         g4 = next(e for e in self.fs.entries("") if e.filename == "G4DOS.SYS")
         self.assertEqual(self.fs.boot_file_map, g4.map)
         b1, b23, dos = mkfloppy.fdos_parts(ROOT)
@@ -71,9 +72,12 @@ class TestFloppy(unittest.TestCase):
         sb = self.img.read_sector(1)
         self.assertEqual(sb[48:48 + len(b1)], b1)
         self.assertEqual(sb[4] | sb[5] << 8, 0x0700)     # DOSINI
+        with open(os.path.join(ROOT, "build", "shell.sys"), "rb") as f:
+            self.assertEqual(self.fs.read("SHELL.SYS"), f.read())
         names = {e.filename for e in self.fs.entries("")}
         self.assertFalse({n for n in names if n.endswith(".DOS")
-                          or n.endswith(".SYS")} - {"G4DOS.SYS"}, names)
+                          or n.endswith(".SYS")} - {"G4DOS.SYS", "SHELL.SYS"},
+                         names)
 
     def test_it_is_the_card_s_system(self):
         """Every file in tools/mkcf.py's SYSTEM table, in \\GEM\\, byte for
@@ -89,7 +93,7 @@ class TestFloppy(unittest.TestCase):
         self.assertEqual(on_disk, set(want))
         root = {e.filename for e in self.fs.entries("")}
         self.assertEqual(root, {"GEM", "AUTOEXEC.BAT", "INSTALL.BAT",
-                                "G4DOS.SYS"})
+                                "G4DOS.SYS", "SHELL.SYS"})
 
     def test_the_installer_is_mkcf_s(self):
         self.assertEqual(self.fs.read("INSTALL.BAT"),

@@ -110,7 +110,15 @@ DISKS = [
      "ordinary SDX disk and everything works, saving included, which is "
      "how to keep GEM: `INSTALL.BAT` copies it onto your own drive.  "
      "No third-party DOS is on it, which is why it can be given away.  "
-     "Its other half is `disks/gem-apps.atr`."),
+     "Its other half is `disks/gem-apps.atr`.  **Quit GEM and you are at "
+     "G4DOS's own prompt**, its shell `SHELL.SYS`, which speaks a Linux "
+     "user's words -- `ls` (`-l` for sizes and dates), `cd`, `pwd`, `cp`, "
+     "`mv`, `rm`, `mkdir`, `rmdir`, `cat`, `more`, `df`, and `help` lists "
+     "them -- with `DIR`, `COPY`, `REN`, `DEL` and `TYPE` beside them.  A "
+     "path is `D2:/APPS/EDIT.PRG` (`/`, `>` or `\\` between folders), "
+     "`*` and `?` match, and a program runs by its name and comes back to "
+     "the prompt; `gem` starts GEM again.  Under GEM, *File -> DOS "
+     "command* runs the same commands."),
     ("gem-apps.atr", "disks/gem-apps.atr", "sdfs",
      "The applications: the calculator, the clock and a hello-world "
      "program in `\\APPS\\`, and the clock desk accessory in `\\GEM\\`, on "
