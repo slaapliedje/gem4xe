@@ -102,9 +102,9 @@ PBI_BANNER = "PBI"
 SDX_BANK = 0xD5E1               # the SIDE's SDX bank register; $80 unmaps it
 DRVMAP = 0x03                   # D1: and D2:, the card's two partitions
 RTC_U1MB = 0xD3E2               # src/sys/clock.c: the chip the U1MB carries
-CLOCK_CARD = {0: "none", 1: "U1MB", 2: "SIDE", 3: "the DOS"}   # src/sys/clock.h
+CLOCK_CARD = {0: "none", 1: "U1MB", 2: "SIDE", 3: "the DOS", 4: "the bus"}   # src/sys/clock.h
 # the boot screen's Clock line starts with the card (src/sys/bootinfo.c)
-CLOCK_LINE = {1: "U1MB, ", 2: "SIDE, ", 3: "DOS, "}
+CLOCK_LINE = {1: "U1MB, ", 2: "SIDE, ", 3: "DOS, ", 4: "SIO, "}
 RAP_MCR = 0xFF0080              # the Rapidus's Memory Control Register
 MCR_SLOW1 = 0x02                # $4000-$7FFF on the motherboard bus
 # the boot screen's second Processor line under BANKWINDOW=SLOW

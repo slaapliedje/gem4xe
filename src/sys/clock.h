@@ -3,9 +3,10 @@
  * The Atari has no clock of its own.  Two of the cards this machine may
  * have do: the Ultimate 1MB at $D3E2 and the SIDE / SIDE 2 at $D5E2, the
  * same DS1305 wired the same way, bit-banged through that one register
- * (docs/phase15.md).  A machine with neither is asked through its DOS,
- * which knows any clock it loaded a driver for (a SpartaDOS kernel call,
- * clock.c).  A machine with none of that says so and GEMDOS answers the
+ * (docs/phase15.md).  A machine with neither asks the serial bus, where a
+ * FujiNet answers, and then its DOS, which knows any clock it loaded a
+ * driver for (a SpartaDOS kernel call, clock.c).  A machine with none of
+ * that says so and GEMDOS answers the
  * ST's epoch, 1 January 1980, which is what a TOS with a dead clock
  * answers as well.
  *
@@ -43,12 +44,13 @@ uint8_t clock_write(const CLOCK *c);
 #define CLOCK_U1MB 1
 #define CLOCK_SIDE 2
 #define CLOCK_DOS  3                /* whatever the DOS's driver reads */
+#define CLOCK_SIO  4                /* an APETime clock: a FujiNet's */
 uint8_t clock_card(void);
 
 /* Where to look.  src/gem.c sets it from GEM4XE.CFG before the first
  * read; the numbers are CFG_CLOCK_* in src/sys/config.h and the two
  * lists must agree -- tests/host/test_print.py says so. */
-#define CLOCK_HOW_AUTO 0            /* the chips, then the DOS */
+#define CLOCK_HOW_AUTO 0            /* the chips, the bus, then the DOS */
 #define CLOCK_HOW_DOS  1            /* the DOS only */
 #define CLOCK_HOW_NONE 2            /* nothing: the epoch */
 extern uint8_t clock_how;

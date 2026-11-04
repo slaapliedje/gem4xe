@@ -84,8 +84,9 @@
 #define CFG_SCREENW_WIDE   672
 
 /* CLOCK -- where the time comes from.  src/sys/clock.c: the chip on a
- * U1MB or a SIDE first, the DOS's kernel when there is neither. */
-#define CFG_CLOCK_AUTO   0      /* the chip, then the DOS */
+ * U1MB or a SIDE first, then a FujiNet on the bus, the DOS's kernel when
+ * there is none of those. */
+#define CFG_CLOCK_AUTO   0      /* the chip, the bus, then the DOS */
 #define CFG_CLOCK_DOS    1      /* the DOS only: for a machine whose chip
                                  * probe misfires, and for the gate that
                                  * exercises the DOS path on a machine

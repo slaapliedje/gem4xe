@@ -205,15 +205,18 @@ uint8_t cio_xio(uint8_t cmd, const char *name, uint8_t aux1, uint8_t aux2)
 #define SIO_TO     0x80         /* ...or is sent to */
 #define SIO_PUT    0x50         /* 'P': a write without the drive's verify */
 #define SIO_TIME   0x0F         /* DTIMLO, as the OS uses for a disk */
+#define SIO_CLOCK  0x45         /* DDEVIC of an APETime clock: a FujiNet's */
+#define SIO_GETTIME 0x93        /* its date and time */
+#define SIO_GETAUX 0xA0EE       /* DAUX as APETime's callers send it */
 
-static uint8_t sio_dir(uint8_t unit, uint8_t cmd, uint8_t dir, uint16_t aux,
-                       void *buf, uint16_t len)
+static uint8_t sio_dev(uint8_t dev, uint8_t unit, uint8_t cmd, uint8_t dir,
+                       uint16_t aux, void *buf, uint16_t len)
 {
     uint8_t st;
     volatile uint8_t *d = (volatile uint8_t *)DCB_DDEVIC;
     volatile uint16_t *w;
 
-    d[DCB_DDEVIC - DCB_DDEVIC] = SIO_DISK;
+    d[DCB_DDEVIC - DCB_DDEVIC] = dev;
     d[DCB_DUNIT - DCB_DDEVIC] = unit;
     d[DCB_DCOMND - DCB_DDEVIC] = cmd;
     d[DCB_DSTATS - DCB_DDEVIC] = dir;
@@ -228,6 +231,12 @@ static uint8_t sio_dir(uint8_t unit, uint8_t cmd, uint8_t dir, uint16_t aux,
     st = (uint8_t)dsk_call(0);
     irq_pokey_resync();             /* and arms timer 1 again (cio.s) */
     return st;
+}
+
+static uint8_t sio_dir(uint8_t unit, uint8_t cmd, uint8_t dir, uint16_t aux,
+                       void *buf, uint16_t len)
+{
+    return sio_dev(SIO_DISK, unit, cmd, dir, aux, buf, len);
 }
 
 static uint8_t sio(uint8_t unit, uint8_t cmd, uint16_t aux, void *buf,
@@ -260,4 +269,10 @@ uint8_t dsk_status(uint8_t unit)
     uint8_t st[4];
 
     return sio(unit, SIO_STATUS, 0, st, sizeof st);
+}
+
+uint8_t sio_gettime(void *buf)
+{
+    return sio_dev(SIO_CLOCK, 1, SIO_GETTIME, SIO_FROM, SIO_GETAUX, buf,
+                   SIO_GETTIME_LEN);
 }

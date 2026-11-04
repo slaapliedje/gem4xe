@@ -5,9 +5,16 @@
  * $D5E2.  It is the same chip wired the same way on both, so the only
  * difference is which register the bits go to, and clock_probe picks it.
  *
- * A MACHINE WITH NEITHER may still have a clock -- an IDE Plus 2, an
- * R-Time 8, a FujiNet -- and a SpartaDOS knows it, through whichever
- * driver it loaded.  So when both registers say no, the DOS is asked:
+ * A FUJINET HAS ONE TOO, on the serial bus and not in a register: device
+ * $45, command $93, six binary bytes, the protocol it took from APETime.
+ * So does anything else that answers as APETime.  It is asked when both
+ * registers say no, and before the DOS, as it is a real clock on any DOS
+ * and the DOS may only have its software one.  It cannot be set: Tsetdate
+ * says so.  Nobody on the bus costs one round of the OS's retries, once.
+ *
+ * A MACHINE WITH NONE OF THOSE may still have a clock -- an IDE Plus 2, an
+ * R-Time 8 -- and a SpartaDOS knows it, through whichever driver it
+ * loaded.  So after those, the DOS is asked:
  * kernel function 100 (kd_gettd) fills `date` and `time` in page 7 from
  * the clock driver (SDX User Guide 6.8).  It comes second, not first,
  * because on a machine with the chip the chip is the source the DOS
@@ -64,7 +71,7 @@
  * once by clock_probe and not looked for again. */
 static volatile uint8_t *rtc;
 static uint8_t rtc_probed;
-static uint8_t rtc_dos;         /* no register: the DOS's kernel answers */
+static uint8_t rtc_other;       /* no register: CLOCK_SIO or CLOCK_DOS answers */
 uint8_t clock_how = CLOCK_HOW_AUTO;
 
 /* A moment, for a chip that was specified when a fast machine was 8 MHz.
@@ -190,6 +197,24 @@ static void read_regs(uint8_t *r)
 #define DOS_TRIES     255
 #define DOS_DEV_ANY   0x10
 
+/* Day, month, two-digit year and hour, minute, second, in binary, as both
+ * the DOS and the SIO clock give them: into c, if they could be a time. */
+static uint8_t binary_time(CLOCK *c, const volatile uint8_t *d,
+                           const volatile uint8_t *t)
+{
+    if (d[0] < 1 || d[0] > 31 || d[1] < 1 || d[1] > 12 || d[2] > 99
+        || t[0] > 23 || t[1] > 59 || t[2] > 59)
+        return 0;
+    c->day = d[0];
+    c->month = d[1];
+    c->year = (uint16_t)(d[2] < RTC_YEAR_PIVOT ? 2000 + d[2] : 1900 + d[2]);
+    c->hour = t[0];
+    c->minute = t[1];
+    c->second = t[2];
+    c->present = 1;
+    return 1;
+}
+
 static uint8_t dos_clock(CLOCK *c)
 {
     volatile uint8_t *dev = (volatile uint8_t *)DOS_DEVICE;
@@ -218,17 +243,18 @@ static uint8_t dos_clock(CLOCK *c)
     *dev = (uint8_t)save;
     if (p & 1)
         return 0;                               /* busy for good */
-    if (d[0] < 1 || d[0] > 31 || d[1] < 1 || d[1] > 12 || d[2] > 99
-        || t[0] > 23 || t[1] > 59 || t[2] > 59)
+    return binary_time(c, d, t);
+}
+
+/* The SIO clock's time, into c: 1 if something on the bus answered with a
+ * time that could be one.  On the stack, so in bank $00 as the OS needs. */
+static uint8_t sio_clock(CLOCK *c)
+{
+    uint8_t r[SIO_GETTIME_LEN];
+
+    if (sio_gettime(r) != SIO_OK)
         return 0;
-    c->day = d[0];
-    c->month = d[1];
-    c->year = (uint16_t)(d[2] < RTC_YEAR_PIVOT ? 2000 + d[2] : 1900 + d[2]);
-    c->hour = t[0];
-    c->minute = t[1];
-    c->second = t[2];
-    c->present = 1;
-    return 1;
+    return binary_time(c, r, r + 3);
 }
 
 /* Which register is a clock: the U1MB's, then the SIDE's, then the DOS,
@@ -268,7 +294,7 @@ static void clock_probe(void)
 
     rtc_probed = 1;
     rtc = 0;
-    rtc_dos = 0;
+    rtc_other = 0;
     if (clock_how == CLOCK_HOW_NONE)
         return;
     for (i = 0; clock_how != CLOCK_HOW_DOS && i < 2; i++) {
@@ -282,15 +308,18 @@ static void clock_probe(void)
             return;
         rtc = 0;
     }
-    rtc_dos = dos_clock(&c);
+    if (clock_how != CLOCK_HOW_DOS && sio_clock(&c))
+        rtc_other = CLOCK_SIO;
+    else if (dos_clock(&c))
+        rtc_other = CLOCK_DOS;
 }
 
 uint8_t clock_card(void)
 {
     if (!rtc_probed)
         clock_probe();
-    if (rtc_dos)
-        return CLOCK_DOS;
+    if (rtc_other)
+        return rtc_other;
     if (!rtc)
         return CLOCK_NONE;
     return (uint16_t)rtc == RTC_U1MB ? CLOCK_U1MB : CLOCK_SIDE;
@@ -307,7 +336,9 @@ uint8_t clock_read(CLOCK *c)
 
     if (!rtc_probed)
         clock_probe();
-    if (rtc_dos)
+    if (rtc_other == CLOCK_SIO)
+        return sio_clock(c);
+    if (rtc_other == CLOCK_DOS)
         return dos_clock(c);
     if (!rtc)
         return 0;
@@ -420,7 +451,7 @@ uint8_t clock_write(const CLOCK *c)
 
     if (!rtc_probed)
         clock_probe();
-    if (rtc_dos)
+    if (rtc_other == CLOCK_DOS)
         return dos_setclock(c);
     if (!rtc)
         return 0;

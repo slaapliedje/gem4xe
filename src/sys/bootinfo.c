@@ -155,6 +155,7 @@ static const char FAR s_vbxe[]    = "VBXE ";
 static const char FAR s_u1mb[]    = "U1MB, ";
 static const char FAR s_side[]    = "SIDE, ";
 static const char FAR s_dos[]     = "DOS, ";
+static const char FAR s_sio[]     = "SIO, ";
 static const char FAR s_ps[]      = "PostScript, ";
 static const char FAR s_pcl[]     = "PCL 5, ";
 static const char FAR s_digit[]   = "0123456789ABCDEF";
@@ -429,7 +430,8 @@ void boot_clock(void)
         return;
     }
     clock_read(&c);
-    p = app(v, card == CLOCK_U1MB ? s_u1mb : card == CLOCK_SIDE ? s_side : s_dos);
+    p = app(v, card == CLOCK_U1MB ? s_u1mb : card == CLOCK_SIDE ? s_side
+              : card == CLOCK_SIO ? s_sio : s_dos);
     p = dec(p, c.year);
     *p++ = '-';
     p = two(p, c.month);
