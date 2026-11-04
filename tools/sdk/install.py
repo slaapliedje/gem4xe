@@ -116,6 +116,13 @@ def main(argv):
                 except Exception:
                     pass                # already there, which is fine
         try:
+            # REPLACED, as the docstring says: the old one deleted first.
+            # Without this an SDFS disk refused the name ("exists") and a
+            # DOS 2 one took a second entry of it, the old file still the
+            # one that read (tests/host/test_kit_install.py).
+            old = fs.find(name)
+            if old is not None and not getattr(old, "is_dir", False):
+                fs.delete(name)
             fs.add_file(name, data)
         except Exception as e:
             print(f"{name}: {e}", file=sys.stderr)
