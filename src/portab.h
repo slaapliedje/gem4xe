@@ -37,7 +37,7 @@
 #ifndef GEM4XE_PORTAB_H
 #define GEM4XE_PORTAB_H
 
-#if defined(__CALYPSI__)
+#if defined(__CALYPSI__) && !defined(__CALYPSI_TARGET_6502__)
 
 #include <calypsi/intrinsics65816.h>
 
@@ -61,6 +61,27 @@
 void irq_sei(void);
 #define cpu_sei()    irq_sei()
 #define cpu_cli()    __enable_interrupts()
+
+#elif defined(__CALYPSI_TARGET_6502__)
+
+/* THE 6502 BUILD (docs/6502.md) -- a survey block, not a design.  There is
+ * no 24-bit address on a 6502: memory beyond 64 KB is a PORTB bank in the
+ * $4000-$7FFF window, reached only through code that switches it.  So FAR
+ * is defined away here only to see what else breaks; every FAR in the C is
+ * a place the 6502 build needs a banked accessor instead (docs/6502.md,
+ * "the far data"), and nothing built with this block runs. */
+#define FAR
+#define NEAR
+#define TINY         __attribute__((zpage))
+#define SIMPLE_CALL
+#define TASK
+#define SAVEDS
+#define SECTION(s)   __attribute__((section(s)))
+#define memcpy_far   memcpy
+void irq_sei(void);
+#define cpu_sei()    irq_sei()
+#define cpu_cli()    irq_cli()
+void irq_cli(void);
 
 #else
 #error "portab.h: no dialect for this compiler -- add one here"
