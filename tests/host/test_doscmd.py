@@ -11,6 +11,8 @@ step 4) -- the listings, the paths, the messages -- and afterwards every
 image is read with atr.py: Sdfs.check() (every chain used once and
 marked, the free count the bitmap's), and each file the session copied
 or moved compared byte for byte with what it was made from.
+Then D2: write-protected (doscmd_host -w 2): a copy to it fails, and
+nothing else does.
 
     python3 tests/host/test_doscmd.py
 """
@@ -217,6 +219,52 @@ def more(paths):
     check(printed == want, f"more printed {printed!r}, not {want!r}")
 
 
+# D2: write-protected (doscmd_host -w 2), as a drive with its tab on or
+# a FujiNet slot mounted read-only.  A copy to it fails, and it must fail
+# ALONE: the engine kept the changes it could not write and tried them
+# again whenever any drive wanted a cache slot, so every line after it,
+# on every drive, said "write-protected" -- G4BENCH's report refused by
+# D2: lost DESKTOP.RSC on D1: (2026-11-03).
+READONLY = [
+    ("cp docs/big.dat D2:", ["cp: BIG.DAT: write-protected"], -13),
+    ("cat docs/lines.txt", [f"line {i:02d}" for i in range(1, 31)], 0),
+    ("ls docs", ["A.TXT         B.TXT", "C.DOC         LINES.TXT",
+                 "BIG.DAT       OLD/"], 0),
+    ("cat README.TXT", ["Hello", "World"], 0),
+    ("cp docs/a.txt docs/a2.txt", [], 0),
+    ("cat docs/a2.txt", ["aaa"], 0),
+    ("ls D2:", [], 0),
+    ("cp docs/c.doc D2:", ["cp: C.DOC: write-protected"], -13),
+    ("cat README.TXT", ["Hello", "World"], 0),
+]
+
+
+def readonly(d):
+    """A write-protected drive refuses its own writes and nothing else."""
+    rd = os.path.join(d, "ro")
+    os.makedirs(rd)
+    paths = disks(rd)
+    before = open(paths[1], "rb").read()
+    got = answers(run(paths, [ln for ln, _, _ in READONLY], "-w", "2"))
+    check(len(got) == len(READONLY),
+          f"read-only: {len(got)} lines answered of {len(READONLY)}")
+    for (ln, printed, e), (want_ln, want, want_e) in zip(got, READONLY):
+        check(ln == want_ln and printed == want and e == want_e,
+              f"read-only: `{want_ln}` printed {printed} = {e}, not "
+              f"{want} = {want_e}")
+    check(open(paths[1], "rb").read() == before,
+          "read-only: the write-protected D2: changed")
+    s1 = atr.Sdfs(atr.ATRImage.load(paths[0]))
+    bad = s1.check()
+    check(not bad, "read-only: D1: " + "; ".join(bad[:4]))
+    try:
+        copy = s1.read("DOCS>A2.TXT")
+    except atr.ATRError:
+        copy = None
+    check(copy == b"aaa\x9b", f"read-only: D1:/DOCS/A2.TXT is {copy!r}, "
+                              f"not A.TXT's copy")
+
+
 def main():
     if not os.path.exists(HOST):
         print(f"{HOST} is not built (make build/doscmd_host)")
@@ -227,6 +275,8 @@ def main():
         if paths:
             df(paths)
             more(paths)
+        print("  D2: write-protected: a copy to it fails, and nothing else")
+        readonly(d)
     if problems:
         print(f"test_doscmd: FAIL ({len(problems)})")
         return 1

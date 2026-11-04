@@ -100,6 +100,28 @@ void rapidus_speedup(void)
     rapidus.cmcr_after = cmcr;
 }
 
+/* $4000-$7FFF slow again, on GEM4XE.CFG's say -- which is read after the
+ * speed-up, because reading it takes CIO and CIO takes the vectors.  The
+ * window's copy goes down to the motherboard first: it is fast, so a read
+ * comes from the SRAM, and write-through (on since the speed-up) lands each
+ * byte in both.  Whatever was written there before write-through came on --
+ * the window fast from the firmware without it -- reaches the motherboard
+ * that way too, and nothing is lost when the reads move there.  No bank is
+ * in: this runs between CIO calls, and nothing else banks. */
+void rapidus_slow_bank(void)
+{
+    uint8_t mcr;
+
+    if (!rapidus.present)
+        return;
+    mcr = reg_read(RAP_MCR);
+    if (!(mcr & MCR_SLOW1))
+        sync_window(1);
+    mcr |= MCR_SLOW1;
+    reg_write(RAP_MCR, mcr);
+    rapidus.mcr_after = mcr;
+}
+
 /* The way back, for a return to DOS.  Window 0 first gets its write-through
  * back and is copied onto itself -- reads still come from the SRAM, so the
  * copy carries everything written since the speed-up down to the

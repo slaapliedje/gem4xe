@@ -43,6 +43,7 @@
 
 static WORD margin;                     /* the inset less what E: adds */
 static uint8_t dos_ink;                 /* COLOR1 as DOS had it */
+static uint8_t dos_chbas;               /* CHBAS as DOS had it */
 
 /* E:, and what it makes of a byte. */
 #define E_IOCB    0                     /* the OS opens it on this one */
@@ -99,6 +100,7 @@ static uint8_t dos_ink;                 /* COLOR1 as DOS had it */
  * in bank $00, and the accelerator's answer to a halted bus is not a
  * thing this screen wants to find out. */
 #define GLYPHS     0x8000               /* the one-glyph set, 1 KB     */
+#define TEXTSET    0x8400               /* the OS's set, where ANTIC sees it */
 #define DL_TEXT    8                    /* ANTIC's first line          */
 #define DL_BLANK   24                   /* the OS list's three $70s    */
 #define LOGO_TOP   ((DL_TEXT + DL_BLANK + 8) / 2)  /* row 1, in VCOUNT */
@@ -258,6 +260,21 @@ void boot_begin(void)
 
     margin = (WORD)(LMARGN < INSET ? INSET - LMARGN : 0);
     CRSINH = 1;                         /* from the next character on */
+    /* THE TEXT'S GLYPHS, copied to where ANTIC can read them.  By now
+     * irq_install() has the OS running from RAM under its ROM, and on a
+     * Rapidus that RAM may be the card's SRAM alone (irq.via S, the
+     * choice that spares a DOS living in the motherboard's): the CPU
+     * reads the set at $E000 from the copy, ANTIC -- on the motherboard
+     * bus -- from the motherboard's RAM there, which holds no glyphs.
+     * Every letter came out as noise on a real card (2026-11-03) while
+     * the logo, in its own set at $8000, was fine.  Altirra's ANTIC sees
+     * the copy, so only test-boot's read of CHBAS says this happened.
+     * The copy goes beside the logo's set, in the loader's spent staging
+     * buffer, and the shadow points at it until boot_end is done. */
+    dos_chbas = CHBAS;
+    memcpy((void *)TEXTSET, (const void *)((uint16_t)dos_chbas << 8), 1024);
+    CHBAS = (uint8_t)(TEXTSET >> 8);
+    CHBASE = CHBAS;
     dos_ink = COLOR1;
     COLOR1 = INK;                       /* the shadow: see bootinfo.h */
     COLPF1 = INK;
@@ -289,6 +306,11 @@ void boot_begin(void)
         p = app(p, s_rapidus);
     *p = '\0';
     line(LS_BOOT_CPU, v);
+    /* ...and BANKWINDOW=SLOW, the one way the speed-up leaves $4000-$7FFF
+     * slow (src/sys/rapidus.c): said, because a misspelt key is ignored
+     * in silence and this is the line that shows it took. */
+    if (rapidus.present && (rapidus.mcr_after & MCR_SLOW1))
+        line(LS_BOOT_CPU, lang_str(LS_BOOT_BANKSLOW));
 
     /* The vectors: how irq_install() reached them, or why it could not
      * (src/sys/irq.h) -- and on a Rapidus the MCR and CMCR as the
@@ -610,4 +632,5 @@ void boot_end(void)
     logo_off();
     kb_drain();
     COLOR1 = dos_ink;                   /* the OS's VBI restores the rest */
+    CHBAS = dos_chbas;
 }

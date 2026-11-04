@@ -82,7 +82,7 @@ os.environ["XDG_CONFIG_HOME"] = PROFILE
 
 from a8test.launcher import launch          # noqa: E402
 from farheap import far_heap, heap_text  # noqa: E402
-import apt, atr, mkxex, symfile, vbxeref    # noqa: E402
+import apt, atr, langrsc, mkxex, symfile, vbxeref    # noqa: E402
 from m4_aes import SHOTDIR                  # noqa: E402
 from m14_sparta import screen               # noqa: E402
 from m17_desktop import listing             # noqa: E402
@@ -105,6 +105,10 @@ RTC_U1MB = 0xD3E2               # src/sys/clock.c: the chip the U1MB carries
 CLOCK_CARD = {0: "none", 1: "U1MB", 2: "SIDE", 3: "the DOS"}   # src/sys/clock.h
 # the boot screen's Clock line starts with the card (src/sys/bootinfo.c)
 CLOCK_LINE = {1: "U1MB, ", 2: "SIDE, ", 3: "DOS, "}
+RAP_MCR = 0xFF0080              # the Rapidus's Memory Control Register
+MCR_SLOW1 = 0x02                # $4000-$7FFF on the motherboard bus
+# the boot screen's second Processor line under BANKWINDOW=SLOW
+BANKSLOW = dict(langrsc.STRINGS)["BOOT_BANKSLOW"]
 
 # The BIOS setup is walked by what its screen says, not by a count of keys.
 # The fields move between firmware releases -- 2.0 put a PBI logo row
@@ -295,18 +299,45 @@ def card_checks(check, card=CARD):
     return fs
 
 
-def cfg_clock(fs):
-    """What the card's GEM4XE.CFG says the clock is: the CLOCK= line if
-    it has one, else AUTO (src/sys/config.c reads it the same way)."""
+def cfg_value(fs, key, default):
+    """What the card's GEM4XE.CFG says for `key`: its line if it has one,
+    else the default (src/sys/config.c reads it the same way)."""
     try:
         text = fs.read("GEM>GEM4XE.CFG").replace(b"\x9b", b"\n").decode("latin-1")
     except Exception:
-        return "AUTO"
+        return default
     for ln in text.splitlines():
         ln = ln.split("#")[0].split(";")[0].strip().upper()
-        if ln.startswith("CLOCK") and "=" in ln:
-            return ln.split("=", 1)[1].strip() or "AUTO"
-    return "AUTO"
+        if "=" in ln and ln.split("=", 1)[0].strip() == key:
+            return ln.split("=", 1)[1].strip() or default
+    return default
+
+
+def cfg_clock(fs):
+    return cfg_value(fs, "CLOCK", "AUTO")
+
+
+def bank_checks(check, b, want, held):
+    """BANKWINDOW: the MCR the machine runs the desktop with, read out of
+    the Rapidus's register file, against what the card's GEM4XE.CFG asked
+    for.  SLOW puts $4000-$7FFF back on the motherboard bus after the
+    speed-up made it fast (src/sys/rapidus.c, rapidus_slow_bank), and the
+    boot screen says so on a second Processor line; anything else leaves
+    it fast and says nothing.  SpartaDOS X has banked into that window
+    all through the boot either way -- and in Altirra the card hands the
+    window to the bank whenever one is in, so the desk coming up is the
+    only thing this can show about that, not what a real card does."""
+    mcr = b.memdump(RAP_MCR, 1)[0]
+    slow = bool(mcr & MCR_SLOW1)
+    said = any(BANKSLOW in ln for ln in held)
+    print(f"  BANKWINDOW={want}: the MCR reads ${mcr:02X}, $4000-$7FFF "
+          f"{'slow' if slow else 'fast'}; the boot screen "
+          f"{'said' if said else 'did not say'} {BANKSLOW!r}")
+    check(slow == (want == "SLOW"),
+          f"BANKWINDOW={want}, but $4000-$7FFF is {'slow' if slow else 'fast'}")
+    check(said == (want == "SLOW"),
+          f"BANKWINDOW={want}, but the boot screen "
+          f"{'said' if said else 'did not say'} {BANKSLOW!r}")
 
 
 def clock_checks(check, b, syms, want, report):
@@ -436,10 +467,12 @@ def main(argv):
         # -- 3b. the boot screen, while it is held ---------------------------
         # As the floppy gate reads it (tests/emu/product_boot.py): the
         # Clock line is the time GEM read, from whichever clock it found.
+        held = []
         for t in range(0, BOOT_WAIT, STEP):
             keep_switch(b, STEP, STEP)
             report = boot_screen(b)
             if report:
+                held = screen(b)
                 break
         else:
             check(False, "the boot screen never showed its hint")
@@ -468,6 +501,7 @@ def main(argv):
         check(not any(REFUSAL in ln for ln in screen(b)),
               "GEM refused the 65C816 as well: the switch did not take")
         clock_checks(check, b, syms, cfg_clock(fs), report)
+        bank_checks(check, b, cfg_value(fs, "BANKWINDOW", "FAST"), held)
 
         bad = []
         for a in far_probes(far, chunk):

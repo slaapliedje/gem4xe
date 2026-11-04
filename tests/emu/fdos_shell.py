@@ -15,6 +15,14 @@ commands at a prompt, booted and come back to by G4DOS's loader.
   2. The same disk with an AUTORUN.SYS on it boots that, not the shell.
   3. The system floppy, gem-sdx.atr: GEM's File -> Quit comes back to the
      shell, which lists the disk.
+  4. BASIC on at a cold start -- OPTION not held, as at every cold start
+     after the first on a Rapidus -- with leftovers in the RAM under BASIC
+     that ask for a cartridge start ($BFFD bit 2, $BFFA aimed at a routine
+     there that marks $BF80).  The OS saw BASIC as a cartridge, G4DOS
+     switches it out, and the OS then reads those leftovers: it must still
+     come to the shell, not run them.  A real machine's RAM holds such
+     leftovers; the emulator's starts at zero, which is why only this,
+     planted, shows it.
 
     python3 tests/emu/fdos_shell.py
 """
@@ -257,12 +265,48 @@ def gem_quits():
         emu.stop()
 
 
+def basic_leftovers():
+    work = tempfile.mkdtemp(prefix="fdossh-")
+    disk = os.path.join(work, "basic.atr")
+    make_disk(disk)
+    # a plain 65C816, so the shell starts without a CPU switch of its own
+    emu = launch(tag="fdossh", memsize="64K", rapidus=False, cpu816=15,
+                 extra_args=["--basic", "--disk", disk])
+    b = emu.bridge
+    try:
+        b.ok("COLD_RESET")
+        t = wait_for(b, fresh, 20000)
+        if not check(t >= 0, "BASIC on at power-up: the disk still boots to the "
+                             "shell"):
+            return
+        # BASIC is out now, so these land in the RAM under it: a routine
+        # that marks $BF80 and loops, a start address at it, $BFFC zero and
+        # $BFFD asking for the cartridge to be started
+        b.memload(0xBF00, bytes([0xA9, 0xAA, 0x8D, 0x80, 0xBF,
+                                 0x4C, 0x05, 0xBF]))
+        b.memload(0xBF80, b"\x00")
+        b.memload(0xBFFA, bytes([0x00, 0xBF, 0x00, 0x04]))
+        b.poke(0x0244, 1)                       # COLDST: RESET starts cold
+        b.ok("WARM_RESET")
+        t = wait_for(b, fresh, 20000)
+        p = os.path.join(OUT, "basic.png")
+        b.screenshot(p)
+        check(b.peek(0xBF80) != 0xAA and t >= 0,
+              f"...and a cold start with BASIC on and leftovers under it that "
+              f"ask for a cartridge start comes to the shell, not into them "
+              f"({p}): $BF80 = ${b.peek(0xBF80):02X}")
+    finally:
+        emu.stop()
+    shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     print("gem4xe-fdossh: G4DOS's shell")
     os.makedirs(OUT, exist_ok=True)
     session()
     autorun()
     gem_quits()
+    basic_leftovers()
     print(f"gem4xe-fdossh: {'FAIL' if problems else 'PASS'} -- G4DOS's shell, "
           f"{len(problems)} problem(s)")
     return 1 if problems else 0

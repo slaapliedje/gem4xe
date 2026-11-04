@@ -122,8 +122,8 @@ Everything that branches on the DOS (`src/sys/dos.c`, `gemdos.c`,
 
 The pattern is the folders' one ([sdfs-plan.md](sdfs-plan.md)):
 **G4DOS keeps only what must exist before gem4xe or without it** -- the
-boot, the loader, sector I/O -- because it is full: 4,763 bytes of code
-with 10 to spare, and `$2000` is gem4xe's direct page.  Everything else
+boot, the loader, sector I/O -- because it is full: 4,766 bytes of code
+with 7 to spare, and `$2000` is gem4xe's direct page.  Everything else
 is gem4xe's, in far memory, written in C until measuring says otherwise.
 
 ## Speed

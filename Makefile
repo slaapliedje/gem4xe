@@ -413,7 +413,7 @@ build/gem.o: src/gem.c src/vdi/vdi.h src/vdi/vdidev.h src/vdi/pointer.h \
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
 
 # GEM4XE.CFG: what the machine should be told before it has a screen.
-build/config.o: src/sys/config.c src/sys/config.h src/sys/cio.h src/vdi/pointer.h
+build/config.o: src/sys/config.c src/sys/config.h src/sys/cio.h src/vdi/pointer.h src/sys/rapidus.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 
@@ -1174,11 +1174,20 @@ $(VSTRESS_MODES:%=build/vstress-%.atr): build/vstress-%.atr: build/vstress-%.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep
 
+# ...and the same test on G4DOS (src/fdos.s) as the disk's AUTORUN.SYS, which
+# G4DOS's loader runs when there is no GEM.COM: no DOS 2, no SpartaDOS X and
+# nothing from the U1MB's PBI BIOS, for a machine with those switched off
+# (docs/vstress.md).
+$(VSTRESS_MODES:%=build/vstress-%-g4.atr): build/vstress-%-g4.atr: build/vstress-%.xex build/fdos.elf build/fdboot.elf tools/mkspdisk.py tools/atr.py
+	@rm -f $@
+	python3 tools/mkspdisk.py --g4dos - $< $@ --name AUTORUN.SYS
+
 vstress: build/vstress-P.atr build/vstress-D.atr build/vstress-N.atr \
          build/vstress-B.atr build/vstress-C.atr build/vstress-I.atr \
          build/vstress-W.atr build/vstress-R.atr build/vstress-F.atr build/vstress-L.atr \
          build/vstress-S.atr build/vstress-M.atr \
-         build/vstress-G.atr build/vstress-H.atr build/vstress-Q.atr
+         build/vstress-G.atr build/vstress-H.atr build/vstress-Q.atr \
+         $(VSTRESS_MODES:%=build/vstress-%-g4.atr)
 
 # The runner outgrew a single-density disk (620 free sectors; the .xex
 # alone wants more), so the fixture is converted to DOS 2.5 enhanced density
@@ -1590,6 +1599,15 @@ build/dosclock.cfg: dist/gem4xe.cfg
 	        .replace(b'# CLOCK=AUTO', b'CLOCK=DOS') \
 	        .replace(b'\r\n', b'\n').replace(b'\n', b'\x9b'))" $< $@
 
+# ...and the one test-cf-bankslow boots with: BANKWINDOW=SLOW, so that
+# $4000-$7FFF is back on the motherboard bus while SpartaDOS X banks there.
+build/bankslow.cfg: dist/gem4xe.cfg
+	@mkdir -p build
+	python3 -c "import sys; \
+	    open(sys.argv[2],'wb').write(open(sys.argv[1],'rb').read() \
+	        .replace(b'# BANKWINDOW=FAST', b'BANKWINDOW=SLOW') \
+	        .replace(b'\r\n', b'\n').replace(b'\n', b'\x9b'))" $< $@
+
 # The DOS's own DUP.SYS stays: it is what GEM returns to when it quits.
 # (It went, for a while, when the system outgrew the disk with the shell
 # on it -- docs/shipping.md section 2 -- and came back with the packed
@@ -1708,6 +1726,13 @@ build/gem-cf.img: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.
 build/gem-cf-dosclock.img: build/gem-cf.img build/dosclock.cfg
 	@rm -f $@
 	python3 tools/mkcf.py $@ --cfg build/dosclock.cfg
+
+# The same card with BANKWINDOW=SLOW: the U1MB's SpartaDOS X, USE BANKED,
+# switching its banks into $4000-$7FFF while the Rapidus leaves that
+# window on the motherboard bus (src/sys/rapidus.c, rapidus_slow_bank).
+build/gem-cf-bankslow.img: build/gem-cf.img build/bankslow.cfg
+	@rm -f $@
+	python3 tools/mkcf.py $@ --cfg build/bankslow.cfg
 
 # The same card in the shape an SD card takes in a SubCart or an AVGCART:
 # a 64 MB FAT32 partition first (the cart's own browser reads it), the
@@ -2542,6 +2567,10 @@ test-cf-dosclock: build/gem-cf-dosclock.img build/desktop.g4a build/desktop.sym
 	@test -n "$(SRC_U1MB)" || { echo "no U1MB fixture: set [u1mb].flash in fixtures.toml"; exit 1; }
 	python3 tests/emu/cf_boot.py --card build/gem-cf-dosclock.img
 
+test-cf-bankslow: build/gem-cf-bankslow.img build/desktop.g4a build/desktop.sym
+	@test -n "$(SRC_U1MB)" || { echo "no U1MB fixture: set [u1mb].flash in fixtures.toml"; exit 1; }
+	python3 tests/emu/cf_boot.py --card build/gem-cf-bankslow.img
+
 # The same card on every U1MB firmware release in [u1mb.firmware] (fixtures.toml,
 # name = flash image).  The gate walks the BIOS setup by what its screen says, so
 # one gate covers releases whose setup pages differ (docs/shipping.md); each
@@ -2633,4 +2662,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

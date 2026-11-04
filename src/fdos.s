@@ -61,6 +61,7 @@ INITAD:       .equ    0x02e2
 COLDSV:       .equ    0xe477
 PORTB:        .equ    0xd301
 BASICF:       .equ    0x03f8          ; the XL OS's: non-zero, BASIC is off
+CARTFG:       .equ    0xbffd          ; cartridge A's option byte
 
 ;;; SIO's device control block and the OS's entry.
 DDEVIC:       .equ    0x0300
@@ -175,6 +176,15 @@ fd_xsect:     .word   0               ; $070E: ...which one
 ;;; on this disk wants BASIC.  (phase 119; test-fdos found it when the
 ;;; emulator's held OPTION stopped covering the second cold start)
 ;;;
+;;; AND THE OS TOLD SO.  It saw BASIC as cartridge A at the cold start
+;;; (TRAMSZ), and when the boot is done it reads the option byte at $BFFD
+;;; and, if bit 2 asks, starts the cartridge through $BFFA -- which, with
+;;; BASIC out, are RAM: whatever the last program left there.  Zero in an
+;;; emulator, so the OS went on to DOSVEC; on a real machine a jump into
+;;; leftovers, a buzz and a blank screen unless OPTION was held
+;;; (2026-11-03).  So $BFFD is zeroed where BASIC was.  A real cartridge's
+;;; ROM there ignores the write, and is started as it asks.
+;;;
 ;;; WHERE DOSVEC GOES: at a cold start the boot's order, at a RESET the
 ;;; shell's (the loader, below).  WARMST is the OS's word for which.
 ;;; ---------------------------------------------------------------------------
@@ -205,6 +215,7 @@ fd_install:   lda     PORTB
 40$:          sta     fd_mode,x       ; sector named by either tag, none of
               dex                     ; the bitmap in hand, nothing owed to
               bpl     40$             ; the free count: fdbss's first bytes
+              sta     CARTFG          ; no cartridge start where BASIC was
               sta     MEMLO           ; fd_top, $2000 (src/fdos.scm): A is
               lda     #.byte1 fd_top  ; its low byte already
               sta     MEMLO+1

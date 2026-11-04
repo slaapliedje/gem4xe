@@ -5,6 +5,19 @@ boots straight into gem4xe's own Rapidus, interrupt, VBXE and pointer code,
 started the way `GEM.COM` starts it, with nothing above it: no AES, no desktop,
 and no DOS call after start-up. `src/vstress.c` lists the modes.
 
+`build/vstress-X-g4.atr` is the same test on G4DOS (`src/fdos.s`), as the
+disk's `AUTORUN.SYS`, which G4DOS's loader runs when there is no `GEM.COM`:
+no DOS 2, no SpartaDOS X and nothing from an Ultimate 1MB's PBI BIOS, for a
+machine with those switched off.  The test's own CPU switch restarts the
+machine from the disk, as `GEM.COM`'s does, and it runs on the second boot.
+
+`BANKWINDOW=SLOW` in `GEM4XE.CFG` is the other half of the hunt: it keeps
+`$4000-$7FFF` on the motherboard bus under GEM, where SpartaDOS X with
+`USE BANKED` switches its banks in while gem4xe's window lists and buffers
+live in the Rapidus's fast copy of the same addresses. Altirra hands that
+window to the bank whenever one is in; whether a real card does is the
+question, and the boot screen's second Processor line says the setting took.
+
 It is for a real machine that freezes under gem4xe's VBXE screen. The emulator
 never freezes, so this is not a gate; every mode is still run once in AltirraSDL
 before it goes on a card, which caught two mistakes of its own (below).

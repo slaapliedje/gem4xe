@@ -27,7 +27,7 @@ Three pieces:
 | | |
 |---|---|
 | `src/fdboot.s` | the boot sectors.  The OS loads sectors 1-3 to `$3000` and calls `$3006`; this follows the superblock's boot-file map (+40, the field a SpartaDOS's own boot sectors follow) and reads `G4DOS.SYS` to `$0700`, sector by sector in the map's order.  Sector 1 is the superblock and its fields are untouched; the code is sectors 2 and 3, and sector 1 from +48, where a SpartaDOS keeps boot code too. |
-| `src/fdos.s` | `G4DOS.SYS`, 4,763 bytes at `$0700`.  A CIO `D:` handler over SDFS, reading and writing, a loader (*The loader*, below), and a sector entry for gem4xe's own SDFS engine (*Folders*, below).  The OS calls it as DOSINI after the boot and after every RESET, and jumps through DOSVEC to the loader. |
+| `src/fdos.s` | `G4DOS.SYS`, 4,766 bytes at `$0700`.  A CIO `D:` handler over SDFS, reading and writing, a loader (*The loader*, below), and a sector entry for gem4xe's own SDFS engine (*Folders*, below).  The OS calls it as DOSINI after the boot and after every RESET, and jumps through DOSVEC to the loader. |
 | `src/shell/` | `SHELL.SYS`, G4DOS's shell: a prompt and the DOS's commands (`src/sys/doscmd.c`), over the same SDFS engine gem4xe uses -- what the loader runs when a disk has nothing else to boot, and what DOSVEC comes back to (*The shell*, below). |
 | `tools/atr.py`, `tools/mkfloppy.py` | `Sdfs.boot_gem4xe` writes the header, the boot code and the boot file onto a floppy; `mkfloppy.py` does it for the system disk.  The applications and QED disks keep the message instead: booted alone they say they have no DOS and name the system disk. |
 
@@ -149,11 +149,11 @@ data and the map page of the file being written, and a bitmap sector.
 ### What it costs
 
 Bank $00 from `$0700` to `$1FFF`, MEMLO `$2000`: the handler, the
-loader and the sector entry, 4,763 bytes; their variables, 347; five
+loader and the sector entry, 4,766 bytes; their variables, 347; five
 sector buffers at `$1B00`.  That is the ceiling.  gem4xe's direct page
 is `$2000` (`src/gem4xe.scm`) and nothing GEM.COM loads is below
 `$3000`, so it still costs gem4xe nothing -- but the three memories in
-`src/fdos.scm` are full to within ten bytes, which is why the folders are
+`src/fdos.scm` are full to within seven bytes, which is why the folders are
 gem4xe's and not G4DOS's.  For scale: a
 DOS 2.5 leaves MEMLO at `$1CFC`, SpartaDOS X at `$1C1D`, a SpartaDOS 3.2
 near `$2000`.
@@ -162,7 +162,9 @@ Four bytes was not room for the loader below and its list of names; it
 was found by sharing four tails said twice and three times (a file's
 cursor rewound, a tag let go) and by clearing the variables that start
 known in one loop -- which is why `fd_mode`, the tags and the bitmap's
-are the first bytes of `fdbss`, in that order.  Ten bytes are spare now.
+are the first bytes of `fdbss`, in that order.  Ten bytes were spare;
+three of them now tell the OS that BASIC, switched out, is no cartridge
+to start (`fd_install`), and seven are left.
 
 ## The loader
 

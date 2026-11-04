@@ -2,7 +2,7 @@
  * src/sys/doscmd.c and src/sys/sdfs.c the Atari runs, against ATR images
  * held in memory as D1:, D2: ... and written back when the lines are done.
  *
- *   doscmd_host [-c COLS] [-r ROWS] [-k KEYS] D1.atr [D2.atr ...] < LINES
+ *   doscmd_host [-c COLS] [-r ROWS] [-k KEYS] [-w N] D1.atr [D2.atr ...] < LINES
  *
  * Each line is run as typed at the prompt, and answered as
  *
@@ -12,7 +12,9 @@
  *
  * More's pause prints "{more}" and takes the next of KEYS (a space when
  * they are used up); a program run prints "{exec Dn:PATH}" and a reboot
- * "{reboot}".  sd_now gives one fixed time, as in sdfs_host.c.
+ * "{reboot}".  -w N makes DN: write-protected: every write to it is
+ * refused, as a drive does with the tab on, or a FujiNet slot mounted
+ * read-only.  sd_now gives one fixed time, as in sdfs_host.c.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +29,7 @@ static struct {
     long len;
     unsigned secsz;
     long nsec;
+    int wprot;
 } d[UNITS];
 
 static const char *keys = "";
@@ -55,6 +58,8 @@ int16_t sd_dev(SDFS *s, uint8_t unit, uint16_t sec, uint8_t *buf,
     at = offset_of(u, sec);
     if (at + len > d[u].len)
         return SD_EERROR;
+    if (write && d[u].wprot)
+        return SD_EWRPRO;
     if (write)
         memcpy(d[u].img + at, buf, len);
     else
@@ -138,7 +143,7 @@ int main(int argc, char **argv)
     SDFS *s = malloc(sizeof(SDFS));
     DC_STATE *h = malloc(sizeof(DC_STATE));
     char line[300];
-    int i = 1, u = 0, cols = 38, rows = 0;
+    int i = 1, u = 0, cols = 38, rows = 0, wp = 0;
     int16_t e;
 
     for (; i < argc && argv[i][0] == '-'; i += 2) {
@@ -150,7 +155,11 @@ int main(int argc, char **argv)
             rows = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "-k"))
             keys = argv[i + 1];
+        else if (!strcmp(argv[i], "-w"))
+            wp = atoi(argv[i + 1]);
     }
+    if (wp >= 1 && wp <= UNITS)
+        d[wp - 1].wprot = 1;
     for (; i < argc && u < UNITS; i++, u++) {
         if (!strcmp(argv[i], "-"))      /* an empty drive */
             continue;
@@ -168,7 +177,7 @@ int main(int argc, char **argv)
     }
     if (!u) {
         fprintf(stderr, "usage: doscmd_host [-c COLS] [-r ROWS] [-k KEYS] "
-                "D1.atr [D2.atr ...] < LINES\n");
+                "[-w N] D1.atr [D2.atr ...] < LINES\n");
         return 2;
     }
     sd_init(s);
@@ -183,7 +192,7 @@ int main(int argc, char **argv)
     }
     for (u = 0; u < UNITS; u++) {
         FILE *f;
-        if (!d[u].img)
+        if (!d[u].img || d[u].wprot)
             continue;
         sd_sync(s, (uint8_t)(u + 1));
         f = fopen(d[u].path, "wb");

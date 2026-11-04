@@ -13,6 +13,7 @@
 #include "../vbxe/vbxe.h"   /* VB_WIDE_*: the width index SCREENW keeps */
 #include "../vdi/pointer.h"
 #include "hiprobe.h"         /* HIGHRAM= goes straight into its limits */
+#include "rapidus.h"         /* BANKWINDOW=SLOW is done as it is read */
 
 /* SCREENW's default is NAMED and not left to the zero the rest of the
  * struct starts as: VB_WIDE_NARROW is 0, so an unset SCREENW would have
@@ -104,6 +105,8 @@ static const char FAR k_screenh[] = "SCREENH";
 static const char FAR k_screenw[] = "SCREENW";
 static const char FAR k_highram[] = "HIGHRAM";
 static const char FAR k_look[] = "LOOK";
+static const char FAR k_bankwin[] = "BANKWINDOW";
+static const char FAR v_slow[] = "SLOW";
 
 static char up(char c)
 {
@@ -272,6 +275,13 @@ static void cfg_line(char *s)
                 hiram_hi = (uint8_t)hi;
             }
         }
+    }
+    else if (same(k_bankwin, key)) {
+        /* Done here and now, as MOUSEPORT is, so that nothing is kept:
+         * the speed-up has run and the file is read between CIO calls,
+         * with no bank in.  FAST is what the speed-up already made it. */
+        if (same(v_slow, val))
+            rapidus_slow_bank();
     }
     else if (same(k_printto, key)) {
         /* A NAME, not a word out of a table: the value is taken as it

@@ -95,16 +95,27 @@ static uint16_t perm(SDFS FAR *s, uint8_t u)
 
 /* ---- the cache -------------------------------------------------------- */
 
+/* A changed sector to the disk.  ONE THE DRIVE REFUSES -- a disk with its
+ * tab on, a FujiNet slot mounted read-only, a bad sector -- takes every
+ * change of its unit's with it: the unit is forgotten, and mounted again
+ * from what is on the disk the next time it is asked for.  Kept, those
+ * changes could never be written, and the next time any drive wanted a
+ * slot this would try one of them again and fail that drive's call: a
+ * report G4BENCH could not write to a read-only D2: lost DESKTOP.RSC on
+ * D1:, and the desktop with it (2026-11-03).  The caller hears the error. */
 static int16_t c_write(SDFS FAR *s, int16_t i)
 {
     SD_SLOT FAR *sl = &s->slots[i];
+    uint8_t u = sl->unit;
     int16_t e;
 
     if (!sl->dirty)
         return 0;
-    e = sd_dev(s, sl->unit, sl->sec, s->buf[i], seclen(s, sl->unit, sl->sec), 1);
-    if (e < 0)
+    e = sd_dev(s, u, sl->sec, s->buf[i], seclen(s, u, sl->sec), 1);
+    if (e < 0) {
+        sd_forget(s, u);
         return e;
+    }
     sl->dirty = 0;
     return 0;
 }
@@ -163,14 +174,16 @@ static int16_t c_get(SDFS FAR *s, uint8_t u, uint16_t sec, uint8_t kind,
     }
     sl = &s->slots[v];
     if (sl->unit && sl->dirty) {
-        int16_t r;
-        if (sl->kind > 0) {
-            r = c_flush(s, sl->unit, (uint8_t)(sl->kind - 1));
-            if (r < 0)
-                return r;
-        }
-        r = c_write(s, v);
-        if (r < 0)
+        /* ...and a refusal is the call's own failure only when the slot
+         * was this unit's: another drive's changes, refused, are gone
+         * with that drive (c_write), and the slot is free for this one */
+        uint8_t was = sl->unit;
+        int16_t r = 0;
+        if (sl->kind > 0)
+            r = c_flush(s, was, (uint8_t)(sl->kind - 1));
+        if (r >= 0)
+            r = c_write(s, v);
+        if (r < 0 && was == u)
             return r;
     }
     sl->unit = 0;

@@ -84,6 +84,13 @@ void rapidus_speedup(void);
  * return to DOS only; nothing is fast afterwards. */
 void rapidus_restore(void);
 
+/* BANKWINDOW=SLOW in GEM4XE.CFG (src/sys/config.c): $4000-$7FFF, where an
+ * XE's extra memory banks appear, back on the motherboard bus after the
+ * speed-up made it fast.  For finding out whether a DOS that banks there
+ * (SpartaDOS X, USE BANKED) and the fast copy disagree on a real card;
+ * Altirra's card hands the window to the bank whenever one is in. */
+void rapidus_slow_bank(void);
+
 /* The register file, for src/sys/irq.c's window 3 switch. */
 uint8_t rapidus_reg_read(uint32_t a);
 void    rapidus_reg_write(uint32_t a, uint8_t v);

@@ -122,6 +122,7 @@ BOOT_WAIT = 3000                # frames from the CPU switch to give it to appea
 # behind the 4 KB cache.
 SDRAM_BASE = 0x080000
 BOOT_INK, BOOT_PAPER = "$00", "$0e"     # src/sys/bootinfo.c INK, PAPER, as HWSTATE prints them
+CHBAS = 0x02F4                          # the OS's shadow of ANTIC's CHBASE
 REFUSAL = "gem4xe needs"        # src/farload.s msg_no816
 RAPIDUS_MCR_BEFORE = 1          # and in RAPIDUS (src/sys/rapidus.h): the MCR ...
 RAPIDUS_CMCR_BEFORE = 5         # ... and the CMCR as the firmware left them
@@ -259,9 +260,11 @@ def boot_screen(b):
     return report
 
 
-def check_boot(name, report, gtia, b, syms, check):
+def check_boot(name, report, gtia, b, syms, check, glyphs=None):
     """The report against the machine that wrote it; gtia is HWSTATE's
-    reading of the colours, taken while the screen was held."""
+    reading of the colours, and glyphs (CHBAS, the set it names, the set
+    at $E000) what ANTIC was given to draw the text with, both taken
+    while the screen was held."""
     words = dict(LANG)
     L = lambda k: words["BOOT_" + k]        # noqa: E731
     with open(os.path.join(ROOT, "VERSION")) as f:
@@ -313,6 +316,18 @@ def check_boot(name, report, gtia, b, syms, check):
     check((ink, paper) == (BOOT_INK, BOOT_PAPER),
           f"{name}: the boot screen's ink is {ink} on {paper}, not "
           f"{BOOT_INK} on {BOOT_PAPER} -- the OS's VBI put COLOR1 back?")
+    # The text's glyphs, where ANTIC can read them: the OS's own set, in
+    # RAM below the ROM's $C000 (src/sys/bootinfo.c, boot_begin).  With
+    # the OS running from RAM under its ROM, a Rapidus may hold that copy
+    # in the card's SRAM alone, which ANTIC -- on the motherboard bus --
+    # never sees: a real card drew every letter as noise.  Altirra's ANTIC
+    # draws the text either way, so it is the memory that is read here.
+    if glyphs:
+        page, shown, osset = glyphs
+        check(page < 0xC0 and shown == osset,
+              f"{name}: the boot screen's text is drawn from ${page:02X}00, "
+              + ("which is not the OS's set" if page < 0xC0 else
+                 "under the OS ROM, where ANTIC may read no glyphs at all"))
 
 
 def one(name, progname, how, batches, cart, keep, check):
@@ -476,12 +491,15 @@ def one(name, progname, how, batches, cart, keep, check):
         # Three seconds is 150 frames and the poll is 20, so it cannot be
         # missed; what is read is the whole report, because the hint is
         # the last thing written.  The picture is kept beside the desk's.
-        gtia = {}
+        gtia, glyphs = {}, None
         for t in range(0, BOOT_WAIT, STEP):
             b.frames(STEP)
             report = boot_screen(b)
             if report:
                 gtia = b.cmd("HWSTATE")["gtia"]       # while it is held
+                page = b.peek(CHBAS)
+                glyphs = (page, b.memdump(page << 8, 1024),
+                          b.memdump(0xE000, 1024))
                 break
         else:
             check(False, f"{name}: the boot screen never showed its hint")
@@ -515,7 +533,7 @@ def one(name, progname, how, batches, cart, keep, check):
         check(not any(REFUSAL in ln for ln in screen(b)),
               f"{name}: GEM refused the 65C816 as well: the switch did not take")
         if report:
-            check_boot(name, report, gtia, b, syms, check)
+            check_boot(name, report, gtia, b, syms, check, glyphs)
 
         # the far image, as the linker wrote it
         bad = []
