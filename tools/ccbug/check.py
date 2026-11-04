@@ -299,10 +299,11 @@ def main():
     fixtures["B21 mscan follows a small-model fragment"] = (
         len(_mscan.joins(_fix)), 1)
     # ...and B12's: the compiler's own -O1 assembly, one wrong-bit shift
-    # and an unsigned control beside it that must stay silent.
+    # and an unsigned control beside it that must stay silent, and -O2's
+    # shared fragment with its label on the first shift.
     _fix = os.path.join(ROOT, "tools", "ccbug", "mscan_b12.s")
     fixtures["B12 mscan finds the shift from the wrong bit"] = (
-        len(list(_mscan.wrong_bit(_fix))), 1)
+        len(list(_mscan.wrong_bit(_fix))), 2)
 
     # The same discipline for the negative-Y scan.  Calypsi #82 is fixed in
     # the 5.18 this tree requires, so the scan guards a shape rather than a

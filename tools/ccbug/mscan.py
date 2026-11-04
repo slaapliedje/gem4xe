@@ -402,6 +402,12 @@ def wrong_bit(path):
         if m:
             func = m.group(1)
             line = line[m.end():]
+        else:
+            # a fragment's label, `?L29`:, may sit on the first shift: off
+            # with it too, or that shift is not counted (mscan_b12.s, -O2)
+            m = re.match(r"^`[^`]+`:", line)
+            if m:
+                line = line[m.end():]
         text = line.strip()
         if not text or text.startswith("."):
             continue

@@ -617,6 +617,23 @@ fixture that proves it can report; `make check-cc` runs it.  A result
 below 2^(n-1) survives the wrong sign extension, which is why this sat
 unseen: the shape is the bug, not the answer.
 
+**The scan was blind to it for two months at -O2, and is blind past 8.**
+(2026-11-04, g4paint's flood fill: `GROUP(x)` as a signed `x >> 4` made
+319 >> 4 come out 3, and every span stopped at pixel 63.)  At -O2 two
+functions with the same shift share one fragment, and the fragment's
+label sits on the first `lsr` -- `` `?L29`:     lsr a `` -- which the scan
+read as part of the instruction, so it counted no shift.  It strips
+those labels now, and `mscan_b12.s` carries the compiler's own -O2 shape
+as a second hit; a rescan of every source (`mscan.py --tree`'s fresh
+assembly) found none in the tree.  Past 8 the scan cannot help: the
+count itself is wrong.  Run in the simulator, `0x7123 >> n` gives -4
+(n=3), 2 (4), 113 (8, right), 145 (9), 72 (10), **1810 (12)** and 226
+(15), and `x >> 12` is emitted as four shifts and a twelve-bit sign
+extension -- a correct `x >> 4`, which no scan of the assembly can tell
+from one written on purpose.  Only a source scan would find those (a
+clang with a 16-bit `int`, msp430, so the promotions are the Atari's);
+until there is one, the rule above is the guard.
+
 
 ## B13 and B14 — an arrowhead's two ends
 
