@@ -56,7 +56,7 @@ APT_LBA = 1
 # What a card image says when it is mounted as a floppy and booted (the
 # screen editor shows 38 columns).
 CARD_IMAGE_SAYS = ["gem4xe: a card image, not a floppy.",
-                   "Boot gem-sdx.atr instead."]
+                   "Boot gem-sys.atr instead."]
 MBR_TYPE_APT = 0x7F             # the type byte a protective MBR gives the table
 MBR_TYPE_FAT32 = 0x0C           # FAT32 with LBA addressing: the SD-card case
 SIG = b"APT"

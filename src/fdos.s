@@ -2,10 +2,10 @@
 ;;; fdos.s -- G4DOS, gem4xe's own DOS for its floppies: D: over an SDFS
 ;;; disk, and a loader that runs GEM.COM off it.  docs/fdos.md.
 ;;;
-;;; WHY.  gem-sdx.atr, gem-apps.atr and gem-qed.atr carry no DOS, so that
-;;; they can be given away: they boot under SpartaDOS X, which lives in the
-;;; machine.  Anywhere else -- an emulator's default setup, a machine with
-;;; no SDX -- the system floppy did not boot at all.  This is the cartridge's
+;;; WHY.  gem4xe's floppies carried no DOS, so that they could be given
+;;; away: they booted under SpartaDOS X, which lives in the machine.
+;;; Anywhere else -- an emulator's default setup, a machine with no SDX --
+;;; the system floppy, now gem-sys.atr, did not boot at all.  This is the cartridge's
 ;;; answer (src/cartd.s, docs/cartridge.md) brought to the floppy.  It
 ;;; began as reading alone -- the small half, and all GEM needs to start --
 ;;; and writes since 2026-11-02, so that what gem4xe saves stays saved.

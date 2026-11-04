@@ -8,14 +8,15 @@ Two of them boot, and they come up the same way by different means:
                      boot, beside the DOS's own DUP.SYS, which is what
                      GEM returns to (tools/mkdisk.py --sweep, and
                      docs/shipping.md section 2);
-  build/gem-sdx.atr  a double-sided double-density SDFS disk with NO DOS
-                     on it (tools/mkfloppy.py): the one the release
-                     carries, because the other boots a DOS that is not
-                     gem4xe's to give away.  It boots under SpartaDOS X
-                     from a cartridge (--sdx=CART, the fixture
-                     [spartados].sdx_cart) or from Ultimate 1MB flash,
-                     which reads its AUTOEXEC.BAT.  Without the fixture
-                     its files are still checked; the boot is not.
+  build/gem-sys.atr  a double-sided double-density SDFS disk whose only
+                     DOS is gem4xe's own, G4DOS (tools/mkfloppy.py): the
+                     one the release carries, because the other boots a
+                     DOS that is not gem4xe's to give away.  Here it is
+                     booted under SpartaDOS X from a cartridge
+                     (--sdx=CART, the fixture [spartados].sdx_cart), which
+                     reads its AUTOEXEC.BAT; its own boot, G4DOS's, is
+                     test-fdos's.  Without the fixture its files are still
+                     checked; the boot is not.
   build/gem-apps.atr the applications and the desk accessory, with no DOS
                      and no AUTOEXEC.BAT: not a boot disk, so it is read
                      and not booted.
@@ -137,7 +138,7 @@ HEAD = 64                       # and at the head of every chunk: where a DOS
 PRODUCTS = [
     ("gem-boot.atr", "AUTORUN.SYS", "a double-density DOS 2, AUTORUN.SYS",
      (), False),
-    ("gem-sdx.atr", "GEM.COM", "no DOS on the disk: SpartaDOS X from the "
+    ("gem-sys.atr", "GEM.COM", "no DOS on the disk: SpartaDOS X from the "
      "cartridge, AUTOEXEC.BAT", ("AUTOEXEC.BAT",), True),
 ]
 
@@ -670,7 +671,7 @@ def no_dos(check):
     has no DOS and what to boot instead (tools/mkfloppy.py NO_DOS), where
     it used to fail with BOOT ERROR over and over.  Reported from
     AltirraSDL as a sector error at the bootloader.  (The system disk,
-    gem-sdx.atr, boots its own DOS now: tests/emu/fdos_boot.py.)"""
+    gem-sys.atr, boots its own DOS now: tests/emu/fdos_boot.py.)"""
     import mkfloppy
     from m14_sparta import screen
     name = "gem-apps.atr"

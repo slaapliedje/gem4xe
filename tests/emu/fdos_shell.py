@@ -13,7 +13,7 @@ commands at a prompt, booted and come back to by G4DOS's loader.
      the disk is read with tools/atr.py: what the session made is there,
      what it moved and deleted is not, and Sdfs.check() is clean.
   2. The same disk with an AUTORUN.SYS on it boots that, not the shell.
-  3. The system floppy, gem-sdx.atr: GEM's File -> Quit comes back to the
+  3. The system floppy, gem-sys.atr: GEM's File -> Quit comes back to the
      shell, which lists the disk.
   4. BASIC on at a cold start -- OPTION not held, as at every cold start
      after the first on a Rapidus -- with leftovers in the RAM under BASIC
@@ -243,7 +243,7 @@ def autorun():
 def gem_quits():
     syms = symfile.load(SYMS)
     emu = launch(tag="fdossh", memsize="1088K",
-                 extra_args=["--disk", os.path.join(BUILD, "gem-sdx.atr")])
+                 extra_args=["--disk", os.path.join(BUILD, "gem-sys.atr")])
     b = emu.bridge
     try:
         boot(b, syms, OUT)

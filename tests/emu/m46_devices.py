@@ -6,7 +6,7 @@ Two machines, each booted with D1: only:
   DOS 2 (gem-shots.atr).  DOS 2 keeps a map of the drives it serves,
      and the desk starts with what it says, D1: and D2:.  Nothing is
      attached as D2:, so Install devices takes its icon away.
-  SpartaDOS X from its cartridge (gem-sdx.atr).  A SpartaDOS keeps no
+  SpartaDOS X from its cartridge (gem-sys.atr).  A SpartaDOS keeps no
      map, so the desk starts with a guess, D1: and D2:.  A disk is
      attached as D3: once the desk is up, as a person would mount one
      from a loader; Install devices gives it an icon and takes D2:'s
@@ -34,7 +34,7 @@ from deskrsc import OPTNMENU, IDSKITEM, SAVEITEM       # noqa: E402
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
 DOS2 = os.path.join(BUILD, "gem-boot.atr")
 SPARTA = os.path.join(BUILD, "gem-shots.atr")      # SpartaDOS 3.2
-SDX = os.path.join(BUILD, "gem-sdx.atr")
+SDX = os.path.join(BUILD, "gem-sys.atr")
 D3 = os.path.join(BUILD, "gem-apps.atr")      # any disk will do
 OUT = os.path.join(BUILD, "shots", "m46")
 

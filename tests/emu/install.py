@@ -10,7 +10,7 @@ floppy drives and a third drive to install onto:
 
   D1:  a blank SDFS disk -- the drive being installed onto, which is D1:
        so that the cold start at the end boots from it
-  D2:  gem-sdx.atr, the system
+  D2:  gem-sys.atr, the system
   D3:  gem-apps.atr, the applications and the desk accessory
 
   1. SpartaDOS X (the [spartados].sdx_cart fixture) comes up at D1:,
@@ -48,7 +48,7 @@ import atr, mkcf, symfile                   # noqa: E402
 from m14_sparta import KEYS, screen, wait_prompt  # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
-SYSTEM = os.path.join(BUILD, "gem-sdx.atr")
+SYSTEM = os.path.join(BUILD, "gem-sys.atr")
 APPS = os.path.join(BUILD, "gem-apps.atr")
 TARGET = os.path.join(BUILD, "install-target.atr")
 SYMS = os.path.join(BUILD, "gem.sym")

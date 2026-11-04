@@ -125,19 +125,21 @@ public release (`make release`) does not carry it.  A SpartaDOS 3.2
 floppy, `gem-sp.atr`, was the same and was retired after phase 42: the
 installer is SpartaDOS X's, and a machine with a drive to install onto
 has SpartaDOS X in its flash, so a disk that boots 3.2 was one more thing
-to build and gate for nobody.  **`gem-sdx.atr`** and
+to build and gate for nobody.  **`gem-sys.atr`** and
 **`gem-apps.atr`** (`tools/mkfloppy.py`) are the two that can travel:
 double-sided double-density SDFS disks, 1440 sectors of 256 bytes, with
-**no DOS**, their boot sectors the blank disk's stub.  The first is the
+**no DOS but gem4xe's own**: the system floppy's boot sectors load G4DOS
+(`docs/fdos.md`), and the applications floppy boots nothing.  The first is the
 system -- the card's `\GEM\` without the accessories, the card's
 `AUTOEXEC.BAT` and `INSTALL.BAT` -- and the second the applications, the
 three accessories and the control panel extension, with an `INSTALL.BAT`
 of its own and nothing that boots.
 
-The system floppy boots under SpartaDOS X, which is the one DOS that
-lives in the machine rather than on the disk: a cartridge, or an
-Ultimate 1MB with it in flash.  SDX comes up, changes to D1: and runs the
-disk's `AUTOEXEC.BAT`, and that is GEM; the loader switches the Rapidus
+The system floppy boots by itself, into G4DOS and on into GEM, and
+under SpartaDOS X as well, which is the one DOS that lives in the machine
+rather than on the disk: a cartridge, or an Ultimate 1MB with it in
+flash.  There SDX comes up, changes to D1: and runs the disk's
+`AUTOEXEC.BAT`, and that is GEM; the loader switches the Rapidus
 as it does from the other two.  `make test-boot` boots it under the
 `[spartados].sdx_cart` fixture, nothing typed, compares the desk with the
 model as it does the others, and reads the applications floppy file by
@@ -157,10 +159,10 @@ here rather than in a forum thread.
 | If you have | Use | Why |
 |---|---|---|
 | U1MB / Incognito, SIDE, SIDE2, SIDE3, IDE Plus 2.0, MyIDE-II | `disks/gem-cf.img` written to a card | APT; the system installs to `\GEM\`, applications to `\APPS\` |
-| An APT drive you have already partitioned | `disks/gem-sdx.atr` and `disks/gem-apps.atr`, and `-INSTALL` from each | the floppies are the card in two halves; nothing of yours is touched |
-| SIDE3 / AVGCART / any FAT loader, with SpartaDOS X in the machine | `disks/gem-sdx.atr` on the card you have, `disks/gem-apps.atr` as a second drive | the loader mounts them; SDX boots the first; nothing to install -- and they are the floppies in the public release |
-| SIDE3 / AVGCART / any FAT loader, without | `disks/gem-sdx.atr` on the card you have, `disks/gem-apps.atr` as a second drive | the system disk boots its own DOS (docs/fdos.md): everything opens, runs and saves, with folders under GEM |
-| SDrive-MAX, FujiNet, a real drive | `disks/gem-sdx.atr` with `disks/gem-apps.atr` in a second drive | plain floppy images: read and write under SpartaDOS X, read-only on their own (docs/fdos.md) |
+| An APT drive you have already partitioned | `disks/gem-sys.atr` and `disks/gem-apps.atr`, and `-INSTALL` from each | the floppies are the card in two halves; nothing of yours is touched |
+| SIDE3 / AVGCART / any FAT loader, with SpartaDOS X in the machine | `disks/gem-sys.atr` on the card you have, `disks/gem-apps.atr` as a second drive | the loader mounts them; SDX boots the first; nothing to install -- and they are the floppies in the public release |
+| SIDE3 / AVGCART / any FAT loader, without | `disks/gem-sys.atr` on the card you have, `disks/gem-apps.atr` as a second drive | the system disk boots its own DOS (docs/fdos.md): everything opens, runs and saves, with folders under GEM |
+| SDrive-MAX, FujiNet, a real drive | `disks/gem-sys.atr` with `disks/gem-apps.atr` in a second drive | plain floppy images: read and write under SpartaDOS X and on their own, under G4DOS (docs/fdos.md) |
 | A DOS you already like | `system/` -- the loose files | put them where you want; give the disk a start-up that runs `GEM` |
 | MIO, BlackBox, original MyIDE | the floppies | their partitioning is their own; nothing here writes it |
 

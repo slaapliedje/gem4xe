@@ -2,7 +2,7 @@
 """The system floppy boots by itself: no SpartaDOS X, only the disk's own
 DOS, G4DOS (src/fdos.s, src/fdboot.s, docs/fdos.md).
 
-build/gem-sdx.atr in D1: and build/gem-apps.atr in D2:, on a machine
+build/gem-sys.atr in D1: and build/gem-apps.atr in D2:, on a machine
 with no SDX cartridge -- an emulator's default, or a machine without one:
 
   1. the boot sectors load G4DOS.SYS, which loads GEM.COM, and the desk
@@ -137,8 +137,8 @@ def main():
     # A copy, written to: the emulator keeps its working copy of it by its
     # hash in the run's configuration (tests/emu/gemarc.py does the same).
     work = tempfile.mkdtemp(prefix="fdos-")
-    disk = os.path.join(work, "gem-sdx.atr")
-    shutil.copy(os.path.join(BUILD, "gem-sdx.atr"), disk)
+    disk = os.path.join(work, "gem-sys.atr")
+    shutil.copy(os.path.join(BUILD, "gem-sys.atr"), disk)
     sha = hashlib.sha256(open(disk, "rb").read()).hexdigest()
     state = os.path.join(config_dir_for("fdos"), "disk_state", sha)
     shutil.rmtree(state, ignore_errors=True)
@@ -149,7 +149,7 @@ def main():
     b = emu.bridge
     try:
         boot(b, syms, OUT)
-        check(True, "the desk came up from gem-sdx.atr with no SpartaDOS X")
+        check(True, "the desk came up from gem-sys.atr with no SpartaDOS X")
         # below S, idle in the desktop's evnt_multi, all of the engine
         # stack is free: painted, and read back at the end
         stk_lo, stk_hi = stack_range()

@@ -145,7 +145,7 @@ def walk_atr(fs, path=""):
 
 def reading():
     print("reading: gem4xe's disks, as tools/atr.py has them")
-    disks = [p for p in ("gem-sdx.atr", "gem-apps.atr", "gem-shots.atr",
+    disks = [p for p in ("gem-sys.atr", "gem-apps.atr", "gem-shots.atr",
                          "m14-boot.atr", "gem-qed.atr")
              if os.path.exists(os.path.join(BUILD, p))]
     check(len(disks) >= 2, f"disks to read: {disks}")

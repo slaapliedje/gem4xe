@@ -27,11 +27,11 @@ the release page says which, and points `ALTIRRASDL` at it:
 
     ALTIRRASDL=~/dev/altirra-patched/AltirraSDL python3 tools/screenshot.py ...
 
-A BLUE SCREEN OF "BOOT ERROR" IS NOT A BUG.  The release's own
-`gem-sdx.atr` carries no DOS on purpose -- it boots under SpartaDOS X,
-which lives in the machine rather than on the disk -- so it needs
-`--cart` pointing at an SDX cartridge image.  The release page says
-where to get one.
+The release's own `gem-sys.atr` boots by itself, into gem4xe's own small
+DOS (G4DOS) and on into GEM; it runs under SpartaDOS X too, given `--cart`
+pointing at an SDX cartridge image.  A disk of your own with no DOS on it
+needs that cartridge, and boots to a blue BOOT ERROR without one -- which
+is not a bug.
 
 THE FRAME COUNT IS THE THING TO TUNE.  A Rapidus cold-boots as a 6502;
 gem4xe's loader notices, switches the CPU and restarts, so the desktop
@@ -57,9 +57,8 @@ def main(argv):
     ap.add_argument("--frames", type=int, default=2600,
                     help="how long to wait before the picture (default 2600)")
     ap.add_argument("--disk2", help="a second drive, for your own work")
-    ap.add_argument("--cart", help="a cartridge image -- SpartaDOS X, if "
-                                   "you are booting the release's own "
-                                   "gem-sdx.atr, which carries no DOS")
+    ap.add_argument("--cart", help="a cartridge image -- SpartaDOS X, for "
+                                   "a disk that carries no DOS of its own")
     a = ap.parse_args(argv[1:])
 
     extra = ["--disk", os.path.abspath(a.image)]

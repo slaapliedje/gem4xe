@@ -116,9 +116,9 @@ def main():
     sdx = next((a[6:] for a in sys.argv if a.startswith("--sdx=")), "")
     print("gem4xe boot time (not a gate)")
     one("DOS 2.0S, gem-boot.atr", "gem-boot.atr", None)
-    one("G4DOS, gem-sdx.atr alone", "gem-sdx.atr", None)
+    one("G4DOS, gem-sys.atr alone", "gem-sys.atr", None)
     if sdx:
-        one("SpartaDOS X, gem-sdx.atr", "gem-sdx.atr", sdx)
+        one("SpartaDOS X, gem-sys.atr", "gem-sys.atr", sdx)
     one("the cartridge, gem4xe-sys.car", None,
         os.path.join(BUILD, "gem4xe-sys.car"))
     return 0

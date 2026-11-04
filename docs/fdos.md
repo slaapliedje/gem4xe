@@ -1,6 +1,6 @@
 # The system floppy boots by itself
 
-`gem-sdx.atr` carries gem4xe's own small DOS, `G4DOS.SYS`, on its boot
+`gem-sys.atr` carries gem4xe's own small DOS, `G4DOS.SYS`, on its boot
 sectors.  On a machine with no SpartaDOS X it loads GEM; under
 SpartaDOS X it is never run, and the floppy is the ordinary SDX disk it
 always was.

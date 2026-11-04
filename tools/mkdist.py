@@ -29,7 +29,8 @@ that made it.
 --public is the release (`make release`): the same, without the two
 floppies that boot a DOS which is not gem4xe's to give away, and with
 the page's few passages about them saying so instead.  The third floppy,
-gem-sdx.atr, carries no DOS and travels in both.  --zip writes the same
+gem-sys.atr, boots gem4xe's own DOS, G4DOS, and travels in both.  --zip
+writes the same
 tree as --tar does, for the people whose machine opens one and not the
 other.
 """
@@ -96,7 +97,7 @@ DISKS = [
      "system and nothing else: a DOS 2 cannot read the applications "
      "floppy's directories, so this disk is for trying GEM rather than "
      "for keeping it, and its Desk menu holds only the About item."),
-    ("gem-sdx.atr", "disks/gem-sdx.atr", "sdfs",
+    ("gem-sys.atr", "disks/gem-sys.atr", "sdfs",
      "A double-sided double-density SDFS floppy, 360 KB: the system -- "
      "the card's `\\GEM\\`, without the desk accessory -- an "
      "`AUTOEXEC.BAT` that changes into `\\GEM\\` and runs GEM, and "
@@ -381,20 +382,20 @@ TESTER = {
     "emu_note": "",
     "install": (
         "**If you already have an APT drive**, do not write the card image "
-        "over\nit.  `gem-sdx.atr` and `gem-apps.atr` each carry an "
+        "over\nit.  `gem-sys.atr` and `gem-apps.atr` each carry an "
         "`INSTALL.BAT` that\ncopies what the disk holds onto a drive you "
         "name.  At the SpartaDOS X\nprompt (quit GEM to get there), on the "
         "drive the floppy is in,\n`-INSTALL` and the drive to put it on --\n\n"
         "    -INSTALL D2:\n\n"
-        "-- first with `gem-sdx.atr`, then with `gem-apps.atr`, and `gem-qed.atr` for QED.  The "
+        "-- first with `gem-sys.atr`, then with `gem-apps.atr`, and `gem-qed.atr` for QED.  The "
         "system's gives\nthe drive an `AUTOEXEC.BAT` that starts GEM, "
         "unless it has one already,\nwhich is left alone.  Installing a "
         "newer gem4xe is the same again.\n\n"
         "If what you have is a **loader that reads FAT** -- a SIDE3, an "
         "AVGCART\n-- or an SDrive-MAX, a FujiNet or a real drive, then the "
-        "floppies are\nwhat you want: copy `gem-sdx.atr` (SpartaDOS X in "
-        "the machine) or\n`gem-boot.atr` (DOS 2) onto the card you already "
-        "have and load it like\nanything else.  `docs/media.md` in the "
+        "floppies are\nwhat you want: copy `gem-sys.atr` (it boots its own "
+        "DOS, and runs\nunder SpartaDOS X too) or `gem-boot.atr` (DOS 2) "
+        "onto the card you\nalready have and load it like anything else.  `docs/media.md` in the "
         "source tree has the whole matrix\nand the reasoning."),
     "dosnote": (
         "**The DOS on each disk image is not gem4xe's**, and is there so "
@@ -415,26 +416,24 @@ def public_text():
         "emu_disk": "--cart gem4xe.car",
         "emu_note": fill(
             "That is the whole of it: `gem4xe.car` needs no disk and no "
-            "DOS.  For the floppies instead, `--cart SDX.car --disk "
-            "disks/gem-sdx.atr` -- `disks/gem-sdx.atr` carries no DOS "
-            "(*What is in the download*, below) and boots under SpartaDOS "
-            "X, and `SDX.car` is a SpartaDOS X cartridge image, which this "
-            "download does not include: the SpartaDOS X Upgrade Project "
-            "offers one for emulators at <https://sdx.atari8.info/>, and "
-            "Altirra reads it as it is.  Without one, make a disk of your "
-            "own: a bootable SpartaDOS 3.2 or DOS 2 disk with the files in "
-            "`system/` on it, started at boot the way *Booting* describes "
-            "or by hand from the DOS prompt, and `--disk` that "
-            "instead.") + "\n",
+            "DOS.  For the floppies instead, `--disk disks/gem-sys.atr`: "
+            "it boots by itself, into gem4xe's own small DOS, G4DOS, and "
+            "on into GEM (*What is in the download*, below).  It runs "
+            "under SpartaDOS X as well -- `--cart SDX.car --disk "
+            "disks/gem-sys.atr`, where `SDX.car` is a SpartaDOS X "
+            "cartridge image, which this download does not include: the "
+            "SpartaDOS X Upgrade Project offers one for emulators at "
+            "<https://sdx.atari8.info/>, and Altirra reads it as it "
+            "is.") + "\n",
         "install": fill(
             "**If you already have an APT drive**, do not write the card "
-            "image over it.  `gem-sdx.atr` and `gem-apps.atr` each carry "
+            "image over it.  `gem-sys.atr` and `gem-apps.atr` each carry "
             "an `INSTALL.BAT` that copies what the disk holds onto a drive "
             "you name.  At the SpartaDOS X prompt (quit GEM to get there), "
             "on the drive the floppy is in, `-INSTALL` and the drive to put "
             "it on --") +
             "\n\n    -INSTALL D2:\n\n" + fill(
-            f"-- first with `gem-sdx.atr`, then with `gem-apps.atr`, and `gem-qed.atr` for QED.  The "
+            f"-- first with `gem-sys.atr`, then with `gem-apps.atr`, and `gem-qed.atr` for QED.  The "
             f"system's gives the drive an `AUTOEXEC.BAT` of two lines, "
             f"{boot}, unless it has one already, which is left alone; "
             f"installing a newer gem4xe is the same again.  Or by hand "
@@ -442,22 +441,19 @@ def public_text():
             f"`\\GEM\\`; {appsdir} into `\\APPS\\`.") + "\n\n" + fill(
             "If what you have is a **loader that reads FAT** -- a SIDE3, an "
             "AVGCART -- or an SDrive-MAX, a FujiNet or a real drive, then "
-            "a floppy is what you want.  On a machine that runs SpartaDOS "
-            "X -- a cartridge, or an Ultimate 1MB with it in flash -- that "
-            "is `gem-sdx.atr`: copy it onto the card you already have and "
-            "load it like anything else.  On one that does not, put the "
-            "files in `system/` on a DOS 2 or SpartaDOS disk of your own "
-            "-- this download carries no such disk, because it would boot "
-            "a DOS that is not gem4xe's to give away; from the source "
-            "tree, `make dist` builds the DOS 2 one, given your DOS image "
-            "in `fixtures.toml` -- and `docs/media.md` there has the whole "
-            "matrix and the reasoning."),
+            "a floppy is what you want: `gem-sys.atr`, which boots by "
+            "itself into gem4xe's own DOS and runs under SpartaDOS X as "
+            "well -- copy it onto the card you already have and load it "
+            "like anything else, with `gem-apps.atr` as a second drive.  "
+            "`docs/media.md` in the source tree has the whole matrix and "
+            "the reasoning."),
         "dosnote": fill(
-            "**No disk in this download carries a DOS.**  The card image "
-            "and `gem-sdx.atr` run under the SpartaDOS X in your machine "
-            "-- Ultimate 1MB flash or a cartridge -- and the floppy `make "
-            "dist` also builds, `gem-boot.atr`, is not here because it "
-            "boots a DOS that is not gem4xe's to give away."),
+            "**The only DOS in this download is gem4xe's own**: G4DOS, on "
+            "`gem-sys.atr`'s boot sectors.  The card image runs under the "
+            "SpartaDOS X in your machine -- Ultimate 1MB flash or a "
+            "cartridge -- and the floppy `make dist` also builds, "
+            "`gem-boot.atr`, is not here because it boots a DOS that is "
+            "not gem4xe's to give away."),
     }
 
 
@@ -557,10 +553,9 @@ def build(out, tar=None, require_clean=False, public=False, zip_path=None):
         disks += ("\n*(" + " and ".join(f"`{d}`" for d in left_out)
                   + ", which `make dist` also builds, is not in this "
                   "download: it boots a DOS that is not gem4xe's to "
-                  "give away.  `disks/gem-sdx.atr` and `disks/gem-apps.atr` "
-                  "carry none, which is why they are here; *On real "
-                  "storage*, above, says how to "
-                  "make one of the others from `system/`.)*\n")
+                  "give away.  `disks/gem-sys.atr` boots gem4xe's own "
+                  "and `disks/gem-apps.atr` carries none, which is why "
+                  "they are here.)*\n")
 
     items = menu_items()
     with open(TEMPLATE) as f:

@@ -58,15 +58,13 @@ same devices.  This is the command line the test suite itself uses:
         --cart gem4xe.car
 
 That is the whole of it: `gem4xe.car` needs no disk and no DOS.  For the
-floppies instead, `--cart SDX.car --disk disks/gem-sdx.atr` --
-`disks/gem-sdx.atr` carries no DOS (*What is in the download*, below)
-and boots under SpartaDOS X, and `SDX.car` is a SpartaDOS X cartridge
+floppies instead, `--disk disks/gem-sys.atr`: it boots by itself, into
+gem4xe's own small DOS, G4DOS, and on into GEM (*What is in the
+download*, below).  It runs under SpartaDOS X as well -- `--cart SDX.car
+--disk disks/gem-sys.atr`, where `SDX.car` is a SpartaDOS X cartridge
 image, which this download does not include: the SpartaDOS X Upgrade
 Project offers one for emulators at <https://sdx.atari8.info/>, and
-Altirra reads it as it is.  Without one, make a disk of your own: a
-bootable SpartaDOS 3.2 or DOS 2 disk with the files in `system/` on it,
-started at boot the way *Booting* describes or by hand from the DOS
-prompt, and `--disk` that instead.
+Altirra reads it as it is.
 
 In desktop Altirra the two devices go in **System > Configure System >
 Devices**; the machine is an 800XL, PAL, BASIC off.
@@ -140,14 +138,14 @@ it a card of its own.
     dd if=disks/gem-cf.img of=/dev/sdX bs=1M conv=fsync    # sdX, not sdX1
 
 **If you already have an APT drive**, do not write the card image over
-it.  `gem-sdx.atr` and `gem-apps.atr` each carry an `INSTALL.BAT` that
+it.  `gem-sys.atr` and `gem-apps.atr` each carry an `INSTALL.BAT` that
 copies what the disk holds onto a drive you name.  At the SpartaDOS X
 prompt (quit GEM to get there), on the drive the floppy is in,
 `-INSTALL` and the drive to put it on --
 
     -INSTALL D2:
 
--- first with `gem-sdx.atr`, then with `gem-apps.atr`, and `gem-qed.atr`
+-- first with `gem-sys.atr`, then with `gem-apps.atr`, and `gem-qed.atr`
 for QED.  The system's gives the drive an `AUTOEXEC.BAT` of two lines,
 `CD >GEM` and `GEM`, unless it has one already, which is left alone;
 installing a newer gem4xe is the same again.  Or by hand from `system/`,
@@ -162,14 +160,11 @@ the way the card has them: `GEM.COM`, `DESKTOP.PRG`, `DESKTOP.RSC`,
 
 If what you have is a **loader that reads FAT** -- a SIDE3, an AVGCART
 -- or an SDrive-MAX, a FujiNet or a real drive, then a floppy is what
-you want.  On a machine that runs SpartaDOS X -- a cartridge, or an
-Ultimate 1MB with it in flash -- that is `gem-sdx.atr`: copy it onto the
-card you already have and load it like anything else.  On one that does
-not, put the files in `system/` on a DOS 2 or SpartaDOS disk of your own
--- this download carries no such disk, because it would boot a DOS that
-is not gem4xe's to give away; from the source tree, `make dist` builds
-the DOS 2 one, given your DOS image in `fixtures.toml` -- and
-`docs/media.md` there has the whole matrix and the reasoning.
+you want: `gem-sys.atr`, which boots by itself into gem4xe's own DOS and
+runs under SpartaDOS X as well -- copy it onto the card you already have
+and load it like anything else, with `gem-apps.atr` as a second drive.
+`docs/media.md` in the source tree has the whole matrix and the
+reasoning.
 
 ## What is in the download
 
@@ -181,7 +176,7 @@ It carries its own read-only `D1:` — a CIO handler over a directory in the ROM
 
 Two things to know.  **Reading 165 KB out of the ROM through CIO takes about twenty-six seconds** — a Rapidus comes up with every window on the 1.79 MHz bus and nothing raises that until GEM is running — so it prints a dot per segment while it works; it has not hung.  On its own it is **read-only**, so *Options → Save desktop* and copying a file will tell you they cannot.  With a DOS floppy in drive 1 as well -- MyDOS or DOS 2, or an ATR on a FujiNet -- the DOS boots first and saves go to the floppy, whose files win over the cartridge's.  It wants the same machine the rest of this does: a 65C816 and VBXE.
 
-### `disks/gem-sdx.atr`
+### `disks/gem-sys.atr`
 
 A double-sided double-density SDFS floppy, 360 KB: the system -- the card's `\GEM\`, without the desk accessory -- an `AUTOEXEC.BAT` that changes into `\GEM\` and runs GEM, and `INSTALL.BAT`.  **It boots anywhere**: on a machine with no SpartaDOS X its boot sectors load gem4xe's own small DOS, `G4DOS.SYS`, which starts GEM, and under GEM its disks have folders: open them, make them, rename and delete them, copy into them, and *Save desktop* and settings are saved, everything opens and runs, from this disk and from the applications disk in D2:.  Under **SpartaDOS X** -- a cartridge or Ultimate 1MB flash -- it is an ordinary SDX disk and everything works, saving included, which is how to keep GEM: `INSTALL.BAT` copies it onto your own drive.  No third-party DOS is on it, which is why it can be given away.  Its other half is `disks/gem-apps.atr`.  **Quit GEM and you are at G4DOS's own prompt**, its shell `SHELL.SYS`, which speaks a Linux user's words -- `ls` (`-l` for sizes and dates), `cd`, `pwd`, `cp`, `mv`, `rm`, `mkdir`, `rmdir`, `cat`, `more`, `df`, and `help` lists them -- with `DIR`, `COPY`, `REN`, `DEL` and `TYPE` beside them.  A path is `D2:/APPS/EDIT.PRG` (`/`, `>` or `\` between folders), `*` and `?` match, and a program runs by its name and comes back to the prompt; `gem` starts GEM again.  Under GEM, *File -> DOS command* runs the same commands.
 
@@ -461,8 +456,8 @@ in NuttX and carry a notice the BSD licence asks to be reproduced here:
 > (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 > OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-**No disk in this download carries a DOS.**  The card image and `gem-
-sdx.atr` run under the SpartaDOS X in your machine -- Ultimate 1MB flash
-or a cartridge -- and the floppy `make dist` also builds, `gem-
-boot.atr`, is not here because it boots a DOS that is not gem4xe's to
-give away.
+**The only DOS in this download is gem4xe's own**: G4DOS, on `gem-
+sys.atr`'s boot sectors.  The card image runs under the SpartaDOS X in
+your machine -- Ultimate 1MB flash or a cartridge -- and the floppy
+`make dist` also builds, `gem-boot.atr`, is not here because it boots a
+DOS that is not gem4xe's to give away.

@@ -779,9 +779,9 @@ name: `build/gem4xe-0.1.1.tar.gz`, the same tree again as
 `gem4xe-0.1.1.sha256` covering them for the release page; the inner
 `VERSION` still carries the date and commit.  What it leaves out is
 `gem-boot.atr`, because it boots a DOS that is not gem4xe's to give away
-(`fixtures.toml.example`); the card image, `gem-sdx.atr` and
-`gem-apps.atr` are built from this tree alone and carry no DOS, so they
-travel (`docs/media.md`, *The floppies the release can carry*).  The
+(`fixtures.toml.example`); the card image, `gem-sys.atr` and
+`gem-apps.atr` are built from this tree alone and carry no DOS but
+gem4xe's own, so they travel (`docs/media.md`, *The floppies the release can carry*).  The
 page says which file is missing and how to make one from `system/`
 rather than pretending the download is the same one a tester gets.
 

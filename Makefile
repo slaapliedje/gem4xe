@@ -146,7 +146,7 @@ M16_BITS   = 320
 # linker map).
 all: build/hello-boot.atr build/m2-boot.atr build/m3-boot.atr build/m6split-boot.atr \
      build/m12-d2.atr build/m14-boot.atr build/m17-boot.atr build/gem-boot.atr \
-     build/gem-sdx.atr build/gem-apps.atr build/gem-cf.img
+     build/gem-sys.atr build/gem-apps.atr build/gem-cf.img
 
 build/%.o: src/%.s
 	@mkdir -p build
@@ -1027,7 +1027,7 @@ build/g4bench-boot.atr: build/gem-dos2.xex build/g4bench.g4a build/lang.rsc buil
 g4bench: build/g4bench-boot.atr build/g4bench.sym
 	python3 tests/emu/g4bench.py $(ARGS)
 
-bench-boot: build/gem-boot.atr build/gem-sdx.atr build/gem4xe-sys.car
+bench-boot: build/gem-boot.atr build/gem-sys.atr build/gem4xe-sys.car
 	python3 tests/emu/bench_boot.py --sdx="$(SRC_SDX)" $(ARGS)
 
 bench-antic: build/bench-antic.atr
@@ -1752,7 +1752,7 @@ build/gem-sd.img: build/gem-cf.img build/gemdiag.com
 # machine rather than on the disk, so the disk is gem4xe's to give away
 # where gem-boot.atr is not.  Needs no fixture to build; test-boot boots
 # it when [spartados].sdx_cart names a cartridge.
-build/gem-sdx.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc \
+build/gem-sys.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc \
                    build/lang.rsc build/gem4xe.cfg build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py \
                    build/fdos.elf build/fdboot.elf build/shell.sys
 	@rm -f $@
@@ -2049,7 +2049,7 @@ build/gem4xe-sdk.tar.gz: $(SDK_FILES)
 # that could go stale cannot).  DIST is the name it takes: the date and
 # the commit unless you say otherwise.
 DIST ?= build/gem4xe-$(shell date +%F)-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
-DIST_DISKS = build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-qed.atr build/gem-cf.img \
+DIST_DISKS = build/gem-boot.atr build/gem-sys.atr build/gem-apps.atr build/gem-qed.atr build/gem-cf.img \
              build/gem4xe-sys.car
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
@@ -2077,13 +2077,13 @@ dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
 VERSION := $(shell cat VERSION)
 RELEASE  = build/gem4xe-$(VERSION)
 
-release: $(DIST_SYS) $(QED_FILES) $(LANG_FILES) build/l2.fnt build/gem-cf.img build/gem-sdx.atr build/gem-apps.atr build/gem-qed.atr \
+release: $(DIST_SYS) $(QED_FILES) $(LANG_FILES) build/l2.fnt build/gem-cf.img build/gem-sys.atr build/gem-apps.atr build/gem-qed.atr \
          build/gem4xe-sys.car build/gem4xe-sdk.tar.gz \
          tools/mkdist.py tools/dist/README.md tools/mksdk.py
 	@python3 -c 'import sys; sys.exit(b"version $(VERSION)\0" not in open("build/desktop.rsc","rb").read())' \
 	    || { echo "build/desktop.rsc does not say version $(VERSION) (phase38.md)"; exit 1; }
 	python3 tools/mkdist.py $(RELEASE) --public --tar $(RELEASE).tar.gz --zip $(RELEASE).zip
-	cp build/gem-sdx.atr $(RELEASE).atr
+	cp build/gem-sys.atr $(RELEASE).atr
 	cp build/gem-apps.atr $(RELEASE)-apps.atr
 	cp build/gem-qed.atr $(RELEASE)-qed.atr
 	cp build/gem4xe-sys.car $(RELEASE).car
@@ -2175,7 +2175,7 @@ test-vbxefeat: build/gem-boot.atr build/gem-dos2.sym
 # come up, which it did not while a process record's resource slots were
 # left as the pool had them (docs/phase41.md).
 SRC_65816 ?= $(shell python3 -c "import tomllib;print(tomllib.load(open('fixtures.toml','rb'))['spartados']['driver_65816'])" 2>/dev/null)
-test-sdx816: build/gem-sdx.atr build/gem.sym build/desktop.sym
+test-sdx816: build/gem-sys.atr build/gem.sym build/desktop.sym
 	@test -n "$(SRC_RAPIDUS_OS)" && test -n "$(SRC_SDX)" && test -n "$(SRC_65816)" || { echo "needs [rapidus].os, [spartados].sdx_cart and [spartados].driver_65816 in fixtures.toml"; exit 1; }
 	python3 tests/emu/sdx816.py --os="$(SRC_RAPIDUS_OS)" --cart="$(SRC_SDX)" --driver="$(SRC_65816)"
 
@@ -2325,7 +2325,7 @@ test-m44: build/gem-shots.atr
 # each that answers and none for one that does not, on DOS 2 and on the
 # SpartaDOS X cartridge with a disk mounted as D3: after boot; saved
 # across a cold reset.  The SDX half needs [spartados].sdx_cart.
-test-m46: build/gem-boot.atr build/gem-shots.atr build/gem-sdx.atr build/gem-apps.atr
+test-m46: build/gem-boot.atr build/gem-shots.atr build/gem-sys.atr build/gem-apps.atr
 	python3 tests/emu/m46_devices.py $(SRC_SDX)
 
 test-m45: build/m45-boot.atr build/m45_acc.sym build/calc.sym build/desktop.sym
@@ -2491,7 +2491,7 @@ test-m21: build/m3-boot.atr build/inv.fnt
 # left the other stale whenever GEM.COM was rebuilt -- which looked exactly
 # like the far image being mangled by the DOS, and cost an afternoon
 # twice (docs/phase16.md).
-# gem-sdx.atr carries no DOS and boots under the SDX cartridge fixture;
+# gem-sys.atr carries no DOS and boots under the SDX cartridge fixture;
 # with none named it is read but not booted, and the gate says so rather
 # than failing.  gem-apps.atr is not a boot disk and is only read
 # (tests/emu/product_boot.py).
@@ -2503,7 +2503,7 @@ test-look: build/gem-shots.atr build/gem.sym
 # The system floppy booted with no SpartaDOS X: its own DOS, G4DOS
 # (src/fdos.s, docs/fdos.md), loads GEM, Save desktop writes, and the
 # applications floppy in D2: lists and runs (tests/emu/fdos_boot.py).
-test-fdos: build/gem-sdx.atr build/gem-apps.atr build/gem.sym
+test-fdos: build/gem-sys.atr build/gem-apps.atr build/gem.sym
 	python3 tests/emu/fdos_boot.py
 
 # GEMDOS's SDFS engine on the host (docs/sdfs-plan.md step 1): the same
@@ -2512,7 +2512,7 @@ build/sdfs_host: src/sys/sdfs.c src/sys/sdfs.h tests/host/sdfs_host.c
 	@mkdir -p build
 	gcc -O1 -Wall -Wextra -DSDFS_HOST -I src/sys -o $@ src/sys/sdfs.c tests/host/sdfs_host.c
 
-test-sdfs: build/sdfs_host build/gem-sdx.atr build/gem-apps.atr build/m14-boot.atr tools/atr.py
+test-sdfs: build/sdfs_host build/gem-sys.atr build/gem-apps.atr build/m14-boot.atr tools/atr.py
 	python3 tests/host/test_sdfs.py
 
 # The DOS's commands on the host, over three drives -- 256-, 128- and
@@ -2532,7 +2532,7 @@ test-doscmd: build/doscmd_host tools/atr.py
 # G4DOS's shell: booted, a session typed at it, a program run and come back
 # from, RESET, AUTORUN.SYS before it, and GEM quitting to it
 # (tests/emu/fdos_shell.py, docs/g4dos-plan.md step 4).
-test-fdossh: build/shell.sys build/gem-sdx.atr build/gem.sym build/fdos.elf build/fdboot.elf tools/mkfloppy.py tools/atr.py
+test-fdossh: build/shell.sys build/gem-sys.atr build/gem.sym build/fdos.elf build/fdboot.elf tools/mkfloppy.py tools/atr.py
 	python3 tests/emu/fdos_shell.py
 
 test-fdosapp: build/gem-appliance.atr build/gem.sym
@@ -2541,7 +2541,7 @@ test-fdosapp: build/gem-appliance.atr build/gem.sym
 test-fdosw: build/fdos.elf build/fdboot.elf build/fdwtest.elf tools/atr.py tools/mkfloppy.py
 	python3 tests/emu/fdos_write.py
 
-test-boot: build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-cf.img build/desktop.g4a build/desktop.sym
+test-boot: build/gem-boot.atr build/gem-sys.atr build/gem-apps.atr build/gem-cf.img build/desktop.g4a build/desktop.sym
 	python3 tests/emu/product_boot.py --sdx="$(SRC_SDX)"
 
 # The same boot off the product CF card, on the machine this project is
@@ -2551,7 +2551,7 @@ test-boot: build/gem-boot.atr build/gem-sdx.atr build/gem-apps.atr build/gem-cf.
 # The installer (docs/media.md): SpartaDOS X runs each floppy's INSTALL.BAT
 # onto a blank drive, the drive is listed, and the machine boots GEM from
 # it -- the accessory from the applications disk loaded beside the desktop.
-test-install: build/gem-sdx.atr build/gem-apps.atr build/gem.sym
+test-install: build/gem-sys.atr build/gem-apps.atr build/gem.sym
 	@test -n "$(SRC_SDX)" || { echo "no SDX fixture: set [spartados].sdx_cart in fixtures.toml"; exit 1; }
 	python3 tests/emu/install.py --sdx="$(SRC_SDX)"
 

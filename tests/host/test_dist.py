@@ -292,18 +292,18 @@ class TestDistribution(unittest.TestCase):
         self.assertIn("--disk disks/gem-boot.atr", self.page)
         self.assertNotIn("not gem4xe's to give away", self.page)
 
-    def test_the_release_carries_the_floppy_that_has_no_dos(self):
-        """gem-sdx.atr (tools/mkfloppy.py) is the one floppy the release
-        can carry: no third-party DOS, only gem4xe's own read-only one
-        (docs/fdos.md), and the page has to say what that does and what
-        SpartaDOS X -- from a cartridge it does not include -- adds."""
-        if not built("gem-sdx.atr"):
-            self.skipTest("build/gem-sdx.atr is not built")
+    def test_the_release_carries_the_floppy_whose_dos_is_its_own(self):
+        """gem-sys.atr (tools/mkfloppy.py) is the one floppy the release
+        can carry: no third-party DOS, only gem4xe's own (docs/fdos.md),
+        and the page has to say what that does and that SpartaDOS X --
+        from a cartridge it does not include -- runs it too."""
+        if not built("gem-sys.atr"):
+            self.skipTest("build/gem-sys.atr is not built")
         out = os.path.join(self.dir, "gem4xe-public-floppy")
         mkdist.build(out, public=True)
         with open(os.path.join(out, "README.md")) as f:
             page = f.read()
-        p = os.path.join(out, "disks", "gem-sdx.atr")
+        p = os.path.join(out, "disks", "gem-sys.atr")
         self.assertTrue(os.path.isfile(p))
         fs = atr.open_fs(atr.ATRImage.load(p))
         # the one DOS it may name is gem4xe's own (docs/fdos.md)
@@ -311,10 +311,13 @@ class TestDistribution(unittest.TestCase):
         self.assertEqual(len(g4), 1, "the release floppy has no G4DOS.SYS")
         self.assertEqual(fs.boot_file_map, g4[0].map,
                          "the release floppy names a DOS other than gem4xe's")
-        self.assertIn("--cart SDX.car --disk disks/gem-sdx.atr", page)
+        # a code span may wrap; Markdown renders the line break as a space
+        flat = " ".join(page.split())
+        self.assertIn("`--disk disks/gem-sys.atr`", flat)
+        self.assertIn("--cart SDX.car --disk disks/gem-sys.atr", flat)
         self.assertIn("https://sdx.atari8.info/", page)
         self.assertIn("does not include", page)
-        section = page.split("### `disks/gem-sdx.atr`")[1].split("###")[0]
+        section = page.split("### `disks/gem-sys.atr`")[1].split("###")[0]
         self.assertIn("G4DOS.SYS", section)
         self.assertIn("No third-party DOS", section)
         self.assertIn("`GEM\\` (", section)

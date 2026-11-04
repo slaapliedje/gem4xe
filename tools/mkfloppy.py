@@ -7,7 +7,7 @@ its own until these.  Each is a double-sided double-density disk (1440
 sectors of 256 bytes, 360 KB) formatted SDFS, with NO boot code beyond
 the stub every blank SDFS disk has.
 
-  gem-sdx.atr   THE SYSTEM: \\GEM\\ as the card holds it -- GEM.COM, the
+  gem-sys.atr   THE SYSTEM: \\GEM\\ as the card holds it -- GEM.COM, the
                 desktop and its resources, LANG.RSC, GEM4XE.CFG, 816.COM
                 -- the card's AUTOEXEC.BAT, and INSTALL.BAT.  It boots
                 under SpartaDOS X, which lives in the machine rather than
@@ -67,7 +67,7 @@ SECTORS = 1440                                   # DSDD, as an XF551 writes
 # that was BOOT ERROR repeated, which told a tester in AltirraSDL nothing
 # (atr.py say_no_dos).  The system disk boots its own (fdos=True).
 NO_DOS = ["gem4xe: this disk has no DOS on it.",
-          "Boot the system disk, gem-sdx.atr,",   # the editor shows 38 columns
+          "Boot the system disk, gem-sys.atr,",   # the editor shows 38 columns
           "or boot this one with SpartaDOS X",
           "(a cartridge, or U1MB flash)."]
 
