@@ -11,7 +11,9 @@
 ;;; resident means parking a near region in the 14.9 MB and bringing it
 ;;; back (docs/multitasking.md), and whether that is affordable at a
 ;;; timer tick is exactly the cost of a few kilobytes of block move.  So
-;;; this exists to be MEASURED first and used second.
+;;; this existed to be MEASURED first and used second; since phase 128 it
+;;; is under far_put, far_get and far_copy (src/sys/farmem.c), with one
+;;; exception there for an emulator's MVN that reads bank $00's chips.
 ;;;
 ;;; THE BANKS ARE IN THE INSTRUCTION, not in a register, so a routine
 ;;; that moves between banks chosen at run time has to write its own MVN.

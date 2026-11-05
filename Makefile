@@ -74,7 +74,7 @@ M2_OBJS    = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 # out of abi.s for the way a context enters its program, and the runner's
 # own stubs for the engine that is deliberately not linked.
 M27_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m27_ctx.o \
-             build/ctx.o build/ctxs.o build/farmem.o build/hiprobe.o build/abis.o build/seis.o
+             build/ctx.o build/ctxs.o build/farmem.o build/blkmove.o build/hiprobe.o build/abis.o build/seis.o
 # The ANTIC surface milestone: no VBXE object at all, which is the point
 M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/m24_antic.o build/antic.o build/font8x8.o
 # The VDI on the ANTIC device: the same vdi.c, compiled for the other
@@ -82,7 +82,7 @@ M24_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/clib.o build/
 M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/clib.o build/m25_antic_vdi.o \
              build/vdi.o build/dev_antic.o build/dev_print.o build/emit.o build/antic.o build/pointer.o \
              build/font8x8.o build/font6x6.o build/fillpat.o build/sintbl.o build/font.o \
-             build/farmem.o build/hiprobe.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
+             build/farmem.o build/blkmove.o build/hiprobe.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
              build/cio.o build/cios.o build/dos.o build/m25_stub.o \
              build/graf.o build/objc.o build/grlib.o build/event.o \
              build/proc.o build/appl.o build/ctx.o build/ctxs.o \
@@ -96,7 +96,7 @@ M25_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o buil
 M30_OBJS   = build/crt_atari.o build/farload.o build/div16.o build/muldiv.o build/clib.o build/m30_print.o \
              build/vdi.o build/dev_print.o build/emit.o build/pointer.o \
              build/font8x8.o build/fillpat.o build/sintbl.o build/font.o \
-             build/farmem.o build/hiprobe.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
+             build/farmem.o build/blkmove.o build/hiprobe.o build/irq.o build/irqs.o build/seis.o build/rapidus.o \
              build/cio.o build/cios.o build/dos.o build/m25_stub.o \
              build/graf.o build/objc.o build/grlib.o build/event.o \
              build/proc.o build/appl.o build/ctx.o build/ctxs.o \

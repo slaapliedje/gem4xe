@@ -453,6 +453,31 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
     g.call("Fclose", W(h))
     sample = bytes(b.cmd(f"EVAL db(${far + i:06X})").get("value") for i in range(8))
     check(sample == fixture[:8], f"far bytes {sample!r}, fixture {fixture[:8]!r}")
+    # MVN'S WINDOW (docs/phase128.md).  A read into far memory comes through
+    # a pool slice in bank $00 and far_put, and far_put moves with MVN.
+    # Altirra performs MVN's two internal cycles as READS of the destination
+    # offset in the SOURCE bank, so a copy from bank $00 to an offset in
+    # $D000-$D7FF reads the chips -- and on a MaxFlash cartridge, which is
+    # what SpartaDOS X comes on, any access to $D500-$D50F selects a bank.
+    # So: a whole bank's block, and a read into it at $D4C0, across those
+    # sixteen bytes: the bytes must arrive and the cartridge must be where it
+    # was (test-m15x is the run with the cartridge in).
+    room, _ = g.call("Malloc", L(-1))
+    big, _ = g.call("Malloc", L(room))
+    tgt = (big & 0xFF0000) | 0xD4C0
+    check(big and big <= tgt and tgt + len(fixture) <= big + room,
+          f"a bank's block at ${big:06X} holds ${tgt:06X}..+{len(fixture)}")
+    cart0 = b.cmd("CART_INFO").get("bank")
+    h, _ = g.call("Fopen", L(g.string("TEST.TXT")), W(0))
+    ret, _ = g.call("Fread", W(h), L(len(fixture)), L(tgt))
+    g.call("Fclose", W(h))
+    cart1 = b.cmd("CART_INFO").get("bank")
+    got = bytes(b.memdump(tgt, len(fixture)))
+    check(ret == len(fixture) and got == fixture,
+          f"Fread into ${tgt:06X}, across $D500-$D50F: {ret} bytes, "
+          f"{'the fixture' if got == fixture else 'NOT the fixture'}")
+    check(cart1 == cart0, f"...and the cartridge's bank is where it was ({cart0} -> {cart1})")
+    g.call("Mfree", L(big))
     h, _ = g.call("Fcreate", L(g.string("A:\\GDOUT.TXT")), W(0))
     check(h >= HANDLE_BASE, f"Fcreate {h}")
     ret, _ = g.call("Fwrite", W(h), L(len(fixture)), L(far))

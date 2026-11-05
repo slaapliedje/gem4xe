@@ -27,9 +27,53 @@ uint8_t far_read8(uint32_t addr)
     return *p;
 }
 
+/* MVN, THE CPU'S BLOCK MOVE, for every copy of eight bytes or more
+ * (src/sys/blkmove.s; phase 128).  Seven cycles a byte where the loops
+ * below cost about forty -- the switcher copies a program's whole near
+ * region each way (docs/switcher-plan.md), and the far heap's purgeable
+ * file cache copies whole resources (phase 120).
+ *
+ * EXCEPT WHERE ALTIRRA WOULD TOUCH BANK $00'S CHIPS.  Its 65C816 performs
+ * MVN's two internal cycles as READS of the destination offset in the
+ * SOURCE bank (cpu65c816.cpp: kState816ReadByte after kState816_MoveWrite,
+ * with the address bank still the source's).  The W65C816S puts no access
+ * on the bus in those cycles.  So a copy FROM bank $00 to an offset in
+ * $D000-$D7FF reads the hardware registers there two at a time, and on a
+ * MaxFlash cartridge -- which is what SpartaDOS X comes on -- any access
+ * to $D500-$D50F selects a bank: the DOS's next call into its cartridge
+ * runs garbage.  That is what took MVN out in phase 120 ("emulation mode,
+ * DB=$20, layout- and timing-dependent"): it depended on where a far block
+ * landed.  Such a copy keeps the byte loop; a far source's false reads land
+ * in far RAM and do no harm.  test-m15x reads a file across $D500-$D50F
+ * and fails without this rule.  The fix is in the emulator: the two cycles
+ * are internal operations (docs/phase128.md has the patch). */
+extern void blk_move(void);
+extern uint32_t blk_src, blk_dst;
+extern uint16_t blk_len;
+#define MVN_MIN 8
+
+static uint16_t mvn_safe(uint32_t src, uint32_t dst, uint16_t len)
+{
+    uint16_t lo = (uint16_t)dst;
+    uint32_t hi = (uint32_t)lo + len;
+
+    if (len < MVN_MIN)
+        return 0;
+    if (src >> 16)
+        return 1;                       /* the reads land in a far bank */
+    return hi <= 0xD000UL || lo >= 0xD800;
+}
+
 void far_put(uint32_t dst, const uint8_t *src, uint16_t len)
 {
     uint8_t FAR *p = (uint8_t FAR *)dst;
+    if (mvn_safe((uint32_t)(uint16_t)src, dst, len)) {
+        blk_src = (uint32_t)(uint16_t)src;
+        blk_dst = dst;
+        blk_len = len;
+        blk_move();
+        return;
+    }
     while (len--)
         *p++ = *src++;
 }
@@ -37,6 +81,13 @@ void far_put(uint32_t dst, const uint8_t *src, uint16_t len)
 void far_get(uint8_t *dst, uint32_t src, uint16_t len)
 {
     uint8_t FAR *p = (uint8_t FAR *)src;
+    if (mvn_safe(src, (uint32_t)(uint16_t)dst, len)) {
+        blk_src = src;
+        blk_dst = (uint32_t)(uint16_t)dst;
+        blk_len = len;
+        blk_move();
+        return;
+    }
     while (len--)
         *dst++ = *p++;
 }
@@ -47,6 +98,13 @@ void far_copy(uint32_t dst, uint32_t src, uint16_t len)
 {
     uint8_t FAR *d = (uint8_t FAR *)dst;
     const uint8_t FAR *s = (const uint8_t FAR *)src;
+    if (mvn_safe(src, dst, len)) {
+        blk_src = src;
+        blk_dst = dst;
+        blk_len = len;
+        blk_move();
+        return;
+    }
     while (len--)
         *d++ = *s++;
 }
