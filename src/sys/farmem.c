@@ -47,10 +47,22 @@ uint8_t far_read8(uint32_t addr)
  * in far RAM and do no harm.  test-m15x reads a file across $D500-$D50F
  * and fails without this rule.  The fix is in the emulator: the two cycles
  * are internal operations (docs/phase128.md has the patch). */
+#define MVN_MIN 8
+
+#ifdef FARMEM_LOOPS
+/* The simulator's build (tests/host/test_farmem.py): db65816's MVN moves
+ * nothing, so the loops do every copy there. */
+static uint16_t far_mvn(uint32_t dst, uint32_t src, uint16_t len)
+{
+    (void)dst;
+    (void)src;
+    (void)len;
+    return 0;
+}
+#else
 extern void blk_move(void);
 extern uint32_t blk_src, blk_dst;
 extern uint16_t blk_len;
-#define MVN_MIN 8
 
 static uint16_t mvn_safe(uint32_t src, uint32_t dst, uint16_t len)
 {
@@ -64,16 +76,24 @@ static uint16_t mvn_safe(uint32_t src, uint32_t dst, uint16_t len)
     return hi <= 0xD000UL || lo >= 0xD800;
 }
 
+/* The copy done by MVN, or 0 and nothing done: the caller's loop does it. */
+static uint16_t far_mvn(uint32_t dst, uint32_t src, uint16_t len)
+{
+    if (!mvn_safe(src, dst, len))
+        return 0;
+    blk_src = src;
+    blk_dst = dst;
+    blk_len = len;
+    blk_move();
+    return 1;
+}
+#endif
+
 void far_put(uint32_t dst, const uint8_t *src, uint16_t len)
 {
     uint8_t FAR *p = (uint8_t FAR *)dst;
-    if (mvn_safe((uint32_t)(uint16_t)src, dst, len)) {
-        blk_src = (uint32_t)(uint16_t)src;
-        blk_dst = dst;
-        blk_len = len;
-        blk_move();
+    if (far_mvn(dst, (uint32_t)(uint16_t)src, len))
         return;
-    }
     while (len--)
         *p++ = *src++;
 }
@@ -81,13 +101,8 @@ void far_put(uint32_t dst, const uint8_t *src, uint16_t len)
 void far_get(uint8_t *dst, uint32_t src, uint16_t len)
 {
     uint8_t FAR *p = (uint8_t FAR *)src;
-    if (mvn_safe(src, (uint32_t)(uint16_t)dst, len)) {
-        blk_src = src;
-        blk_dst = (uint32_t)(uint16_t)dst;
-        blk_len = len;
-        blk_move();
+    if (far_mvn((uint32_t)(uint16_t)dst, src, len))
         return;
-    }
     while (len--)
         *dst++ = *p++;
 }
@@ -98,13 +113,8 @@ void far_copy(uint32_t dst, uint32_t src, uint16_t len)
 {
     uint8_t FAR *d = (uint8_t FAR *)dst;
     const uint8_t FAR *s = (const uint8_t FAR *)src;
-    if (mvn_safe(src, dst, len)) {
-        blk_src = src;
-        blk_dst = dst;
-        blk_len = len;
-        blk_move();
+    if (far_mvn(dst, src, len))
         return;
-    }
     while (len--)
         *d++ = *s++;
 }

@@ -207,9 +207,11 @@ class TestFarAlloc(unittest.TestCase):
         objs = []
         for src in (FARMEM_C, SIM_C):
             obj = os.path.join(out, os.path.basename(src)[:-2] + ".o")
+            # FARMEM_LOOPS: the simulator's MVN moves nothing, so the far
+            # copies stay loops here (src/sys/farmem.c, phase 128)
             subprocess.run([cc, "-g", "--code-model=large", "--data-model=small",
-                            "-O2", "-I", os.path.join(ROOT, "src"), "-I", out,
-                            "-o", obj, src], check=True)
+                            "-O2", "-DFARMEM_LOOPS", "-I", os.path.join(ROOT, "src"),
+                            "-I", out, "-o", obj, src], check=True)
             objs.append(obj)
         elf = os.path.join(out, "farmem.elf")
         subprocess.run([ld, "-g", scm] + objs + ["-o", elf, "clib-lc-sd.a",

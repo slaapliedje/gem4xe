@@ -47,9 +47,12 @@
 
 ;;; The parameters are globals rather than arguments on purpose: this is
 ;;; called from C compiled in two data models and the measurement wanted
-;;; one shape, not an ABI argument.  Bank $00, absolute through DB, which
-;;; is where a small-data global lives.
-              .section zdata, bss
+;;; one shape, not an ABI argument.  Bank $00, absolute through DB.  In
+;;; the DIRECT PAGE's section since phase 128, when far_put and its kin
+;;; began to call this and the linker began to keep it: LoRAM is at its
+;;; 256-byte floor and the direct page had 128 to spare (as km_* in
+;;; src/sys/sei.s).
+              .section ztiny, bss
 blk_src:      .space  4
 blk_dst:      .space  4
 blk_len:      .space  2
@@ -59,22 +62,22 @@ blk_len:      .space  2
 blk_stub:     .space  4
 
               .section farcode, noreorder
-blk_move:     lda     blk_len
+blk_move:     lda     abs:blk_len
               beq     9$              ; see the header: 0 is not 65536 here
               phb
               sep     #0x20           ; 8-bit A to lay the instruction down
               lda     #0x54           ; MVN.  ONE #: `##` is a 16-bit immediate
-              sta     blk_stub
-              lda     blk_dst+2       ; ...DESTINATION bank first: $54 dst src
-              sta     blk_stub+1
-              lda     blk_src+2
-              sta     blk_stub+2
+              sta     abs:blk_stub
+              lda     abs:blk_dst+2       ; ...DESTINATION bank first: $54 dst src
+              sta     abs:blk_stub+1
+              lda     abs:blk_src+2
+              sta     abs:blk_stub+2
               lda     #0x6b           ; RTL
-              sta     blk_stub+3
+              sta     abs:blk_stub+3
               rep     #0x20
-              ldx     blk_src         ; source offset
-              ldy     blk_dst         ; destination offset
-              lda     blk_len
+              ldx     abs:blk_src         ; source offset
+              ldy     abs:blk_dst         ; destination offset
+              lda     abs:blk_len
               dec     a               ; MVN moves A+1
               jsl     blk_stub
               plb                     ; MVN left DB on the destination bank
