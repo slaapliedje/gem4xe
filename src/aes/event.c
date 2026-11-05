@@ -493,10 +493,13 @@ WORD ct_idle(void)
  * else's turn if anybody else can go: every wait loop here spins on
  * this, which makes it the one place in gem4xe where a context switch
  * can happen (src/aes/proc.h). */
+ZWIN uint8_t ev_appwait;         /* src/sys/abi.c, aes_entry */
+
 void ev_poll(void)
 {
     vdi_input_poll();
     ct_poll();
+    sh_hotkey();                    /* the switch key: src/aes/shel.c */
     proc_yield();
 }
 

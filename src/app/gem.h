@@ -518,6 +518,12 @@ typedef struct userblk {
 #define AP_RESCHG   57
 #define SHUT_COMPLETED  60
 #define RESCH_COMPLETED 61
+/* gem4xe's own: the switch key, CONTROL-TAB, pressed while the desktop
+ * runs.  msg[3] is 1 (next) or 2 (SHIFT, the one before): the desktop
+ * answers shel_write(SWM_G4SWITCH, msg[3], 0, "", "") and ends if that
+ * says 1.  Nothing else is sent it.  AP_, as AP_TERM, the other message
+ * that asks a program to end; G4_ names are objc_sysvar's. */
+#define AP_G4SWITCH     0x4734
 
 /* wind_create kinds, wind_get / wind_set fields, wind_update codes */
 #define NAME    0x0001
@@ -884,10 +890,19 @@ WORD rsrc_gaddr(WORD type, WORD index, void **addr);
 /* gem4xe's own: put the caller aside.  The desktop comes back; started
  * again from it, the program is RESUMED where it was -- this call returns
  * 1 then, its windows back, WM_REDRAW queued for what shows and WM_ONTOP
- * for the top one.  0, at once, when it cannot be: one program aside at
- * a time, and not the desktop.  Nothing else of it changes while it is
- * aside -- its files stay open, its memory is kept. */
+ * for the top one.  0, at once, when it cannot be: the desktop, or no
+ * memory to keep it in.  Nothing else of it changes while it is aside --
+ * its files stay open, its memory is kept.  Six programs may be loaded
+ * at once besides the desktop. */
 #define SWM_G4SUSPEND 71
+/* gem4xe's own: the same, but what runs in the caller's place is the
+ * next program loaded (isgr 1) or the one before (isgr 2), in the order
+ * they were started with the desktop after the last -- what CONTROL-TAB
+ * and SHIFT-CONTROL-TAB do, which the AES takes before any program sees
+ * them.  From the desktop, which is never put aside, it is the desktop's
+ * way out: 1 means it should end now, and the shell resumes that
+ * program.  0 when there is nothing to switch to. */
+#define SWM_G4SWITCH  72
 #define SD_ABORT      0         /* ...the one that started it, only */
 #define SD_PARTIAL    1         /* applications AP_TERM, accessories AC_CLOSE */
 #define SD_COMPLETE   2         /* ...and accessories AP_TERM as well */

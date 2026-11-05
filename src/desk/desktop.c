@@ -761,6 +761,10 @@ static WORD hndl_msg(void)
         return FALSE;
     case AP_TERM:                               /* a shutdown: as Quit */
         return TRUE;
+    case AP_G4SWITCH:                           /* CONTROL-TAB: the shell
+                                                 * resumes a program put
+                                                 * aside, once this ends */
+        return shel_write(SWM_G4SWITCH, msg[3], 0, "", "") != 0;
     default:
         return FALSE;
     }

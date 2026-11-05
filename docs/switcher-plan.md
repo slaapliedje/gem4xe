@@ -1,8 +1,9 @@
 # A task switcher: XM/GEM's shape, on gem4xe
 
-Status: **planned 2026-11-04, nothing built.**  The order agreed: AES 4's
-calls first (phases 123-125: `AP_TERM`, AES 4.0, the window messages),
-then this, then MVN as a speed-up for it (`docs/multitasking.md`).
+Status: **steps 1-3 built, and step 4's key** (phases 126, 127, 129); the
+Desk menu's list is next.  The order agreed: AES 4's calls first (phases
+123-125: `AP_TERM`, AES 4.0, the window messages), then this, then MVN as
+a speed-up for it (`docs/multitasking.md`; phase 128).
 
 ## What it is
 
@@ -127,16 +128,21 @@ Each says how it is tested; a check is believed only once it has failed.
      inside its `shel_write`, and a `WM_REDRAW` for every window and
      `WM_ONTOP` for the top one.
    - **One suspended program** in step 2; a list in step 3.
-3. **Several at once**: the desktop launches another while one is
-   suspended; a list of loaded programs, each a parked record.  *Gate*:
-   three programs started, switched among in an order, each resumed with
-   its state; the far heap's model (`tools/farref.py`) held to the
-   blocks.
+3. **Several at once** -- BUILT, phase 129 ([phase129.md](phase129.md)):
+   up to six programs besides the desktop, each put aside in a record, in
+   a ring that keeps the order they were started in with the desktop
+   after the last.  *Gate* (test-m54): three programs started, switched
+   among in an order, each resumed with its state, the ring read out of
+   far memory after every switch, and the far heap's blocks the same by
+   length and kind once all have quit.
 4. **The user's way to switch**: the Desk menu lists the loaded programs
    by their `menu_register` titles, as MultiTOS's does, and a key goes to
-   the next; closing one from the list asks it with `AP_TERM`.  *Gate*:
-   driven with the pointer and the key, and a program that refuses
-   `AP_TERM` stays.
+   the next -- **the key is BUILT, phase 129**: CONTROL-TAB, and
+   SHIFT-CONTROL-TAB back, MultiTOS's Control-Alternate-Tab on a keyboard
+   with no Alternate; `shel_write(SWM_G4SWITCH)` for a program.  Still to
+   do: the list, and closing one from it with `AP_TERM`.  *Gate*: driven
+   with the pointer and the key, and a program that refuses `AP_TERM`
+   stays.
 5. **When there is no room**: no far memory for a parked region, no
    record, a pool place taken -- refused with an alert that says what was
    short, never a half-switched machine.  *Gate*: each case forced.
@@ -145,10 +151,12 @@ Each says how it is tested; a check is believed only once it has failed.
 
 ## Decisions for the project
 
-1. **How many programs** may be loaded: bounded by process records (94
-   bytes of pool each) and far memory; six, as the Desk menu's slots?
-2. **The switch key.**  Something no ST program uses: the AES must take
-   it before the program sees it.
+1. **How many programs** may be loaded: six for now (`SH_PROGS`, phase
+   129), as the Desk menu's slots -- one constant, still the project's to
+   decide.  Not process records, as this first thought: a program put
+   aside is a far record, not a process.
+2. **The switch key**: Alt-Tab, the user said (2026-11-05) -- built as
+   CONTROL-TAB, since this keyboard has no Alternate key (phase 129).
 3. **What the desktop is** while programs are suspended: the shell, always
    reachable, as XM's desktop was; quitting it with programs loaded asks
    each to end first (phase 123's shutdown).

@@ -377,6 +377,11 @@ void vdi_input_poll(void);
  * pressed between two events is still there when someone asks. */
 void vdi_key_poll(void);
 
+/* The switch key, CONTROL and TAB, since it was last asked: 0 none, 1 the
+ * next program, 2 (with SHIFT) the one before.  Taken from the keys
+ * before they are queued, so no program sees it; asking clears it. */
+WORD vdi_switchkey(void);
+
 /* The gem4xe ABI for vex_* handlers: they take no arguments and read
  * ptr_state / the VDI globals.  GEM's 68000 convention passes x and y in
  * d0/d1, which has no meaning here; a documented platform convention is

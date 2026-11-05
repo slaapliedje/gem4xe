@@ -1029,8 +1029,18 @@ static void aes_entry(const AESPB_IMG FAR *pb)
 
     {
         uint16_t was = gem_bad;
+        /* Process 0 waiting in an evnt_ call of its OWN -- not in a
+         * form_do or a drag, which wait on the same polls -- is where the
+         * switch key may put it aside (src/aes/shel.c, sh_hotkey).  Only
+         * process 0 writes it, so an accessory's calls in between leave it
+         * as it was. */
+        WORD top = (rlr == proc_app);
+        if (top && control[0] >= 20 && control[0] <= 25)
+            ev_appwait = 1;
         int_out[0] = crysbind(control[0], (WORD FAR *)pb->global,
                               int_in, int_out, addr_in);
+        if (top)
+            ev_appwait = 0;
         if (gem_bad != was)
             gem_badop = (uint16_t)control[0];
     }

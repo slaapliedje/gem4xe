@@ -600,6 +600,7 @@ WORD ev_timer(uint32_t count);
 uint32_t combine_cms(WORD clicks, UWORD mask, UWORD state);
 void ev_fq(void);
 void ev_poll(void);             /* one poll, and the control manager's turn */
+extern uint8_t ev_appwait;      /* process 0 is in an evnt_ call of its own */
 extern uint32_t gl_ticks;       /* timer ticks since ev_init */
 
 /* Mouse ownership (geminput.c): the application owns the control
@@ -624,6 +625,11 @@ extern OBJECT FAR *gl_mntree;       /* the menu bar showing, or 0 */
 /* shel_write's gem4xe mode: the caller put aside, resumed when it is
  * started again (src/aes/shel.c, sh_suspend; src/app/gem.h). */
 #define SWM_G4SUSPEND   71
+/* ...and the next one (isgr 1) or the one before (2) run in its place:
+ * the switch key's (sh_hotkey), and the desktop's answer to AP_G4SWITCH. */
+#define SWM_G4SWITCH    72
+#define AP_G4SWITCH     0x4734  /* to the desktop: end, for SWM_G4SWITCH */
+void sh_hotkey(void);
 /* Process 0's windows put aside and put back (src/aes/wind.c). */
 uint16_t wm_savesize(void);
 uint16_t wm_save(uint32_t at);

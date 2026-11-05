@@ -475,10 +475,11 @@ static WORD poll_joy(void)
  * holding one key while pressing others on it is awkward, so the INVERSE
  * key turns the mode on and off instead.  In it, the arrow keys (with or
  * without CONTROL) move the pointer while held, one pixel a frame with
- * SHIFT; RETURN is the left button and TAB the right, while held.  POKEY
- * sees one held key at a time, so a drag cannot hold a button key and an
- * arrow together: SPACE presses the left button and leaves it down until
- * SPACE again, and the arrows drag.  Every other key types as before.
+ * SHIFT; RETURN is the left button and TAB the right, while held (TAB
+ * with CONTROL is the switch key, src/vdi/vdi.c).  POKEY sees one held
+ * key at a time, so a drag cannot hold a button key and an arrow
+ * together: SPACE presses the left button and leaves it down until SPACE
+ * again, and the arrows drag.  Every other key types as before.
  * By key code, KBCODE's low six bits. */
 #define SKSTAT  (*(volatile uint8_t *)0xD20F)
 #define KBCODE  (*(volatile uint8_t *)0xD209)
@@ -527,15 +528,17 @@ WORD ptr_keymode(void)
  * the keys', so that one frame's step is taken once. */
 static void poll_keys(WORD joy)
 {
-    WORD k = -1, dirs = joy, b;
+    WORD k = -1, raw = 0, dirs = joy, b;
 
     if (!(key_mode & KM_ON)) {
         if (ptr_state.kind == PTR_JOY)
             ptr_move(joy, 0);
         return;
     }
-    if (!(SKSTAT & 0x04))               /* a key is down: which, KBCODE */
-        k = (WORD)(KBCODE & 0x3F);
+    if (!(SKSTAT & 0x04)) {             /* a key is down: which, KBCODE */
+        raw = (WORD)KBCODE;
+        k = (WORD)(raw & 0x3F);
+    }
     switch (k) {
     case KC_UP:    dirs |= 1; break;
     case KC_DOWN:  dirs |= 2; break;
@@ -544,7 +547,8 @@ static void poll_keys(WORD joy)
     default:       break;
     }
     b = (WORD)(((key_mode & KM_LOCK) || k == KC_RETURN) ? 1 : 0);
-    if (k == KC_TAB)
+    if (k == KC_TAB && raw < 0x80)      /* with CONTROL it is the switch
+                                         * key, not a button (vdi.c) */
         b |= 2;
     if (ptr_state.kind == PTR_NONE)
         ptr_state.buttons = b;          /* nothing else sets them */

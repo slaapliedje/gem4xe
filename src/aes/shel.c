@@ -89,6 +89,29 @@ static uint32_t sh_cmd_far, sh_tail_far, sh_buf_far;   /* 0 until sh_init */
 #define SH_CDIRLEN  114         /* LEN_ZPATH: a path with its drive */
 static uint32_t sh_desk_far, sh_cdir_far;
 
+/* THE RING (phase 129, switcher step 3): everything loaded and not
+ * running, in the order the switch key goes round them -- a program put
+ * aside by its record (sh_suspend), and the desktop, while it is not the
+ * one running, by SH_DESKREC.  The one running is the gap between the
+ * last entry and the first.  The switch key goes to the first entry, and
+ * with SHIFT to the last, and whatever stops goes into the gap: so the
+ * circle keeps its order however it is gone round -- the order the
+ * programs were started in, then the desktop, as MultiTOS's list of
+ * processes does for its Control-Alternate-Tab.  A program the desktop
+ * starts comes in just before the desktop, so one CONTROL-TAB from it
+ * goes back where it was started from.
+ *
+ * A count word and SH_PROGS entries, in far memory after the desktop's
+ * directory (sh_init) rather than a block of their own, so that no
+ * gate's model of the heap has one more block to place.  SH_PROGS is how
+ * many programs may be loaded at once besides the desktop: all of them
+ * aside while the desktop runs, or one running and the rest aside beside
+ * the desktop's entry. */
+#define SH_PROGS     6
+#define SH_RINGBYTES (2 + 4 * SH_PROGS)
+#define SH_DESKREC   1UL
+#define sh_ring      (sh_cdir_far + SH_CDIRLEN)
+
 #define SH_DESKTOP  0
 #define SH_PROGRAM  1
 
@@ -100,11 +123,13 @@ void sh_init(void)
     sh_tail_far = far_alloc(SH_TAILLEN);
     sh_buf_far  = far_alloc(SH_BUFLEN);
     sh_desk_far = far_alloc(SH_DESKLEN);
-    sh_cdir_far = far_alloc(SH_CDIRLEN);
+    sh_cdir_far = far_alloc(SH_CDIRLEN + SH_RINGBYTES);
     if (sh_desk_far)
         far_strput(sh_desk_far, SH_DESKNAME, SH_DESKLEN);
-    if (sh_cdir_far)
+    if (sh_cdir_far) {
         far_write8(sh_cdir_far, 0);     /* empty: the system's directory */
+        far_fill(sh_ring, 0, 2);        /* nothing loaded */
+    }
     if (sh_cmd_far && sh_tail_far && sh_buf_far) {
         far_write8(sh_cmd_far, 0);
         far_write8(sh_tail_far, 0);
@@ -327,7 +352,8 @@ WORD sh_environ(WORD how, WORD len, uint32_t buf)
  * put back and the call returns 1, the program's windows on the screen
  * again, redraws queued and WM_ONTOP for the top one.  XM/GEM's shape:
  * one program running, the others frozen, the desktop the way between
- * them.  One at a time in step 2; the desktop is never put aside -- it
+ * them.  Up to SH_PROGS of them, in the ring above, which the switch key
+ * goes round (phase 129, sh_hotkey); the desktop is never put aside -- it
  * ends, kept dormant (phase 121), as it does to run any program.
  *
  * THE RECORD, in far memory, the system's (owner 0, so nothing of the
@@ -352,7 +378,8 @@ WORD sh_environ(WORD how, WORD len, uint32_t buf)
  * are owned by CONTEXT and process 0's context is shared, are kept under
  * SH_SUSPMARK until it runs again (vdi_retag_virtuals).
  *
- * A program that is not process 0, the desktop, or one with nowhere to
+ * A program that is not process 0, the desktop, a program not started
+ * by the shell (an AUTO program, a Pexec child), or one with nowhere to
  * keep the record is refused: 0, and it carries on. */
 #define SU_PARK     0
 #define SU_POOL     4
@@ -366,19 +393,148 @@ WORD sh_environ(WORD how, WORD len, uint32_t buf)
 #define SU_WIN      (SU_DIR + gemdos_dirsize())
 #define SH_SUSPMARK ((void *)1)
 
-ZWIN static uint32_t sh_susp;           /* the program put aside, or 0 */
+/* What the one that ran last leaves the ring (ring_turn): its record if
+ * it was put aside, SH_DESKREC if it was the desktop and it ended, 0 if
+ * it was a program and it ended. */
+ZWIN static uint32_t sh_left;
 ZWIN uint8_t sh_parked;                 /* it was put aside in this run */
+/* The owner of the program the shell is running: a program IT runs in
+ * that program's context -- a Pexec child -- has another, and is not the
+ * shell's to put aside (its parent's frames are under it). */
+ZWIN static uint8_t sh_runown;
 
-static WORD sh_suspend(void)
+/* The ring's count, its entries, one entry; and the ring written back. */
+static WORD ring_n(void)
+{
+    uint16_t n = 0;
+
+    if (sh_cdir_far)
+        far_get((uint8_t *)&n, sh_ring, 2);
+    return (WORD)n;
+}
+
+static WORD ring_get(uint32_t *e)
+{
+    WORD n = ring_n();
+
+    if (n)
+        far_get((uint8_t *)e, sh_ring + 2, (uint16_t)(4 * n));
+    return n;
+}
+
+static uint32_t ring_at(WORD k)
+{
+    uint32_t a;
+
+    far_get((uint8_t *)&a, sh_ring + 2 + 4 * (uint32_t)k, 4);
+    return a;
+}
+
+static void ring_put(const uint32_t *e, WORD n)
+{
+    uint16_t c = (uint16_t)n;
+
+    far_put(sh_ring, (const uint8_t *)&c, 2);
+    if (n)
+        far_put(sh_ring + 2, (const uint8_t *)e, (uint16_t)(4 * n));
+}
+
+/* The entry that is the program `cmd` names, or -1: the same eight
+ * characters appl_find would search (proc_name).  Names are unique in
+ * the ring, since starting a name that is there resumes it. */
+static WORD ring_find(const char *cmd)
+{
+    char name[AP_NAMELEN];
+    WORD n = ring_n(), i;
+    uint32_t a;
+
+    if (!n)
+        return -1;
+    proc_name(proc_app, cmd);
+    for (i = 0; i < n; i++) {
+        a = ring_at(i);
+        if (a == SH_DESKREC)
+            continue;
+        far_get((uint8_t *)name, a + SU_NAME, AP_NAMELEN);
+        if (memcmp(name, proc_app->p_name, AP_NAMELEN) == 0)
+            return i;
+    }
+    return -1;
+}
+
+/* What is about to run leaves the ring from entry k (-1: it was not in
+ * it -- a program loaded, or the desktop at boot), and what ran last
+ * takes its place in the gap (sh_left), which keeps the circle's order:
+ * the entries after k, the one that stopped, the entries before k. */
+static void ring_turn(WORD k)
+{
+    uint32_t e[SH_PROGS], t[SH_PROGS];
+    uint32_t keep = sh_left;
+    WORD n = ring_get(e), m = 0, i;
+
+    sh_left = 0;
+    if (k < 0) {
+        if (keep && n < SH_PROGS)
+            t[m++] = keep;
+        for (i = 0; i < n; i++)
+            t[m++] = e[i];
+    } else {
+        for (i = (WORD)(k + 1); i < n; i++)
+            t[m++] = e[i];
+        if (keep)
+            t[m++] = keep;
+        for (i = 0; i < k; i++)
+            t[m++] = e[i];
+    }
+    ring_put(t, m);
+}
+
+/* What runs next is the ring's entry `to`: the desktop, or a program put
+ * aside by its name, which sh_ldapp finds in the ring again. */
+static void sh_goto(uint32_t to)
+{
+    char name[AP_NAMELEN + 1];
+    WORD i;
+
+    sh_isgem = 1;
+    if (to == SH_DESKREC) {
+        sh_next = SH_DESKTOP;
+        sh_doexec = 0;
+        return;
+    }
+    far_get((uint8_t *)name, to + SU_NAME, AP_NAMELEN);
+    for (i = AP_NAMELEN; i > 0 && name[i - 1] == ' '; i--)
+        ;
+    name[i] = 0;
+    far_strput(sh_cmd_far, name, (uint16_t)(i + 1));
+    sh_next = SH_PROGRAM;
+    sh_doexec = 1;
+}
+
+/* What runs in place of the one put aside: the desktop, for
+ * shel_write(SWM_G4SUSPEND); the ring's first entry or its last, for the
+ * switch key and shel_write(SWM_G4SWITCH). */
+#define SH_TODESK   0
+#define SH_TONEXT   1
+#define SH_TOPREV   2
+
+static WORD sh_suspend(WORD how)
 {
     uint8_t own = (uint8_t)proc_app->p_ctx.owner;
-    uint8_t keep = far_owner, keept = far_tag, tag;
+    uint8_t keep = far_owner, keept = far_tag, tag, wait;
     uint16_t at, len, nb, i;
-    uint32_t rec, park, p, size, tree;
-    WORD max;
+    uint32_t rec, park, p, size, tree, to;
+    WORD max, n;
 
-    if (rlr != proc_app || sh_deskrun || sh_susp || !own)
+    if (rlr != proc_app || sh_deskrun || !own || own != sh_runown
+        || ctx_root != proc_shell)
         return 0;
+    n = ring_n();
+    to = SH_DESKREC;
+    if (n && how == SH_TONEXT)
+        to = ring_at(0);
+    if (n && how == SH_TOPREV)
+        to = ring_at((WORD)(n - 1));
     size = SU_WIN + wm_savesize() + 2;
     for (nb = 0; pool_owned(own, nb, &at, &len, &tag); nb++)
         size += 6 + len;
@@ -420,11 +576,63 @@ static WORD sh_suspend(void)
     }
     pool_free_owner(own);
     vdi_retag_virtuals(&proc_app->p_ctx, SH_SUSPMARK);
-    sh_susp = rec;
+    sh_left = rec;
     sh_parked = 1;
+    sh_goto(to);
+    wait = ev_appwait;                  /* the switch key's: in an evnt_ */
     ctx_switch(ctx_root);               /* the shell; back here when it is
                                          * started again (sh_unpark) */
+    ev_appwait = wait;                  /* ...which it still is */
     return 1;
+}
+
+/* shel_write(SWM_G4SWITCH): a program is put aside for the ring's next
+ * (how 1) or the one before (2); the desktop, which is never put aside,
+ * ends instead, with that program as the next thing the shell runs --
+ * its answer to AP_G4SWITCH.  0 when there is nothing to switch to. */
+static WORD sh_switch(WORD how)
+{
+    WORD n;
+    uint32_t to;
+
+    if ((how != SH_TONEXT && how != SH_TOPREV) || rlr != proc_app)
+        return 0;
+    if (!sh_deskrun)
+        return sh_suspend(how);
+    n = ring_n();
+    if (!n)
+        return 0;
+    to = ring_at(0);
+    if (how == SH_TOPREV)
+        to = ring_at((WORD)(n - 1));
+    sh_goto(to);
+    return 1;
+}
+
+/* THE SWITCH KEY (phase 129): CONTROL-TAB, and SHIFT-CONTROL-TAB back,
+ * which the VDI takes before the key queue (src/vdi/vdi.c), seen at every
+ * poll.  Process 0's polls only, and only while a program runs there
+ * (not the shell between two): an accessory's turn or the shell's
+ * leaves it for the next, which is what lets a second press go one
+ * further.  Acted on only while process 0 waits in an evnt_ call of its
+ * own (ev_appwait), with nothing mid-gesture and nobody holding the
+ * screen -- inside a form_do, a drag or an alert it is dropped, since
+ * what is on the screen then is in no window a resume could redraw.  A
+ * program is put aside; the desktop is sent AP_G4SWITCH and ends itself,
+ * so that it leaves the way it always does (sh_switch). */
+void sh_hotkey(void)
+{
+    WORD how;
+
+    if (rlr != proc_app || ctx_root != proc_shell)
+        return;
+    how = vdi_switchkey();
+    if (!how || !ev_appwait || !ct_idle() || gl_ctmown || !wm_lockfree(0))
+        return;
+    if (!sh_deskrun)
+        sh_suspend(how);
+    else if (ring_n())
+        ap_sendmsg(proc_app, AP_G4SWITCH, how, 0, 0, 0, 0);
 }
 
 WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
@@ -453,7 +661,9 @@ WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
         rlr->p_msgs = isgem;
         break;
     case SWM_G4SUSPEND:                     /* gem4xe's: above */
-        return sh_suspend();
+        return sh_suspend(SH_TODESK);
+    case SWM_G4SWITCH:
+        return sh_switch(isgem);
     default:
         /* 2 (a thread), 3 (an accessory now), 5 (a resolution change --
          * there is one resolution, and a program told yes would wait for
@@ -1340,7 +1550,6 @@ static WORD sh_run(const APP *app, uint32_t resume)
          * buffer it kept; the spare is not needed and goes back */
         far_get((uint8_t *)pc, resume + SU_CTX, sizeof *pc);
         far_free(resume);
-        sh_susp = 0;
         give = spare;
     } else {
         pc->save = spare;
@@ -1352,9 +1561,9 @@ static WORD sh_run(const APP *app, uint32_t resume)
     ctx_switch(pc);                     /* back when it has ended, or has
                                          * been put aside (sh_suspend) */
     if (sh_parked) {
-        far_put(sh_susp + SU_APP, (const uint8_t *)app, sizeof *app);
-        far_put(sh_susp + SU_CTX, (const uint8_t *)pc, sizeof *pc);
-        far_get((uint8_t *)&spare, sh_susp + SU_PARK, 4);
+        far_put(sh_left + SU_APP, (const uint8_t *)app, sizeof *app);
+        far_put(sh_left + SU_CTX, (const uint8_t *)pc, sizeof *pc);
+        far_get((uint8_t *)&spare, sh_left + SU_PARK, 4);
         r = 0;
     } else {
         r = (WORD)pc->entry;            /* main()'s, ctx_boot */
@@ -1370,25 +1579,15 @@ static WORD sh_run(const APP *app, uint32_t resume)
     return r;
 }
 
-/* The program put aside is the one `cmd` names: the same eight
- * characters appl_find would search (proc_name). */
-static WORD sh_is_parked(const char *cmd)
+/* A program put aside (record `rec`), put back -- all but its context,
+ * which sh_run takes: its bank-$00 blocks first, where they were -- if
+ * one's place is taken nothing else is touched and it stays put aside --
+ * then its record, its queue, its directories, its workstations, its
+ * menu bar and its windows.  APP_OK, with *app its APP again; or
+ * APP_E_POOL. */
+static int16_t sh_unpark(APP *app, uint32_t rec)
 {
-    char name[AP_NAMELEN];
-
-    proc_name(proc_app, cmd);
-    far_get((uint8_t *)name, sh_susp + SU_NAME, AP_NAMELEN);
-    return memcmp(name, proc_app->p_name, AP_NAMELEN) == 0;
-}
-
-/* ...and put back, all but its context (sh_run takes that): its bank-$00
- * blocks first, where they were -- if one's place is taken nothing else
- * is touched and it stays put aside -- then its record, its queue, its
- * directories, its workstations, its menu bar and its windows.  APP_OK,
- * with *app its APP again; or APP_E_POOL. */
-static int16_t sh_unpark(APP *app)
-{
-    uint32_t rec = sh_susp, p, tree;
+    uint32_t p, tree;
     uint16_t nb, i, at, len;
     uint8_t tag, own, keep = far_owner, keept = far_tag;
     WORD max;
@@ -1443,7 +1642,7 @@ static WORD sh_ldapp(void)
 {
     APP app;
     char cmd[SH_CMDLEN];
-    WORD st, was = sh_next;
+    WORD st, was = sh_next, k = -1;
     uint8_t stops;
     uint32_t resume = 0;
 
@@ -1486,21 +1685,41 @@ static WORD sh_ldapp(void)
         far_strget(cmd, sh_cmd_far, SH_CMDLEN);
         sh_next = SH_DESKTOP;
         sh_isgem = 1;
-        if (sh_susp && sh_is_parked(cmd)) {
+        k = ring_find(cmd);
+        if (k >= 0) {
             /* started again: resumed where it was put aside */
-            st = sh_unpark(&app);
-            if (st == APP_OK)
-                resume = sh_susp;
+            resume = ring_at(k);
+            st = sh_unpark(&app, resume);
+            if (st != APP_OK)
+                resume = 0;
+        } else if (sh_left && ring_n() >= SH_PROGS) {
+            st = APP_E_POOL;            /* SH_PROGS loaded already */
         } else {
             st = app_load_file(cmd, &app);
         }
     }
     sh_lastrc = st;
     if (st != APP_OK) {
+        /* what ran last is still in sh_left, for whatever runs instead */
         if (was == SH_DESKTOP)      /* nothing to return to: the loop ends */
             sh_doexec = 4;
         return st;
     }
+    /* The ring turns: this one out, the last one in (ring_turn).  The
+     * desktop's entry is wherever the turns have put it -- and absent at
+     * boot, or when the desktop runs again because what it started did
+     * not load, which is the one case where it is sh_left itself. */
+    if (was == SH_DESKTOP) {
+        WORD n = ring_n(), i;
+
+        for (i = 0; i < n && ring_at(i) != SH_DESKREC; i++)
+            ;
+        if (i < n)
+            k = i;
+        if (sh_left == SH_DESKREC)
+            sh_left = 0;
+    }
+    ring_turn(k);
     /* What appl_find will search, and it is the APPLICATION's record by
      * definition -- an application is process 0 (proc.h).  Named after
      * the load rather than before it, so that a failure leaves the name
@@ -1510,6 +1729,7 @@ static WORD sh_ldapp(void)
     if (!resume)
         proc_app->p_msgs = 0;   /* registers for itself, or does not */
     sh_deskrun = (was == SH_DESKTOP);
+    sh_runown = (uint8_t)app.owner;
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     stops = gem_stack_stops;
@@ -1517,9 +1737,10 @@ static WORD sh_ldapp(void)
     sh_deskrun = 0;
     if (sh_parked) {
         /* PUT ASIDE, not ended (sh_suspend): nothing of it is freed, and
-         * the desktop runs next, as after any program.  The accessories
-         * close their windows, as they do between programs: the loop's
-         * wm_init is about to empty the table. */
+         * what runs next is what sh_goto chose -- the desktop, or the
+         * ring's next.  The accessories close their windows, as they do
+         * between programs: the loop's wm_init is about to empty the
+         * table. */
         sh_parked = 0;
         proc_input = proc_app;
         mn_cleanup();
@@ -1534,6 +1755,9 @@ static WORD sh_ldapp(void)
      * alive has to be given the chance to give it back.  Then it is given
      * the TURNS to do that in: the donor blocks appl_exit until every
      * accessory has read the message, and proc_drain is that barrier. */
+    sh_left = 0;                /* ended: it leaves the ring nothing... */
+    if (was == SH_DESKTOP)
+        sh_left = SH_DESKREC;   /* ...but the desktop is always there */
     proc_input = proc_app;
     mn_cleanup();
     sh_appgone();               /* SHUT_COMPLETED, if one waited on it */

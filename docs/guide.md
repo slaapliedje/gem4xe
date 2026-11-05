@@ -293,6 +293,14 @@ left button and keeps it down until SPACE again, so that the arrows can
 drag: the Atari's keyboard sees one held key at a time.  Every other key
 types as usual.  It works beside any pointer, or with `MOUSE=NONE`.
 
+**Several programs at once**: **CONTROL-TAB** puts the program you are
+in aside and goes to the next one loaded, the desktop among them, and
+**SHIFT-CONTROL-TAB** goes back -- Alt-Tab elsewhere, on a keyboard with
+no Alt key.  A program put aside stops where it is, its windows, open
+files and memory kept, and carries on when you come back to it; opening
+it again from the desktop does the same.  They go round in the order you
+started them, then the desktop.  Up to six besides the desktop.
+
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
 
@@ -381,11 +389,13 @@ Besides those:
   `PRINTTO=` names, turned on by `PRINTER=` in `GEM4XE.CFG`.  Nothing in
   the desktop opens that workstation yet, so a printed page of GEM
   graphics is still something an application you write yourself does.
-- **one program at a time.**  The AES runs the desktop, one program and
-  the desk accessories, as TOS's single-tasking AES does; there is no
-  MultiTOS.  The clipboard (`scrp_read`, `scrp_write`) works between
-  programs run one after the other, which is what QED's cut and paste
-  use.
+- **one program runs at a time.**  Several can be loaded -- CONTROL-TAB
+  goes between them (above) -- but only the one in front runs, and the
+  others wait where they stopped, as XM/GEM's did; there is no MultiTOS.
+  The Desk menu does not list them yet, and quitting the desktop with
+  programs put aside does not ask them to end first.  The clipboard
+  (`scrp_read`, `scrp_write`) works between programs, which is what
+  QED's cut and paste use.
 
 ## Writing a program for it
 

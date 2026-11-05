@@ -2406,6 +2406,15 @@ static uint8_t kb_m[KB_QLEN];   /* each key's own SHIFT and CONTROL, as
 static uint8_t kb_head, kb_tail;
 static uint8_t kb_caps;
 
+/* THE SWITCH KEY (phase 129, docs/switcher-plan.md): CONTROL and TAB for
+ * the next program, with SHIFT for the one before -- everyone's Alt-Tab
+ * and MultiTOS's Control-Alternate-Tab, on a keyboard with no Alternate
+ * key.  It is the AES's and never a program's, so it is taken here,
+ * before the queue (vdi_switchkey); it typed nothing until now -- the
+ * OS's CLR TAB, which the translation below drops.  1 next, 2 previous. */
+#define KB_TAB  0x2C
+static TINY uint8_t kb_switch;          /* direct page: LoRAM is at its floor */
+
 /* The ST's scan code for each key this keyboard shares with it, by the
  * Atari's key code (KBCODE's low six bits); 0 where the ST has no such
  * key.  A GEM program matches a key by its scan code as often as by its
@@ -2497,6 +2506,11 @@ static void kb_queue(uint8_t code)
     WORD k;
     uint8_t next;
 
+    if ((code & 0xBF) == (0x80 | KB_TAB)) {
+        kb_switch = (uint8_t)(1 + ((code >> 6) & 1));   /* SHIFT: back */
+        return;                     /* in pointer mode too: TAB without
+                                     * CONTROL is its right button */
+    }
     if (ptr_key(code))
         return;                     /* pointer mode's (src/vdi/pointer.c) */
     k = kb_translate(code);
@@ -2513,6 +2527,14 @@ static void kb_queue(uint8_t code)
         kb_m[kb_tail] = (uint8_t)((code >> 5) & 6);
         kb_tail = next;
     }
+}
+
+WORD vdi_switchkey(void)
+{
+    WORD k = kb_switch;
+
+    kb_switch = 0;
+    return k;
 }
 
 void vdi_key_poll(void)
