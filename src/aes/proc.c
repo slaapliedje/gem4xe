@@ -59,6 +59,18 @@ WORD proc_init(void *store)
     return TRUE;
 }
 
+void proc_fresh(PROC *p)
+{
+    WORD *q = p->p_queue;
+    WORD max = p->p_qmax;
+
+    memset((uint8_t *)p + sizeof(CTX), 0, sizeof(PROC) - sizeof(CTX));
+    memset(p->p_name, ' ', AP_NAMELEN);
+    p->p_stat = P_LIVE;
+    p->p_queue = q;
+    p->p_qmax = max;
+}
+
 WORD proc_pid(const PROC *p)
 {
     return (WORD)(p - proc_tab);

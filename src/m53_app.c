@@ -1,0 +1,82 @@
+/* m53_app.c -- the phase 127 gate program: put aside, and resumed.
+ *
+ * One window, its own file kept open, and a count in its near data that
+ * goes up every turn.  When the gate writes `step`, it calls
+ * shel_write(SWM_G4SUSPEND): the desktop comes back, and when the gate
+ * starts M53.PRG again from it, the call returns here -- with the count
+ * where it was, the window on the screen, the file still open.  It logs
+ * every window message, so tests/emu/m53_suspend.py can see the redraws
+ * and the WM_ONTOP a resume sends.
+ */
+#include "gem.h"
+
+WORD r_wh;
+WORD r_fh;                      /* M53.PRG, open from the start */
+WORD r_ready;
+WORD step;                      /* the gate writes 1: put me aside */
+WORD app_quit;
+uint16_t r_count;               /* every turn, in near data */
+WORD r_resumes;                 /* shel_write(SWM_G4SUSPEND) returned */
+WORD r_ret[4];                  /* ...with these */
+WORD r_read[4];                 /* the file's first two bytes read again */
+uint8_t r_head[4][2];           /* ...and what they were */
+WORD r_log[48][2];              /* window messages: type, handle */
+WORD r_nlog;
+
+static void logmsg(const WORD *m)
+{
+    if (r_nlog < 48) {
+        r_log[r_nlog][0] = m[0];
+        r_log[r_nlog][1] = m[3];
+        r_nlog++;
+    }
+}
+
+int main(void)
+{
+    WORD msg[8], mx, my, mb, ks, kr, br, k;
+    LONG fh;
+
+    appl_init();
+    fh = Fopen("M53.PRG", 0);
+    r_fh = (WORD)fh;
+    r_wh = wind_create(NAME | MOVER, 60, 40, 300, 120);
+    wind_set_str(r_wh, WF_NAME, " Put aside ");
+    wind_open(r_wh, 60, 40, 300, 120);
+    r_ready = 1;
+
+    while (!app_quit) {
+        WORD what = evnt_multi_moblk((UWORD)(MU_MESAG | MU_TIMER), 1, 1, 1,
+                                     0, 0, msg, 50, 0,
+                                     &mx, &my, &mb, &ks, &kr, &br);
+        r_count++;
+        if (step == 1) {
+            step = 0;
+            k = (WORD)(r_resumes & 3);
+            r_ret[k] = shel_write(SWM_G4SUSPEND, 0, 0, "", "");
+            Fseek(0, r_fh, 0);
+            r_read[k] = (WORD)Fread(r_fh, 2, r_head[k]);
+            r_resumes++;
+        }
+        if (!(what & MU_MESAG))
+            continue;
+        switch (msg[0]) {
+        case WM_TOPPED:
+            logmsg(msg);
+            wind_set(msg[3], WF_TOP, 0, 0, 0, 0);
+            break;
+        case WM_REDRAW:
+        case WM_ONTOP:
+        case WM_UNTOPPED:
+            logmsg(msg);
+            break;
+        default:
+            break;
+        }
+    }
+    Fclose(r_fh);
+    wind_close(r_wh);
+    wind_delete(r_wh);
+    appl_exit();
+    return 0;
+}

@@ -229,3 +229,23 @@ uint16_t pool_room(void)
 {
     return (uint16_t)(app_pool_hi - pool_mark());
 }
+
+uint16_t pool_owned(uint8_t owner, uint16_t n, uint16_t *at, uint16_t *len,
+                    uint8_t *tag)
+{
+    uint16_t i;
+
+    for (i = 0; i < pool_blocks; i++) {
+        if (pb_own[i] != owner)
+            continue;
+        if (n) {
+            n--;
+            continue;
+        }
+        *at = pb_at[i];
+        *len = pb_len[i];
+        *tag = pb_tag[i];
+        return 1;
+    }
+    return 0;
+}

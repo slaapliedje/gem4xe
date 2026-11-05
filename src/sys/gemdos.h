@@ -230,6 +230,12 @@ void gemdos_release(void);
 void gemdos_home(void);
 /* ...and INTO one, which is what shel_wdef's directory names. */
 void gemdos_chdir(const char *path);
+/* The current drive and every drive's current directory, written to far
+ * memory and read back: a program put aside takes its directories with
+ * it (src/aes/shel.c).  gemdos_dirsize() bytes. */
+uint16_t gemdos_dirsize(void);
+void gemdos_dirsave(uint32_t at);
+void gemdos_dirload(uint32_t at);
 /* A name the AES opens, resolved through GEMDOS's current
  * directory when there is one (src/sys/gemdos.c). */
 void gd_cioname(const char *name, char *cio);

@@ -24,11 +24,6 @@
 #include "sys/abi.h"
 #include "sys/farmem.h"
 
-/* The whole engine stack: what one context can want at the very most.
- * src/gem4xe.scm gives the stack 2 KB and the gates measure 1,239 bytes
- * of it in use at the deepest, so a park can never exceed this -- but a
- * park is measured, not assumed, and ctx_park refuses one that would. */
-#define CTX_MAX     0x0800
 
 CTX      *ctx_cur;
 uint16_t  ctx_base;

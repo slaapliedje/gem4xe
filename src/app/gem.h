@@ -881,6 +881,13 @@ WORD rsrc_gaddr(WORD type, WORD index, void **addr);
 #define SWM_ENVIRON   8         /* isgr: ENVIRON_SIZE or ENVIRON_COPY */
 #define SWM_NEWMSG    9         /* isgr: the NM_* this program understands */
 #define SWM_AESMSG    10        /* cmd: eight words for the AES: AP_TFAIL */
+/* gem4xe's own: put the caller aside.  The desktop comes back; started
+ * again from it, the program is RESUMED where it was -- this call returns
+ * 1 then, its windows back, WM_REDRAW queued for what shows and WM_ONTOP
+ * for the top one.  0, at once, when it cannot be: one program aside at
+ * a time, and not the desktop.  Nothing else of it changes while it is
+ * aside -- its files stay open, its memory is kept. */
+#define SWM_G4SUSPEND 71
 #define SD_ABORT      0         /* ...the one that started it, only */
 #define SD_PARTIAL    1         /* applications AP_TERM, accessories AC_CLOSE */
 #define SD_COMPLETE   2         /* ...and accessories AP_TERM as well */

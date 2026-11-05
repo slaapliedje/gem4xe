@@ -66,6 +66,11 @@ uint16_t pool_free(void *block);    /* 1 if it was a block, 0 if not */
 void     pool_free_owner(uint8_t owner);            /* 0, the system: no-op */
 void     pool_free_sub(uint8_t owner, uint8_t sub); /* one sub-pool, 1-15 */
 uint16_t pool_room(void);           /* above the top: what pool_alloc has */
+/* The n-th block `owner` has, lowest first: 1 with its place, length and
+ * tag, 0 when there are no more -- what a program put aside takes with
+ * it (src/aes/shel.c, sh_suspend) and claims back where it was. */
+uint16_t pool_owned(uint8_t owner, uint16_t n, uint16_t *at, uint16_t *len,
+                    uint8_t *tag);
 
 void     pool_keep_mark(void);
 uint16_t pool_floor(void);

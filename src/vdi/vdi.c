@@ -891,6 +891,15 @@ void vdi_close_virtuals(void)
     vdi_close_virtuals_but(0);
 }
 
+void vdi_retag_virtuals(void *from, void *to)
+{
+    WORD i;
+
+    for (i = 1; i < NUM_VWK; i++)
+        if (vwk_own[i] == from)
+            vwk_own[i] = to;
+}
+
 static void vdi_vq_extnd(void)
 {
     WORD i;

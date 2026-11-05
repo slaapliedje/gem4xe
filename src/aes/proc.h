@@ -180,6 +180,9 @@ extern PROC *proc_input;
  * without anything noticing (phase 100). */
 extern const uint16_t proc_store_size;
 WORD  proc_init(void *store);
+/* A record as proc_init leaves it, but for its context and its queue's
+ * place: process 0 after a program is put aside (src/aes/shel.c). */
+void  proc_fresh(PROC *p);
 WORD  proc_pid(const PROC *p);
 PROC *proc_of(WORD pid);
 

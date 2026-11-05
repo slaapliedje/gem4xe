@@ -38,6 +38,8 @@
 #include "sys/ctx.h"
 #include "sys/abi.h"                    /* app_run: a CPX is run, not exec'd */
 #include "aes/proc.h"
+#include "sys/pool.h"
+#include "../vdi/vdi.h"
 #include "sys/zwin.h"
 #include "lang_rsc.h"
 
@@ -316,6 +318,115 @@ WORD sh_environ(WORD how, WORD len, uint32_t buf)
     return (WORD)(n - len);
 }
 
+/* ---- A PROGRAM PUT ASIDE (switcher step 2, docs/switcher-plan.md) --------
+ *
+ * shel_write(SWM_G4SUSPEND) from the running program puts it aside: its
+ * state goes into one far record, it stops where it is -- inside this
+ * call -- and the desktop comes back.  Started again from the desktop,
+ * under the same name, it is RESUMED instead of loaded: the record is
+ * put back and the call returns 1, the program's windows on the screen
+ * again, redraws queued and WM_ONTOP for the top one.  XM/GEM's shape:
+ * one program running, the others frozen, the desktop the way between
+ * them.  One at a time in step 2; the desktop is never put aside -- it
+ * ends, kept dormant (phase 121), as it does to run any program.
+ *
+ * THE RECORD, in far memory, the system's (owner 0, so nothing of the
+ * program's frees it), written in sequence rather than as a struct
+ * (Calypsi's sizes, B7):
+ *   SU_PARK   the park buffer the shell takes in place of the one the
+ *             program keeps -- its engine stack is parked in that one
+ *   SU_POOL   where the pool's section starts (the windows' is variable)
+ *   SU_NAME   the eight-character name it was started under
+ *   SU_APP    its APP and SU_CTX its context: the SHELL writes these two,
+ *             after the switch, since both are the shell's to see
+ *   SU_PROC   process 0's record after its context: queue count, waits,
+ *             resources, files, DTA, name, messages
+ *   SU_QUEUE  the application queue's sixteen messages
+ *   SU_MENU   its menu bar, if the bar was its
+ *   SU_DIR    the current drive and directories (gemdos_dirsave)
+ *   SU_WIN    its windows (wm_save)
+ *   then the pool: a count, and each of its bank-$00 blocks -- address,
+ *   length, tag and bytes -- which are then FREED, so the desktop can
+ *   take its own region back; resuming claims them where they were.
+ * Its far blocks stay where they are, its own.  Its workstations, which
+ * are owned by CONTEXT and process 0's context is shared, are kept under
+ * SH_SUSPMARK until it runs again (vdi_retag_virtuals).
+ *
+ * A program that is not process 0, the desktop, or one with nowhere to
+ * keep the record is refused: 0, and it carries on. */
+#define SU_PARK     0
+#define SU_POOL     4
+#define SU_NAME     8
+#define SU_APP      16
+#define SU_CTX      (SU_APP + sizeof(APP))
+#define SU_PROC     (SU_CTX + sizeof(CTX))
+#define SU_QUEUE    (SU_PROC + (sizeof(PROC) - sizeof(CTX)))
+#define SU_MENU     (SU_QUEUE + NUM_MSGS * 16)
+#define SU_DIR      (SU_MENU + 4)
+#define SU_WIN      (SU_DIR + gemdos_dirsize())
+#define SH_SUSPMARK ((void *)1)
+
+ZWIN static uint32_t sh_susp;           /* the program put aside, or 0 */
+ZWIN uint8_t sh_parked;                 /* it was put aside in this run */
+
+static WORD sh_suspend(void)
+{
+    uint8_t own = (uint8_t)proc_app->p_ctx.owner;
+    uint8_t keep = far_owner, keept = far_tag, tag;
+    uint16_t at, len, nb, i;
+    uint32_t rec, park, p, size, tree;
+    WORD max;
+
+    if (rlr != proc_app || sh_deskrun || sh_susp || !own)
+        return 0;
+    size = SU_WIN + wm_savesize() + 2;
+    for (nb = 0; pool_owned(own, nb, &at, &len, &tag); nb++)
+        size += 6 + len;
+    far_owner = 0;                      /* the system's: see above */
+    far_tag = 0;
+    rec = far_alloc_top(size);
+    park = 0;
+    if (rec)
+        park = far_alloc(CTX_MAX);
+    far_owner = keep;
+    far_tag = keept;
+    if (!park) {
+        if (rec)
+            far_free(rec);
+        return 0;
+    }
+    far_put(rec + SU_PARK, (const uint8_t *)&park, 4);
+    far_put(rec + SU_NAME, (const uint8_t *)proc_app->p_name, AP_NAMELEN);
+    far_put(rec + SU_PROC, (const uint8_t *)proc_app + sizeof(CTX),
+            (uint16_t)(sizeof(PROC) - sizeof(CTX)));
+    far_put(rec + SU_QUEUE, (const uint8_t *)gl_appqueue(&max), NUM_MSGS * 16);
+    tree = 0;
+    if (mn_barowner() == 0)
+        tree = (uint32_t)gl_mntree;
+    far_put(rec + SU_MENU, (const uint8_t *)&tree, 4);
+    gemdos_dirsave(rec + SU_DIR);
+    p = rec + SU_WIN;
+    p += wm_save(p);
+    far_put(rec + SU_POOL, (const uint8_t *)&p, 4);
+    far_put(p, (const uint8_t *)&nb, 2);
+    p += 2;
+    for (i = 0; i < nb; i++) {
+        pool_owned(own, i, &at, &len, &tag);
+        far_put(p, (const uint8_t *)&at, 2);
+        far_put(p + 2, (const uint8_t *)&len, 2);
+        far_put(p + 4, &tag, 1);
+        far_put(p + 6, (const uint8_t *)at, len);
+        p += 6 + len;
+    }
+    pool_free_owner(own);
+    vdi_retag_virtuals(&proc_app->p_ctx, SH_SUSPMARK);
+    sh_susp = rec;
+    sh_parked = 1;
+    ctx_switch(ctx_root);               /* the shell; back here when it is
+                                         * started again (sh_unpark) */
+    return 1;
+}
+
 WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
               const char *ptail)
 {
@@ -341,6 +452,8 @@ WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
     case 9:                                 /* SWM_NEWMSG: NM_APTERM */
         rlr->p_msgs = isgem;
         break;
+    case SWM_G4SUSPEND:                     /* gem4xe's: above */
+        return sh_suspend();
     default:
         /* 2 (a thread), 3 (an accessory now), 5 (a resolution change --
          * there is one resolution, and a program told yes would wait for
@@ -1214,26 +1327,108 @@ WORD sh_runs;                   /* programs started, the desktop included */
  * is the context's now, which ctx_park applies at the switch.  Programs
  * started anywhere else (AUTO, the modules, Pexec) are app_exec's still:
  * they run in whatever context runs them. */
-static WORD sh_run(const APP *app)
+static WORD sh_run(const APP *app, uint32_t resume)
 {
     CTX *pc = &proc_app->p_ctx, *sc = proc_shell;
-    uint32_t spare = sc->save;
+    uint32_t spare = sc->save, give = 0;
     WORD r;
 
     memcpy(sc, pc, sizeof *sc);         /* the shell, as it runs */
     ctx_cur = ctx_root = sc;
-    pc->save = spare;
-    ctx_reset(pc, app->entry);
-    pc->owner = app->owner;
-    pc->floor = app->stack_floor ? app->stack_floor
-                                 : (uint16_t)(app->near_base + CTX_FLOOR);
-    ctx_switch(pc);                     /* back when the program has ended */
-    r = (WORD)pc->entry;                /* main()'s, ctx_boot */
-    spare = pc->save;
+    if (resume) {
+        /* PUT ASIDE BEFORE: its context as it was parked, in the park
+         * buffer it kept; the spare is not needed and goes back */
+        far_get((uint8_t *)pc, resume + SU_CTX, sizeof *pc);
+        far_free(resume);
+        sh_susp = 0;
+        give = spare;
+    } else {
+        pc->save = spare;
+        ctx_reset(pc, app->entry);
+        pc->owner = app->owner;
+        pc->floor = app->stack_floor ? app->stack_floor
+                                     : (uint16_t)(app->near_base + CTX_FLOOR);
+    }
+    ctx_switch(pc);                     /* back when it has ended, or has
+                                         * been put aside (sh_suspend) */
+    if (sh_parked) {
+        far_put(sh_susp + SU_APP, (const uint8_t *)app, sizeof *app);
+        far_put(sh_susp + SU_CTX, (const uint8_t *)pc, sizeof *pc);
+        far_get((uint8_t *)&spare, sh_susp + SU_PARK, 4);
+        r = 0;
+    } else {
+        r = (WORD)pc->entry;            /* main()'s, ctx_boot */
+        spare = pc->save;
+    }
     memcpy(pc, sc, sizeof *pc);         /* and the shell is process 0 again */
     sc->save = spare;
     ctx_cur = ctx_root = pc;
+    if (give)
+        far_free(give);
+    if (sh_parked)
+        proc_fresh(proc_app);           /* for whatever runs next */
     return r;
+}
+
+/* The program put aside is the one `cmd` names: the same eight
+ * characters appl_find would search (proc_name). */
+static WORD sh_is_parked(const char *cmd)
+{
+    char name[AP_NAMELEN];
+
+    proc_name(proc_app, cmd);
+    far_get((uint8_t *)name, sh_susp + SU_NAME, AP_NAMELEN);
+    return memcmp(name, proc_app->p_name, AP_NAMELEN) == 0;
+}
+
+/* ...and put back, all but its context (sh_run takes that): its bank-$00
+ * blocks first, where they were -- if one's place is taken nothing else
+ * is touched and it stays put aside -- then its record, its queue, its
+ * directories, its workstations, its menu bar and its windows.  APP_OK,
+ * with *app its APP again; or APP_E_POOL. */
+static int16_t sh_unpark(APP *app)
+{
+    uint32_t rec = sh_susp, p, tree;
+    uint16_t nb, i, at, len;
+    uint8_t tag, own, keep = far_owner, keept = far_tag;
+    WORD max;
+
+    far_get((uint8_t *)app, rec + SU_APP, sizeof *app);
+    own = (uint8_t)app->owner;
+    far_get((uint8_t *)&p, rec + SU_POOL, 4);
+    far_get((uint8_t *)&nb, p, 2);
+    p += 2;
+    for (i = 0; i < nb; i++) {
+        far_get((uint8_t *)&at, p, 2);
+        far_get((uint8_t *)&len, p + 2, 2);
+        far_get(&tag, p + 4, 1);
+        far_owner = own;
+        far_tag = tag;
+        if (!pool_claim(at, len)) {
+            far_owner = keep;
+            far_tag = keept;
+            pool_free_owner(own);       /* the ones claimed so far */
+            return APP_E_POOL;
+        }
+        far_get((uint8_t *)at, p + 6, len);
+        p += 6 + len;
+    }
+    far_owner = keep;
+    far_tag = keept;
+    far_get((uint8_t *)proc_app + sizeof(CTX), rec + SU_PROC,
+            (uint16_t)(sizeof(PROC) - sizeof(CTX)));
+    far_get((uint8_t *)gl_appqueue(&max), rec + SU_QUEUE, NUM_MSGS * 16);
+    gemdos_dirload(rec + SU_DIR);
+    vdi_retag_virtuals(SH_SUSPMARK, &proc_app->p_ctx);
+    far_get((uint8_t *)&tree, rec + SU_MENU, 4);
+    if (tree)
+        mn_bar((OBJECT FAR *)tree, TRUE);
+    wm_restore(rec + SU_WIN);
+    app_near = app->near_base;
+    app_far = app->far_addr;
+    app_vars = app->vars_addr;
+    app_vlink = app->vars_link;
+    return APP_OK;
 }
 
 WORD sh_lastret;                /* what the last one's main() returned */
@@ -1250,6 +1445,7 @@ static WORD sh_ldapp(void)
     char cmd[SH_CMDLEN];
     WORD st, was = sh_next;
     uint8_t stops;
+    uint32_t resume = 0;
 
     if (was == SH_DESKTOP) {
         /* The last program ran in its own directory (the desktop's
@@ -1290,7 +1486,14 @@ static WORD sh_ldapp(void)
         far_strget(cmd, sh_cmd_far, SH_CMDLEN);
         sh_next = SH_DESKTOP;
         sh_isgem = 1;
-        st = app_load_file(cmd, &app);
+        if (sh_susp && sh_is_parked(cmd)) {
+            /* started again: resumed where it was put aside */
+            st = sh_unpark(&app);
+            if (st == APP_OK)
+                resume = sh_susp;
+        } else {
+            st = app_load_file(cmd, &app);
+        }
     }
     sh_lastrc = st;
     if (st != APP_OK) {
@@ -1304,13 +1507,25 @@ static WORD sh_ldapp(void)
      * of whatever is actually there instead of one for a program that
      * never started. */
     proc_name(proc_app, cmd);   /* the desktop's name is in cmd too now */
-    proc_app->p_msgs = 0;       /* registers for itself, or does not */
+    if (!resume)
+        proc_app->p_msgs = 0;   /* registers for itself, or does not */
     sh_deskrun = (was == SH_DESKTOP);
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     stops = gem_stack_stops;
-    sh_lastret = sh_run(&app);
+    sh_lastret = sh_run(&app, resume);
     sh_deskrun = 0;
+    if (sh_parked) {
+        /* PUT ASIDE, not ended (sh_suspend): nothing of it is freed, and
+         * the desktop runs next, as after any program.  The accessories
+         * close their windows, as they do between programs: the loop's
+         * wm_init is about to empty the table. */
+        sh_parked = 0;
+        proc_input = proc_app;
+        mn_cleanup();
+        proc_drain(ACC_ROUNDS);
+        return 0;
+    }
 
     /* The program has gone.  The mouse comes back here whatever it left
      * it set to, and every accessory is told -- before app_free takes the

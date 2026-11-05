@@ -342,6 +342,10 @@ void vdi_close_virtuals(void); /* every virtual workstation closed: a program's,
  * slots, and all of those closed but the ones in `keep`. */
 uint16_t vdi_virtuals_open(void);
 void vdi_close_virtuals_but(uint16_t keep);
+/* Every workstation `from` owns made `to`'s: a program put aside keeps
+ * its workstations under a marker while another runs in its context --
+ * they are owned by context, and process 0's is shared (src/aes/shel.c). */
+void vdi_retag_virtuals(void *from, void *to);
 
 /* Mouse cursor.  vdi_cursor_move() is what an input poll calls after
  * ptr_poll(): it erases, repositions and redraws only if something changed. */

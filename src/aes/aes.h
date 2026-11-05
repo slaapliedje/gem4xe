@@ -621,6 +621,13 @@ void ct_arrow_stop(void);
 
 /* ---- the menu library: menu.c (gemmnlib.c) ----------------------------- */
 extern OBJECT FAR *gl_mntree;       /* the menu bar showing, or 0 */
+/* shel_write's gem4xe mode: the caller put aside, resumed when it is
+ * started again (src/aes/shel.c, sh_suspend; src/app/gem.h). */
+#define SWM_G4SUSPEND   71
+/* Process 0's windows put aside and put back (src/aes/wind.c). */
+uint16_t wm_savesize(void);
+uint16_t wm_save(uint32_t at);
+void     wm_restore(uint32_t at);
 extern MOBLK   gl_ctwait;       /* the rectangle whose entry runs the menu */
 void mn_init(void);
 void mn_bar(OBJECT FAR *tree, WORD showit);

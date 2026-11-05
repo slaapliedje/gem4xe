@@ -92,7 +92,10 @@ Each says how it is tested; a check is believed only once it has failed.
      and `GD_PEXEC_STACK` refused every Pexec when it grew 114 bytes.  In
      its own context the program starts at the top of the stack, with the
      shell's frames parked.
-2. **Suspend and resume one program**, from inside: a private request
+2. **Suspend and resume one program** -- BUILT, phase 127
+   ([phase127.md](phase127.md)): `shel_write(SWM_G4SUSPEND)` puts it aside;
+   started again from the desktop under the same name, it is resumed.
+   From inside: a private request
    (a `shel_write` mode in gem4xe's own range) parks the running program
    -- context, near region, windows and menu bar hidden, the DOS's
    directory kept -- and revives the desktop; a second request resumes it.

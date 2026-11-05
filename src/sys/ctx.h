@@ -51,6 +51,14 @@
 #define CTX_LIVE    1       /* running, or parked with a stack to come back to */
 #define CTX_DONE    2       /* its program returned */
 
+/* The whole engine stack: what one context can want at the very most,
+ * and so a park buffer's size.  src/gem4xe.scm gives the stack 2 KB and
+ * the gates measure 1,239 bytes of it in use at the deepest, so a park
+ * can never exceed this -- but a park is measured, not assumed, and
+ * ctx_park refuses one that would.  The shell takes buffers of this size
+ * for a program it puts aside (src/aes/shel.c, sh_suspend). */
+#define CTX_MAX     0x0800
+
 typedef struct {
     uint16_t sp;        /* engine S while parked; meaningless while running */
     uint32_t save;      /* far: where the parked extent lives */

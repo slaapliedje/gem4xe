@@ -1459,16 +1459,113 @@ static WORD w_linked(WORD wh)
     return FALSE;
 }
 
+ZWIN static uint8_t w_quiet;            /* wm_restore is reopening */
+
 static void w_topchanged(WORD oldtop, WORD bottomed)
 {
     WORD newtop = gl_wtop;
 
-    if (oldtop == newtop || oldtop == NIL || oldtop == DESKWH)
+    if (w_quiet || oldtop == newtop || oldtop == NIL || oldtop == DESKWH)
         return;
     if (!bottomed && w_linked(oldtop))
         ap_sendmsg(wm_owner(oldtop), WM_UNTOPPED, oldtop, 0, 0, 0, 0);
     else if (newtop != NIL && newtop != DESKWH)
         ap_sendmsg(wm_owner(newtop), WM_ONTOP, newtop, 0, 0, 0, 0);
+}
+
+/* PROCESS 0'S WINDOWS, PUT ASIDE AND PUT BACK (switcher step 2,
+ * docs/switcher-plan.md; src/aes/shel.c sh_suspend and sh_unpark).
+ *
+ * wm_save writes the windows process 0 owns to far memory -- a count,
+ * then each one's handle (bit 15 if it is open), its WINDOW record and
+ * its current rectangle -- the open ones bottom first, in the tree's
+ * order, then the ones made and not open.  The shell loop's wm_init then
+ * empties the table for whatever runs next.
+ *
+ * wm_restore puts them back at the SAME HANDLES, which a program has
+ * kept, on a table wm_init has just emptied: each one made as wm_create
+ * makes one, its record copied over, the open ones opened in their old
+ * order by wm_open -- which draws their frames and queues the redraws
+ * of what shows.  Quietly: reopening would tell each one WM_UNTOPPED as
+ * the next opened over it, and a program with many windows would find
+ * its queue full of them and its redraws dropped.  The top one is told
+ * WM_ONTOP instead, as MultiTOS's dispatcher tells a program whose
+ * window it has just brought back (GEMDISP.C).
+ *
+ * wm_savesize() bytes at most; wm_save answers how many it wrote. */
+uint16_t wm_savesize(void)
+{
+    return (uint16_t)(2 + NUM_WIN * (2 + sizeof(WINDOW) + sizeof(GRECT)));
+}
+
+static uint32_t w_save1(uint32_t at, WORD wh, uint16_t open)
+{
+    uint16_t h = (uint16_t)wh;          /* an if, not a ?: -- &h is taken
+                                         * below, and that is B9's shape */
+    GRECT c;
+
+    if (open)
+        h |= 0x8000;
+    w_getsize(WS_CURR, wh, &c);
+    far_put(at, (const uint8_t *)&h, 2);
+    far_put(at + 2, (const uint8_t *)w_win(wh), sizeof(WINDOW));
+    far_put(at + 2 + sizeof(WINDOW), (const uint8_t *)&c, sizeof(GRECT));
+    return at + 2 + sizeof(WINDOW) + sizeof(GRECT);
+}
+
+uint16_t wm_save(uint32_t at)
+{
+    uint32_t p = at + 2;
+    uint16_t n = 0;
+    WORD k;
+
+    for (k = W_TREE[ROOT].ob_head; k != NIL && k != ROOT; k = W_TREE[k].ob_next)
+        if (k != DESKWH && w_win(k)->w_owner == 0) {
+            p = w_save1(p, k, 1);
+            n++;
+        }
+    for (k = 1; k < NUM_WIN; k++)
+        if ((w_win(k)->w_flags & VF_INUSE) && !(w_win(k)->w_flags & VF_ISOPEN)
+            && w_win(k)->w_owner == 0) {
+            p = w_save1(p, k, 0);
+            n++;
+        }
+    far_put(at, (const uint8_t *)&n, 2);
+    return (uint16_t)(p - at);
+}
+
+void wm_restore(uint32_t at)
+{
+    uint16_t n, h, i;
+    WORD wh;
+    WINDOW sw, *pwin;
+    GRECT c;
+
+    far_get((uint8_t *)&n, at, 2);
+    at += 2;
+    for (i = 0; i < n; i++) {
+        far_get((uint8_t *)&h, at, 2);
+        far_get((uint8_t *)&sw, at + 2, sizeof(WINDOW));
+        far_get((uint8_t *)&c, at + 2 + sizeof(WINDOW), sizeof(GRECT));
+        at += 2 + sizeof(WINDOW) + sizeof(GRECT);
+        wh = (WORD)(h & 0x7FFF);
+        if (wh <= DESKWH || wh >= NUM_WIN)
+            continue;
+        w_setup(wh, (WORD)sw.w_kind);
+        w_setsize(WS_CURR, wh, &gl_rzero);
+        pwin = w_win(wh);
+        *pwin = sw;
+        pwin->w_flags = (UWORD)(sw.w_flags & ~VF_ISOPEN);
+        pwin->w_rlist = 0;
+        pwin->w_rnext = 0;
+        if (h & 0x8000) {
+            w_quiet = 1;
+            wm_open(wh, &c);
+            w_quiet = 0;
+        }
+    }
+    if (gl_wtop != NIL && gl_wtop != DESKWH && w_win(gl_wtop)->w_owner == 0)
+        ap_sendmsg(wm_owner(gl_wtop), WM_ONTOP, gl_wtop, 0, 0, 0, 0);
 }
 
 /* Bring window wh to the top: last among the root's children, then

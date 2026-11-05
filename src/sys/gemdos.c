@@ -2195,6 +2195,25 @@ void gemdos_chdir(const char *path)
     gd_setpath((LONG)(uint32_t)(uint16_t)path);
 }
 
+uint16_t gemdos_dirsize(void)
+{
+    return (uint16_t)(1 + GD_DRIVES + GD_DRIVES * GD_DIRMAX);
+}
+
+void gemdos_dirsave(uint32_t at)
+{
+    far_put(at, &gd_drive, 1);
+    far_put(at + 1, gd_dirset, GD_DRIVES);
+    far_copy(at + 1 + GD_DRIVES, gd_dirs, GD_DRIVES * GD_DIRMAX);
+}
+
+void gemdos_dirload(uint32_t at)
+{
+    far_get(&gd_drive, at, 1);
+    far_get(gd_dirset, at + 1, GD_DRIVES);
+    far_copy(gd_dirs, at + 1 + GD_DRIVES, GD_DRIVES * GD_DIRMAX);
+}
+
 void gemdos_home(void)
 {
     WORD i;
