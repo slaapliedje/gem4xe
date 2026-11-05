@@ -129,11 +129,16 @@ typedef struct {
 #define O_SIZE  7
 #define AI_SIZE 3
 
-/* AES_VERSION 0x0140 is AES 1.40, TOS 1.04's, which is what EmuTOS reports
- * when built with none of the later extensions (menu popups, 3D objects,
- * window colours) -- gem4xe has none of them either, and the number is a
- * promise about which functions exist. */
-#define AES_VERSION 0x0140
+/* AES 4.0, MultiTOS's number, since phase 124.  It is a promise about
+ * which calls exist and how they answer, and it was 1.40 until every one
+ * an AES 4 program makes on seeing it was there and honest: appl_getinfo
+ * and appl_search, appl_find's forms, shel_write's modes and the AP_TERM
+ * shutdown (phase 123), menu_register for an application, menu_bar's
+ * inquiry, rsrc_rcfix, WF_TOP's three words, global[13] and [14].  What 4.0
+ * does NOT promise is concurrency: global[1] stays 1, one application at
+ * a time, where MultiTOS says -1 -- and appl_getinfo(AES_SHELL) says
+ * shel_write(1) runs the program when the caller ends. */
+#define AES_VERSION 0x0400
 
 /* ---- VDI ---------------------------------------------------------------- */
 
@@ -286,6 +291,11 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
 
     str_used = 0;                   /* one call's far-string bounces */
 
+    /* menu_bar(0, MENU_INQUIRE) names no tree: it asks whose bar it is
+     * (AES 4, phase 124), and must not be refused for the missing tree. */
+    if (opcode == 30 && int_in[0] == -1)
+        return mn_barowner();
+
     /* Every op that takes a tree takes it in addr_in[0]. */
     switch (opcode) {
     case 30: case 31: case 32: case 33: case 34:
@@ -308,10 +318,16 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     case 10:                        /* appl_init */
         global[0] = AES_VERSION;
         global[1] = 1;              /* concurrent applications */
-        global[2] = 0;              /* ap_id: the one application */
+        global[2] = proc_pid(rlr);  /* ap_id: an accessory's own, which
+                                     * this said 0 for until phase 124 */
         for (k = 3; k < 15; k++)
             global[k] = 0;
         global[10] = gl_nplanes;
+        /* AES 4's: the largest and smallest character height the AES
+         * draws with -- one face here, so both are its cell height, which
+         * is what appl_getinfo's AES_LARGEFONT answers too */
+        global[13] = gl_hchar;
+        global[14] = gl_hchar;
         ret = proc_pid(rlr);        /* ap_id */
         break;
     case 11:                        /* appl_read: id, length, buffer */
@@ -352,15 +368,25 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
          * tells it to (p.362), compared over all eight.  A name that was
          * not padded finds nothing, which is what a real AES answers.
          *
-         * The AES 4.0 extensions are NOT here and must not be: an upper
-         * word of $FFFF, $FFFE or $0000 meaning a MiNT id, an AES id or
-         * "me".  They are gated on appl_getinfo, which is AES 4.0 while
-         * gem4xe reports 1.40 -- and the third would be ruinous on a
-         * 24-bit machine anyway, where EVERY near pointer has a zero
-         * upper word and would be swallowed by it. */
-        const char *s = near_str(addr_in[0]);
-        PROC *p = s ? proc_byname(s) : 0;
-        ret = p ? proc_pid(p) : -1;
+         * AES 4's three forms (p.363; phase 124): an upper word of $FFFF
+         * is a MiNT id to convert to an AES id, $FFFE the other way --
+         * the same number here, there being no MiNT, so either answers
+         * the id if such a process is there -- and $0000 means "me".
+         * THAT ONE ONLY AS NULL: on this 24-bit machine EVERY bank-$00
+         * string has a zero upper word, and taking them all for "me"
+         * would break appl_find for every small-data program. */
+        uint32_t a = (uint32_t)addr_in[0];
+        if (a == 0) {
+            ret = proc_pid(rlr);
+        } else if ((a >> 16) == 0xFFFFu || (a >> 16) == 0xFFFEu) {
+            PROC *p = proc_of((WORD)(a & 0xFFFFu));
+            ret = (p && p->p_stat != P_FREE && p->p_stat != P_DONE)
+                  ? proc_pid(p) : -1;
+        } else {
+            const char *s = near_str(addr_in[0]);
+            PROC *p = s ? proc_byname(s) : 0;
+            ret = p ? proc_pid(p) : -1;
+        }
         break;
     }
     case 17:
@@ -439,7 +465,10 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
 
     /* Menu manager */
     case 30:                        /* menu_bar: tree, showit */
-        mn_bar(tree, int_in[0]);
+        if (int_in[0] == -1)        /* MENU_INQUIRE: whose bar, or -1 */
+            ret = mn_barowner();
+        else
+            mn_bar(tree, int_in[0]);
         break;
     case 31:                        /* menu_icheck: tree, item, check */
         ret = do_chg(tree, int_in[0], CHECKED, int_in[1], FALSE, FALSE);
@@ -463,7 +492,19 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
          * of the machine and reads it at every redraw, and the scratch is
          * reused by the next call that takes a string -- so the title
          * goes in whole and is read where it lies (src/aes/menu.c). */
-        ret = addr_in[0] ? mn_register(int_in[0], (uint32_t)addr_in[0]) : -1;
+        if (int_in[0] == -1) {
+            /* REG_NEWNAME (AES 4, phase 124): the caller's process
+             * renamed -- eight characters, as appl_find compares them --
+             * and THIS one may go through near_str, because the name is
+             * copied into the process record and not kept. */
+            const char *s = near_str(addr_in[0]);
+            if (s)
+                proc_name(rlr, s);
+            ret = s ? 1 : -1;
+        } else {
+            ret = addr_in[0] ? mn_register(int_in[0], (uint32_t)addr_in[0])
+                             : -1;
+        }
         break;
     case 36: {                      /* menu_popup: me, x, y, mdata */
         WORD me[MENU_WORDS], md[MENU_WORDS];
@@ -935,9 +976,21 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
                          &int_out[3], &int_out[4]);
         break;
 
+    case 18:                        /* appl_search: mode, name, type, id */
+        ret = ap_search(int_in[0], (uint32_t)addr_in[0],
+                        (uint32_t)addr_in[1], (uint32_t)addr_in[2]);
+        break;
+    case 115:                       /* rsrc_rcfix: a resource in memory */
+        ret = addr_in[0] ? rs_rcfix((uint32_t)addr_in[0]) : 0;
+        break;
+
     default:
+        /* 0, the AES's answer for a call that did not happen.  It was
+         * -1 until phase 124 -- non-zero, which a caller testing for
+         * success reads as done. */
         gem_bad++;
-        ret = -1;
+        gem_badop = opcode;
+        ret = 0;
         break;
     }
     return ret;

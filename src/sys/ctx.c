@@ -77,9 +77,20 @@ int16_t ctx_make(CTX *c, uint32_t entry)
 
     if (!save)
         return 0;
-    c->sp = 0;
     c->save = save;
-    c->len = c->deep = 0;
+    c->deep = 0;
+    ctx_reset(c, entry);
+    return 1;
+}
+
+/* A context made new again, in the park buffer it has: never entered,
+ * no call in flight, nothing to check.  What a program run by the shell
+ * starts in (src/aes/shel.c, sh_run), where ctx_make's allocation would
+ * be one more far block for every program. */
+void ctx_reset(CTX *c, uint32_t entry)
+{
+    c->sp = 0;
+    c->len = 0;
     c->entry = entry;
     c->live = CTX_NEW;
     c->pb = 0;
@@ -87,7 +98,6 @@ int16_t ctx_make(CTX *c, uint32_t entry)
     c->which = 0;
     c->depth = 0;
     c->floor = 0;
-    return 1;
 }
 
 /* Called from ctx_switch, which has left the outgoing S in ctx_sp_in.
@@ -144,13 +154,14 @@ void ctx_unpark(void)
 
 /* Called from ctx_switch on a context's first turn, at the top of the
  * stack.  Runs its program; if that ever returns, the context is done
- * and context 0 gets the processor back. */
+ * and context 0 gets the processor back -- with what main() returned in
+ * `entry`, which a finished context has no other use for (CTX_DONE). */
 void ctx_boot(void)
 {
     CTX *c = ctx_cur;
 
     c->live = CTX_LIVE;
-    (void)app_run(c->entry);
+    c->entry = (uint32_t)(uint16_t)app_run(c->entry);
     c->live = CTX_DONE;
     for (;;)
         ctx_switch(ctx_root);

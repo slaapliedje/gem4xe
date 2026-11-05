@@ -133,6 +133,7 @@ EXPECT = [
     ("appl_trecord",     AES, 15, 1, 1, 1, 0),
     ("appl_write",       AES, 12, 2, 1, 1, 0),
     ("appl_find",        AES, 13, 0, 1, 1, 0),
+    ("appl_search",      AES, 18, 1, 1, 3, 0),     # AES 4: name, type, id
     ("appl_getinfo",     AES, 130, 1, 5, 0, 0),
     ("appl_xgetinfo",    AES, 130, 1, 5, 0, 0),   # the kit's forward: same call
     ("appl_yield",       AES, 17, 0, 1, 0, 0),
@@ -211,6 +212,7 @@ EXPECT = [
     ("rsrc_gaddr",       AES, 112, 2, 1, 0, 1),
     ("rsrc_saddr",       AES, 113, 2, 1, 1, 0),
     ("rsrc_obfix",       AES, 114, 1, 1, 1, 0),
+    ("rsrc_rcfix",       AES, 115, 0, 1, 1, 0),    # AES 4: a resource in memory
     ("shel_read",        AES, 120, 0, 1, 2, 0),
     ("shel_write",       AES, 121, 3, 1, 2, 0),
     ("shel_get",         AES, 122, 1, 1, 1, 0),

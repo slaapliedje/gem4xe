@@ -339,6 +339,35 @@ int32_t b9_fix(int32_t count, WORD write)
     return done;
 }
 
+/* B9 REDUCED (phase 125, from appl_search): the whole of it is a join's
+ * value -- ?:, !, &&, ||, a comparison -- given to a scalar whose address
+ * is taken anywhere in the function.  The arms leave the value in X and
+ * the store takes A, which holds the condition: t is app, 1 or 0.  At
+ * every -O, -O0 included.  qscan.py finds the shape in the source. */
+WORD b9m_seen;
+void b9m_take(WORD *p) { b9m_seen = *p; }
+
+WORD b9m_bug(WORD app)
+{
+    WORD t;
+
+    t = app ? 2 : 4;
+    b9m_take(&t);
+    return b9m_seen;
+}
+
+WORD b9m_fix(WORD app)
+{
+    WORD t;
+
+    if (app)
+        t = 2;
+    else
+        t = 4;
+    b9m_take(&t);
+    return b9m_seen;
+}
+
 
 /* ---- B10: both parameters clamped in place, then read from nowhere ----- */
 
@@ -417,6 +446,7 @@ volatile WORD r_b5_dec_bug, r_b5_dec_fix;               /* want 4 */
 volatile WORD r_b7_bug, r_b7_fix;                       /* want 801 */
 volatile WORD r_b8_bug, r_b8_fix;                       /* want 'T' = 84 */
 volatile WORD r_b9_bug, r_b9_fix;                       /* want 20 */
+volatile WORD r_b9m_bug, r_b9m_fix;                     /* want 24 */
 volatile WORD r_b10_bug, r_b10_fix;                     /* want 207 */
 volatile WORD r_b12_bug, r_b12_fix;                     /* want 112 */
 volatile WORD r_b12_neg;                                /* want -113 */
@@ -724,6 +754,8 @@ __task int main(void)
     b9_st = 1;
     r_b9_bug = (WORD)b9_bug(20, 1);             /* 8 + 8 + 4 written */
     r_b9_fix = (WORD)b9_fix(20, 1);
+    r_b9m_bug = (WORD)(b9m_bug(1) * 10 + b9m_bug(0));
+    r_b9m_fix = (WORD)(b9m_fix(1) * 10 + b9m_fix(0));
 
     b10_dirty();
     r_b10_bug = b10_bug(1, 2);                  /* (106, 101): 207 */

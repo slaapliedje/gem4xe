@@ -371,12 +371,14 @@ def main(argv):
         # colours on this device.  Then colour icons, which this
         # sixteen-colour screen draws in colour (phase 86; the answer said
         # 0 until phase 91), and yes to the extended resource format.
-        # WF_BOTTOM set, bit 6, and nothing else: wind_set sends a window
-        # to the bottom since phase 98, and every other bit would send a
-        # program to a field this AES does not serve (src/aes/appl.c)
+        # WF_TOP's three words (bit 0, phase 124), WF_NEWDESK read back
+        # (bit 1, phase 125), WF_BOTTOM (bit 6, phase 98), and in the third
+        # word Shift-click to the back (bit 2, test-m52) -- and nothing
+        # else: every other bit would send a program to a field this AES
+        # does not serve (src/aes/appl.c)
         winw = words("ag_win")
-        check(winw == [1, 64, 0, 0, 0],
-              f"appl_getinfo(AES_WINDOW) answered {winw}, not [1, 64, 0, 0, 0]")
+        check(winw == [1, 67, 0, 4, 0],
+              f"appl_getinfo(AES_WINDOW) answered {winw}, not [1, 67, 0, 4, 0]")
         print(f"  appl_getinfo(AES_SYSTEM) -> {sysw}")
         check(sysw == [1, -1, 16, 1, 1],
               f"appl_getinfo(AES_SYSTEM) answered {sysw}, not [1, -1, 16, 1, 1] "

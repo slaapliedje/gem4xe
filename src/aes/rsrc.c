@@ -976,6 +976,41 @@ WORD rs_load(const char *name, WORD wants_far)
     return 1;
 }
 
+/* rsrc_rcfix (AES 4, Compendium p.435; phase 124): a resource the program
+ * already holds -- the .RSC file's bytes, as rsh2c and the Resource
+ * Construction Set write them into a program, in its own memory, bank $00
+ * or far -- fixed up and made its resource, as rs_load makes a file's.
+ *
+ * What rs_load does once it has read the file, less what only a READ
+ * resource needs: the images are not moved out of the pool, because they
+ * were never in it, and rsrc_free gives nothing back, because the memory
+ * is the program's -- the slot's mark is past the top of the pool, which
+ * pool_release takes as nothing to release, and there is no far block.
+ * Refused, 0: a third resource, a header that is not one, and a resource
+ * with colour icons, whose extension rs_cicons reads from the open file.
+ *
+ * 1 when it is done.  MultiTOS's dispatcher answers TRUE (GEMBIND.C);
+ * the Compendium says 0 is success, which is the opposite of every other
+ * AES call and of the AES its programs ran on. */
+WORD rs_rcfix(uint32_t base)
+{
+    RSHDR hdr;
+
+    if (rs_1 && rs_2)
+        return 0;
+    far_get((uint8_t *)&hdr, base, sizeof hdr);
+    swap_words(&hdr, sizeof hdr / 2);
+    if (hdr.rsh_rssize < sizeof hdr || (hdr.rsh_vrsn & NEW_FORMAT_RSC))
+        return 0;
+    if (rs_1) {
+        rs_2 = base;  rs_2mark = 0xFFFF;  rs_2far = 0;
+    } else {
+        rs_1 = base;  rs_1mark = 0xFFFF;  rs_1far = 0;
+    }
+    rs_fixit(base);
+    return 1;
+}
+
 /* A PROGRAM THAT STAYS KEEPS WHAT IT LOADED, AND GIVES UP THE CLAIM.
  *
  * A control panel module and an AUTO program are RUN, in whatever

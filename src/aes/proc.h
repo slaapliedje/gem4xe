@@ -159,11 +159,21 @@ extern PROC *proc_input;
  * src/sys/ctx.h says why, and main() is that place. */
 #define proc_app    (&proc_tab[0])
 
+/* THE SHELL, PARKED, while a program runs as process 0 (switcher step 1,
+ * docs/switcher-plan.md; src/aes/shel.c, sh_run).  Process 0's p_ctx is
+ * whoever is running as process 0 -- it has to be, rlr is ctx_cur -- so
+ * the shell and the program it runs take turns in it, and the one that is
+ * not running is kept here.  A CTX, not a PROC: nobody switches to it but
+ * a program's context when it ends (ctx_root).  It is the store's last
+ * thirty bytes, after the records, so it is in the pool beside them and
+ * the pool's models (tools/memreport.py) see it through proc_store_size. */
+#define proc_shell  ((CTX *)&proc_tab[NUM_PROCS])
+
 /* The records, in memory the CALLER owns: PROC_STORE bytes of bank $00.
  * The engine takes them from the pool; a milestone runner that has no
  * loader and no pool passes a static array, which is why proc.c allocates
  * nothing itself.  FALSE for a null store. */
-#define PROC_STORE  (NUM_PROCS * sizeof(PROC))
+#define PROC_STORE  (NUM_PROCS * sizeof(PROC) + sizeof(CTX))
 /* ...and as a word in the image, which is what the callers allocate by and
  * what tools/memreport.py reads out of build/gem.elf: its model of the
  * pool had 7 * 52 written in, and the records grew to 90 bytes each

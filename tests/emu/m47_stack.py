@@ -60,14 +60,17 @@ def main():
     try:
         # The parent's memory, found through the floor gem4xe keeps for
         # the context it runs in (src/sys/ctx.h) -- its own again after
-        # its child's, which is half of what is being tested.  m47_done
-        # says the result is written: a mark, because before GEM.COM has
-        # started every one of these addresses holds what memory did.
+        # its child's, which is half of what is being tested.  That context
+        # is process 0's, the first thing in proc_tab[0]: since phase 126 a
+        # program runs in it while the shell is parked, and ctx_root is the
+        # SHELL's (src/aes/proc.h, proc_shell).  m47_done says the result
+        # is written: a mark, because before GEM.COM has started every one
+        # of these addresses holds what memory did.
         f, base, done = 0, 0, 0
         while f < 40000:
             b.frames(200)
             f += 200
-            root = b.peek16(g["ctx_root"])
+            root = b.peek16(g["proc_tab"])
             if 0x2000 <= root < 0x8000:
                 fl = b.peek16(root + CTX_FLOOR)
                 if 0x4000 < fl < 0x8000 and fl & 0xFF == FLOOR_OFF:

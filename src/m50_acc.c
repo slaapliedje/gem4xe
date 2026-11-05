@@ -23,9 +23,17 @@ WORD acc_ret;                   /* ...and what the last one answered */
 WORD acc_shut;                  /* SHUT_COMPLETED received */
 WORD acc_shutmsg[8];            /* ...the last one, word for word */
 WORD acc_closes;                /* AC_CLOSE received */
+WORD acc_g2;                    /* global[2] after appl_init: its own id
+                                 * since phase 124 (test-m51 reads it) */
+WORD acc_wh = -1;               /* ACC_OPEN's window (test-m52, phase 125) */
 
 /* SD_ABORT is 0, which is also "nothing asked": the gate writes this. */
 #define ACC_ABORT 3
+/* ...and test-m52's two (phase 125): a window of the accessory's own
+ * opened over the program's, and closed again -- so the program's comes
+ * back to the top without the program doing it, which is WM_ONTOP. */
+#define ACC_OPEN  10
+#define ACC_CLOSE 11
 
 static char acc_title[] = "  Shutdown gate";
 
@@ -34,6 +42,7 @@ int main(void)
     WORD msg[8], mx, my, mb, ks, kr, br, i;
 
     acc_id = appl_init();
+    acc_g2 = global[2];
     acc_menu = menu_register(acc_id, acc_title);
     for (;;) {
         WORD what = evnt_multi_moblk((UWORD)(MU_MESAG | MU_TIMER), 1, 1, 1,
@@ -41,7 +50,19 @@ int main(void)
                                      &mx, &my, &mb, &ks, &kr, &br);
         if (what & MU_TIMER) {
             acc_ticks++;
-            if (acc_req) {
+            if (acc_req == ACC_OPEN && acc_wh < 0) {
+                acc_req = 0;
+                acc_wh = wind_create(NAME, 300, 120, 200, 80);
+                if (acc_wh >= 0)
+                    wind_open(acc_wh, 300, 120, 200, 80);
+                acc_asked++;
+            } else if (acc_req == ACC_CLOSE && acc_wh >= 0) {
+                acc_req = 0;
+                wind_close(acc_wh);
+                wind_delete(acc_wh);
+                acc_wh = -1;
+                acc_asked++;
+            } else if (acc_req) {
                 WORD how = acc_req;
                 acc_req = 0;
                 acc_ret = shel_write(SWM_SHUTDOWN,

@@ -117,6 +117,7 @@ typedef struct {
 #define WM_NEWTOP   29
 #define WM_UNTOPPED 30
 #define WM_ONTOP    31
+#define WM_BOTTOMED 33              /* AES 4: Shift-click on a frame (phase 125) */
 #define AC_OPEN     40
 #define AC_CLOSE    41
 /* AES 4's shutdown (phase 123, src/aes/shel.c) */
@@ -683,6 +684,16 @@ WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item);
 void mn_start(void);             /* once per AES start: the registry cleared */
 WORD mn_register(WORD pid, uint32_t pstr);
 struct PROC *mn_owner(WORD id);  /* who registered that slot, or 0 */
+WORD mn_barowner(void);              /* menu_bar(0, -1): its pid, or -1 */
+/* appl_search (AES 4, phase 124) */
+#define APP_FIRST       0
+#define APP_NEXT        1
+#define APP_APPLICATION 0x02
+#define APP_ACCESSORY   0x04
+#define APP_SHELL       0x08
+WORD ap_search(WORD mode, uint32_t fname, uint32_t ptype, uint32_t pid);
+WORD sh_desk_running(void);          /* is process 0 the desktop? */
+WORD rs_rcfix(uint32_t base);        /* rsrc_rcfix: src/aes/rsrc.c */
 void mn_cleanup(void);           /* AC_CLOSE to every registered accessory */
 extern WORD gl_dafirst;          /* where the first accessory name lands */
 extern WORD gl_accreg;           /* names registered in the Desk menu */

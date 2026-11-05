@@ -492,6 +492,41 @@ is whatever was there — 770 on the target, 259 in the simulator for a
 a local rather than through a pointer.  -O2.  `gd_xfer` tests the status,
 breaks on failure, and assigns `got = m` on the line after.
 
+**REDUCED (phase 125), and it is every -O.**  `appl_search` met it again
+-- `type = (p == proc_app) ? ... : APP_ACCESSORY;` beside
+`far_put(ptype, &type, 2)` -- and both process types came back 0.  The
+whole of it is:
+
+    void v(WORD app) { gt = app ? 2 : 4; take(&gt); }
+
+    -O0:    tax / inx / dex / bne ?L5
+            ldx ##4 / bra ?L6
+    ?L5:    ldx ##2
+    ?L6:    sta gt              ; A, which is app -- the value is in X
+
+A join's value -- `?:`, `!`, `&&`, `||`, a comparison -- given to a
+scalar whose address is taken **anywhere in the function** gets the
+condition instead, or a stray slot.  Measured in the simulator, each shape
+compiled alone at -O0 and -O2:
+
+| wrong | right |
+|---|---|
+| `t = c ? 2 : 4;` / `t = c ? f() : 4;` / `t = !c;` / `t = c && g;` / `t = c > 0;` | `t = c ? 2 : 4;` when nothing takes `&t` |
+| a local, a parameter, a `static`, a **global** | a struct field, an array element |
+| `&t` before, after, or only on a path not taken | another variable's address taken |
+| the join inside the value: `(c ? 2 : 4) + 1`, `f(c ? 2 : 4)`, `t \|= c ? 8 : 0` | `if (c) t = 2; else t = 4;`, or the choice made into another local first |
+| `WORD`, `uint8_t`, `uint32_t`, a pointer | `tab[c ? 1 : 0]`, `if (c ? g : 0)` |
+
+Not every instance fails -- `(uint8_t)(c == 1)` into an address-taken
+byte compiled right, and so did `src/aes/ctrl.c`'s `gr_slidebox(...,
+cpt == W_VELEV)` -- so what decides it is not all known, and the scan
+is conservative.  **`qscan.py` refuses the shape** (`make qscan`, in the
+suite): per function, the variables whose address is taken, and any
+assignment or initialiser of one with a join in its value; its self-test
+holds seven wrong shapes found and five right ones not.  The product had
+one, the ctrl.c call, rewritten.  `bugs.c`'s `b9m_bug` is the reduced
+case.
+
 ## B10 — parameters clamped in place are read from an unwritten slot
 
     static void snap_icon(WORD gx, WORD gy, WORD *px, WORD *py)

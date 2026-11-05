@@ -202,6 +202,7 @@ int main(void)
     appl_trecord(tape, 1);
     appl_write(0, 16, w8);
     appl_find("SCRENSAV");              /* eight, as the contract says */
+    appl_search(APP_FIRST, path, &a, &b);
     appl_getinfo(AES_LARGEFONT, &a, &b, &c, &d);
     appl_xgetinfo(AES_LARGEFONT, &a, &b, &c, &d);
     appl_yield();
@@ -287,6 +288,7 @@ int main(void)
     rsrc_gaddr(0, 1, (void **)&env);
     rsrc_saddr(0, 1, path);
     rsrc_obfix(tree, 1);
+    rsrc_rcfix(path);
     shel_read(path, name);
     shel_write(1, 1, 1, "X", "");
     shel_get(path, 8);

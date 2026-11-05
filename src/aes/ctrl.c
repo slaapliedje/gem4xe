@@ -121,13 +121,16 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
     WORD    wm, hm;
     WORD    elev_x, elev_y;
     WORD    kind;
-    WORD    cpt, message;
+    WORD    cpt, message, vert;
     WORD    gadget;
     WORD    need_normal = FALSE;
 
     if (wh != gl_wtop) {
-        /* went down on an inactive window: tell the owner to top it */
-        ct_msgup(wm_owner(wh), WM_TOPPED, wh, 0, 0, 0, 0);
+        /* went down on an inactive window: tell the owner to top it --
+         * or, with a Shift key held, to send it to the back (AES 4's
+         * WM_BOTTOMED, phase 125: MultiTOS's GEMCTRL.C) */
+        ct_msgup(wm_owner(wh), (gsx_kstate() & 3) ? WM_BOTTOMED : WM_TOPPED,
+                 wh, 0, 0, 0, 0);
         return;
     }
 
@@ -154,6 +157,11 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
         }
         break;
     case W_NAME:
+        if (gsx_kstate() & 3) {         /* Shift on the top window's mover:
+                                         * to the back, not a drag */
+            message = WM_BOTTOMED;
+            break;
+        }
         if (kind & MOVER) {
             /* the window may go off the right and the bottom, but not
              * so far that its title is out of reach */
@@ -215,8 +223,12 @@ static void hctl_window(WORD wh, WORD mx, WORD my)
         message = (cpt == W_HELEV) ? WM_HSLID : WM_VSLID;
         if (gl_3d)
             ct_show(wh, gadget, SELECTED);
-        /* and cpt-1 is the elevator's bar */
-        x = gr_slidebox(gl_awind, cpt - 1, cpt, (cpt == W_VELEV));
+        /* and cpt-1 is the elevator's bar.  The direction is chosen
+         * apart: x's address is taken above, and a join's value given to
+         * such a variable -- here through the call -- is B9's shape
+         * (tools/ccbug/README.md), which qscan refuses */
+        vert = (cpt == W_VELEV);
+        x = gr_slidebox(gl_awind, cpt - 1, cpt, vert);
         break;
     }
 

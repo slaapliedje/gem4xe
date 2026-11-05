@@ -107,6 +107,7 @@ WF_BOTTOM = 25
 # messages
 (WM_REDRAW, WM_TOPPED, WM_CLOSED, WM_FULLED, WM_ARROWED, WM_HSLID,
  WM_VSLID, WM_SIZED, WM_MOVED, WM_NEWTOP, WM_UNTOPPED, WM_ONTOP) = range(20, 32)
+WM_BOTTOMED = 33                        # AES 4: Shift-click to the back
 MN_SELECTED = 10
 AC_OPEN, AC_CLOSE = 40, 41
 # the menu tree's fixed objects (menu.c), and mn_do's states
@@ -3243,6 +3244,7 @@ class AES:
         oldtop = self.gl_wtop
         self.gl_wtop = W[ROOT].ob_tail
         self.w_setactive()
+        self.w_topchanged(oldtop, False)
 
         start, stop, moved = wh, DESKWH, False
         if not rc_equal(self.gl_rzero, pt) and pt.x == c.x and pt.y == c.y:
@@ -3448,7 +3450,12 @@ class AES:
         elif field == WF_VSLSIZ:
             out[0] = pwin.w_vslsiz
         elif field == WF_TOP:
-            out[0] = self.w_top()
+            # AES 4's three words (phase 124): the top, its owner, the
+            # window below it -- the application's and the desk when none
+            t = self.w_top()
+            out[0] = t
+            out[1] = self.gl_win[t].w_owner if t != DESKWH else 0
+            out[2] = self.w_below(t) if t != DESKWH else DESKWH
         elif field in (WF_FIRSTXYWH, WF_NEXTXYWH):
             t = self.w_getsize(WS_WORK, wh)
             i = 0 if field == WF_FIRSTXYWH else pwin.w_rnext
@@ -3473,6 +3480,31 @@ class AES:
             return 0, out
         return 1, out
 
+    def w_linked(self, wh):
+        """wh is one of the root's children: still in the window order."""
+        k = self.W_TREE[ROOT].ob_head
+        while k not in (NIL, ROOT):
+            if k == wh:
+                return True
+            k = self.W_TREE[k].ob_next
+        return False
+
+    def w_topchanged(self, oldtop, bottomed):
+        """AES 4's top messages (src/aes/wind.c w_topchanged, phase 125;
+        MultiTOS's GEMWMLIB.C the specification): how the top changed
+        decides which.  Topped over -- opened or WF_TOP -- and the old top
+        is told WM_UNTOPPED; closed or sent to the back, and the new top is
+        told WM_ONTOP.  Nothing for the desk, nothing when no window was
+        on top before.  Whether the old top went away is the TREE's
+        answer: a closing window is still VF_ISOPEN here."""
+        newtop = self.gl_wtop
+        if oldtop == newtop or oldtop in (NIL, DESKWH):
+            return
+        if not bottomed and self.w_linked(oldtop):
+            self.ap_sendmsg(WM_UNTOPPED, oldtop, 0, 0, 0, 0)
+        elif newtop not in (NIL, DESKWH):
+            self.ap_sendmsg(WM_ONTOP, newtop, 0, 0, 0, 0)
+
     def wm_mktop(self, wh):
         self.ob_order(self.W_TREE, wh, NIL)
         p = self.w_getsize(WS_PREV, wh)
@@ -3491,6 +3523,7 @@ class AES:
         self.w_everyobj(ROOT, NIL, lambda obj, x, y: self.newrect(obj))
         self.gl_wtop = W[ROOT].ob_tail
         self.w_setactive()
+        self.w_topchanged(oldtop, True)
         t = self.w_getsize(WS_CURR, wh)
         t.w += DROP_SHADOW_SIZE
         t.h += DROP_SHADOW_SIZE
@@ -3756,7 +3789,10 @@ class AES:
     def hctl_window(self, wh, mx, my):
         pwin = self.gl_win[wh]
         if wh != self.gl_wtop:
-            self.ct_msgup(WM_TOPPED, wh, 0, 0, 0, 0)
+            # Shift: to the back, not to the top (phase 125) -- the key
+            # state is a VDI call on the target, so it is one here too
+            self.ct_msgup(WM_BOTTOMED if self.gsx_kstate() & 3 else WM_TOPPED,
+                          wh, 0, 0, 0, 0)
             return
         message = 0
         need_normal = False
@@ -3774,7 +3810,10 @@ class AES:
                     message = WM_CLOSED if cpt == W_CLOSER else WM_FULLED
                     need_normal = True
             elif cpt == W_NAME:
-                if kind & MOVER:
+                if self.gsx_kstate() & 3:
+                    # Shift on the top window's mover: to the back
+                    message = WM_BOTTOMED
+                elif kind & MOVER:
                     f = Rect(0, self.gl_hbox,
                              self.gl_rscreen.w + w - self.gl_wbox - 6
                              - (2 * ADJ3DSTD if self.gl_3d else 0),
@@ -5118,7 +5157,15 @@ class AES:
         an object's ob_spec, which is the donor's own behaviour and the
         reason an accessory's title has to outlive the accessory's
         start-up.  The id is the SLOT, found by looking for a free one, so
-        that six ids stay six ids however they were handed out."""
+        that six ids stay six ids however they were handed out.
+
+        AN APPLICATION'S title (phase 124) -- and the runner is process 0,
+        the application -- is AES 4's: the name a switcher lists it by,
+        kept, and NO slot taken, the answer a menu id no accessory has.
+        src/aes/menu.c, mn_register."""
+        if pid >= 0 and getattr(self, "caller_is_app", True):
+            self.mn_apptitle = addr
+            return MAX_ACCS
         if pid < 0 or self.gl_accreg >= MAX_ACCS:
             return -1
         for slot in range(MAX_ACCS):

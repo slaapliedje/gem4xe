@@ -162,13 +162,13 @@ def case_two(L, s):
         # other and the desk, and WF_BOTTOM is 1 (tests/host/
         # test_wind_order.py writes those numbers out of the Compendium).
         get(0, WF_TOP), get(1, WF_OWNER), get(2, WF_OWNER), get(0, WF_BOTTOM),
-    ] + rects(1, 3) + rects(2, 2) + rects(0, 7) + mesag(2) + [
+    ] + rects(1, 3) + rects(2, 2) + rects(0, 7) + mesag(3) + [   # and 1 UNTOPPED
         wset(1, WF_TOP),
         get(0, WF_TOP), get(1, WF_OWNER), get(2, WF_OWNER), get(0, WF_BOTTOM),
     ] + rects(1, 2) + rects(2, 3) + [
         wset(1, WF_TOP),                        # already on top: nothing
         wset(2, WF_TOP),
-    ] + rects(1, 3) + mesag(2) + [timeout()]
+    ] + rects(1, 3) + mesag(4) + [timeout()]   # an UNTOPPED and a redraw each
 
 
 def case_bottom(L, s):
@@ -184,14 +184,14 @@ def case_bottom(L, s):
         create(NAME | MOVER | INFO), wopen(3, 260, 110, 300, 100),
         setaddr(3, WF_NAME, L.text("Front")),
         setaddr(3, WF_INFO, L.text("sent to the back")),
-    ] + mesag(3) + [
+    ] + mesag(5) + [                        # 1 and 2 told UNTOPPED as each opens
         get(3, WF_KIND), get(3, WF_NAME), get(3, WF_INFO), get(1, WF_KIND),
         get(0, WF_TOP), get(0, WF_BOTTOM),
         wset(3, WF_BOTTOM),
         get(0, WF_TOP), get(0, WF_BOTTOM),
         get(1, WF_OWNER), get(2, WF_OWNER), get(3, WF_OWNER),
-    ] + rects(1, 3) + rects(2, 2) + rects(3, 3) + mesag(3) + [
-        timeout(),                              # a redraw each, and no more
+    ] + rects(1, 3) + rects(2, 2) + rects(3, 3) + mesag(4) + [
+        timeout(),                              # 2 ONTOP, a redraw each, no more
         wset(3, WF_BOTTOM),                     # already at the back
         get(0, WF_BOTTOM),
     ] + [timeout()]
@@ -217,7 +217,7 @@ def case_size(L, s):
     return [
         create(ALL), wopen(1, 100, 50, 300, 150),
         create(NAME | MOVER | SIZER), wopen(2, 300, 120, 200, 80),
-    ] + mesag(2) + [
+    ] + mesag(3) + [                        # 1 told UNTOPPED as 2 opens
         wset(2, WF_CXYWH, 300, 120, 260, 100),  # grows in place
         get(2, WF_CXYWH), get(2, WF_WXYWH),
     ] + rects(1, 4) + [
@@ -234,7 +234,7 @@ def case_size(L, s):
         create(NAME), get(2, WF_KIND), (WIND_DELETE, (), (2,)),
         (WIND_DELETE, (), (2,)),                # already deleted
         (WIND_FIND, (), (310, 130)),
-    ] + mesag(2) + [timeout()]
+    ] + mesag(3) + [timeout()]              # and 1 told ONTOP as 2 closes
 
 
 def case_sliders(L, s):
@@ -373,7 +373,7 @@ def case_topped(L, s):
     b = Script()
     b.extend([create(ALL), wopen(1, 100, 50, 300, 150),
               create(NAME | MOVER), wopen(2, 200, 100, 300, 120)])
-    b.extend(mesag(2))
+    b.extend(mesag(3))                      # 1 told UNTOPPED as 2 opens
     r = s.rect(b, 1, W_WORK)
     under = (r.x + 8, r.y + 8)              # window 1 where 2 does not cover it
     menu = s.aes(b).gl_rmenu
@@ -381,6 +381,7 @@ def case_topped(L, s):
     b.op(multi(MU_BUTTON | MU_MESAG | MU_TIMER, 1, 1, 1, ms=2000),
          F(3), M(*under), B(1))             # WM_TOPPED 1 by MU_MESAG, not the press
     b.op(wset(1, WF_TOP))                   # button still down: no hand-back
+    b.op(MESAG)                             # WM_UNTOPPED 2: topped over
     b.op(MESAG)                             # WM_REDRAW 1
     b.op(multi(MU_BUTTON, 1, 1, 0), *RELEASE)   # completed by the hand-back
     b.op((GRAF_MKSTATE,))
@@ -573,7 +574,7 @@ def case_3d_frame(L, s):
         setaddr(2, WF_NAME, L.text("On top")),
         get(1, WF_WXYWH), get(2, WF_WXYWH),
         wset(1, WF_VSLIDE, 1000),               # untopped: redrawn at once
-    ] + mesag(2) + [
+    ] + mesag(3) + [                            # 1 told UNTOPPED as 2 opens
         timeout(),
         sysvar(SV_SET, G4_3DLOOK, 0),           # flat again under them:
         get(1, WF_CXYWH), get(1, WF_WXYWH),     # the same frame, a new

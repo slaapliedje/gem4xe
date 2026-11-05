@@ -36,6 +36,7 @@
 #include "aes.h"
 #include "proc.h"
 #include "sys/farmem.h"
+#include "sys/zwin.h"
 
 #define MENU_THICKNESS  1       /* the frame bb_save keeps around a drop-down */
 
@@ -986,9 +987,19 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
  * bar object stretched to the right edge, drawn with the clip off, and
  * the line under it drawn black in replace mode whatever the tree says
  * -- or hide it, which is only to forget it: the application redraws. */
+/* Whose bar it is, for menu_bar(0, MENU_INQUIRE) (phase 124): the
+ * process that last showed one, while it is shown. */
+ZWIN static PROC *mn_barpd;
+
+WORD mn_barowner(void)
+{
+    return (gl_mntree && mn_barpd) ? proc_pid(mn_barpd) : -1;
+}
+
 void mn_bar(OBJECT FAR *tree, WORD showit)
 {
     if (showit) {
+        mn_barpd = rlr;
         gl_mntree = tree;
         menu_fixup();
         tree[THEBAR].ob_width = gl_width - tree[THEBAR].ob_x;
@@ -999,6 +1010,7 @@ void mn_bar(OBJECT FAR *tree, WORD showit)
         gsx_cline(0, gl_hbox - 1, gl_width - 1, gl_hbox - 1);
     } else {
         gl_mntree = 0;
+        mn_barpd = 0;
         gl_ctwait.m_gr = gl_rmenu;
     }
 }
@@ -1045,10 +1057,25 @@ void mn_text(OBJECT FAR *tree, WORD item, const char *text)
  * handed out.  The owner recorded is the CALLER, not the pid it names --
  * again the donor's: pid is a sanity check and nothing more, since the
  * only process that can ask is the one running. */
+/* AN APPLICATION -- process 0 -- names itself for the Desk menu's list of
+ * running programs under MultiTOS (Compendium p.418; phase 124).  That
+ * list is what a task switcher here will show, so the title is kept for
+ * it -- the program's own memory, forgotten when the next one starts
+ * (mn_init) -- and it takes NO accessory slot.  It took one until now,
+ * and the slot outlived the program: the Desk menu then pointed into
+ * freed memory, and AC_CLOSE went to whatever ran next as process 0.  The
+ * answer is a menu id no accessory has.  (REG_NEWNAME, -1 as the pid, is
+ * the shim's: src/sys/abi.c.) */
+ZWIN uint32_t mn_apptitle;
+
 WORD mn_register(WORD pid, uint32_t pstr)
 {
     WORD slot;
 
+    if (rlr == proc_app && pid >= 0) {
+        mn_apptitle = pstr;
+        return MAX_ACCS;
+    }
     if (pid < 0 || gl_accreg >= MAX_ACCS)
         return -1;
     for (slot = 0; slot < MAX_ACCS; slot++)
@@ -1127,6 +1154,7 @@ void mn_start(void)
 void mn_init(void)
 {
     gl_mntree = 0;
+    mn_apptitle = 0;                    /* the last program's own memory */
     gl_ctwait.m_out = FALSE;
     gl_ctwait.m_gr = gl_rmenu;
 }

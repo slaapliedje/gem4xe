@@ -1456,7 +1456,16 @@ static LONG gd_dprobe(void)
  *
  * Malloc that cannot answers 0, the ST's NULL.  It answered ENSMEM here
  * until the C functions came, which a program testing for NULL would have
- * taken for an address. */
+ * taken for an address.
+ *
+ * ONLY -1 ASKS HOW MUCH IS FREE (EmuTOS bdos/umem.c, `amount == -1L`).
+ * Any other negative size is a size, too big to give, so 0.  Every
+ * negative size used to be the question, and RetroWP's allocator, handed
+ * a garbage size of more than 2 GB, got 65,532 back -- a whole free bank
+ * less this header -- took it for the address of its arena, and wrote the
+ * arena's end into bank $00 at $D32C: PORTB, through the PIA's mirrors.
+ * The stack and the direct page went out of the CPU's view at once
+ * (2026-11-05).  Asked the ST's way, the program would have heard NULL. */
 #define MB_HDR      4
 #define MB_MARK     0xA5000000UL
 #define MB_SIZE     0x00FFFFFFUL
@@ -1465,13 +1474,13 @@ static LONG gd_malloc(LONG n)
 {
     uint32_t a, room;
 
-    if (n < 0) {
+    if (n == -1) {
         room = far_largest(0);          /* a block is inside one bank */
         if (room <= MB_HDR)
             return 0;
         return (LONG)(room - MB_HDR);
     }
-    if (n == 0 || (uint32_t)n > MB_SIZE)
+    if (n <= 0 || (uint32_t)n > MB_SIZE)
         return 0;
     a = far_alloc((uint32_t)n + MB_HDR);
     if (!a)

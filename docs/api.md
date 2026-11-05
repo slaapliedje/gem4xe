@@ -19,6 +19,7 @@ is the distinction this exists for.
 | 14 | `appl_tplay` | served |
 | 15 | `appl_trecord` | served |
 | 17 | `appl_yield` | served |
+| 18 | `appl_search` | served |
 | 19 | `appl_exit` | served |
 | 20 | `evnt_keybd` | served |
 | 21 | `evnt_button` | served |
@@ -83,6 +84,7 @@ is the distinction this exists for.
 | 112 | `rsrc_gaddr` | served |
 | 113 | `rsrc_saddr` | served |
 | 114 | `rsrc_obfix` | served |
+| 115 | `rsrc_rcfix` | served |
 | 120 | `shel_read` | served |
 | 121 | `shel_write` | served |
 | 122 | `shel_get` | served |
@@ -175,7 +177,7 @@ draws nothing, which is what an application expects of it.
 
 ## wind_get and wind_set fields
 
-**17 answered by wind_get, 10 taken by wind_set**, out of the fields EmuTOS's `aesdefs.h` and the kit's `gem.h` name.  From the `case` labels of `wm_get` and `wm_set` (`src/aes/wind.c`).  A field a call does not take makes it return 0, which is failure.
+**18 answered by wind_get, 10 taken by wind_set**, out of the fields EmuTOS's `aesdefs.h` and the kit's `gem.h` name.  From the `case` labels of `wm_get` and `wm_set` (`src/aes/wind.c`).  A field a call does not take makes it return 0, which is failure.
 
 | field | name | wind_get | wind_set |
 |---|---|---|---|
@@ -191,7 +193,7 @@ draws nothing, which is what an application expects of it.
 | 10 | `WF_TOP` | yes | yes |
 | 11 | `WF_FIRSTXYWH` | yes | -- |
 | 12 | `WF_NEXTXYWH` | yes | -- |
-| 14 | `WF_NEWDESK` | -- | yes |
+| 14 | `WF_NEWDESK` | yes | yes |
 | 15 | `WF_HSLSIZ` | yes | yes |
 | 16 | `WF_VSLSIZ` | yes | yes |
 | 17 | `WF_SCREEN` | yes | -- |
@@ -221,7 +223,7 @@ draws nothing, which is what an application expects of it.
 | 12 | `AI_MESSAGE` | answered |
 | 13 | `AI_OBJECT` | answered |
 | 14 | `AI_FORM` | answered |
-| 64 | `AI_CPX` | answered |
+| 18228 | `AI_CPX` | answered |
 
 ## objc_sysvar settings
 

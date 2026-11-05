@@ -438,6 +438,12 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
     # bank (src/sys/farmem.c, phase 79), so a free bank less the header
     check(ret == 0x10000 - 4, f"Malloc(-1) {ret:#x}, not a free bank's $FFFC")
     print(f"  Malloc(-1): the largest block is {ret} bytes")
+    # ONLY -1 is the question (EmuTOS's `amount == -1L`); any other negative
+    # size is too big to give.  Every negative size used to answer $FFFC, and
+    # RetroWP took that for its arena's address (docs/phase126.md).
+    for n in (-2, -0x7F00DE, -0x80000000):
+        ret, _ = g.call("Malloc", L(n))
+        check(ret == 0, f"Malloc({n:#x}) {ret:#x}, not 0: only -1 asks how much is free")
     far, _ = g.call("Malloc", L(4096))
     check(far > 0xFFFF, f"Malloc(4096) ${far:06X} is not far")
     h, _ = g.call("Fopen", L(g.string("TEST.TXT")), W(0))

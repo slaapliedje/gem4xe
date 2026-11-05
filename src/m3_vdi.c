@@ -1358,7 +1358,7 @@ TASK void main(void)
      * and test-m27 caught it being got wrong.  main() is the shallowest
      * place in gem4xe that can ever change hands. */
     if (!ctx_regs_ok() || !proc_init(pool_alloc(proc_store_size, 2))
-        || !ctx_make(&proc_app->p_ctx, 0))
+        || !ctx_make(&proc_app->p_ctx, 0) || !ctx_make(proc_shell, 0))
         _sys_exit();
     ctx_init(&proc_app->p_ctx);
     STATUS[16] = farmem.kind;

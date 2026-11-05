@@ -1304,6 +1304,17 @@ WORD appl_find(const char *fname)
     return aes(13, 0, 1, 1, 0);
 }
 
+/* The three answers go straight to the caller's memory, any bank: the
+ * AES writes through the addresses (phase 124). */
+WORD appl_search(WORD mode, char *fname, WORD *type, WORD *ap_id)
+{
+    int_in[0] = mode;
+    addr_in[0] = (LONG)(uint32_t)(char FAR *)fname;
+    addr_in[1] = (LONG)(uint32_t)(WORD FAR *)type;
+    addr_in[2] = (LONG)(uint32_t)(WORD FAR *)ap_id;
+    return aes(18, 1, 1, 3, 0);
+}
+
 /* FIVE out words, not one: int_out[0] is the answer and 1..4 the four
  * values -- the widest copy-out of any AES call gem4xe serves.  The
  * count in the control block is what makes the shim copy them, and this
@@ -1464,6 +1475,12 @@ WORD rsrc_obfix(OBJECT *tree, WORD obj)
     int_in[0] = obj;
     addr_in[0] = tree_addr(tree);
     return aes(114, 1, 1, 1, 0);
+}
+
+WORD rsrc_rcfix(void *rc_header)
+{
+    addr_in[0] = (LONG)(uint32_t)(void FAR *)rc_header;
+    return aes(115, 0, 1, 1, 0);
 }
 
 WORD scrp_read(char *path)

@@ -1045,6 +1045,7 @@ void w_update(WORD bottom, GRECT *pt, WORD top, WORD moved)
  * top, otherwise a redraw of the union of old and new from wherever in
  * the stack it starts to matter. */
 static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr);
+static void w_topchanged(WORD oldtop, WORD bottomed);
 
 static void draw_change(WORD wh, const GRECT *pt)
 {
@@ -1085,6 +1086,7 @@ static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr)
     oldtop = gl_wtop;
     gl_wtop = W_TREE[ROOT].ob_tail;
     w_setactive();
+    w_topchanged(oldtop, FALSE);
 
     start = wh;
     stop = DESKWH;
@@ -1375,8 +1377,23 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds)
     case WF_VSLSIZ:
         poutwds[0] = pwin->w_vslsiz;
         break;
+    case WF_NEWDESK:
+        /* The desk's tree and root, as wind_set takes them: high word
+         * first (phase 125; appl_getinfo AES_WINDOW bit 1). */
+        poutwds[0] = (WORD)((uint32_t)gl_newdesk >> 16);
+        poutwds[1] = (WORD)((uint32_t)gl_newdesk & 0xFFFF);
+        poutwds[2] = gl_newroot;
+        break;
     case WF_TOP:
-        poutwds[0] = w_top();
+        /* AES 4's three words (phase 124; appl_getinfo AES_WINDOW bit 0):
+         * the top window, its owner's AES id, and the window below it --
+         * the desk's owner, the application, when there is no window. */
+        {
+            WORD t = w_top();
+            poutwds[0] = t;
+            poutwds[1] = (t != DESKWH) ? w_win(t)->w_owner : 0;
+            poutwds[2] = (t != DESKWH) ? w_below(t) : DESKWH;
+        }
         break;
     case WF_FIRSTXYWH:
     case WF_NEXTXYWH:
@@ -1415,6 +1432,45 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds)
     return TRUE;
 }
 
+/* AES 4's messages about the top (phase 125; MultiTOS's GEMWMLIB.C, read
+ * as specification).  WHICH ONE IS SENT DEPENDS ON HOW THE TOP CHANGED,
+ * not on who changed it:
+ *
+ *   a window opened or topped over the top one -- WM_UNTOPPED to the
+ *   owner of the one that was on top (w_top), even when it is the same
+ *   program that topped the other;
+ *   the top window closed, or sent to the back -- WM_ONTOP to the owner
+ *   of the one now uncovered (wm_close, wmset's WF_BOTTOM), even when
+ *   that program did the closing.
+ *
+ * Nothing for the desk, and nothing when there was no window on top
+ * before: the first window opened is told neither.
+ *
+ * A window being closed is still VF_ISOPEN here -- wm_close clears the
+ * flag after its redraw -- but it has left the tree already, so the tree
+ * is what says whether the old top was covered or went away. */
+static WORD w_linked(WORD wh)
+{
+    WORD k;
+
+    for (k = W_TREE[ROOT].ob_head; k != NIL && k != ROOT; k = W_TREE[k].ob_next)
+        if (k == wh)
+            return TRUE;
+    return FALSE;
+}
+
+static void w_topchanged(WORD oldtop, WORD bottomed)
+{
+    WORD newtop = gl_wtop;
+
+    if (oldtop == newtop || oldtop == NIL || oldtop == DESKWH)
+        return;
+    if (!bottomed && w_linked(oldtop))
+        ap_sendmsg(wm_owner(oldtop), WM_UNTOPPED, oldtop, 0, 0, 0, 0);
+    else if (newtop != NIL && newtop != DESKWH)
+        ap_sendmsg(wm_owner(newtop), WM_ONTOP, newtop, 0, 0, 0, 0);
+}
+
 /* Bring window wh to the top: last among the root's children, then
  * draw_change with its own rectangle, which redraws just the frames. */
 static void wm_mktop(WORD w_handle)
@@ -1446,6 +1502,7 @@ static void wm_mkbottom(WORD w_handle)
     everyobj(gl_wtree, ROOT, NIL, newrect, 0, 0, MAX_DEPTH);
     gl_wtop = W_TREE[ROOT].ob_tail;
     w_setactive();
+    w_topchanged(oldtop, TRUE);
     w_getsize(WS_CURR, w_handle, &t);
     t.g_w = (WORD)(t.g_w + DROP_SHADOW_SIZE);
     t.g_h = (WORD)(t.g_h + DROP_SHADOW_SIZE);

@@ -146,7 +146,8 @@ def report(kind, served, names, show_all):
 # Served here and absent from EmuTOS's include/aesdefs.h, so the audit
 # reports them as "served that AES's name table does not carry".  They
 # still belong in a reference a person reads.
-EXTRA_AES = {130: "appl_getinfo"}
+EXTRA_AES = {130: "appl_getinfo",
+             18: "appl_search", 115: "rsrc_rcfix"}   # AES 4.0 (phase 124)
 
 
 # ---- below the opcodes: the questions one opcode answers ---------------

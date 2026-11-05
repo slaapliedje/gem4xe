@@ -242,6 +242,16 @@ static WORD sh_shutdown(WORD how)
     return 1;
 }
 
+/* Whether process 0 is the desktop, for appl_search's APP_SHELL (phase
+ * 124): set by sh_ldapp around the run, as the loop knows which it is
+ * starting. */
+ZWIN static WORD sh_deskrun;
+
+WORD sh_desk_running(void)
+{
+    return sh_deskrun;
+}
+
 /* The application has ended: whoever was waiting on it is told -- or,
  * if it was the one shutting down, the shutdown ends with it. */
 static void sh_appgone(void)
@@ -1182,6 +1192,50 @@ static WORD sh_revive(APP *app)
 }
 
 WORD sh_runs;                   /* programs started, the desktop included */
+/* RUN A PROGRAM IN A CONTEXT OF ITS OWN (switcher step 1,
+ * docs/switcher-plan.md).  It used to be called from here, nested: the
+ * shell's frames -- sh_main, sh_ldapp, app_exec -- under the program's
+ * for as long as it ran, which is what a switcher cannot have, since a
+ * second program could not then start without unwinding the first.
+ *
+ * Process 0's context is whoever is running as process 0, because rlr IS
+ * ctx_cur; the shell and the program take turns in it.  So the shell's
+ * bookkeeping moves to proc_shell (proc.h), which becomes ctx_root, the
+ * place a finished context returns to; the program gets process 0's
+ * context made new, in the park buffer proc_shell was keeping; and the
+ * switch parks the shell's frames and starts the program at the top of
+ * the engine stack.  When the program returns ctx_boot switches to
+ * ctx_root, and everything is put back the other way.
+ *
+ * Between the two assignments to ctx_cur and their switch, rlr is not a
+ * process: nothing here may call the AES there.
+ *
+ * What app_exec did around app_run -- the owner and the stack's floor --
+ * is the context's now, which ctx_park applies at the switch.  Programs
+ * started anywhere else (AUTO, the modules, Pexec) are app_exec's still:
+ * they run in whatever context runs them. */
+static WORD sh_run(const APP *app)
+{
+    CTX *pc = &proc_app->p_ctx, *sc = proc_shell;
+    uint32_t spare = sc->save;
+    WORD r;
+
+    memcpy(sc, pc, sizeof *sc);         /* the shell, as it runs */
+    ctx_cur = ctx_root = sc;
+    pc->save = spare;
+    ctx_reset(pc, app->entry);
+    pc->owner = app->owner;
+    pc->floor = app->stack_floor ? app->stack_floor
+                                 : (uint16_t)(app->near_base + CTX_FLOOR);
+    ctx_switch(pc);                     /* back when the program has ended */
+    r = (WORD)pc->entry;                /* main()'s, ctx_boot */
+    spare = pc->save;
+    memcpy(pc, sc, sizeof *pc);         /* and the shell is process 0 again */
+    sc->save = spare;
+    ctx_cur = ctx_root = pc;
+    return r;
+}
+
 WORD sh_lastret;                /* what the last one's main() returned */
 WORD sh_lastrc;                 /* the last load's status (APP_*) */
 
@@ -1203,13 +1257,16 @@ static WORD sh_ldapp(void)
          * in the system's, and its DESKTOP.RSC is a bare name -- unless
          * shel_wdef named another, which is what its directory is for.
          *
-         * `cmd` TWICE, and not a buffer of its own: THIS FRAME IS ON THE
-         * ENGINE'S STACK FOR AS LONG AS THE PROGRAM RUNS, and GEMDOS
+         * `cmd` TWICE, and not a buffer of its own: this frame was on
+         * the engine's stack for as long as the program ran, and GEMDOS
          * refuses a Pexec with less than GD_PEXEC_STACK of that stack
          * left, because a child's calls are served below the parent's on
          * it (src/gem4xe.scm).  A 114-byte second buffer here answered
          * ENSMEM to every Pexec in test-m32 -- including one for a file
-         * that is not there, which is the guard firing before it looks. */
+         * that is not there, which is the guard firing before it looks.
+         * Since phase 126 the frame is PARKED while the program runs
+         * (sh_run), so that reason has gone; the one buffer does no harm
+         * and stays. */
         gemdos_home();
         far_strget(cmd, sh_cdir_far, SH_CDIRLEN);
         if (cmd[0])
@@ -1248,10 +1305,12 @@ static WORD sh_ldapp(void)
      * never started. */
     proc_name(proc_app, cmd);   /* the desktop's name is in cmd too now */
     proc_app->p_msgs = 0;       /* registers for itself, or does not */
+    sh_deskrun = (was == SH_DESKTOP);
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     stops = gem_stack_stops;
-    sh_lastret = app_exec(&app);
+    sh_lastret = sh_run(&app);
+    sh_deskrun = 0;
 
     /* The program has gone.  The mouse comes back here whatever it left
      * it set to, and every accessory is told -- before app_free takes the

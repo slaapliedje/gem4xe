@@ -40,7 +40,9 @@ HDR_FIELDS = [                      # (offset, bytes, name)
     (122, 18, "title_txt"), (140, 2, "t_info"), (142, 64, "buffer"),
     (206, 306, "reserved"),
 ]
-SUBJECT = 64                        # appl_getinfo's, gem4xe's own
+SUBJECT = 0x4734                    # appl_getinfo's, gem4xe's own: "G4".
+                                    # 64 until phase 124, which is gemlib's
+                                    # AES_EXTENDED, asked by AES 4 programs
 SLOT_INFO = 4                       # a 32-bit CPXINFO address...
 SLOT_FILE = 16                      # ...the file name, PADDED to 16 (B7)
 SLOT_HDR = SLOT_INFO + SLOT_FILE    # ...then the header

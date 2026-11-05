@@ -19,6 +19,7 @@
 #include "proc.h"
 #include "sys/farmem.h"         /* appl_read's buffer may be far */
 #include "../vdi/font.h"        /* FONT_ID_SYS: the face that is linked in */
+#include "sys/zwin.h"
 
 /* THE PIPE IS MESSAGES, NOT BYTES, and that is the whole of appl_read.
  *
@@ -90,7 +91,9 @@ WORD ap_read(WORD ap_id, WORD length, uint32_t buf)
  * with a future Atari subject by accident.  A program that asks an AES
  * which does not know it gets FALSE from the default below, which is
  * the correct answer and exactly what the call is for. */
-#define AI_CPX          64
+#define AI_CPX          0x4734  /* "G4".  64 until phase 124, which is
+                                 * gemlib's AES_EXTENDED: a program asking
+                                 * about extended shutdown got this table */
 
 /* THE RESOLUTION NUMBER: gem4xe has none, and says so.
  *
@@ -114,6 +117,56 @@ WORD ap_read(WORD ap_id, WORD length, uint32_t buf)
  * real number of colours.  The size is v_opnwk's work_out and the cell is
  * graf_handle, which is where a program that means it will look. */
 #define AI_REZ_NONE     (-1)
+
+/* appl_search (AES 4, Compendium p.370; phase 124): the processes, one a
+ * call -- APP_FIRST starts again, APP_NEXT goes on -- each one's eight-
+ * character name and a NUL, its type and its id, written to the caller's
+ * memory in any bank.  1 with an answer, 0 when there are no more.  The
+ * application is APP_APPLICATION, and APP_SHELL too while it is the
+ * desktop; an accessory is APP_ACCESSORY.  There is no system process to
+ * list: the AES here is not one.  The cursor is the AES's, as the donor's
+ * is, so it is one search at a time. */
+ZWIN static WORD ap_srch;
+
+WORD ap_search(WORD mode, uint32_t fname, uint32_t ptype, uint32_t pid)
+{
+    WORD i, k, type, id;
+    uint8_t name[AP_NAMELEN + 1];
+
+    if (mode == APP_FIRST)
+        ap_srch = 0;
+    else if (mode != APP_NEXT)
+        return 0;
+    for (i = ap_srch; i < proc_n; i++) {
+        PROC *p = &proc_tab[i];
+        if (p->p_stat == P_FREE || p->p_stat == P_DONE)
+            continue;
+        ap_srch = (WORD)(i + 1);
+        /* An if, not the ?: it was: `type`'s address is taken below,
+         * and a ?:'s value given to such a variable is B9 -- both types
+         * came back 0 (test-m51, phase 124; tools/ccbug/README.md). */
+        if (p == proc_app) {
+            type = APP_APPLICATION;
+            if (sh_desk_running())
+                type |= APP_SHELL;
+        } else {
+            type = APP_ACCESSORY;
+        }
+        id = proc_pid(p);
+        for (k = 0; k < AP_NAMELEN; k++)
+            name[k] = (uint8_t)p->p_name[k];
+        name[AP_NAMELEN] = 0;
+        if (fname)
+            far_put(fname, name, AP_NAMELEN + 1);
+        if (ptype)
+            far_put(ptype, (const uint8_t *)&type, 2);
+        if (pid)
+            far_put(pid, (const uint8_t *)&id, 2);
+        return 1;
+    }
+    ap_srch = proc_n;
+    return 0;
+}
 
 WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
 {
@@ -175,9 +228,13 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
 
     case AI_PROCESS:
         /* Cooperative, and proud of it: proc.c is a round robin with no
-         * pre-emption and no timer.  appl_find has no MiNT ids to
-         * convert between, appl_search is not served (AES 4.0), and
-         * neither is rsrc_rcfix. */
+         * pre-emption and no timer.  Since phase 124: appl_find converts
+         * between MiNT and AES ids -- the same numbers, there being no
+         * MiNT -- appl_search lists the processes, and rsrc_rcfix fixes
+         * a resource a program carries (src/sys/abi.c, src/aes/rsrc.c). */
+        *out2 = 1;
+        *out3 = 1;
+        *out4 = 1;
         break;
 
     case AI_PCGEM:
@@ -189,12 +246,12 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_INQUIRE:
-        /* The four "-1 means something extra" extensions, and this AES
-         * has none of them.  appl_read is not served at all; shel_get
-         * ignores a length that is not positive (and, worse for a
-         * caller, still answers TRUE); menu_bar reads its mode as a
-         * truth value, so -1 INSTALLS the bar rather than asking about
-         * it, and MENU_INSTL is not distinct from it. */
+        /* The four "-1 means something extra" extensions.  menu_bar's
+         * since phase 124 (out3): -1 asks whose bar it is (src/sys/abi.c).
+         * appl_read's APR_NOWAIT is not special (ap_read, above); shel_get
+         * ignores a length that is not positive; MENU_INSTL is not
+         * distinct from showing the bar. */
+        *out3 = 1;
         break;
 
     case AI_WDIALOG:
@@ -264,7 +321,10 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
          * where bit 4 asks for get AND set -- claiming it would send a
          * program to a wind_set that answers FALSE.  No iconifier, no
          * bottomer gadget, no shift-click-to-bottom, no hot close box. */
-        *out1 = 1 << 6;
+        *out1 = (1 << 6) | (1 << 0)     /* bit 0, WF_TOP's three words:
+                                         * phase 124 */
+              | (1 << 1);               /* wind_get(WF_NEWDESK): 125 */
+        *out3 = 1 << 2;                 /* Shift-click sends to the back */
         break;
 
     case AI_MESSAGE:
@@ -277,7 +337,9 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
          * yet: WM_NEWTOP, WM_UNTOPPED and WM_ONTOP are declared and never
          * sent, and CH_EXIT, WM_BOTTOM and the iconify messages do not
          * exist here. */
-        *out1 = (1 << 3) | (1 << 4);
+        /* ...and since phase 125 WM_UNTOPPED (bit 1), WM_ONTOP (2) and
+         * WM_BOTTOMED (6), from src/aes/wind.c and ctrl.c. */
+        *out1 = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6);
         break;
 
     case AI_OBJECT:

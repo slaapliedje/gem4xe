@@ -56,7 +56,8 @@ typedef struct {
     uint32_t save;      /* far: where the parked extent lives */
     uint16_t len;       /* bytes parked -- what the last switch cost */
     uint16_t deep;      /* the most it has ever parked: for the gate to print */
-    uint32_t entry;     /* the program, entered the first time it is resumed */
+    uint32_t entry;     /* the program, entered the first time it is resumed;
+                         * once CTX_DONE, what its main() returned */
     uint16_t live;      /* CTX_NEW / CTX_LIVE / CTX_DONE */
     /* the call gate's per-call words, which a park interrupts */
     uint32_t pb;
@@ -106,6 +107,7 @@ extern uint16_t ctx_regs_want;
  * FALSE if the far heap has none.  `entry` is the program it runs the
  * first time it is resumed; it is expected never to return. */
 int16_t ctx_make(CTX *c, uint32_t entry);
+void    ctx_reset(CTX *c, uint32_t entry);
 
 /* Park the running context and resume `to`.  Returns -- in `to` -- from
  * the ctx_switch() that parked IT, or, the first time, by entering its

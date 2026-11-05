@@ -729,6 +729,17 @@ $(eval $(call g4a,m50_acc,$(M50A_OBJS),768,160,384,,))
 M50P_OBJS = $(G4A_LIB) build/app/m50_app.o
 $(eval $(call g4a,m50_app,$(M50P_OBJS),1536,160,768,,))
 
+# The AES 4.0 gate's program (test-m51, phase 124): every call a program
+# makes on seeing 4.0, answered into globals.  Two resource files' bytes
+# are in its near data (src/m51_app.c), hence the room.
+M51P_OBJS = $(G4A_LIB) build/app/m51_app.o
+$(eval $(call g4a,m51_app,$(M51P_OBJS),4608,160,768,,))
+
+# The window-message gate's program (test-m52, phase 125): two windows
+# and a log of what it is told about the top.
+M52P_OBJS = $(G4A_LIB) build/app/m52_app.o
+$(eval $(call g4a,m52_app,$(M52P_OBJS),1536,160,768,,))
+
 # The shipped applications (src/apps): the first programs written to the
 # application ABI that are not tests.  Each is one C file, one resource
 # built on the host, and the same three-way link every .g4a takes.
@@ -1971,7 +1982,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2347,6 +2358,21 @@ test-m50: build/gem-sys.atr build/gem.sym build/m50_acc.g4a build/m50_acc.sym \
           build/m50_app.g4a build/m50_app.sym
 	python3 tests/emu/m50_shutdown.py
 
+# AES 4.0 (phase 124): what a program that sees the number calls --
+# appl_search, appl_find's forms, menu_register for an application and
+# REG_NEWNAME, menu_bar's inquiry, rsrc_rcfix, WF_TOP's words, global[] --
+# from inside a program, beside the phase 123 gate accessory.
+test-m51: build/gem-sys.atr build/gem.sym build/m50_acc.g4a build/m50_acc.sym \
+          build/m51_app.g4a build/m51_app.sym build/edit.rsc build/test.rsc
+	python3 tests/emu/m51_aes4.py
+
+# AES 4's window messages (phase 125): WM_UNTOPPED to the window that lost
+# the top, WM_ONTOP to one that came to it unasked, WM_BOTTOMED for a
+# Shift-click -- the gate holds the real Shift key -- and WF_NEWDESK read.
+test-m52: build/gem-sys.atr build/gem.sym build/m50_acc.g4a build/m50_acc.sym \
+          build/m52_app.g4a build/m52_app.sym
+	python3 tests/emu/m52_winmsg.py
+
 # A program whose stack leaves its own memory is stopped at its next GEM
 # call, and its parent carries on (src/sys/abi.c, docs/phase114.md).
 build/m47-boot.atr: build/gem.xex build/m47_parent.g4a build/m47_child.g4a build/m47_big.g4a build/m47_small.g4a build/lang.rsc build/816.com
@@ -2678,4 +2704,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

@@ -498,8 +498,10 @@ typedef struct userblk {
 #define WM_SIZED    27
 #define WM_MOVED    28
 #define WM_NEWTOP   29
-#define WM_UNTOPPED 30  /* AES 4's: a program may test for them, this */
-#define WM_ONTOP    31  /* AES sends neither -- it is single-application */
+#define WM_UNTOPPED 30  /* AES 4's, sent since phase 125: msg[3] lost the top */
+#define WM_ONTOP    31  /* ...or came to it without its owner asking */
+#define WM_BOTTOMED 33  /* AES 4: the user Shift-clicked msg[3]'s frame; the */
+#define WM_BOTTOM   33  /* program answers wind_set(WF_BOTTOM) -- both names */
 #define AC_OPEN     40
 #define AC_CLOSE    41
 /* MultiTOS's shutdown handshake (MESSAGE.H), sent since phase 123.  A
@@ -774,6 +776,7 @@ WORD evnt_multi_moblk(UWORD flags, WORD bclk, UWORD bmsk, UWORD bst,
                       WORD *mx, WORD *my, WORD *mb, WORD *ks, WORD *kr, WORD *br);
 
 WORD menu_bar(OBJECT *tree, WORD showit);
+#define MENU_INQUIRE  (-1)      /* menu_bar(0, -1): whose bar it is, or -1 */
 WORD menu_icheck(OBJECT *tree, WORD item, WORD check);
 WORD menu_ienable(OBJECT *tree, WORD item, WORD enable);
 WORD menu_tnormal(OBJECT *tree, WORD title, WORD normal);
@@ -927,6 +930,11 @@ WORD evnt_mouse(WORD flags, WORD x, WORD y, WORD w, WORD h,
 WORD evnt_dclick(WORD rate, WORD setit);
 WORD menu_text(OBJECT *tree, WORD item, const char *text);
 WORD menu_register(WORD pid, const char *str);
+/* AES 4 (phase 124): an APPLICATION's title is the name a switcher lists
+ * it by, and takes no Desk menu slot; REG_NEWNAME as the pid renames the
+ * caller's process for appl_find and appl_search -- eight characters,
+ * blank-padded, as appl_find's argument is. */
+#define REG_NEWNAME   (-1)
 
 /* menu_popup puts the MENU box (above) up at (xpos, ypos), tracks it
  * until a click, and takes it down.  TRUE with mdata->mn_item set when an
@@ -989,6 +997,18 @@ WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item);
 #define MIS_INQUIRE 0
 #define MIS_SET     1
 WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
+/* AES 4's forms of appl_find's argument (phase 124): NULL answers the
+ * caller's own id; 0xFFFF0000 | MiNT id and 0xFFFE0000 | AES id convert
+ * -- the same number here, there being no MiNT.  An address in bank $00
+ * is NOT "the caller" as on an ST: on this machine every near string has
+ * a zero upper word, so only a NULL pointer means that. */
+#define APP_FIRST       0       /* appl_search's mode */
+#define APP_NEXT        1
+#define APP_SYSTEM      0x01    /* ...and its type, a mask */
+#define APP_APPLICATION 0x02
+#define APP_ACCESSORY   0x04
+#define APP_SHELL       0x08    /* the desktop is APPLICATION | SHELL */
+WORD appl_search(WORD mode, char *fname, WORD *type, WORD *ap_id);
 
 /* appl_getinfo (AES 130) -- what this AES has, asked one subject at a
  * time.  The modes are the Compendium's and gemlib's; the higher ones
@@ -1033,7 +1053,10 @@ WORD appl_find(const char *fname);      /* EIGHT chars, blank-padded */
  *   out4  one entry's size, to stride it
  * src/app/cpx.h's cpx_count and cpx_slot wrap this; there is no reason
  * to assemble the address by hand. */
-#define AES_CPX         64
+#define AES_CPX         0x4734  /* "G4": gem4xe's own.  It was 64 until
+                                 * phase 124, which is gemlib's AES_EXTENDED
+                                 * and answered a program asking about that
+                                 * with this table */
 /* AES_LARGEFONT / AES_SMALLFONT's ap_gout3 */
 #define SYSTEM_FONT     0
 #define OUTLINE_FONT    1
@@ -1083,6 +1106,11 @@ WORD fsel_input(char *path, char *sel, WORD *button);
 WORD fsel_exinput(char *path, char *sel, WORD *button, const char *label);
 WORD rsrc_saddr(WORD type, WORD index, void *addr);
 WORD rsrc_obfix(OBJECT *tree, WORD obj);
+/* AES 4: a resource already in memory -- the .RSC file's bytes, as the
+ * program carries them -- fixed up and made the program's, as rsrc_load
+ * would have.  1 done, 0 refused: another one is loaded, or the file has
+ * colour icons (phase 124).  rsrc_free afterwards gives nothing back. */
+WORD rsrc_rcfix(void *rc_header);
 /* The scrap manager keeps a DIRECTORY, not the scrap: the clipboard is
  * files called SCRAP.* in it, so two programs agree on a place rather
  * than on a format.  The path is your buffer and must be near, as
