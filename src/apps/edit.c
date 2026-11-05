@@ -912,6 +912,7 @@ int main(void)
     cmd[0] = 0;
     tail[0] = 0;
     appl_init();
+    shel_write(SWM_NEWMSG, NM_APTERM, 0, 0, 0);    /* AP_TERM: below */
     shel_read(cmd, tail);
     if (!rsrc_load("EDIT.RSC")) {
         appl_exit();
@@ -996,6 +997,16 @@ int main(void)
             case WM_CLOSED:
                 if (msgb[3] == wh)
                     done = let_go();
+                break;
+            case AP_TERM:
+                /* Asked to end by a shutdown: the same question closing
+                 * the window asks -- and Cancel is a refusal the one that
+                 * asked is told about, AP_TFAIL (phase 123). */
+                done = let_go();
+                if (!done) {
+                    WORD f[8] = { AP_TFAIL, 1, 0, 0, 0, 0, 0, 0 };
+                    shel_write(SWM_AESMSG, 0, 0, (const char *)f, 0);
+                }
                 break;
             case WM_MOVED:
             case WM_SIZED:

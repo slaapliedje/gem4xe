@@ -166,6 +166,146 @@ void sh_pop(uint32_t save)
     far_copy(sh_tail_far, save + SH_CMDLEN, SH_TAILLEN);
 }
 
+/* ---- AES 4's shutdown (phase 123) -------------------------------------
+ *
+ * MultiTOS's protocol, from its sh_shutdown and shel_write (GEMSHLIB.C,
+ * read as specification), on gem4xe's processes: process 0, the one
+ * application -- the desktop or a program -- and the accessories.
+ *
+ * A shutdown is ASKED, never forced.  Every other application must have
+ * said, with shel_write(SWM_NEWMSG, NM_APTERM), that it understands
+ * AP_TERM -- in a complete shutdown every accessory too -- or nothing is
+ * sent and the caller is answered 0: a program that never registered may
+ * be holding work it would lose.  Then the accessories are sent AC_CLOSE
+ * (and AP_TERM, in a complete one), the application AP_TERM with the
+ * reason in msg[5], and the caller is the one shutting down until it
+ * aborts or ends.  It is told by SHUT_COMPLETED: msg[3] 1 once the
+ * application it waited for has gone -- at once if there was none -- or
+ * 0 if one answered AP_TFAIL, with msg[4] who and msg[5] its code.
+ *
+ * WHERE THE MODE IS READ.  The Compendium puts SD_ABORT / SD_PARTIAL /
+ * SD_COMPLETE in wiscr; MultiTOS's own AES reads them from isgem
+ * (`case 4: return sh_shutdown(isgem, AP_TERM)`), and that is what the
+ * programs written for it were tested against.  isgem it is. */
+/* In the window, not LoRAM: only shel_write and the shell loop touch it,
+ * from gem4xe's own calls and never an interrupt (src/sys/zwin.h), and
+ * LoRAM had no two bytes to spare (test_memory's budget). */
+ZWIN static PROC *sh_shutpd;    /* who is shutting down, or 0 */
+ZWIN uint16_t sh_shutdone;      /* SHUT_COMPLETED sent, for the gate */
+
+static WORD sh_shutdown(WORD how)
+{
+    PROC *me = rlr;
+    WORD i, wait = 0;
+
+    switch (how) {
+    case SD_ABORT:
+        if (!sh_shutpd || sh_shutpd != me)
+            return 0;           /* not shutting down, or not its own */
+        sh_shutpd = 0;
+        return 1;
+    case SD_PARTIAL:
+    case SD_COMPLETE:
+        if (sh_shutpd)
+            return sh_shutpd == me;
+        break;
+    default:
+        return 0;
+    }
+    for (i = 0; i < proc_n; i++) {
+        PROC *p = &proc_tab[i];
+        if (p == me || p->p_stat == P_FREE || p->p_stat == P_DONE)
+            continue;
+        if ((p == proc_app || how == SD_COMPLETE)
+            && !(p->p_msgs & NM_APTERM))
+            return 0;           /* one would lose its work: refused */
+    }
+    for (i = 0; i < MAX_ACCS; i++) {
+        PROC *p = mn_owner(i);
+        if (p && p != me)
+            ap_sendmsg(p, AC_CLOSE, i, 0, AP_TERM, 0, 0);
+    }
+    for (i = 1; i < proc_n; i++) {
+        PROC *p = &proc_tab[i];
+        if (p != me && how == SD_COMPLETE)
+            ap_sendmsg(p, AP_TERM, i, 0, AP_TERM, 0, 0);
+    }
+    if (proc_app != me) {
+        ap_sendmsg(proc_app, AP_TERM, 0, 0, AP_TERM, 0, 0);
+        wait = 1;
+    }
+    sh_shutpd = me;
+    if (!wait) {
+        ap_sendmsg(me, SHUT_COMPLETED, 1, 0, 0, 0, 0);
+        sh_shutdone++;
+    }
+    return 1;
+}
+
+/* The application has ended: whoever was waiting on it is told -- or,
+ * if it was the one shutting down, the shutdown ends with it. */
+static void sh_appgone(void)
+{
+    PROC *p = sh_shutpd;
+
+    if (!p)
+        return;
+    sh_shutpd = 0;
+    if (p == proc_app)
+        return;
+    ap_sendmsg(p, SHUT_COMPLETED, 1, 0, 0, 0, 0);
+    sh_shutdone++;
+}
+
+/* shel_write(SWM_AESMSG): eight words for the AES.  AP_TFAIL is the one
+ * it understands -- the application asked to end cannot -- and ends the
+ * shutdown, telling the one that asked who refused and why. */
+WORD sh_aesmsg(const WORD *msg)
+{
+    PROC *p = sh_shutpd;
+
+    if (msg[0] != AP_TFAIL || !p)
+        return 0;
+    sh_shutpd = 0;
+    ap_sendmsg(p, SHUT_COMPLETED, 0, proc_pid(rlr), msg[1], 0, 0);
+    sh_shutdone++;
+    return 1;
+}
+
+/* shel_write(SWM_BROADCAST): the message to every other process that is
+ * there to read it, with word 1 the sender's id, as appl_write does. */
+WORD sh_broadcast(const WORD *msg)
+{
+    WORD m[8], i;
+
+    for (i = 0; i < 8; i++)
+        m[i] = msg[i];
+    m[1] = proc_pid(rlr);
+    for (i = 0; i < proc_n; i++) {
+        PROC *p = &proc_tab[i];
+        if (p != rlr && p->p_stat != P_FREE && p->p_stat != P_DONE)
+            mq_put(p, m);
+    }
+    return 1;
+}
+
+/* shel_write(SWM_ENVIRON): the AES's environment, sh_env, by size or
+ * copied into the caller's buffer (which may be far: bytes cross).  The
+ * copy answers how many bytes did NOT fit.  Changing it is not served. */
+WORD sh_environ(WORD how, WORD len, uint32_t buf)
+{
+    WORD n = (WORD)sizeof sh_env;
+
+    if (how == ENVIRON_SIZE)
+        return n;
+    if (how != ENVIRON_COPY || !buf || len < 0)
+        return 0;
+    if (len > n)
+        len = n;
+    far_copy(buf, (uint32_t)(uint16_t)sh_env, (uint16_t)len);
+    return (WORD)(n - len);
+}
+
 WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
               const char *ptail)
 {
@@ -186,16 +326,19 @@ WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
         sh_isgem = (isgem != 0);
         sh_next = SH_PROGRAM;
         break;
-    case 4:                                 /* SHW_SHUTDOWN */
-        sh_doexec = doex;
-        sh_isgem = 0;
-        break;
-    case 5:                                 /* SHW_RESCHNG: one resolution */
-        far_write8(sh_cmd_far, 0);
-        far_write8(sh_tail_far, 0);
+    case 4:                                 /* SWM_SHUTDOWN: above */
+        return sh_shutdown(isgem);
+    case 9:                                 /* SWM_NEWMSG: NM_APTERM */
+        rlr->p_msgs = isgem;
         break;
     default:
-        break;
+        /* 2 (a thread), 3 (an accessory now), 5 (a resolution change --
+         * there is one resolution, and a program told yes would wait for
+         * a RESCH_COMPLETED that never came), 6: not served, and SAID so.
+         * They answered 1 until phase 123, which a program reads as done.
+         * 7, 8 and 10 come through sh_broadcast, sh_environ and
+         * sh_aesmsg, which take what those modes point at. */
+        return 0;
     }
     return 1;
 }
@@ -1104,6 +1247,7 @@ static WORD sh_ldapp(void)
      * of whatever is actually there instead of one for a program that
      * never started. */
     proc_name(proc_app, cmd);   /* the desktop's name is in cmd too now */
+    proc_app->p_msgs = 0;       /* registers for itself, or does not */
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     stops = gem_stack_stops;
@@ -1118,6 +1262,7 @@ static WORD sh_ldapp(void)
      * accessory has read the message, and proc_drain is that barrier. */
     proc_input = proc_app;
     mn_cleanup();
+    sh_appgone();               /* SHUT_COMPLETED, if one waited on it */
     proc_drain(ACC_ROUNDS);
     /* The default desktop, ending to run a program it will come back
      * from: kept, dormant (sh_revive above).  Anything else is freed. */

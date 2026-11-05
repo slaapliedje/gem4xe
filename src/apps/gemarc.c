@@ -794,6 +794,7 @@ int main(void)
     cmd[0] = 0;
     tail[0] = 0;
     appl_init();
+    shel_write(SWM_NEWMSG, NM_APTERM, 0, 0, 0);    /* AP_TERM: below */
     shel_read(cmd, tail);
     if (!rsrc_load("GEMARC.RSC")) {
         appl_exit();
@@ -871,6 +872,9 @@ int main(void)
             switch (msgb[0]) {
             case MN_SELECTED:
                 done = do_menu(msgb[3], msgb[4]);
+                break;
+            case AP_TERM:               /* a shutdown: nothing to keep */
+                done = TRUE;
                 break;
             case WM_REDRAW:
                 if (msgb[3] == wh)

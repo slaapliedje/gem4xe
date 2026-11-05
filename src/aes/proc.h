@@ -127,6 +127,11 @@ typedef struct PROC {
      * a record full of zeroes matches the empty string, so a program
      * that asked appl_find("") would be told it had found process 0. */
     char     p_name[AP_NAMELEN];
+    /* The AES 4 messages it said it understands, shel_write(SWM_NEWMSG):
+     * NM_APTERM, or nothing -- and a shutdown asks only a process that
+     * has said so (src/aes/shel.c, phase 123).  Cleared for each program
+     * process 0 runs, and for each accessory's new record. */
+    WORD     p_msgs;
 } PROC;
 
 extern PROC *proc_tab;          /* NUM_PROCS records, the caller's memory */

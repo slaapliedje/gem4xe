@@ -353,10 +353,11 @@ def main(argv):
         check(font == [1, 8, 1, 0, 0],
               f"appl_getinfo(AES_LARGEFONT) answered {font}, not [1, 8, 1, 0, 0] "
               f"-- the cell height, the system font id, and a bitmap face")
-        # shel_write's highest mode is 5; mode 0 cancels; mode 1 takes
+        # shel_write's highest mode is 10; mode 0 cancels; mode 1 takes
         # effect when the running program exits; no ARGV.
-        check(shell == [1, 5, 1, 1, 0],
-              f"appl_getinfo(AES_SHELL) answered {shell}, not [1, 5, 1, 1, 0]")
+        # 10 since phase 123: modes 7, 8, 9 and 10 are served (test-m50)
+        check(shell == [1, 10, 1, 1, 0],
+              f"appl_getinfo(AES_SHELL) answered {shell}, not [1, 10, 1, 1, 0]")
         # No 3D objects, objc_sysvar present (this is the subject cflib's
         # obgframe.c branches on), no GDOS face in a TEDINFO, and MagiC's
         # WHITEBAK objects drawn by the AES (bit 2 of the fourth word, which

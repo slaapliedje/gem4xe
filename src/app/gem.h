@@ -502,13 +502,20 @@ typedef struct userblk {
 #define WM_ONTOP    31  /* AES sends neither -- it is single-application */
 #define AC_OPEN     40
 #define AC_CLOSE    41
-/* MultiTOS's shutdown handshake (MESSAGE.H).  Declared so a port that
- * switches on a message code compiles and so a shell can send AP_TERM
- * some day; this AES sends none of them, having one application and no
- * process to ask anything of. */
+/* MultiTOS's shutdown handshake (MESSAGE.H), sent since phase 123.  A
+ * program that registers with shel_write(SWM_NEWMSG, NM_APTERM, ...) is
+ * sent AP_TERM when a shutdown asks it to end -- msg[5] says why, AP_TERM
+ * or AP_RESCHG -- and either ends or answers AP_TFAIL through
+ * shel_write(SWM_AESMSG, ...) with its error code in msg[1].  The one
+ * that asked for the shutdown is told how it went by SHUT_COMPLETED:
+ * msg[3] 1 when everything asked has gone, 0 with msg[4] the process
+ * that refused and msg[5] its code.  An accessory is sent AC_CLOSE. */
 #define AP_TERM     50
 #define AP_TFAIL    51
 #define AP_TSUCCESS 52
+#define AP_RESCHG   57
+#define SHUT_COMPLETED  60
+#define RESCH_COMPLETED 61
 
 /* wind_create kinds, wind_get / wind_set fields, wind_update codes */
 #define NAME    0x0001
@@ -859,7 +866,25 @@ WORD rsrc_gaddr(WORD type, WORD index, void **addr);
  * tail is the ST's: a length byte, then the characters. */
 #define SHW_NOEXEC   0          /* back to the desktop */
 #define SHW_EXEC     1          /* run cmd, then the desktop again */
-#define SHW_SHUTDOWN 4          /* leave GEM (the desktop's Quit) */
+#define SHW_SHUTDOWN 4          /* AES 4's shutdown: below */
+/* ...and AES 4's names for the modes gem4xe serves (phase 123).  A mode
+ * this AES does not serve -- 2, 3, 5 and 6 -- answers 0. */
+#define SWM_LAUNCH    0
+#define SWM_LAUNCHNOW 1
+#define SWM_SHUTDOWN  4         /* isgr: SD_*.  Every OTHER application
+                                 * must have registered NM_APTERM, or the
+                                 * shutdown is refused and 0 answered */
+#define SWM_BROADCAST 7         /* cmd: eight words, to every other process */
+#define SWM_ENVIRON   8         /* isgr: ENVIRON_SIZE or ENVIRON_COPY */
+#define SWM_NEWMSG    9         /* isgr: the NM_* this program understands */
+#define SWM_AESMSG    10        /* cmd: eight words for the AES: AP_TFAIL */
+#define SD_ABORT      0         /* ...the one that started it, only */
+#define SD_PARTIAL    1         /* applications AP_TERM, accessories AC_CLOSE */
+#define SD_COMPLETE   2         /* ...and accessories AP_TERM as well */
+#define NM_APTERM     0x0001
+#define ENVIRON_SIZE   0
+#define ENVIRON_CHANGE 1        /* not served: answers 0 */
+#define ENVIRON_COPY   2
 WORD shel_write(WORD doex, WORD isgr, WORD iscr, const char *cmd, const char *tail);
 /* The shell buffer: 4192 bytes the AES keeps between programs (the ST's
  * SIZE_SHELBUF), where the desktop leaves its DESKTOP.INF text.  The

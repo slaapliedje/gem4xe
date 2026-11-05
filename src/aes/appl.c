@@ -237,17 +237,20 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
         break;
 
     case AI_SHELL:
-        /* The modes sh_write acts on are 0, 1, 4 and 5, so 5 is the
-         * highest legal one, and there are no extended mode bits to
-         * report in the high byte.  (cflib's sendchan.c wants 7 or more
-         * before it will speak the AV protocol; it will not, correctly.)
+        /* The modes served are 0, 1, 4 (AES 4's shutdown), 7 (a
+         * broadcast), 8 (the environment's size and a copy of it), 9 and
+         * 10 (AP_TERM registered, AP_TFAIL answered), so 10 is the
+         * highest legal one since phase 123; 2, 3, 5 and 6 answer 0, as
+         * the Compendium allows of a legal mode an AES does not do.  No
+         * extended mode bits in the high byte.  (cflib's sendchan.c
+         * broadcasts with mode 7 from 7 up, which now arrives.)
          *
          * Mode 0 CANCELS a previous shel_write here -- it clears the
          * stored command and makes the desktop what runs next -- and
          * mode 1 takes effect when the current program exits rather than
          * launching at once, because the shell's loop starts it only
          * after app_exec returns.  No ARGV passing. */
-        *out1 = 5;
+        *out1 = 10;
         *out2 = 1;
         *out3 = 1;
         break;
@@ -267,12 +270,14 @@ WORD ap_getinfo(WORD which, WORD *out1, WORD *out2, WORD *out3, WORD *out4)
     case AI_MESSAGE:
         /* The AES sends WM_REDRAW, WM_TOPPED, WM_CLOSED, WM_FULLED,
          * WM_ARROWED, WM_HSLID, WM_VSLID, WM_SIZED, WM_MOVED,
-         * MN_SELECTED, AC_OPEN and AC_CLOSE -- all of them AES 1's.
-         * NONE of the extended ones: WM_NEWTOP, WM_UNTOPPED and WM_ONTOP
-         * are declared and never sent (the control manager keeps the
-         * mouse until the button is up, which is the ROM's rule), and
-         * AP_TERM, CH_EXIT, WM_BOTTOM and the three iconify messages do
-         * not exist here at all. */
+         * MN_SELECTED, AC_OPEN and AC_CLOSE -- AES 1's -- and since phase
+         * 123 AP_TERM (bit 3) and the shutdown's SHUT_COMPLETED (bit 4,
+         * which also names resolution changes: there is one resolution,
+         * so a change is refused before anything would be sent).  Not
+         * yet: WM_NEWTOP, WM_UNTOPPED and WM_ONTOP are declared and never
+         * sent, and CH_EXIT, WM_BOTTOM and the iconify messages do not
+         * exist here. */
+        *out1 = (1 << 3) | (1 << 4);
         break;
 
     case AI_OBJECT:

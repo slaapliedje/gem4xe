@@ -122,6 +122,7 @@ MAX_DELLEVEL = 4
 DISPATTR = FA_SUBDIR
 F_SELECTED = 0x0001
 SHW_EXEC, SHW_SHUTDOWN = 1, 4               # gem.h
+SWM_NEWMSG, NM_APTERM, AP_TERM = 9, 1, 50    # gem.h, phase 123
 CPDATA_LEN, INF_REV_LEVEL, SH_TAILLEN = 128, 2, 128
 INF_NAME = "DESKTOP.INF"                    # desk.h
 AES_VERSION = 0x0140                        # abi.c: global[0]
@@ -2423,7 +2424,8 @@ class Desktop:
             if pw:
                 self.win_close(pw, True)
         elif item == QUITITEM:
-            self.call(SHEL_WRITE, (SHW_SHUTDOWN, 0, 0))
+            # returning is the request: a desktop that ends without asking
+            # for anything ends GEM (phase 123; SHW_SHUTDOWN is AES 4's)
             return True
         return False
 
@@ -2584,10 +2586,13 @@ class Desktop:
             return self.hndl_menu(msg[3], msg[4])
         if WM_REDRAW <= msg[0] <= WM_NEWTOP:
             self.hndl_wmsg(msg)
+        if msg[0] == AP_TERM:                   # a shutdown: as Quit
+            return True
         return False
 
     def main(self):
         self.call(APPL_INIT)
+        self.call(SHEL_WRITE, (SWM_NEWMSG, NM_APTERM, 0))  # AP_TERM is Quit
         io, _ = self.call(GRAF_HANDLE)
         self.handle, self.wchar, self.hchar, self.wbox, self.hbox = io[0:5]
         self.desk = self.wind_get_rect(DESKWH, WF_WXYWH)
@@ -2618,7 +2623,6 @@ class Desktop:
             self.busy(False)
             self.fun_alert(1, STNOMEM)
             self.call(RSRC_FREE)
-            self.call(SHEL_WRITE, (SHW_SHUTDOWN, 0, 0))
             self.call(APPL_EXIT)
             return 1
         self.app_start()

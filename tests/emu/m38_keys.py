@@ -138,7 +138,8 @@ def main():
         check(windows(t) == 0, "^U closes the window")
 
         # sh_doexec is the shell's pending request (src/aes/shel.c): -1
-        # while the desktop runs, SHW_SHUTDOWN (4) once it has asked to end
+        # while the desktop runs, 4 once it has ended without asking for
+        # anything else -- which since phase 123 is how Quit ends GEM
         check(b.peek16(syms["sh_doexec"]) == 0xFFFF,
               "the desktop is still running before ^Q")
         b.key("Q", ctrl=True)

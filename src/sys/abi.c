@@ -847,7 +847,25 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
          * And pool_str rather than near_of for the pair, so a far path
          * works at all: sh_write COPIES both into far memory, so the
          * pool copies go back at the end of the call. */
-        if (int_in[0] != 1) {
+        if (int_in[0] == 7 || int_in[0] == 10) {
+            /* SWM_BROADCAST and SWM_AESMSG: cmd is EIGHT WORDS, not a
+             * string, and copied in here as appl_write copies its
+             * message -- through a far pointer, so a large-data caller's
+             * buffer works where it is (phase 123). */
+            const WORD FAR *m = (const WORD FAR *)addr_in[0];
+            WORD msg[AP_MSGWORDS];
+
+            if (!addr_in[0]) {
+                ret = 0;
+                break;
+            }
+            for (k = 0; k < AP_MSGWORDS; k++)
+                msg[k] = m[k];
+            ret = (int_in[0] == 7) ? sh_broadcast(msg) : sh_aesmsg(msg);
+        } else if (int_in[0] == 8) {
+            /* SWM_ENVIRON: cmd is the buffer a copy goes to, any bank */
+            ret = sh_environ(int_in[1], int_in[2], (uint32_t)addr_in[0]);
+        } else if (int_in[0] != 1) {
             ret = sh_write(int_in[0], int_in[1], int_in[2], 0, 0);
         } else {
             uint16_t smark = pool_mark();

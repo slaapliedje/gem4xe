@@ -341,7 +341,10 @@ static WORD do_filemenu(WORD item)
         fun_command();
         break;
     case QUITITEM:
-        shel_write(SHW_SHUTDOWN, 0, 0, "", "\0");
+        /* Returning is enough: a desktop that ends without asking the
+         * shell for anything ends GEM (src/aes/shel.c, sh_ldapp).  It
+         * said shel_write(SHW_SHUTDOWN, 0, 0) here until phase 123, when
+         * mode 4 became AES 4's shutdown -- which with 0 means abort. */
         return TRUE;
     default:
         break;
@@ -756,6 +759,8 @@ static WORD hndl_msg(void)
                                                  * is not a folder's */
             hndl_wmsg(msg);
         return FALSE;
+    case AP_TERM:                               /* a shutdown: as Quit */
+        return TRUE;
     default:
         return FALSE;
     }
@@ -903,6 +908,9 @@ int main(void)
     WORD i, done;
 
     appl_init();
+    /* AP_TERM is understood -- it is Quit (hndl_msg) -- so a shutdown
+     * an accessory asks for may end the desktop, and GEM with it. */
+    shel_write(SWM_NEWMSG, NM_APTERM, 0, 0, 0);
     G.g_handle = graf_handle(&G.g_wchar, &G.g_hchar, &G.g_wbox, &G.g_hbox);
     wind_get(DESKWH, WF_WORKXYWH, &G.g_desk.g_x, &G.g_desk.g_y,
              &G.g_desk.g_w, &G.g_desk.g_h);
@@ -912,8 +920,7 @@ int main(void)
         desk_busy(FALSE);
         /* the one string that cannot come from the resource */
         form_alert(1, "[3][DESKTOP.RSC is not on|the boot disk.][ Quit ]");
-        shel_write(SHW_SHUTDOWN, 0, 0, "", "\0");
-        appl_exit();
+        appl_exit();                    /* and GEM ends: see QUITITEM */
         return 1;
     }
     rsrc_gaddr(R_TREE, ADMENU, (void **)&G.a_menu);
@@ -938,8 +945,7 @@ int main(void)
         desk_busy(FALSE);
         fun_alert(1, STNOMEM);
         rsrc_free();
-        shel_write(SHW_SHUTDOWN, 0, 0, "", "\0");
-        appl_exit();
+        appl_exit();                    /* and GEM ends: see QUITITEM */
         return 1;
     }
     app_start();

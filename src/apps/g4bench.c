@@ -678,6 +678,10 @@ int main(void)
     WORD msg[8], mx, my, mb, ks, kr, br, ev, done = FALSE;
 
     appl_init();
+    /* AP_TERM: the results screen ends on it as on a key.  While the
+     * benchmark runs it waits in the queue, which is where the run
+     * leaves every message (phase 123). */
+    shel_write(SWM_NEWMSG, NM_APTERM, 0, 0, 0);
     vh = graf_handle(&wchar, &hchar, &wbox, &hbox);
     v_opnvwk(work_in, &vh, work_out);
     vq_extnd(vh, 1, ext_out);
@@ -733,6 +737,8 @@ int main(void)
             if (msg[0] == WM_REDRAW && msg[3] == wh)
                 redraw(msg[4], msg[5], msg[6], msg[7]);
             else if (msg[0] == WM_CLOSED && msg[3] == wh)
+                done = TRUE;
+            else if (msg[0] == AP_TERM)
                 done = TRUE;
         }
     }

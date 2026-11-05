@@ -454,8 +454,19 @@ def shel_cases(r, check, b):
     check(r.read(128, len(tail)) == tail, f"shel_read tail {r.read(128, len(tail))!r} != {tail!r}")
     rec = aes(SHEL_WRITE, (0, 1, 0, r.sc + 128), r.sc)
     check(rec[1] == 0 and rec[2] == 1, f"shel_write(0): doexec {rec[1]}, isgem {rec[2]}")
+    # Mode 4 is AES 4's shutdown since phase 123 (test-m50 is its gate):
+    # SD_ABORT with none in force, and a mode it does not know, answer 0
+    # and ask the shell for nothing -- doexec is still the 0 just set.
+    # Mode 9 registers, and 5 (a resolution change) is refused, 0.
     rec = aes(SHEL_WRITE, (4, 0, 0, r.sc + 128), r.sc)
-    check(rec[1] == 4 and rec[2] == 0, f"shel_write(4): doexec {rec[1]}, isgem {rec[2]}")
+    check(rec[0] == 0 and rec[1] == 0,
+          f"shel_write(4, SD_ABORT) with no shutdown: {rec[0]}, doexec {rec[1]}")
+    rec = aes(SHEL_WRITE, (4, 7, 0, r.sc + 128), r.sc)
+    check(rec[0] == 0 and rec[1] == 0, f"shel_write(4, 7): {rec[0]}, doexec {rec[1]}")
+    rec = aes(SHEL_WRITE, (9, 1, 0, r.sc + 128), r.sc)
+    check(rec[0] == 1, f"shel_write(9, NM_APTERM): {rec[0]}")
+    rec = aes(SHEL_WRITE, (5, 0, 0, r.sc + 128), r.sc)
+    check(rec[0] == 0, f"shel_write(5), a resolution change, refused: {rec[0]}")
     print(f"  shel_write/shel_read: {cmd[:-1]!r} with a {tail[0]}-byte tail, round-tripped through far memory")
 
     # -- shel_put / shel_get ----------------------------------------------------------------

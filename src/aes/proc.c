@@ -85,6 +85,7 @@ PROC *proc_new(WORD *queue, WORD qmax)
     p->p_rsc = p->p_rsc2 = 0;          /* a new process has no resource yet */
     p->p_rscmark = p->p_rscmark2 = 0;
     memset(p->p_name, ' ', AP_NAMELEN);   /* not the last tenant's */
+    p->p_msgs = 0;                         /* ...nor its registrations */
     p->p_stat = P_NEW;
     proc_n++;
     return p;

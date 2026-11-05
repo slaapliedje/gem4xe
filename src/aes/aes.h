@@ -119,6 +119,16 @@ typedef struct {
 #define WM_ONTOP    31
 #define AC_OPEN     40
 #define AC_CLOSE    41
+/* AES 4's shutdown (phase 123, src/aes/shel.c) */
+#define AP_TERM     50
+#define AP_TFAIL    51
+#define SHUT_COMPLETED 60
+#define NM_APTERM   0x0001          /* shel_write(9)'s bit: understands AP_TERM */
+#define SD_ABORT    0                   /* shel_write(4)'s isgem */
+#define SD_PARTIAL  1
+#define SD_COMPLETE 2
+#define ENVIRON_SIZE 0                  /* shel_write(8)'s isgem */
+#define ENVIRON_COPY 2
 
 /* graf_mouse's forms (aesdefs.h).  0..7 are the AES's own, in
  * tools/gemdata.py's order; the rest are commands, not shapes. */
@@ -896,6 +906,9 @@ void sh_push(uint32_t save, const char *cmd, uint32_t tail);
 void sh_pop(uint32_t save);
 WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
               const char *ptail);
+WORD sh_aesmsg(const WORD *msg);             /* shel_write 10, 7, 8: */
+WORD sh_broadcast(const WORD *msg);          /*   src/aes/shel.c */
+WORD sh_environ(WORD how, WORD len, uint32_t buf);
 void sh_get(uint32_t pbuffer, WORD len);     /* far addresses */
 void sh_put(uint32_t pdata, WORD len);
 void sh_envrn(const char **ppath, const char *psrch);

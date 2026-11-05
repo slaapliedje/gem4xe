@@ -148,7 +148,9 @@ int main(void)
                 verify |= 0x04;
             if (dir[0] == 0)
                 verify |= 0x08;
-            shel_write(SHW_SHUTDOWN, 0, 0, "", "\0");
+            /* and Quit: returning ends GEM -- the shell's rule for a
+             * desktop that asks for nothing.  shel_write(SHW_SHUTDOWN)
+             * said so here until phase 123 made mode 4 AES 4's. */
             break;
         }
     }
