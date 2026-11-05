@@ -15,9 +15,11 @@ specification), and `appl_getinfo` now says so.
 **Which message depends on how the top changed, not on who changed it**
 -- MultiTOS's rule (`w_top` sends the first, `wm_close` and `WF_BOTTOM`
 the second).  The first version of this phase had "WM_ONTOP unless its
-owner did it", and its own gate agreed with it; the suite's models
-disagreed, and MultiTOS's source settled it (the "model and target
-agreeing wrongly" lesson, again).
+owner did it", and its own gate agreed with it.  The suite's desktop and
+window gates then fell out of step, because their models (`tools/aesref.py`,
+`tools/deskref.py`) knew neither message; writing the rule into the model
+meant reading MultiTOS's source for it, and that found the first version
+wrong (the "model and target agreeing wrongly" lesson, again).
 
 Both come from one place, `w_topchanged` in `src/aes/wind.c`, called
 where the top changes: `draw_change2`, which every open, close and top
