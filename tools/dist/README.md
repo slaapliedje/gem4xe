@@ -177,7 +177,9 @@ in aside and goes to the next one loaded, the desktop among them, and
 no Alt key.  A program put aside stops where it is, its windows, open
 files and memory kept, and carries on when you come back to it; opening
 it again from the desktop does the same.  They go round in the order you
-started them, then the desktop.  Up to six besides the desktop.
+started them, then the desktop.  Up to six besides the desktop.  While
+any is loaded the **Desk** menu lists them all, the one in front
+checked: choose one to go to it.
 
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
@@ -270,8 +272,8 @@ Besides those:
 - **one program runs at a time.**  Several can be loaded -- CONTROL-TAB
   goes between them (above) -- but only the one in front runs, and the
   others wait where they stopped, as XM/GEM's did; there is no MultiTOS.
-  The Desk menu does not list them yet, and quitting the desktop with
-  programs put aside does not ask them to end first.  The clipboard
+  Quitting the desktop with programs put aside does not ask them to end
+  first yet.  The clipboard
   (`scrp_read`, `scrp_write`) works between programs, which is what
   QED's cut and paste use.
 

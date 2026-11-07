@@ -761,10 +761,22 @@ static WORD hndl_msg(void)
         return FALSE;
     case AP_TERM:                               /* a shutdown: as Quit */
         return TRUE;
-    case AP_G4SWITCH:                           /* CONTROL-TAB: the shell
+    case AP_G4SWITCH: {                         /* CONTROL-TAB or the Desk
+                                                 * menu's list: the shell
                                                  * resumes a program put
-                                                 * aside, once this ends */
-        return shel_write(SWM_G4SWITCH, msg[3], 0, "", "") != 0;
+                                                 * aside, once this ends --
+                                                 * 1 next, 2 back, 0 the one
+                                                 * msg[4..7] names */
+        char name[9];
+        WORD i;
+
+        for (i = 0; i < 4; i++) {               /* the bytes as they lie */
+            name[2 * i] = (char)msg[4 + i];
+            name[2 * i + 1] = (char)((UWORD)msg[4 + i] >> 8);
+        }
+        name[8] = 0;
+        return shel_write(SWM_G4SWITCH, msg[3], 0, name, "") != 0;
+    }
     default:
         return FALSE;
     }

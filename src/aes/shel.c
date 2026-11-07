@@ -107,8 +107,7 @@ static uint32_t sh_desk_far, sh_cdir_far;
  * many programs may be loaded at once besides the desktop: all of them
  * aside while the desktop runs, or one running and the rest aside beside
  * the desktop's entry. */
-#define SH_PROGS     6
-#define SH_RINGBYTES (2 + 4 * SH_PROGS)
+#define SH_RINGBYTES (2 + 4 * SH_PROGS)     /* SH_PROGS: aes.h */
 #define SH_DESKREC   1UL
 #define sh_ring      (sh_cdir_far + SH_CDIRLEN)
 
@@ -363,6 +362,10 @@ WORD sh_environ(WORD how, WORD len, uint32_t buf)
  *             program keeps -- its engine stack is parked in that one
  *   SU_POOL   where the pool's section starts (the windows' is variable)
  *   SU_NAME   the eight-character name it was started under
+ *   SU_TITLE  what it called itself for the Desk menu (menu_register), a
+ *             copy, since the string may be in its own bank-$00 memory,
+ *             which is not there while it is aside; SU_TPTR the pointer,
+ *             which is again when it runs
  *   SU_APP    its APP and SU_CTX its context: the SHELL writes these two,
  *             after the switch, since both are the shell's to see
  *   SU_PROC   process 0's record after its context: queue count, waits,
@@ -384,14 +387,22 @@ WORD sh_environ(WORD how, WORD len, uint32_t buf)
 #define SU_PARK     0
 #define SU_POOL     4
 #define SU_NAME     8
-#define SU_APP      16
+#define SU_TITLE    16
+#define SU_TPTR     (SU_TITLE + MN_TITLELEN)
+#define SU_APP      (SU_TPTR + 4)
 #define SU_CTX      (SU_APP + sizeof(APP))
 #define SU_PROC     (SU_CTX + sizeof(CTX))
 #define SU_QUEUE    (SU_PROC + (sizeof(PROC) - sizeof(CTX)))
 #define SU_MENU     (SU_QUEUE + NUM_MSGS * 16)
 #define SU_DIR      (SU_MENU + 4)
 #define SU_WIN      (SU_DIR + gemdos_dirsize())
-#define SH_SUSPMARK ((void *)1)
+/* ...under a MARKER OF ITS OWN: its owner, a number no context's address
+ * can be (contexts are all above $2000) and one no other program loaded
+ * has.  Phase 127 had one marker, which was right for one program aside
+ * and wrong for two: resuming either retagged both programs' workstations
+ * to process 0, the context every program runs in, and when it ended
+ * vdi_close_virtuals closed the other's under it (phase 130). */
+#define SH_SUSPMARK(own) ((void *)(uint16_t)(own))
 
 /* What the one that ran last leaves the ring (ring_turn): its record if
  * it was put aside, SH_DESKREC if it was the desktop and it ended, 0 if
@@ -402,6 +413,9 @@ ZWIN uint8_t sh_parked;                 /* it was put aside in this run */
  * that program's context -- a Pexec child -- has another, and is not the
  * shell's to put aside (its parent's frames are under it). */
 ZWIN static uint8_t sh_runown;
+/* The program the Desk menu chose (sh_request), until a poll can switch
+ * to it: a ring entry, or 0. */
+ZWIN static uint32_t sh_want;
 
 /* The ring's count, its entries, one entry; and the ring written back. */
 static WORD ring_n(void)
@@ -444,21 +458,34 @@ static void ring_put(const uint32_t *e, WORD n)
  * the ring, since starting a name that is there resumes it. */
 static WORD ring_find(const char *cmd)
 {
-    char name[AP_NAMELEN];
+    char name[AP_NAMELEN], want[AP_NAMELEN];
     WORD n = ring_n(), i;
     uint32_t a;
 
     if (!n)
         return -1;
-    proc_name(proc_app, cmd);
+    proc_nameto(want, cmd);             /* not proc_name: process 0 is
+                                         * still whoever it is */
     for (i = 0; i < n; i++) {
         a = ring_at(i);
         if (a == SH_DESKREC)
             continue;
         far_get((uint8_t *)name, a + SU_NAME, AP_NAMELEN);
-        if (memcmp(name, proc_app->p_name, AP_NAMELEN) == 0)
+        if (memcmp(name, want, AP_NAMELEN) == 0)
             return i;
     }
+    return -1;
+}
+
+/* The entry `a`'s place in the ring, or -1: a choice the menu made may
+ * have gone (ended) before a poll could act on it. */
+static WORD ring_index(uint32_t a)
+{
+    WORD n = ring_n(), i;
+
+    for (i = 0; i < n; i++)
+        if (ring_at(i) == a)
+            return i;
     return -1;
 }
 
@@ -511,30 +538,37 @@ static void sh_goto(uint32_t to)
     sh_doexec = 1;
 }
 
-/* What runs in place of the one put aside: the desktop, for
+/* What runs in place of the one that stops: the desktop, for
  * shel_write(SWM_G4SUSPEND); the ring's first entry or its last, for the
- * switch key and shel_write(SWM_G4SWITCH). */
-#define SH_TODESK   0
+ * switch key and shel_write(SWM_G4SWITCH) -- 0 when the ring is empty. */
 #define SH_TONEXT   1
 #define SH_TOPREV   2
 
-static WORD sh_suspend(WORD how)
+static uint32_t ring_pick(WORD how)
+{
+    WORD n = ring_n();
+
+    if (!n)
+        return 0;
+    if (how == SH_TOPREV)
+        return ring_at((WORD)(n - 1));
+    return ring_at(0);
+}
+
+/* Put the running program aside, with the ring's entry `to` to run in
+ * its place. */
+static WORD sh_suspend(uint32_t to)
 {
     uint8_t own = (uint8_t)proc_app->p_ctx.owner;
     uint8_t keep = far_owner, keept = far_tag, tag, wait;
     uint16_t at, len, nb, i;
-    uint32_t rec, park, p, size, tree, to;
-    WORD max, n;
+    uint32_t rec, park, p, size, tree;
+    char title[MN_TITLELEN];
+    WORD max;
 
     if (rlr != proc_app || sh_deskrun || !own || own != sh_runown
-        || ctx_root != proc_shell)
+        || ctx_root != proc_shell || !to)
         return 0;
-    n = ring_n();
-    to = SH_DESKREC;
-    if (n && how == SH_TONEXT)
-        to = ring_at(0);
-    if (n && how == SH_TOPREV)
-        to = ring_at((WORD)(n - 1));
     size = SU_WIN + wm_savesize() + 2;
     for (nb = 0; pool_owned(own, nb, &at, &len, &tag); nb++)
         size += 6 + len;
@@ -553,6 +587,11 @@ static WORD sh_suspend(WORD how)
     }
     far_put(rec + SU_PARK, (const uint8_t *)&park, 4);
     far_put(rec + SU_NAME, (const uint8_t *)proc_app->p_name, AP_NAMELEN);
+    title[0] = 0;
+    if (mn_apptitle)
+        far_strget(title, mn_apptitle, MN_TITLELEN);
+    far_put(rec + SU_TITLE, (const uint8_t *)title, MN_TITLELEN);
+    far_put(rec + SU_TPTR, (const uint8_t *)&mn_apptitle, 4);
     far_put(rec + SU_PROC, (const uint8_t *)proc_app + sizeof(CTX),
             (uint16_t)(sizeof(PROC) - sizeof(CTX)));
     far_put(rec + SU_QUEUE, (const uint8_t *)gl_appqueue(&max), NUM_MSGS * 16);
@@ -575,7 +614,7 @@ static WORD sh_suspend(WORD how)
         p += 6 + len;
     }
     pool_free_owner(own);
-    vdi_retag_virtuals(&proc_app->p_ctx, SH_SUSPMARK);
+    vdi_retag_virtuals(&proc_app->p_ctx, SH_SUSPMARK(own));
     sh_left = rec;
     sh_parked = 1;
     sh_goto(to);
@@ -587,26 +626,96 @@ static WORD sh_suspend(WORD how)
 }
 
 /* shel_write(SWM_G4SWITCH): a program is put aside for the ring's next
- * (how 1) or the one before (2); the desktop, which is never put aside,
+ * (how 1), the one before (2), or the one `cmd` names (0, the eight
+ * characters appl_find takes); the desktop, which is never put aside,
  * ends instead, with that program as the next thing the shell runs --
  * its answer to AP_G4SWITCH.  0 when there is nothing to switch to. */
-static WORD sh_switch(WORD how)
+static WORD sh_switch(WORD how, const char *cmd)
 {
-    WORD n;
-    uint32_t to;
+    uint32_t to = 0;
+    WORD k;
 
-    if ((how != SH_TONEXT && how != SH_TOPREV) || rlr != proc_app)
+    if (rlr != proc_app)
+        return 0;
+    if (how == SH_TONEXT || how == SH_TOPREV) {
+        to = ring_pick(how);
+    } else if (how == 0 && cmd) {
+        k = ring_find(cmd);
+        if (k >= 0)
+            to = ring_at(k);
+    }
+    if (!to)
         return 0;
     if (!sh_deskrun)
-        return sh_suspend(how);
-    n = ring_n();
-    if (!n)
-        return 0;
-    to = ring_at(0);
-    if (how == SH_TOPREV)
-        to = ring_at((WORD)(n - 1));
+        return sh_suspend(to);
     sh_goto(to);
     return 1;
+}
+
+/* The Desk menu's list (phase 130, src/aes/menu.c): how many programs
+ * are loaded -- the desktop and every program, running or aside -- or 0
+ * when the desktop is the only one, and the menu is then the program's
+ * own. */
+WORD sh_nprogs(void)
+{
+    WORD n = ring_n();
+
+    return n ? (WORD)(n + 1) : 0;
+}
+
+/* The i-th of them, the desktop first and then round the circle: its
+ * ring entry, or 0 for the one running; and in `text` (MN_TITLELEN) what
+ * the menu says -- the title it gave menu_register, else LANG.RSC's name
+ * for the desktop, else its own eight characters. */
+uint32_t sh_prog(WORD i, char *text)
+{
+    WORD n = ring_n(), k = i, j;
+    uint32_t e = 0;
+
+    if (!sh_deskrun) {                  /* the desktop is in the ring */
+        for (j = 0; j < n && ring_at(j) != SH_DESKREC; j++)
+            ;
+        k = (WORD)(j + i);              /* from it, then the running one */
+        if (k > n)                      /* in the gap after the last */
+            k = (WORD)(k - n - 1);
+        else if (k == n)
+            k = -1;
+    } else {
+        k = (WORD)(i - 1);              /* the desktop is the running one */
+    }
+    if (k >= 0)
+        e = ring_at(k);
+    text[0] = 0;
+    if (!e && mn_apptitle)
+        far_strget(text, mn_apptitle, MN_TITLELEN);
+    else if (e && e != SH_DESKREC)
+        far_strget(text, e + SU_TITLE, MN_TITLELEN);
+    if (!text[0] && (e == SH_DESKREC || (!e && sh_deskrun))) {
+        const char *d = lang_str(LS_MENU_DESKTOP);
+
+        for (j = 0; j < MN_TITLELEN - 1 && d[j]; j++)   /* not strncpy: */
+            text[j] = d[j];             /* the vendor's, and Apache-2.0 */
+        text[j] = 0;
+    } else if (!text[0]) {
+        char name[AP_NAMELEN];
+
+        if (e)
+            far_get((uint8_t *)name, e + SU_NAME, AP_NAMELEN);
+        else
+            memcpy(name, proc_app->p_name, AP_NAMELEN);
+        text[0] = text[1] = ' ';
+        for (j = 0; j < AP_NAMELEN && name[j] != ' '; j++)
+            text[2 + j] = name[j];
+        text[2 + j] = 0;
+    }
+    return e;
+}
+
+/* ...and one chosen: switched to at the next poll that may (sh_hotkey),
+ * since the menu is not yet over when it is chosen. */
+void sh_request(uint32_t e)
+{
+    sh_want = e;
 }
 
 /* THE SWITCH KEY (phase 129): CONTROL-TAB, and SHIFT-CONTROL-TAB back,
@@ -620,19 +729,47 @@ static WORD sh_switch(WORD how)
  * what is on the screen then is in no window a resume could redraw.  A
  * program is put aside; the desktop is sent AP_G4SWITCH and ends itself,
  * so that it leaves the way it always does (sh_switch). */
+/* THE DESK MENU'S CHOICE (phase 130) comes the same way, and is KEPT
+ * until a poll may act on it, not dropped: the menu ends with the button
+ * still down, which is mid-gesture, and the choice is not undone by
+ * that.  It is checked against the ring when acted on, since what was
+ * chosen may have ended in between.  For the desktop, AP_G4SWITCH says 0
+ * and carries the program's eight characters in msg[4..7]. */
 void sh_hotkey(void)
 {
-    WORD how;
+    WORD how, k, name[AP_NAMELEN / 2];
+    uint32_t to;
 
     if (rlr != proc_app || ctx_root != proc_shell)
         return;
     how = vdi_switchkey();
-    if (!how || !ev_appwait || !ct_idle() || gl_ctmown || !wm_lockfree(0))
+    if (!how && !sh_want)
         return;
-    if (!sh_deskrun)
-        sh_suspend(how);
-    else if (ring_n())
+    if (!ev_appwait || !ct_idle() || gl_ctmown || !wm_lockfree(0))
+        return;                         /* the key dropped, a choice kept */
+    if (how) {
+        to = ring_pick(how);
+    } else {
+        to = sh_want;
+        sh_want = 0;
+        if (ring_index(to) < 0)
+            return;                     /* gone in between */
+    }
+    if (!to)
+        return;
+    if (!sh_deskrun) {
+        sh_suspend(to);
+        return;
+    }
+    if (how) {
         ap_sendmsg(proc_app, AP_G4SWITCH, how, 0, 0, 0, 0);
+        return;
+    }
+    for (k = 0; k < AP_NAMELEN / 2; k++)
+        name[k] = 0;
+    if (to != SH_DESKREC)
+        far_get((uint8_t *)name, to + SU_NAME, AP_NAMELEN);
+    ap_sendmsg(proc_app, AP_G4SWITCH, 0, name[0], name[1], name[2], name[3]);
 }
 
 WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
@@ -661,9 +798,9 @@ WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
         rlr->p_msgs = isgem;
         break;
     case SWM_G4SUSPEND:                     /* gem4xe's: above */
-        return sh_suspend(SH_TODESK);
+        return sh_suspend(SH_DESKREC);
     case SWM_G4SWITCH:
-        return sh_switch(isgem);
+        return sh_switch(isgem, pcmd);
     default:
         /* 2 (a thread), 3 (an accessory now), 5 (a resolution change --
          * there is one resolution, and a program told yes would wait for
@@ -1618,7 +1755,10 @@ static int16_t sh_unpark(APP *app, uint32_t rec)
             (uint16_t)(sizeof(PROC) - sizeof(CTX)));
     far_get((uint8_t *)gl_appqueue(&max), rec + SU_QUEUE, NUM_MSGS * 16);
     gemdos_dirload(rec + SU_DIR);
-    vdi_retag_virtuals(SH_SUSPMARK, &proc_app->p_ctx);
+    vdi_retag_virtuals(SH_SUSPMARK(own), &proc_app->p_ctx);
+    far_get((uint8_t *)&mn_apptitle, rec + SU_TPTR, 4);  /* its own memory
+                                                          * again: mn_init
+                                                          * forgot it */
     far_get((uint8_t *)&tree, rec + SU_MENU, 4);
     if (tree)
         mn_bar((OBJECT FAR *)tree, TRUE);

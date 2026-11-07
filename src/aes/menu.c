@@ -197,17 +197,149 @@ static void menu_sr(WORD saveit, OBJECT FAR *tree, WORD imenu)
 
 /* Pull a title's menu down: the title selected, the screen under the
  * drop-down saved, the drop-down drawn.  A disabled title gets none of
- * it.  Returns the drop-down's object. */
-static WORD menu_down(OBJECT FAR *tree, WORD ititle)
+ * it.  Returns the drop-down's object -- in `it`, which is the bar's own
+ * tree, or for the Desk title the list below (its root). */
+static WORD menu_down(OBJECT FAR *tree, OBJECT FAR *it, WORD ititle)
 {
-    WORD imenu;
+    WORD imenu = ROOT;
 
-    imenu = menu_sub(tree, ititle);
+    if (it == tree)
+        imenu = menu_sub(tree, ititle);
     if (do_chg(tree, ititle, SELECTED, TRUE, TRUE, TRUE)) {
-        menu_sr(TRUE, tree, imenu);
-        ob_draw(tree, imenu, MAX_DEPTH);
+        menu_sr(TRUE, it, imenu);
+        ob_draw(it, imenu, MAX_DEPTH);
     }
     return imenu;
+}
+
+/* ---- THE DESK MENU'S LIST OF PROGRAMS (phase 130) -----------------------
+ *
+ * MultiTOS's shape: its menu_bar builds the Desk drop-down in an object
+ * array of the AES's own -- the program's About line, a line and the
+ * accessories, a line and every application, the one in front CHECKED --
+ * and draws and tracks that in place of the program's Desk box
+ * (GEMMNLIB.C's mn_addr, MN_MBAR.C's `imenu == gl_cdabox`, read as
+ * specification).  Here it is built when the Desk title drops, in far
+ * memory, the system's, and freed when the menu ends; and only while a
+ * program besides the desktop is loaded (sh_nprogs), so the desktop on
+ * its own keeps the Desk box its resource drew, as before.  Its box is
+ * the resource's Desk box, where it was and as wide; About and the line
+ * are the resource's own objects, copied.
+ *
+ * WHAT A CHOICE DOES is kept beside each object (DT_ACTS): About is the
+ * program's MN_SELECTED on its own About item and an accessory the
+ * AC_OPEN its slot gets, both handed to hctl_rect as if chosen from the
+ * resource's box; a program is a switch (sh_request), and the one in
+ * front nothing. */
+#define DT_MAX      (3 + MAX_ACCS + 1 + SH_PROGS + 1)
+#define DT_ACTS     ((uint32_t)DT_MAX * sizeof(OBJECT))
+#define DT_TEXT     (DT_ACTS + 4UL * DT_MAX)
+#define DT_BYTES    (DT_TEXT + (uint32_t)(SH_PROGS + 1) * MN_TITLELEN)
+#define DT_ABOUT    0xFF000000UL
+#define DT_ACC      0xFE000000UL        /* + the slot */
+#define DT_SELF     0xFD000000UL        /* the one in front */
+
+static void dt_put(OBJECT FAR *d, WORD *pk, UWORD type, UWORD flags,
+                   UWORD state, uint32_t spec, uint32_t act)
+{
+    WORD k = *pk;
+
+    d[k].ob_type = type;
+    d[k].ob_flags = (UWORD)(flags & ~LASTOB);
+    d[k].ob_state = state;
+    d[k].ob_spec = spec;
+    d[k].ob_x = 0;
+    d[k].ob_y = (WORD)((k - 1) * gl_hchar);
+    d[k].ob_width = d[ROOT].ob_width;
+    d[k].ob_height = gl_hchar;
+    d[k].ob_head = d[k].ob_tail = NIL;
+    ob_add(d, ROOT, k);
+    far_put((uint32_t)d + DT_ACTS + 4UL * (uint32_t)k, (const uint8_t *)&act, 4);
+    *pk = (WORD)(k + 1);
+}
+
+static OBJECT FAR *dt_build(OBJECT FAR *tree)
+{
+    WORD n = sh_nprogs(), themenus, dabox, k, i, x, y;
+    uint8_t keep = far_owner, keept = far_tag;
+    uint32_t blk, e, s;
+    char text[MN_TITLELEN];
+    OBJECT FAR *d;
+
+    if (!n)
+        return 0;
+    themenus = tree[THESCREEN].ob_tail;
+    dabox = tree[themenus].ob_head;
+    far_owner = 0;                      /* the system's, for the menu's life */
+    far_tag = 0;
+    blk = far_alloc(DT_BYTES);
+    far_owner = keep;
+    far_tag = keept;
+    if (!blk)
+        return 0;                       /* the resource's box, then */
+    d = (OBJECT FAR *)blk;
+    ob_offset(tree, dabox, &x, &y);
+    d[ROOT].ob_next = d[ROOT].ob_head = d[ROOT].ob_tail = NIL;
+    d[ROOT].ob_type = tree[dabox].ob_type;
+    d[ROOT].ob_flags = tree[dabox].ob_flags;
+    d[ROOT].ob_state = tree[dabox].ob_state;
+    d[ROOT].ob_spec = tree[dabox].ob_spec;
+    d[ROOT].ob_x = x;
+    d[ROOT].ob_y = y;
+    d[ROOT].ob_width = tree[dabox].ob_width;
+    k = 1;
+    dt_put(d, &k, tree[dabox + 1].ob_type, tree[dabox + 1].ob_flags,
+           tree[dabox + 1].ob_state, tree[dabox + 1].ob_spec, DT_ABOUT);
+    if (gl_accreg) {
+        dt_put(d, &k, tree[dabox + 2].ob_type, tree[dabox + 2].ob_flags,
+               DISABLED, tree[dabox + 2].ob_spec, 0);
+        for (i = 0; i < MAX_ACCS; i++)
+            if (gl_acctitle[i])
+                dt_put(d, &k, G_STRING, 0, NORMAL, gl_acctitle[i],
+                       DT_ACC + (uint32_t)i);
+    }
+    dt_put(d, &k, tree[dabox + 2].ob_type, tree[dabox + 2].ob_flags,
+           DISABLED, tree[dabox + 2].ob_spec, 0);
+    for (i = 0; i < n && i <= SH_PROGS; i++) {
+        e = sh_prog(i, text);
+        s = blk + DT_TEXT + (uint32_t)i * MN_TITLELEN;
+        far_strput(s, text, MN_TITLELEN);
+        if (e)
+            dt_put(d, &k, G_STRING, 0, NORMAL, s, e);
+        else
+            dt_put(d, &k, G_STRING, 0, CHECKED, s, DT_SELF);
+    }
+    d[k - 1].ob_flags |= LASTOB;
+    d[ROOT].ob_height = (WORD)((k - 1) * gl_hchar);
+    return d;
+}
+
+/* A choice from the list, as hctl_rect is to see it: TRUE with *pitem
+ * and the rest set as if it came from the resource's own box (About, an
+ * accessory); FALSE when it was a program, asked for here, or the one in
+ * front -- and then the title is put back, as for an accessory. */
+static WORD dt_chosen(OBJECT FAR *tree, OBJECT FAR *d, WORD title,
+                      WORD item, WORD *pitem, uint32_t *ptree, WORD *pmenu)
+{
+    uint32_t act;
+    WORD themenus = tree[THESCREEN].ob_tail;
+    WORD dabox = tree[themenus].ob_head;
+
+    far_get((uint8_t *)&act, (uint32_t)d + DT_ACTS + 4UL * (uint32_t)item, 4);
+    *ptree = (uint32_t)tree;
+    *pmenu = dabox;
+    if (act == DT_ABOUT) {
+        *pitem = (WORD)(dabox + 1);
+        return TRUE;
+    }
+    if ((act & 0xFF000000UL) == DT_ACC) {
+        *pitem = (WORD)(gl_dafirst + (WORD)(act & 0xFF));
+        return TRUE;
+    }
+    if (act != DT_SELF && act)
+        sh_request(act);
+    do_chg(tree, title, SELECTED, FALSE, TRUE, TRUE);
+    return FALSE;
 }
 
 /* ---- menu_popup -------------------------------------------------------
@@ -770,6 +902,11 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
      * was never a tree.  Everything this passes tree to already takes
      * OBJECT FAR *. */
     OBJECT FAR *tree, *p1tree;
+    /* WHERE THE OPEN DROP-DOWN'S ITEMS ARE: the bar's own tree, or the
+     * Desk menu's list of programs (dt_build, above), built the first time
+     * the Desk title drops and freed when the menu ends. */
+    OBJECT FAR *itree, *dtree = 0;
+    WORD    dtried = FALSE;
     uint32_t buparm, smtree = 0;
     WORD    mnu_flags, done, main_rect;
     WORD    cur_menu, cur_item, last_item;
@@ -788,6 +925,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
     cur_sub = smparent = smnoroom = NIL;
     smroot = 0;
     tree = gl_mntree;
+    itree = tree;
 
     ct_mouse(TRUE);
 
@@ -807,7 +945,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
         case OUTSIDE_STATE:
             /* the pointer into the titles, or into the drop-down */
             mnu_flags |= MU_M2;
-            rect_change(tree, &p2mor, cur_menu, FALSE);
+            rect_change(itree, &p2mor, cur_menu, FALSE);
             main_rect = THEACTIVE;
             leave_flag = FALSE;
             break;
@@ -818,10 +956,11 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
              * opening one (MN_EVENT.C), so that running the pointer down
              * a drop-down does not flash every submenu on the way past.
              * menu_settings is what changes it. */
-            if (!smtree && cur_item != smnoroom && sm_opens(tree, cur_item)) {
+            if (!smtree && cur_item != smnoroom && sm_opens(itree, cur_item)) {
                 mnu_flags |= MU_TIMER;
                 tmout = mn_display;
             }
+            p1tree = itree;
             main_rect = cur_item;
             buparm = (button & 0x0001) ? 0x00010100UL : 0x00010101UL;
             leave_flag = TRUE;
@@ -890,7 +1029,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
                 if (cur_sub != NIL) {
                     menu_state = SUBMENU_STATE;
                 } else {
-                    cur_item = ob_find(tree, cur_menu, 1, rets[0], rets[1]);
+                    cur_item = ob_find(itree, cur_menu, 1, rets[0], rets[1]);
                     if (cur_item != NIL) {
                         menu_state = INITEM_STATE;
                     } else if (tree[cur_title].ob_state & DISABLED) {
@@ -915,12 +1054,20 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
             smparent = NIL;
             cur_sub = last_sub = NIL;
         }
-        menu_select(tree, last_item, cur_item, FALSE);
+        menu_select(itree, last_item, cur_item, FALSE);
         if (menu_select(tree, last_title, cur_title, FALSE))
-            menu_sr(FALSE, tree, cur_menu);
-        if (menu_select(tree, cur_title, last_title, TRUE))
-            cur_menu = menu_down(tree, cur_title);
-        menu_select(tree, cur_item, last_item, TRUE);
+            menu_sr(FALSE, itree, cur_menu);
+        if (menu_select(tree, cur_title, last_title, TRUE)) {
+            if (cur_title == THEDESK && !dtried) {
+                dtried = TRUE;
+                dtree = dt_build(tree);
+            }
+            itree = tree;
+            if (cur_title == THEDESK && dtree)
+                itree = dtree;
+            cur_menu = menu_down(tree, itree, cur_title);
+        }
+        menu_select(itree, cur_item, last_item, TRUE);
         /* The submenu opens AT ONCE and not after a delay.  The ROM arms
          * a timer with SUBMENU_DELAY (200 ms, menu_settings); EmuTOS
          * opens it straight away and so does this, because nothing here
@@ -931,8 +1078,8 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
          * and not on the move that arrived first.  An item whose submenu
          * has nowhere to go is remembered, or the timer would re-arm on
          * it for as long as the pointer stayed there. */
-        if ((ev_which & MU_TIMER) && !smtree && sm_opens(tree, cur_item)) {
-            smtree = sm_show(tree, cur_item, &smroot);
+        if ((ev_which & MU_TIMER) && !smtree && sm_opens(itree, cur_item)) {
+            smtree = sm_show(itree, cur_item, &smroot);
             if (smtree)
                 smparent = cur_item;
             else
@@ -955,7 +1102,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
                 do_chg((OBJECT FAR *)smtree, cur_sub, SELECTED, FALSE,
                        FALSE, FALSE);
         }
-        menu_sr(FALSE, tree, cur_menu);
+        menu_sr(FALSE, itree, cur_menu);
         /* THE ITEM MAY BE IN THE SUBMENU'S TREE, which is why mn_do says
          * which tree at all: with sub-menus an object number on its own
          * no longer names one thing, and the caller would look it up in
@@ -970,14 +1117,19 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
             *pmenu = smroot;
             done = TRUE;
         } else if (!smtree && cur_item != NIL
-                   && do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)) {
+                   && do_chg(itree, cur_item, SELECTED, FALSE, FALSE, TRUE)) {
             *ptitle = cur_title;
             *pitem = cur_item;
             done = TRUE;
+            if (dtree && itree == dtree)    /* the list's: what it means */
+                done = dt_chosen(tree, dtree, cur_title, cur_item,
+                                 pitem, ptree, pmenu);
         } else {
             do_chg(tree, cur_title, SELECTED, FALSE, TRUE, TRUE);
         }
     }
+    if (dtree)
+        far_free((uint32_t)dtree);
 
     ct_mouse(FALSE);
     return done;

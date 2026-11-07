@@ -138,6 +138,11 @@ STRINGS = [
     # the boot screen's second Processor line, only when GEM4XE.CFG's
     # BANKWINDOW=SLOW has put $4000-$7FFF back on the Atari's own bus
     ("BOOT_BANKSLOW", "$4000-$7FFF slow"),
+    # the desktop's line in the Desk menu's list of programs, while a
+    # program is loaded beside it (src/aes/shel.c, sh_prog).  A MENU_
+    # string is a menu line: plain text, the two spaces in front where the
+    # check mark goes, as in every title, and MENU_COLS at most
+    ("MENU_DESKTOP", "  Desktop"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -195,6 +200,7 @@ TRANSLATIONS = {
         "BOOT_CLASH": "vor GEM belegt: $01-",
         "APPSTACK": "[3][Ein Programm hatte zu|wenig Stapelspeicher und|wurde zum Schutz des|Systems beendet.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF langsam",
+        "MENU_DESKTOP": "  Desktop",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -246,6 +252,7 @@ TRANSLATIONS = {
         "BOOT_CLASH": "occupe avant GEM: $01-",
         "APPSTACK": "[3][Un programme a manqué de|mémoire de pile et a été|arrêté pour protéger|le système.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF lent",
+        "MENU_DESKTOP": "  Bureau",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -297,6 +304,7 @@ TRANSLATIONS = {
         "BOOT_CLASH": "en uso antes de GEM: $01-",
         "APPSTACK": "[3][Un programa se quedó sin|memoria de pila y se|detuvo para proteger|el sistema.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF lento",
+        "MENU_DESKTOP": "  Escritorio",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -348,6 +356,7 @@ TRANSLATIONS = {
         "BOOT_CLASH": "zajete przed GEM: $01-",
         "APPSTACK": "[3][Programowi zabrakło|pamięci stosu i został|zatrzymany, by chronić|system.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF wolno",
+        "MENU_DESKTOP": "  Pulpit",
     },
 }
 
@@ -368,6 +377,7 @@ ATARIST = {
 CHARSET = {"de": "atarist", "fr": "atarist", "es": "atarist", "pl": "latin2"}
 FONT = {"pl": "l2.fnt"}
 EXIT_COLS = 40          # the DOS screen's width, where the EXIT_ lines go
+MENU_COLS = 23          # a Desk menu title: MN_TITLELEN less its NUL
 # The boot screen and the exit lines are on E:, the OS's text screen, in
 # ATASCII: a byte from $80 up is an inverse glyph there, and the system
 # font is not used.  So what goes there is plain ASCII, written the way
@@ -436,6 +446,11 @@ def check(lang, table=None):
             bad.append(f"{name}: a label of {len(text)}, past {BOOT_LABEL}")
         if name.startswith("EXIT_") and len(text) > EXIT_COLS:
             bad.append(f"{name}: {len(text)} columns, past {EXIT_COLS}")
+        if name.startswith("MENU_") and (not text.startswith("  ")
+                                         or "[" in text
+                                         or len(text) > MENU_COLS):
+            bad.append(f"{name}: not a menu line -- two spaces, no "
+                       f"brackets, {MENU_COLS} columns at most")
         if name.startswith(("BOOT_", "EXIT_")):
             if not ON_E.fullmatch(text):
                 bad.append(f"{name}: not plain ASCII, which E: draws")

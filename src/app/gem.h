@@ -519,9 +519,10 @@ typedef struct userblk {
 #define SHUT_COMPLETED  60
 #define RESCH_COMPLETED 61
 /* gem4xe's own: the switch key, CONTROL-TAB, pressed while the desktop
- * runs.  msg[3] is 1 (next) or 2 (SHIFT, the one before): the desktop
- * answers shel_write(SWM_G4SWITCH, msg[3], 0, "", "") and ends if that
- * says 1.  Nothing else is sent it.  AP_, as AP_TERM, the other message
+ * runs, or a program chosen from the Desk menu's list.  msg[3] is 1
+ * (next), 2 (SHIFT, the one before) or 0 (the program whose eight
+ * characters are msg[4..7]): the desktop answers shel_write(SWM_G4SWITCH,
+ * msg[3], 0, name, "") and ends if that says 1.  Nothing else is sent it.  AP_, as AP_TERM, the other message
  * that asks a program to end; G4_ names are objc_sysvar's. */
 #define AP_G4SWITCH     0x4734
 
@@ -896,12 +897,14 @@ WORD rsrc_gaddr(WORD type, WORD index, void **addr);
  * at once besides the desktop. */
 #define SWM_G4SUSPEND 71
 /* gem4xe's own: the same, but what runs in the caller's place is the
- * next program loaded (isgr 1) or the one before (isgr 2), in the order
- * they were started with the desktop after the last -- what CONTROL-TAB
- * and SHIFT-CONTROL-TAB do, which the AES takes before any program sees
- * them.  From the desktop, which is never put aside, it is the desktop's
- * way out: 1 means it should end now, and the shell resumes that
- * program.  0 when there is nothing to switch to. */
+ * next program loaded (isgr 1), the one before (isgr 2) -- in the order
+ * they were started, with the desktop after the last -- or the one cmd
+ * names (isgr 0: the eight characters appl_find takes).  CONTROL-TAB and
+ * SHIFT-CONTROL-TAB do the first two, and the Desk menu's list of
+ * programs the third; the AES takes both before any program sees them.
+ * From the desktop, which is never put aside, it is the desktop's way
+ * out: 1 means it should end now, and the shell resumes that program.  0
+ * when there is nothing to switch to. */
 #define SWM_G4SWITCH  72
 #define SD_ABORT      0         /* ...the one that started it, only */
 #define SD_PARTIAL    1         /* applications AP_TERM, accessories AC_CLOSE */

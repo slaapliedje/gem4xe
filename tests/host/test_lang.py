@@ -85,6 +85,12 @@ class Resource(unittest.TestCase):
                 self.assertNotIn("[", s, name)
                 if name in langrsc.BOOT_LABELS:
                     self.assertLessEqual(len(s), langrsc.BOOT_LABEL, name)
+            elif name.startswith("MENU_"):
+                # a Desk menu line (src/aes/shel.c, sh_prog): the check
+                # mark's two spaces, and a title's width
+                self.assertTrue(s.startswith("  "), name)
+                self.assertNotIn("[", s, name)
+                self.assertLessEqual(len(s), langrsc.MENU_COLS, name)
             elif name.startswith("EXIT_"):
                 self.assertNotIn("\x9b", s, name)
                 # EXIT_FARKB has the kilobytes put in front of it, up to
@@ -113,6 +119,8 @@ def german(name, text):
         return text + " (deutsch)"
     if name.startswith("EXIT_"):
         return ("gem4xe: " + text[len("gem4xe: "):] + " (de)")[:40]
+    if name.startswith("MENU_"):
+        return (text + " (deutsch)")[:langrsc.MENU_COLS]
     return ("[1][Diese Anwendung meldet einen Fehler|"
             + ("in der Ausfuehrung|Fehler Nummer #00" if name == "ERRTOS"
                else text[text.index("][") + 2:text.rindex("][")])
@@ -145,7 +153,7 @@ class Translated(unittest.TestCase):
         for name, s in self.STRINGS:
             if name.startswith("EXIT_"):
                 self.assertLessEqual(len(s), 40, name)
-            elif not name.startswith("BOOT_"):
+            elif not name.startswith(("BOOT_", "MENU_")):
                 self.assertRegex(s, r"^\[[0-3]\]\[.+\]\[.+\]$", name)
         s = dict(self.STRINGS)["ERRTOS"]
         self.assertEqual(s.count("#"), 1)

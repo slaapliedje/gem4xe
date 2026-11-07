@@ -1,7 +1,7 @@
 # A task switcher: XM/GEM's shape, on gem4xe
 
-Status: **steps 1-3 built, and step 4's key** (phases 126, 127, 129); the
-Desk menu's list is next.  The order agreed: AES 4's calls first (phases
+Status: **steps 1-4 built but closing one from the list** (phases 126,
+127, 129, 130); closing, and quitting with programs aside, are next.  The order agreed: AES 4's calls first (phases
 123-125: `AP_TERM`, AES 4.0, the window messages), then this, then MVN as
 a speed-up for it (`docs/multitasking.md`; phase 128).
 
@@ -139,10 +139,13 @@ Each says how it is tested; a check is believed only once it has failed.
    by their `menu_register` titles, as MultiTOS's does, and a key goes to
    the next -- **the key is BUILT, phase 129**: CONTROL-TAB, and
    SHIFT-CONTROL-TAB back, MultiTOS's Control-Alternate-Tab on a keyboard
-   with no Alternate; `shel_write(SWM_G4SWITCH)` for a program.  Still to
-   do: the list, and closing one from it with `AP_TERM`.  *Gate*: driven
-   with the pointer and the key, and a program that refuses `AP_TERM`
-   stays.
+   with no Alternate; `shel_write(SWM_G4SWITCH)` for a program.  **The
+   list is BUILT, phase 130** ([phase130.md](phase130.md)): MultiTOS's
+   AES-built Desk drop-down, while a program besides the desktop is
+   loaded.  Still to do: closing one from it with `AP_TERM` -- SHIFT held
+   while choosing, where MultiTOS holds CONTROL, which POKEY cannot report
+   on its own.  *Gate*: driven with the pointer and the key (test-m54,
+   test-m55), and a program that refuses `AP_TERM` stays.
 5. **When there is no room**: no far memory for a parked region, no
    record, a pool place taken -- refused with an alert that says what was
    short, never a half-switched machine.  *Gate*: each case forced.

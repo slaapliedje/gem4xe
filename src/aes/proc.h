@@ -201,6 +201,7 @@ void  proc_drop(PROC *p);
  * eight, so a caller that did not blank-pad finds nothing -- which is
  * what a real AES does and what the caller is told to expect. */
 void  proc_name(PROC *p, const char *path);
+void  proc_nameto(char *out, const char *path);  /* AP_NAMELEN of out */
 PROC *proc_byname(const char *name);
 
 /* Somebody else's turn, if anybody else can go.  ev_poll() calls it,

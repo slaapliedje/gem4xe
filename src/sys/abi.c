@@ -906,6 +906,13 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         } else if (int_in[0] == 8) {
             /* SWM_ENVIRON: cmd is the buffer a copy goes to, any bank */
             ret = sh_environ(int_in[1], int_in[2], (uint32_t)addr_in[0]);
+        } else if (int_in[0] == SWM_G4SWITCH) {
+            /* cmd names the program for isgr 0, and is read for nothing
+             * else: a NULL or a far one is as good as a near one */
+            uint16_t smark = pool_mark();
+            const char *cmd = addr_in[0] ? pool_str(addr_in[0]) : 0;
+            ret = sh_write(int_in[0], int_in[1], int_in[2], cmd, 0);
+            pool_release(smark);
         } else if (int_in[0] != 1) {
             ret = sh_write(int_in[0], int_in[1], int_in[2], 0, 0);
         } else {

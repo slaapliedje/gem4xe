@@ -26,6 +26,8 @@ WORD acc_closes;                /* AC_CLOSE received */
 WORD acc_g2;                    /* global[2] after appl_init: its own id
                                  * since phase 124 (test-m51 reads it) */
 WORD acc_wh = -1;               /* ACC_OPEN's window (test-m52, phase 125) */
+WORD acc_opens;                 /* AC_OPEN received (test-m55, phase 130)... */
+WORD acc_openid;                /* ...and its menu id, msg[4] */
 
 /* SD_ABORT is 0, which is also "nothing asked": the gate writes this. */
 #define ACC_ABORT 3
@@ -79,6 +81,9 @@ int main(void)
                 acc_shutmsg[i] = msg[i];
         } else if (msg[0] == AC_CLOSE) {
             acc_closes++;
+        } else if (msg[0] == AC_OPEN) {
+            acc_openid = msg[4];
+            acc_opens++;
         }
     }
 }

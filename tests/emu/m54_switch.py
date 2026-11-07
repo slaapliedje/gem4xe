@@ -155,8 +155,36 @@ def main():
                 raise SystemExit(1)
             poke16(b, P("r_id"), ident)
             check(w("r_fh") > 0, f"...its own file is open: handle {w('r_fh')}")
+            handles[ident] = w("r_vh")
+            check(handles[ident] > 0,
+                  f"...and a workstation of its own: handle {handles[ident]}")
 
         state = {}                      # id -> (count, the log's length)
+        handles = {}                    # id -> its workstation's handle
+        gone = set()                    # ids that have quit
+
+        def workstations(running):
+            """Every loaded program's workstation still open; the running
+            one's owned by process 0's context, which every program runs
+            in, and each one aside by a marker of its own -- not by process
+            0, where a resume would take it and an exit close it."""
+            pctx = b.peek16(syms["proc_tab"])   # p_ctx is a PROC's first
+            own = {}
+            for k, h in handles.items():
+                if k in gone:
+                    continue
+                o = b.peek16(syms["vwk_own"] + 2 * (h - 1))
+                own[k] = o
+                check(b.peek16(syms["vwk_hdl"] + 2 * (h - 1)) == h,
+                      f"...{NAMES[k]}'s workstation {h} is open")
+                if k == running:
+                    check(o == pctx, f"...and is the running one's, ${o:04X}")
+                else:
+                    check(o != pctx and o != 0,
+                          f"...{NAMES[k]}, aside, keeps its own under ${o:04X}")
+            aside = [o for k, o in own.items() if k != running]
+            check(len(set(aside)) == len(aside),
+                  f"...each program aside under a marker of its own: {own}")
         shots = []
 
         def leave():
@@ -203,6 +231,7 @@ def main():
                 check((WM_REDRAW, wh) in log and (WM_ONTOP, wh) in log,
                       f"...told WM_REDRAW and WM_ONTOP for its window: {log}")
                 check(b.peek16(syms["gl_wtop"]) == wh, "...its window is the top one")
+                workstations(want)
             r = ring()
             check(r == ring_want, f"the ring is {r}, as the circle says {ring_want}")
             shots.append(what)
@@ -297,6 +326,7 @@ def main():
         # -- each quits ------------------------------------------------------
         def quit_running(want_ring, what):
             runs = b.peek16(syms["sh_runs"])
+            gone.add(w("r_id"))
             poke16(b, P("app_quit"), 1)
             arrived(runs, "DESK", want_ring, what)
             check(b.peek16(syms["sh_lastret"]) == 0, "...main() returned 0")

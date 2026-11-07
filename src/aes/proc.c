@@ -110,6 +110,13 @@ PROC *proc_new(WORD *queue, WORD qmax)
  * two cannot then be called in the wrong order. */
 void proc_name(PROC *p, const char *path)
 {
+    proc_nameto(p->p_name, path);
+}
+
+/* ...into eight characters of the caller's: the shell's lookups by name
+ * (src/aes/shel.c), which must not rename process 0 on the way. */
+void proc_nameto(char *out, const char *path)
+{
     const char *name = path, *s;
     WORD i;
 
@@ -117,9 +124,9 @@ void proc_name(PROC *p, const char *path)
         if (*s == '\\' || *s == '/' || *s == ':')
             name = s + 1;
     for (i = 0; i < AP_NAMELEN && name[i] && name[i] != '.'; i++)
-        p->p_name[i] = name[i];
+        out[i] = name[i];
     for (; i < AP_NAMELEN; i++)
-        p->p_name[i] = ' ';
+        out[i] = ' ';
 }
 
 /* The donor's fpdnm(pname, 0), over the records in use -- and P_FREE is

@@ -630,6 +630,18 @@ extern OBJECT FAR *gl_mntree;       /* the menu bar showing, or 0 */
 #define SWM_G4SWITCH    72
 #define AP_G4SWITCH     0x4734  /* to the desktop: end, for SWM_G4SWITCH */
 void sh_hotkey(void);
+/* How many programs may be loaded besides the desktop (phase 129, the
+ * ring in src/aes/shel.c), and the Desk menu's list of them (phase 130):
+ * how many there are, the desktop counted -- 0 when it is the only one --
+ * the i-th one's text and ring entry (0: the one running), and one chosen.
+ * A title is MN_TITLELEN with its NUL; menu_register's for an application
+ * is mn_apptitle (src/aes/menu.c). */
+#define SH_PROGS        6
+#define MN_TITLELEN     24
+WORD     sh_nprogs(void);
+uint32_t sh_prog(WORD i, char *text);
+void     sh_request(uint32_t e);
+extern uint32_t mn_apptitle;
 /* Process 0's windows put aside and put back (src/aes/wind.c). */
 uint16_t wm_savesize(void);
 uint16_t wm_save(uint32_t at);
