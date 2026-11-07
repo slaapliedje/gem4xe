@@ -31,6 +31,8 @@
 #define APP_E_STACK  -9     /* it ran, and was stopped: its stack left its
                                own memory (src/sys/abi.c) -- the shell's
                                report, not a load status */
+#define APP_E_LOADED -10    /* not a load: the desktop's Quit with programs
+                             * aside that cannot be asked to end (phase 131) */
 #define APP_E_OLDSDK -8     /* a G4A of format 1 or 2, built for the old COP
                                signatures (src/sys/abi.h): rebuild it */
 

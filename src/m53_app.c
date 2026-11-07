@@ -3,7 +3,9 @@
  * names: it switches when the gate writes step 2, and keeps the id the
  * gate gives each copy.  And phase 130's (m55_desklist.py): step 4 puts
  * up EDIT.RSC's menu bar and names itself for the Desk menu, and every
- * MN_SELECTED it is sent is kept.
+ * MN_SELECTED it is sent is kept.  And phase 131's (m56_close.py): step
+ * 5 says it understands AP_TERM, which it answers by quitting -- or, with
+ * r_refuse set, by refusing with AP_TFAIL.
  *
  * One window, its own file kept open, and a count in its near data that
  * goes up every turn.  When the gate writes `step`, it calls
@@ -21,7 +23,10 @@ WORD r_ready;
 WORD step;                      /* the gate writes 1: put me aside;
                                  * 2: switch to the next; 3: an alert,
                                  * without wind_update (phase 129); 4: a
-                                 * menu bar and a title (phase 130) */
+                                 * menu bar and a title (phase 130); 5:
+                                 * NM_APTERM (phase 131) */
+WORD r_apterms;                 /* AP_TERM received */
+WORD r_refuse;                  /* the gate writes 1: answer it AP_TFAIL */
 WORD r_inalert;                 /* in that alert */
 WORD r_alerts;                  /* ...and how many have been answered */
 WORD r_id;                      /* the gate's name for this copy, shown
@@ -118,9 +123,22 @@ int main(void)
                 r_bar = 1;
             }
         }
+        if (step == 5) {
+            step = 0;
+            shel_write(SWM_NEWMSG, NM_APTERM, 0, 0, 0);
+        }
         if (!(what & MU_MESAG))
             continue;
         switch (msg[0]) {
+        case AP_TERM:
+            r_apterms++;
+            if (r_refuse) {
+                WORD f[8] = { AP_TFAIL, 53, 0, 0, 0, 0, 0, 0 };
+                shel_write(SWM_AESMSG, 0, 0, (const char *)f, 0);
+            } else {
+                app_quit = 1;
+            }
+            break;
         case MN_SELECTED:
             r_mnsel[0] = msg[3];
             r_mnsel[1] = msg[4];

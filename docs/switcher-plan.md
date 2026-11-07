@@ -1,7 +1,7 @@
 # A task switcher: XM/GEM's shape, on gem4xe
 
-Status: **steps 1-4 built but closing one from the list** (phases 126,
-127, 129, 130); closing, and quitting with programs aside, are next.  The order agreed: AES 4's calls first (phases
+Status: **steps 1-4 built** (phases 126, 127, 129, 130, 131); step 5,
+saying what was short, is next.  The order agreed: AES 4's calls first (phases
 123-125: `AP_TERM`, AES 4.0, the window messages), then this, then MVN as
 a speed-up for it (`docs/multitasking.md`; phase 128).
 
@@ -142,10 +142,12 @@ Each says how it is tested; a check is believed only once it has failed.
    with no Alternate; `shel_write(SWM_G4SWITCH)` for a program.  **The
    list is BUILT, phase 130** ([phase130.md](phase130.md)): MultiTOS's
    AES-built Desk drop-down, while a program besides the desktop is
-   loaded.  Still to do: closing one from it with `AP_TERM` -- SHIFT held
-   while choosing, where MultiTOS holds CONTROL, which POKEY cannot report
-   on its own.  *Gate*: driven with the pointer and the key (test-m54,
-   test-m55), and a program that refuses `AP_TERM` stays.
+   loaded.  **Closing one is BUILT, phase 131**
+   ([phase131.md](phase131.md)): SHIFT held while choosing, where
+   MultiTOS holds CONTROL, which POKEY cannot report on its own -- asked
+   with `AP_TERM`, never forced.  *Gate*: driven with the pointer and the
+   key (test-m54, test-m55, test-m56), and a program that refuses
+   `AP_TERM` stays.
 5. **When there is no room**: no far memory for a parked region, no
    record, a pool place taken -- refused with an alert that says what was
    short, never a half-switched machine.  *Gate*: each case forced.
@@ -162,7 +164,7 @@ Each says how it is tested; a check is believed only once it has failed.
    CONTROL-TAB, since this keyboard has no Alternate key (phase 129).
 3. **What the desktop is** while programs are suspended: the shell, always
    reachable, as XM's desktop was; quitting it with programs loaded asks
-   each to end first (phase 123's shutdown).
+   each to end first (phase 123's shutdown) -- BUILT, phase 131.
 4. **Accessories** keep running throughout, as now.
 
 ## What it will not do

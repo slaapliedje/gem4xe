@@ -143,6 +143,11 @@ STRINGS = [
     # string is a menu line: plain text, the two spaces in front where the
     # check mark goes, as in every title, and MENU_COLS at most
     ("MENU_DESKTOP", "  Desktop"),
+    # a program chosen with SHIFT in the Desk menu's list, to be asked to
+    # end, that never said it understands AP_TERM (src/aes/shel.c,
+    # sh_close); and the desktop's Quit with such a program aside
+    ("NOTERM", "[1][This program cannot be|asked to quit.  Quit it|from its own menu.][  OK  ]"),
+    ("QUITLOADED", "[1][Some programs that are|loaded cannot be asked to|quit.  Quit them from their|own menus first.][  OK  ]"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -201,6 +206,8 @@ TRANSLATIONS = {
         "APPSTACK": "[3][Ein Programm hatte zu|wenig Stapelspeicher und|wurde zum Schutz des|Systems beendet.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF langsam",
         "MENU_DESKTOP": "  Desktop",
+        "NOTERM": "[1][Dieses Programm kann nicht|zum Beenden aufgefordert|werden. Beenden Sie es über|sein eigenes Menü.][  OK  ]",
+        "QUITLOADED": "[1][Einige geladene Programme|können nicht zum Beenden|aufgefordert werden. Bitte|zuerst über ihre eigenen|Menüs beenden.][  OK  ]",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -253,6 +260,8 @@ TRANSLATIONS = {
         "APPSTACK": "[3][Un programme a manqué de|mémoire de pile et a été|arrêté pour protéger|le système.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF lent",
         "MENU_DESKTOP": "  Bureau",
+        "NOTERM": "[1][Ce programme ne peut pas|être invité à quitter.|Quittez-le depuis son|propre menu.][  OK  ]",
+        "QUITLOADED": "[1][Certains programmes chargés|ne peuvent pas être invités|à quitter. Quittez-les|d'abord depuis leurs menus.][  OK  ]",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -305,6 +314,8 @@ TRANSLATIONS = {
         "APPSTACK": "[3][Un programa se quedó sin|memoria de pila y se|detuvo para proteger|el sistema.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF lento",
         "MENU_DESKTOP": "  Escritorio",
+        "NOTERM": "[1][No se puede pedir a este|programa que termine.|Ciérrelo desde su propio|menú.][  OK  ]",
+        "QUITLOADED": "[1][Algunos programas cargados|no pueden recibir la orden|de terminar. Ciérrelos|antes desde sus menús.][  OK  ]",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -357,6 +368,8 @@ TRANSLATIONS = {
         "APPSTACK": "[3][Programowi zabrakło|pamięci stosu i został|zatrzymany, by chronić|system.][ OK ]",
         "BOOT_BANKSLOW": "$4000-$7FFF wolno",
         "MENU_DESKTOP": "  Pulpit",
+        "NOTERM": "[1][Tego programu nie można|poprosić o zakończenie.|Zamknij go z jego|własnego menu.][  OK  ]",
+        "QUITLOADED": "[1][Niektórych wczytanych|programów nie można|poprosić o zakończenie.|Najpierw zamknij je z ich|własnych menu.][  OK  ]",
     },
 }
 

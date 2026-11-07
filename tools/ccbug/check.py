@@ -63,6 +63,8 @@ CRASHES = {
     "b6": "B6 indexed direct-page array",
     "b11": "B11 near <-> far struct copy over 8 bytes",
     "b22": "B22 far array indexed by a byte cast, in a loop",
+    "b28": "B28 a hand-written offsetof, char pointers subtracted",
+    "b29": "B29 a member's address cast to an integer",
 }
 # file stem: note -- the shapes the compiler REFUSES, wrongly.  This is
 # B7's SECOND test, independent of the one in bugs.c: the file asks for

@@ -179,7 +179,9 @@ files and memory kept, and carries on when you come back to it; opening
 it again from the desktop does the same.  They go round in the order you
 started them, then the desktop.  Up to six besides the desktop.  While
 any is loaded the **Desk** menu lists them all, the one in front
-checked: choose one to go to it.
+checked: choose one to go to it, or hold **SHIFT** as you choose it to
+ask it to quit.  **Quit** on the desktop asks every program that is
+loaded to quit first.
 
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
@@ -272,8 +274,8 @@ Besides those:
 - **one program runs at a time.**  Several can be loaded -- CONTROL-TAB
   goes between them (above) -- but only the one in front runs, and the
   others wait where they stopped, as XM/GEM's did; there is no MultiTOS.
-  Quitting the desktop with programs put aside does not ask them to end
-  first yet.  The clipboard
+  A program that never said it can be asked to quit is not closed for
+  you: quit it from its own menu.  The clipboard
   (`scrp_read`, `scrp_write`) works between programs, which is what
   QED's cut and paste use.
 

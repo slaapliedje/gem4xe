@@ -641,6 +641,8 @@ void sh_hotkey(void);
 WORD     sh_nprogs(void);
 uint32_t sh_prog(WORD i, char *text);
 void     sh_request(uint32_t e);
+#define SH_SELF     2UL                 /* sh_request: the one running */
+#define SH_CLOSE    0x80000000UL        /* ...to be asked to end (SHIFT) */
 extern uint32_t mn_apptitle;
 /* Process 0's windows put aside and put back (src/aes/wind.c). */
 uint16_t wm_savesize(void);

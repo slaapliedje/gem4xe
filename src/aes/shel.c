@@ -218,6 +218,11 @@ void sh_pop(uint32_t save)
  * LoRAM had no two bytes to spare (test_memory's budget). */
 ZWIN static PROC *sh_shutpd;    /* who is shutting down, or 0 */
 ZWIN uint16_t sh_shutdone;      /* SHUT_COMPLETED sent, for the gate */
+/* Phase 131: the program about to be resumed is to find AP_TERM waiting
+ * (sh_term, sh_close); and the desktop's Quit is asking every program
+ * aside to end, one at a time (sh_closing, sh_quitround). */
+ZWIN static uint8_t sh_term;
+ZWIN uint8_t sh_closing;
 
 static WORD sh_shutdown(WORD how)
 {
@@ -300,6 +305,12 @@ WORD sh_aesmsg(const WORD *msg)
 {
     PROC *p = sh_shutpd;
 
+    if (msg[0] == AP_TFAIL && sh_closing && rlr == proc_app) {
+        sh_closing = 0;                 /* the desktop's Quit stops here: it
+                                         * stays in front (phase 131) */
+        if (!p)
+            return 1;
+    }
     if (msg[0] != AP_TFAIL || !p)
         return 0;
     sh_shutpd = 0;
@@ -414,8 +425,10 @@ ZWIN uint8_t sh_parked;                 /* it was put aside in this run */
  * shell's to put aside (its parent's frames are under it). */
 ZWIN static uint8_t sh_runown;
 /* The program the Desk menu chose (sh_request), until a poll can switch
- * to it: a ring entry, or 0. */
-ZWIN static uint32_t sh_want;
+ * to it: a ring entry, or SH_SELF for the one running, or 0; with
+ * SH_CLOSE when it was chosen with SHIFT, to be asked to end (phase
+ * 131). */
+ZWIN static uint32_t sh_want;          /* SH_SELF, SH_CLOSE: aes.h */
 
 /* The ring's count, its entries, one entry; and the ring written back. */
 static WORD ring_n(void)
@@ -617,6 +630,7 @@ static WORD sh_suspend(uint32_t to)
     vdi_retag_virtuals(&proc_app->p_ctx, SH_SUSPMARK(own));
     sh_left = rec;
     sh_parked = 1;
+    sh_closing = 0;                     /* a switch away ends a Quit's round */
     sh_goto(to);
     wait = ev_appwait;                  /* the switch key's: in an evnt_ */
     ctx_switch(ctx_root);               /* the shell; back here when it is
@@ -718,6 +732,64 @@ void sh_request(uint32_t e)
     sh_want = e;
 }
 
+/* CLOSING ONE (phase 131): asked, never forced -- phase 123's rule, since
+ * a program that never said it understands AP_TERM may be holding work
+ * it would lose.  Whether `e` said so (shel_write(SWM_NEWMSG,
+ * NM_APTERM)): the one running from its record, one aside from the copy
+ * of its record it was put aside with, and the desktop, which answers
+ * AP_TERM as Quit (src/desk/desktop.c), always. */
+static WORD sh_takes_apterm(uint32_t e)
+{
+    WORD m = 0;
+
+    if (e == SH_DESKREC)
+        return TRUE;
+    if (e == SH_SELF) {
+        m = proc_app->p_msgs;
+    } else {
+        /* p_msgs is the record's last word, and SU_PROC holds the record
+         * after its context, as far as sizeof(PROC) says in code -- the
+         * same reckoning sh_suspend copied it with (Calypsi stopped with
+         * an internal error on the pointer difference, ScaleIndex.hs) */
+        far_get((uint8_t *)&m, e + SU_PROC + (sizeof(PROC) - sizeof(CTX) - 2), 2);
+    }
+    if (m & NM_APTERM)
+        return TRUE;
+    return FALSE;
+}
+
+/* The program `e` asked to end: AP_TERM to the one running; one aside, or
+ * the desktop, switched to with AP_TERM waiting for it (sh_term, posted
+ * by sh_ldapp as it is resumed).  One that cannot be asked is told so,
+ * in an alert, and nothing else happens. */
+static void sh_close(uint32_t e)
+{
+    WORD k, name[AP_NAMELEN / 2];
+    uint8_t wait;
+
+    if (!sh_takes_apterm(e)) {
+        wait = ev_appwait;
+        ev_appwait = 0;                 /* no switch from inside the alert */
+        fm_alert(1, lang_str(LS_NOTERM));
+        ev_appwait = wait;
+        return;
+    }
+    if (e == SH_SELF) {
+        ap_sendmsg(proc_app, AP_TERM, 0, 0, AP_TERM, 0, 0);
+        return;
+    }
+    sh_term = 1;
+    if (!sh_deskrun) {
+        if (!sh_suspend(e))
+            sh_term = 0;
+        return;
+    }
+    for (k = 0; k < AP_NAMELEN / 2; k++)
+        name[k] = 0;
+    far_get((uint8_t *)name, e + SU_NAME, AP_NAMELEN);
+    ap_sendmsg(proc_app, AP_G4SWITCH, 0, name[0], name[1], name[2], name[3]);
+}
+
 /* THE SWITCH KEY (phase 129): CONTROL-TAB, and SHIFT-CONTROL-TAB back,
  * which the VDI takes before the key queue (src/vdi/vdi.c), seen at every
  * poll.  Process 0's polls only, and only while a program runs there
@@ -752,8 +824,12 @@ void sh_hotkey(void)
     } else {
         to = sh_want;
         sh_want = 0;
-        if (ring_index(to) < 0)
+        if ((to & ~SH_CLOSE) != SH_SELF && ring_index(to & ~SH_CLOSE) < 0)
             return;                     /* gone in between */
+        if (to & SH_CLOSE) {
+            sh_close(to & ~SH_CLOSE);
+            return;
+        }
     }
     if (!to)
         return;
@@ -1770,6 +1846,45 @@ static int16_t sh_unpark(APP *app, uint32_t rec)
     return APP_OK;
 }
 
+/* The desktop's Quit, with programs aside (phase 131): every one of them
+ * asked to end, one at a time -- or, if one cannot be asked, none of them
+ * and the desktop back, with the alert that says so (APP_E_LOADED). */
+static WORD sh_closenext(void);
+
+static WORD sh_quitround(void)
+{
+    WORD n = ring_n(), i;
+
+    for (i = 0; i < n; i++)
+        if (!sh_takes_apterm(ring_at(i))) {
+            sh_goto(SH_DESKREC);
+            return APP_E_LOADED;
+        }
+    sh_closing = 1;
+    sh_closenext();
+    return 0;
+}
+
+/* The next program aside, resumed with AP_TERM waiting -- or, when none
+ * is left, GEM ends, as the Quit asked. */
+static WORD sh_closenext(void)
+{
+    WORD n = ring_n(), i;
+    uint32_t e;
+
+    for (i = 0; i < n; i++) {
+        e = ring_at(i);
+        if (e != SH_DESKREC) {
+            sh_term = 1;
+            sh_goto(e);
+            return 1;
+        }
+    }
+    sh_closing = 0;
+    sh_doexec = 4;
+    return 0;
+}
+
 WORD sh_lastret;                /* what the last one's main() returned */
 WORD sh_lastrc;                 /* the last load's status (APP_*) */
 
@@ -1782,7 +1897,7 @@ static WORD sh_ldapp(void)
 {
     APP app;
     char cmd[SH_CMDLEN];
-    WORD st, was = sh_next, k = -1;
+    WORD st, was = sh_next, k = -1, quit = 0;
     uint8_t stops;
     uint32_t resume = 0;
 
@@ -1870,6 +1985,11 @@ static WORD sh_ldapp(void)
         proc_app->p_msgs = 0;   /* registers for itself, or does not */
     sh_deskrun = (was == SH_DESKTOP);
     sh_runown = (uint8_t)app.owner;
+    if (sh_term) {                  /* resumed to be asked to end (sh_close,
+                                     * sh_closenext): the message waits */
+        sh_term = 0;
+        ap_sendmsg(proc_app, AP_TERM, 0, 0, AP_TERM, 0, 0);
+    }
     sh_runs++;
     sh_doexec = -1;                 /* what the program asks for */
     stops = gem_stack_stops;
@@ -1902,6 +2022,14 @@ static WORD sh_ldapp(void)
     mn_cleanup();
     sh_appgone();               /* SHUT_COMPLETED, if one waited on it */
     proc_drain(ACC_ROUNDS);
+    /* THE DESKTOP'S QUIT WITH PROGRAMS ASIDE (phase 131): not the end of
+     * GEM until each of them has been asked and has gone -- and the
+     * desktop kept dormant meanwhile, since sh_goto asks for a program.
+     * And a program that ended during that round: the next one. */
+    if (was == SH_DESKTOP && sh_doexec == -1 && ring_n())
+        quit = sh_quitround();
+    else if (was != SH_DESKTOP && sh_closing)
+        sh_closenext();
     /* The default desktop, ending to run a program it will come back
      * from: kept, dormant (sh_revive above).  Anything else is freed. */
     if (was == SH_DESKTOP && sh_doexec == 1 && !strcmp(cmd, SH_DESKNAME)
@@ -1917,7 +2045,9 @@ static WORD sh_ldapp(void)
         sh_doexec = 4;
     /* stopped for its stack (src/sys/abi.c): the loop says so, on the
      * bare desk, before whatever runs next */
-    return (gem_stack_stops != stops) ? APP_E_STACK : 0;
+    if (gem_stack_stops != stops)
+        return APP_E_STACK;
+    return quit;
 }
 
 /* The donor's sh_main: until a shutdown, reset the windows and the menu,
@@ -2009,6 +2139,7 @@ WORD sh_main(void)
             fm_alert(1, rc == APP_E_FILE   ? lang_str(LS_APPNOTFOUND)
                       : rc == APP_E_OLDSDK ? lang_str(LS_APPOLDSDK)
                       : rc == APP_E_STACK  ? lang_str(LS_APPSTACK)
+                      : rc == APP_E_LOADED ? lang_str(LS_QUITLOADED)
                       :                      lang_str(LS_APPNOTLOAD));
         /* ...and before the first desktop, an accessory that was found
          * and not loaded: past the six slots, or no room in the pool.

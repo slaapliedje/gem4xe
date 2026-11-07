@@ -77,6 +77,8 @@ an optimiser fault, and saying which saves a vendor a bisect.
 | B19 | yes | yes | yes | the same instruction in both data models; a defect only where the symbol is far |
 | B26 | yes | yes | yes | small and large data models alike; the pointer is declared `__far` |
 | B27 | yes | yes | yes | a type rule, so every level: the arms' far pointers differ only in `const` or `volatile` |
+| B28 | yes | yes | yes | internal error, both data models |
+| B29 | yes | yes | yes | internal error, both data models |
 
 `--no-inline` is a useful second axis: it clears B3 and B10, which is
 expected, and it must NOT clear anything else.  It was `--no-inline` that
@@ -1456,3 +1458,35 @@ above, the three that break and three that do not, and it found the
 doscmd.c original when the line was put back.  `make qscan` runs it
 (and `make test`): 105 files, none but that one, 2026-11-03.
 
+## B28 — a hand-written offsetof
+
+    return (uint16_t)((char *)&v.m - (char *)&v);
+
+    internal error: Translator/Compiler/IL/ScaleIndex.hs:74:11-64:
+    Irrefutable pattern failed for pattern Just ptoqt
+
+Every `-O` level and both data models, through a pointer to the struct
+or the struct itself.  It is a crash, so it cannot ship: `b28.c` is
+compiled on its own and `check-cc` reads the outcome from the compiler.
+
+## B29 — a member's address cast to an integer
+
+    return (uint16_t)&p->m;
+
+    internal error: Translator/Compiler/IL/Evaluate.hs:370:11-54:
+    Irrefutable pattern failed for pattern (trail, LoadConst _ e)
+
+Every `-O` level and both data models, to a 16- or a 32-bit integer.
+`return &p->m;` compiles: it is the cast to a number.  `b29.c`, as B28.
+`offsetof` from the vendor's `<stddef.h>`, `((size_t)&((t*)0)->d)`,
+compiles: its base is the constant 0, and it is the real address as a
+base that both crashes need.
+
+FOUND BY, both: phase 131, reading the `p_msgs` of a process record from
+the copy a program put aside keeps in far memory (`src/aes/shel.c`,
+`sh_takes_apterm`).  The field's offset was first written as B28's
+difference, then as B29's numbers; both stopped the compiler.  The
+shape the source uses instead: sizeof arithmetic, since `p_msgs` is the
+record's last word -- `sizeof(PROC) - sizeof(CTX) - 2` in code, the same
+reckoning the record was copied with (and in code, not in a constant
+expression, which is B7's other number).

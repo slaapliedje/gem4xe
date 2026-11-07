@@ -230,7 +230,9 @@ static WORD menu_down(OBJECT FAR *tree, OBJECT FAR *it, WORD ititle)
  * program's MN_SELECTED on its own About item and an accessory the
  * AC_OPEN its slot gets, both handed to hctl_rect as if chosen from the
  * resource's box; a program is a switch (sh_request), and the one in
- * front nothing. */
+ * front nothing.  With SHIFT held, a program -- the one in front too -- is
+ * asked to end instead (phase 131): MultiTOS holds CONTROL, which POKEY
+ * reports only with another key, so a CONTROL-click cannot be seen here. */
 #define DT_MAX      (3 + MAX_ACCS + 1 + SH_PROGS + 1)
 #define DT_ACTS     ((uint32_t)DT_MAX * sizeof(OBJECT))
 #define DT_TEXT     (DT_ACTS + 4UL * DT_MAX)
@@ -336,8 +338,14 @@ static WORD dt_chosen(OBJECT FAR *tree, OBJECT FAR *d, WORD title,
         *pitem = (WORD)(gl_dafirst + (WORD)(act & 0xFF));
         return TRUE;
     }
-    if (act != DT_SELF && act)
+    if (gsx_kstate() & 3) {             /* SHIFT: close it */
+        if (act == DT_SELF)
+            sh_request(SH_SELF | SH_CLOSE);
+        else if (act)
+            sh_request(act | SH_CLOSE);
+    } else if (act != DT_SELF && act) {
         sh_request(act);
+    }
     do_chg(tree, title, SELECTED, FALSE, TRUE, TRUE);
     return FALSE;
 }
