@@ -400,11 +400,18 @@ static uint16_t purge_level(uint16_t level)
     return n;
 }
 
+/* While far_keep1 is set, only level 3 is purged.  What the shell puts a
+ * program aside in must not cost what the desktop it is about to bring
+ * back needs (src/aes/shel.c, phase 132): its dormant image and file at
+ * level 1, and the AES's copies of its resource files at level 2.  With
+ * the program's own memory still held, either could not be read again. */
+ZWIN uint8_t far_keep1;
+
 /* The next level down that had anything to purge, purged: 1 if a request
  * is worth trying again.  *level starts at 4. */
 static uint16_t purge_next(uint16_t *level)
 {
-    while (*level > 1) {
+    while (*level > (uint16_t)(far_keep1 ? 3 : 1)) {
         (*level)--;
         if (purge_level(*level))
             return 1;

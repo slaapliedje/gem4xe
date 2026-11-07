@@ -39,6 +39,7 @@ from m14_sparta import screen                 # noqa: E402
 from m17_desktop import header                # noqa: E402
 from m7_form import CLICK                     # noqa: E402
 from demo_aes import path                     # noqa: E402
+from langrsc import STRINGS                   # noqa: E402
 
 BUILD = os.path.join(ROOT, "build")
 OUT = os.path.join(BUILD, "shots", "m56")
@@ -189,6 +190,13 @@ def main():
                 b.key_raw("F4", False, shift=True)
             b.frames(20)
 
+        def alert_says(name):
+            """The alert up is LANG.RSC's `name` (lang_str's one buffer,
+            src/aes/lang.c), not merely an alert."""
+            got = bytes(b.memdump(syms["lang_buf"], 132)).split(b"\0")[0]
+            want = dict(STRINGS)[name].encode("latin-1")
+            return check(got == want, f"...and it is {name}: {got[:40]!r}...")
+
         def in_alert():
             """Process 0 in sh_close's alert: ev_appwait is put down for
             it, and is up whenever it waits in an evnt_ call of its own."""
@@ -218,6 +226,7 @@ def main():
         b.frames(60)
         check(in_alert() and desk() and runs() == n, "the alert is up, and "
                                                      "nothing switched")
+        alert_says("NOTERM")
         b.screenshot(os.path.join(OUT, "2-noterm.png"))
         b.key("RETURN")
         b.frames(150)
@@ -233,6 +242,7 @@ def main():
         b.frames(100)
         check(not desk() and runs() == n, "...and the alert is up on the bare "
                                           "desk, GEM still running")
+        alert_says("QUITLOADED")
         b.screenshot(os.path.join(OUT, "3-quitloaded.png"))
         b.key("RETURN")
         check(until(lambda: runs() > n) and settle_on(desk),

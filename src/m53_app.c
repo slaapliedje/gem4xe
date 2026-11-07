@@ -5,7 +5,10 @@
  * up EDIT.RSC's menu bar and names itself for the Desk menu, and every
  * MN_SELECTED it is sent is kept.  And phase 131's (m56_close.py): step
  * 5 says it understands AP_TERM, which it answers by quitting -- or, with
- * r_refuse set, by refusing with AP_TFAIL.
+ * r_refuse set, by refusing with AP_TFAIL.  And phase 132's (m57_short.py):
+ * step 6 takes all the FREE far memory, leaving the dormant desktop; step
+ * 8 makes the heap purge that too and takes what it left; step 7 gives
+ * back 12 KB -- room to put it aside, none for the desktop.
  *
  * One window, its own file kept open, and a count in its near data that
  * goes up every turn.  When the gate writes `step`, it calls
@@ -26,6 +29,8 @@ WORD step;                      /* the gate writes 1: put me aside;
                                  * menu bar and a title (phase 130); 5:
                                  * NM_APTERM (phase 131) */
 WORD r_apterms;                 /* AP_TERM received */
+WORD r_filled;                  /* step 6: blocks taken */
+LONG r_lastp, r_lastn;          /* ...the last one, and its size */
 WORD r_refuse;                  /* the gate writes 1: answer it AP_TFAIL */
 WORD r_inalert;                 /* in that alert */
 WORD r_alerts;                  /* ...and how many have been answered */
@@ -126,6 +131,33 @@ int main(void)
         if (step == 5) {
             step = 0;
             shel_write(SWM_NEWMSG, NM_APTERM, 0, 0, 0);
+        }
+        if (step == 6 || step == 8) {   /* a bank's worth at a time */
+            LONG n, p;
+
+            /* Malloc(-1) answers the largest FREE block and purges nothing,
+             * so step 6 leaves the dormant desktop where it is; step 8 first
+             * asks for more than anything free, which makes the heap purge
+             * it, then takes what that left. */
+            if (step == 8 && Malloc(32768L))
+                r_filled++;
+            step = 0;
+            for (;;) {
+                n = Malloc(-1L);
+                if (n < 1024)
+                    break;
+                p = Malloc(n);
+                if (!p)
+                    break;
+                r_lastp = p;
+                r_lastn = n;
+                r_filled++;
+            }
+        }
+        if (step == 7 && r_lastp && r_lastn > 12288) {
+            step = 0;
+            Mfree((void FAR *)r_lastp);
+            r_lastp = Malloc(r_lastn - 12288);
         }
         if (!(what & MU_MESAG))
             continue;

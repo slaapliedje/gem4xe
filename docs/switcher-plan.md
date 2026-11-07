@@ -1,9 +1,10 @@
 # A task switcher: XM/GEM's shape, on gem4xe
 
-Status: **steps 1-4 built** (phases 126, 127, 129, 130, 131); step 5,
-saying what was short, is next.  The order agreed: AES 4's calls first (phases
-123-125: `AP_TERM`, AES 4.0, the window messages), then this, then MVN as
-a speed-up for it (`docs/multitasking.md`; phase 128).
+Status: **built**: steps 1-5 in phases 126, 127 and 129-132, step 6 in
+phase 128.  The order agreed: AES 4's calls first (phases 123-125:
+`AP_TERM`, AES 4.0, the window messages), then this, then MVN as a
+speed-up for it (`docs/multitasking.md`; phase 128).  Still the
+project's: how many programs (decision 1).
 
 ## What it is
 
@@ -148,11 +149,14 @@ Each says how it is tested; a check is believed only once it has failed.
    with `AP_TERM`, never forced.  *Gate*: driven with the pointer and the
    key (test-m54, test-m55, test-m56), and a program that refuses
    `AP_TERM` stays.
-5. **When there is no room**: no far memory for a parked region, no
-   record, a pool place taken -- refused with an alert that says what was
-   short, never a half-switched machine.  *Gate*: each case forced.
-6. **MVN for the copies**, behind the stress gate the MVN work needs
-   (`mvn-far-copy-crash`), measured against the byte loops.
+5. **When there is no room** -- BUILT, phase 132
+   ([phase132.md](phase132.md)): a seventh program, no far memory for a
+   record (taken without purging the dormant desktop), a pool place taken
+   on the way back, no memory to load the desktop again -- each refused
+   with an alert that says what was short, never a half-switched machine.
+   *Gate* (test-m57): each case forced, the alert's text read back.
+6. **MVN for the copies** -- BUILT, phase 128 ([phase128.md](phase128.md)):
+   behind the stress gate the MVN work needed (`mvn-far-copy-crash`).
 
 ## Decisions for the project
 

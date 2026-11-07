@@ -223,6 +223,9 @@ ZWIN uint16_t sh_shutdone;      /* SHUT_COMPLETED sent, for the gate */
  * aside to end, one at a time (sh_closing, sh_quitround). */
 ZWIN static uint8_t sh_term;
 ZWIN uint8_t sh_closing;
+/* Phase 132: the desktop could not be loaded with programs aside, and one
+ * of them was resumed in its place -- once; a second failure ends GEM. */
+ZWIN static uint8_t sh_nodesk;
 
 static WORD sh_shutdown(WORD how)
 {
@@ -569,7 +572,10 @@ static uint32_t ring_pick(WORD how)
 }
 
 /* Put the running program aside, with the ring's entry `to` to run in
- * its place. */
+ * its place: 1 once it is resumed, 0 refused, -1 no room for its record
+ * (phase 132) -- which is far memory without purging the dormant desktop
+ * or its resource files (far_keep1), since the program's memory stays held
+ * while it is aside and they could not then be read again. */
 static WORD sh_suspend(uint32_t to)
 {
     uint8_t own = (uint8_t)proc_app->p_ctx.owner;
@@ -587,16 +593,18 @@ static WORD sh_suspend(uint32_t to)
         size += 6 + len;
     far_owner = 0;                      /* the system's: see above */
     far_tag = 0;
+    far_keep1 = 1;                      /* not at the dormant desktop's cost */
     rec = far_alloc_top(size);
     park = 0;
     if (rec)
         park = far_alloc(CTX_MAX);
+    far_keep1 = 0;
     far_owner = keep;
     far_tag = keept;
     if (!park) {
         if (rec)
             far_free(rec);
-        return 0;
+        return -1;                      /* no room: phase 132 says so */
     }
     far_put(rec + SU_PARK, (const uint8_t *)&park, 4);
     far_put(rec + SU_NAME, (const uint8_t *)proc_app->p_name, AP_NAMELEN);
@@ -661,7 +669,7 @@ static WORD sh_switch(WORD how, const char *cmd)
     if (!to)
         return 0;
     if (!sh_deskrun)
-        return sh_suspend(to);
+        return (WORD)(sh_suspend(to) == 1);
     sh_goto(to);
     return 1;
 }
@@ -762,16 +770,23 @@ static WORD sh_takes_apterm(uint32_t e)
  * the desktop, switched to with AP_TERM waiting for it (sh_term, posted
  * by sh_ldapp as it is resumed).  One that cannot be asked is told so,
  * in an alert, and nothing else happens. */
+/* An alert put up from a poll, in whatever process 0 is running: no
+ * switch from inside it, so ev_appwait is put down for its length. */
+static void sh_tell(WORD ls)
+{
+    uint8_t wait = ev_appwait;
+
+    ev_appwait = 0;
+    fm_alert(1, lang_str(ls));
+    ev_appwait = wait;
+}
+
 static void sh_close(uint32_t e)
 {
     WORD k, name[AP_NAMELEN / 2];
-    uint8_t wait;
 
     if (!sh_takes_apterm(e)) {
-        wait = ev_appwait;
-        ev_appwait = 0;                 /* no switch from inside the alert */
-        fm_alert(1, lang_str(LS_NOTERM));
-        ev_appwait = wait;
+        sh_tell(LS_NOTERM);
         return;
     }
     if (e == SH_SELF) {
@@ -780,8 +795,11 @@ static void sh_close(uint32_t e)
     }
     sh_term = 1;
     if (!sh_deskrun) {
-        if (!sh_suspend(e))
+        k = sh_suspend(e);
+        if (k != 1)
             sh_term = 0;
+        if (k < 0)
+            sh_tell(LS_NOASIDE);
         return;
     }
     for (k = 0; k < AP_NAMELEN / 2; k++)
@@ -834,7 +852,8 @@ void sh_hotkey(void)
     if (!to)
         return;
     if (!sh_deskrun) {
-        sh_suspend(to);
+        if (sh_suspend(to) < 0)
+            sh_tell(LS_NOASIDE);        /* no room to keep it: phase 132 */
         return;
     }
     if (how) {
@@ -874,7 +893,7 @@ WORD sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd,
         rlr->p_msgs = isgem;
         break;
     case SWM_G4SUSPEND:                     /* gem4xe's: above */
-        return sh_suspend(SH_DESKREC);
+        return (WORD)(sh_suspend(SH_DESKREC) == 1);
     case SWM_G4SWITCH:
         return sh_switch(isgem, pcmd);
     default:
@@ -1885,6 +1904,35 @@ static WORD sh_closenext(void)
     return 0;
 }
 
+/* THE DESKTOP COULD NOT BE LOADED, and programs are aside (phase 132):
+ * not the end of GEM, which would leave them as they are, but one of them
+ * resumed in its place, with the alert that says why.  The one just put
+ * aside joins the ring first -- the desktop's ring_turn never ran -- and
+ * is the one chosen; otherwise the ring's first program.  Once: if that
+ * fails too, the next failure of the desktop ends GEM (sh_nodesk). */
+static WORD sh_nodeskgo(void)
+{
+    WORD n, i;
+    uint32_t e = sh_left;
+
+    sh_nodesk = 1;
+    if (e && e != SH_DESKREC) {
+        ring_turn(-1);                  /* sh_left into the ring, in front */
+    } else {
+        e = 0;
+        n = ring_n();
+        for (i = 0; i < n && !e; i++)
+            if (ring_at(i) != SH_DESKREC)
+                e = ring_at(i);
+        if (!e) {
+            sh_doexec = 4;
+            return APP_E_NODESK;
+        }
+    }
+    sh_goto(e);
+    return APP_E_NODESK;
+}
+
 WORD sh_lastret;                /* what the last one's main() returned */
 WORD sh_lastrc;                 /* the last load's status (APP_*) */
 
@@ -1942,24 +1990,34 @@ static WORD sh_ldapp(void)
         sh_isgem = 1;
         k = ring_find(cmd);
         if (k >= 0) {
-            /* started again: resumed where it was put aside */
+            /* started again: resumed where it was put aside -- or not, if
+             * its bank-$00 memory has been taken meanwhile (by a module
+             * or a resource loaded at run time), and it stays aside */
             resume = ring_at(k);
             st = sh_unpark(&app, resume);
-            if (st != APP_OK)
+            if (st != APP_OK) {
                 resume = 0;
+                st = APP_E_TAKEN;
+            }
         } else if (sh_left && ring_n() >= SH_PROGS) {
-            st = APP_E_POOL;            /* SH_PROGS loaded already */
+            st = APP_E_MANY;            /* SH_PROGS loaded already */
         } else {
             st = app_load_file(cmd, &app);
         }
     }
     sh_lastrc = st;
     if (st != APP_OK) {
-        /* what ran last is still in sh_left, for whatever runs instead */
+        /* what ran last is still in sh_left, for whatever runs instead;
+         * nothing is to be asked to end, nor a Quit's round go on */
+        sh_term = 0;
+        sh_closing = 0;
+        if (was == SH_DESKTOP && ring_n() && !sh_nodesk)
+            return sh_nodeskgo();
         if (was == SH_DESKTOP)      /* nothing to return to: the loop ends */
             sh_doexec = 4;
         return st;
     }
+    sh_nodesk = 0;
     /* The ring turns: this one out, the last one in (ring_turn).  The
      * desktop's entry is wherever the turns have put it -- and absent at
      * boot, or when the desktop runs again because what it started did
@@ -2140,6 +2198,9 @@ WORD sh_main(void)
                       : rc == APP_E_OLDSDK ? lang_str(LS_APPOLDSDK)
                       : rc == APP_E_STACK  ? lang_str(LS_APPSTACK)
                       : rc == APP_E_LOADED ? lang_str(LS_QUITLOADED)
+                      : rc == APP_E_MANY   ? lang_str(LS_TOOMANY)
+                      : rc == APP_E_TAKEN  ? lang_str(LS_NORESUME)
+                      : rc == APP_E_NODESK ? lang_str(LS_NODESK)
                       :                      lang_str(LS_APPNOTLOAD));
         /* ...and before the first desktop, an accessory that was found
          * and not loaded: past the six slots, or no room in the pool.

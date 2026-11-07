@@ -28,6 +28,7 @@ WORD acc_g2;                    /* global[2] after appl_init: its own id
 WORD acc_wh = -1;               /* ACC_OPEN's window (test-m52, phase 125) */
 WORD acc_opens;                 /* AC_OPEN received (test-m55, phase 130)... */
 WORD acc_openid;                /* ...and its menu id, msg[4] */
+WORD acc_rsc;                   /* ACC_RSRC's rsrc_load answered */
 
 /* SD_ABORT is 0, which is also "nothing asked": the gate writes this. */
 #define ACC_ABORT 3
@@ -36,6 +37,10 @@ WORD acc_openid;                /* ...and its menu id, msg[4] */
  * back to the top without the program doing it, which is WM_ONTOP. */
 #define ACC_OPEN  10
 #define ACC_CLOSE 11
+/* ...and test-m57's (phase 132): a resource loaded at run time, into the
+ * pool -- where a program put aside was -- and freed again. */
+#define ACC_RSRC  12
+#define ACC_UNRSRC 13
 
 static char acc_title[] = "  Shutdown gate";
 
@@ -57,6 +62,16 @@ int main(void)
                 acc_wh = wind_create(NAME, 300, 120, 200, 80);
                 if (acc_wh >= 0)
                     wind_open(acc_wh, 300, 120, 200, 80);
+                acc_asked++;
+            } else if (acc_req == ACC_RSRC) {
+                acc_req = 0;
+                acc_rsc = rsrc_load("M50.RSC");
+                acc_asked++;
+            } else if (acc_req == ACC_UNRSRC) {
+                acc_req = 0;
+                if (acc_rsc)
+                    rsrc_free();
+                acc_rsc = 0;
                 acc_asked++;
             } else if (acc_req == ACC_CLOSE && acc_wh >= 0) {
                 acc_req = 0;

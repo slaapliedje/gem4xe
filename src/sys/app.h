@@ -33,6 +33,10 @@
                                report, not a load status */
 #define APP_E_LOADED -10    /* not a load: the desktop's Quit with programs
                              * aside that cannot be asked to end (phase 131) */
+#define APP_E_MANY   -11    /* SH_PROGS programs loaded already (phase 132) */
+#define APP_E_TAKEN  -12    /* a program aside whose bank-$00 memory is taken */
+#define APP_E_NODESK -13    /* the desktop could not be loaded; a program aside
+                             * goes on instead (src/aes/shel.c) */
 #define APP_E_OLDSDK -8     /* a G4A of format 1 or 2, built for the old COP
                                signatures (src/sys/abi.h): rebuild it */
 

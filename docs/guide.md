@@ -303,7 +303,8 @@ started them, then the desktop.  Up to six besides the desktop.  While
 any is loaded the **Desk** menu lists them all, the one in front
 checked: choose one to go to it, or hold **SHIFT** as you choose it to
 ask it to quit.  **Quit** on the desktop asks every program that is
-loaded to quit first.
+loaded to quit first.  When there is not the memory to switch, an alert
+says what was short, and nothing is left half done.
 
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.

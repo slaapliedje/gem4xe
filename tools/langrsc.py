@@ -148,6 +148,13 @@ STRINGS = [
     # sh_close); and the desktop's Quit with such a program aside
     ("NOTERM", "[1][This program cannot be|asked to quit.  Quit it|from its own menu.][  OK  ]"),
     ("QUITLOADED", "[1][Some programs that are|loaded cannot be asked to|quit.  Quit them from their|own menus first.][  OK  ]"),
+    # what was short (phase 132, src/aes/shel.c): a seventh program, no
+    # far memory to put one aside, its bank-$00 memory taken while it was
+    # aside, no memory to bring the desktop back while programs are
+    ("TOOMANY", "[1][Too many programs are|loaded.  Quit one to start|another.][  OK  ]"),
+    ("NOASIDE", "[1][There is not enough memory|to put this program aside.][  OK  ]"),
+    ("NORESUME", "[1][This program cannot come|back yet: the memory it|was using is in use.][  OK  ]"),
+    ("NODESK", "[1][There is not enough memory|to bring the desktop back.|A program goes on instead.][  OK  ]"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -208,6 +215,10 @@ TRANSLATIONS = {
         "MENU_DESKTOP": "  Desktop",
         "NOTERM": "[1][Dieses Programm kann nicht|zum Beenden aufgefordert|werden. Beenden Sie es über|sein eigenes Menü.][  OK  ]",
         "QUITLOADED": "[1][Einige geladene Programme|können nicht zum Beenden|aufgefordert werden. Bitte|zuerst über ihre eigenen|Menüs beenden.][  OK  ]",
+        "TOOMANY": "[1][Es sind zu viele Programme|geladen. Beenden Sie eines,|um ein weiteres zu starten.][  OK  ]",
+        "NOASIDE": "[1][Nicht genug Speicher, um|dieses Programm|zurückzustellen.][  OK  ]",
+        "NORESUME": "[1][Dieses Programm kann noch|nicht zurückkehren: sein|Speicher wird benutzt.][  OK  ]",
+        "NODESK": "[1][Nicht genug Speicher für|den Desktop. Ein Programm|läuft stattdessen weiter.][  OK  ]",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -262,6 +273,10 @@ TRANSLATIONS = {
         "MENU_DESKTOP": "  Bureau",
         "NOTERM": "[1][Ce programme ne peut pas|être invité à quitter.|Quittez-le depuis son|propre menu.][  OK  ]",
         "QUITLOADED": "[1][Certains programmes chargés|ne peuvent pas être invités|à quitter. Quittez-les|d'abord depuis leurs menus.][  OK  ]",
+        "TOOMANY": "[1][Trop de programmes sont|chargés. Quittez-en un pour|en lancer un autre.][  OK  ]",
+        "NOASIDE": "[1][Pas assez de mémoire pour|mettre ce programme de côté.][  OK  ]",
+        "NORESUME": "[1][Ce programme ne peut pas|encore revenir : sa mémoire|est utilisée.][  OK  ]",
+        "NODESK": "[1][Pas assez de mémoire pour|rappeler le bureau. Un|programme continue à sa place.][  OK  ]",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -316,6 +331,10 @@ TRANSLATIONS = {
         "MENU_DESKTOP": "  Escritorio",
         "NOTERM": "[1][No se puede pedir a este|programa que termine.|Ciérrelo desde su propio|menú.][  OK  ]",
         "QUITLOADED": "[1][Algunos programas cargados|no pueden recibir la orden|de terminar. Ciérrelos|antes desde sus menús.][  OK  ]",
+        "TOOMANY": "[1][Hay demasiados programas|cargados. Cierre uno para|iniciar otro.][  OK  ]",
+        "NOASIDE": "[1][No hay memoria suficiente|para apartar este programa.][  OK  ]",
+        "NORESUME": "[1][Este programa aún no puede|volver: su memoria está|en uso.][  OK  ]",
+        "NODESK": "[1][No hay memoria suficiente|para volver al escritorio.|Sigue un programa en su lugar.][  OK  ]",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -370,6 +389,10 @@ TRANSLATIONS = {
         "MENU_DESKTOP": "  Pulpit",
         "NOTERM": "[1][Tego programu nie można|poprosić o zakończenie.|Zamknij go z jego|własnego menu.][  OK  ]",
         "QUITLOADED": "[1][Niektórych wczytanych|programów nie można|poprosić o zakończenie.|Najpierw zamknij je z ich|własnych menu.][  OK  ]",
+        "TOOMANY": "[1][Wczytano zbyt wiele|programów. Zamknij jeden,|aby uruchomić kolejny.][  OK  ]",
+        "NOASIDE": "[1][Za mało pamięci, aby|odłożyć ten program.][  OK  ]",
+        "NORESUME": "[1][Ten program nie może|jeszcze wrócić: jego|pamięć jest zajęta.][  OK  ]",
+        "NODESK": "[1][Za mało pamięci, aby|przywrócić pulpit. Zamiast|niego działa program.][  OK  ]",
     },
 }
 

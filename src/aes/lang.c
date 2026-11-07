@@ -168,16 +168,18 @@ WORD lang_loaded(void)
 
 const char *lang_str(WORD n)
 {
-    static char buf[LANG_MAXLEN + 1];
+    /* named for the gates, which read what an alert is showing out of it
+     * (tests/emu/m57_short.py): `buf` is another file's name too */
+    static char lang_buf[LANG_MAXLEN + 1];
     uint8_t off[4];
 
     if (n < 0 || n >= lang_n) {         /* a string this build does not have */
-        buf[0] = '\0';
-        return buf;
+        lang_buf[0] = '\0';
+        return lang_buf;
     }
     far_get(off, lang_base + lang_frstr + (uint32_t)((uint16_t)n << 2), 4);
-    far_strget(buf, lang_base + (((uint32_t)off[0] << 24) | ((uint32_t)off[1] << 16)
-                                 | ((uint32_t)off[2] << 8) | off[3]),
-               sizeof buf);
-    return buf;
+    far_strget(lang_buf, lang_base + (((uint32_t)off[0] << 24) | ((uint32_t)off[1] << 16)
+                                      | ((uint32_t)off[2] << 8) | off[3]),
+               sizeof lang_buf);
+    return lang_buf;
 }
