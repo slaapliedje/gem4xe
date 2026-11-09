@@ -1465,6 +1465,13 @@ static void w_topchanged(WORD oldtop, WORD bottomed)
 {
     WORD newtop = gl_wtop;
 
+    /* THE INPUT GOES WITH THE TOP WINDOW, to its owner (src/aes/event.c,
+     * in_mine): an accessory that tops its window takes the keys and
+     * the presses inside it, and the application takes them back when
+     * one of its own is topped -- or every window closes, which leaves
+     * the desk, the application's (phase 134). */
+    if (!w_quiet && oldtop != newtop)
+        proc_input = wm_owner(w_top());
     if (w_quiet || oldtop == newtop || oldtop == NIL || oldtop == DESKWH)
         return;
     if (!bottomed && w_linked(oldtop))

@@ -22,6 +22,22 @@
  * Its redraw paints its work area white through its own rectangle list,
  * with a one-object tree, so that what the gate photographs is a window
  * drawn by its owner and not whatever was under it.
+ *
+ *   ITEM 13, THE INPUT (phase 134).  While its window is open it waits
+ *   for a press and a key as well as a message, and counts them: a press
+ *   inside its window and a key typed while it is on top are its own;
+ *   once the desktop's window is on top, or the bare desk is pressed,
+ *   neither may reach it -- the desktop's, as the top window's owner.
+ *   WHILE ITS WINDOW IS BEHIND, it polls -- a timer of 0 ms, a GEM
+ *   program's way of polling -- so that it runs all the time it is not
+ *   the owner, which is the case the AES's rule is for: a process with
+ *   nothing to wake it never runs then, and could not take what is not
+ *   its own however input were handed out, which made the first version
+ *   of this check pass with the rule removed (and 20 ms gave it too few
+ *   turns to land on a key).  On top it waits quietly: polling all the
+ *   time slowed the machine until the desktop missed a double-click.
+ *   It knows it is behind from WM_UNTOPPED (phase 125), and on top again
+ *   because it tops itself.
  */
 #include "gem.h"
 
@@ -36,7 +52,11 @@ WORD acc_topped;                /* WM_TOPPED */
 WORD acc_moved;                 /* WM_MOVED */
 WORD acc_closed;                /* WM_CLOSED */
 WORD acc_foreign;               /* a WM_ message for a window not its own */
+WORD acc_buttons;               /* presses it was given (item 13) */
+WORD acc_keys;                  /* ...and keys */
+WORD acc_untopped;              /* WM_UNTOPPED: its window went behind */
 WORD acc_last[8];               /* the last message, word for word */
+static WORD acc_top;            /* its window is on top, it believes */
 
 static char acc_title[] = "  Window gate";
 
@@ -83,7 +103,27 @@ int main(void)
     acc_menu = menu_register(acc_id, acc_title);
 
     for (;;) {
-        evnt_mesag(msg);
+        if (acc_wh >= 0) {
+            /* a window open: its presses and keys too (item 13) */
+            WORD mx, my, mb, ks, kr, nc, ev;
+
+            ev = evnt_multi(MU_MESAG | MU_BUTTON | MU_KEYBD
+                            | (acc_top ? 0 : MU_TIMER),
+                            1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            msg, 0, 0, &mx, &my, &mb, &ks, &kr, &nc);
+            if (ev & MU_BUTTON) {
+                /* one press, however long it is held: a wait for "down"
+                 * is satisfied for as long as the button is, so a GEM
+                 * program waits for it to come up again */
+                acc_buttons++;
+                evnt_button(1, 1, 0, &mx, &my, &mb, &ks);
+            }
+            if (ev & MU_KEYBD)
+                acc_keys++;
+            if (!(ev & MU_MESAG))
+                continue;
+        } else
+            evnt_mesag(msg);
         for (i = 0; i < 8; i++)
             acc_last[i] = msg[i];
         switch (msg[0]) {
@@ -96,6 +136,7 @@ int main(void)
             acc_wh = wind_create(KIND, WX, WY, WW, WH);
             if (acc_wh >= 0)
                 wind_open(acc_wh, WX, WY, WW, WH);
+            acc_top = 1;
             break;
         case AC_CLOSE:
             /* the AES has destroyed it already (src/aes/menu.c) */
@@ -116,6 +157,7 @@ int main(void)
             } else if (msg[0] == WM_TOPPED) {
                 acc_topped++;
                 wind_set(msg[3], WF_TOP, 0, 0, 0, 0);
+                acc_top = 1;
             } else if (msg[0] == WM_MOVED) {
                 acc_moved++;
                 wind_set(msg[3], WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
@@ -124,6 +166,12 @@ int main(void)
                 wind_close(msg[3]);
                 wind_delete(msg[3]);
                 acc_wh = -1;
+            }
+            break;
+        case WM_UNTOPPED:
+            if (msg[3] == acc_wh && acc_wh >= 0) {
+                acc_untopped++;
+                acc_top = 0;
             }
             break;
         default:

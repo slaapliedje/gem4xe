@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """0.12's gate for items 11 and 12: the six accessory slots, and an
-accessory's own window.
+accessory's own window -- and, since phase 134, 13: its input.
 
 THE DISK (build/m45-boot.atr) is the product system with seven copies of
 the window gate accessory in \\GEM\\, A1.ACC to A7.ACC (src/m45_acc.c),
@@ -33,6 +33,16 @@ and no other accessory.
       And the desktop's window, which owns nothing of the accessory's,
       must stay open and be on top at the end.
 
+  13. THE INPUT (phase 134).  Before it is closed, with its window on
+      top: a press inside it and a key are given to it (it counts them);
+      then the desktop's window is clicked and comes to the top, and a
+      key typed then is NOT given to it, nor is a press on the bare desk
+      -- they are the desktop's, the top window's owner and the desk's.
+      Until phase 134 any process waiting took whatever came, and an
+      accessory opened from the Desk menu, always ready to run, took the
+      desktop's keys and clicks along with its own.  Then its title bar,
+      from behind, tops it again for the close box.
+
 Where to click is read off the window tree the AES keeps (gl_wtree): a
 window's object there is its whole frame, on the screen.
 """
@@ -63,7 +73,7 @@ SLOTS = 6                       # src/aes/proc.h MAX_ACCS
 COPIES = 7                      # on the disk
 WM_KEYS = ("acc_id", "acc_menu", "acc_opens", "acc_closes", "acc_wh",
            "acc_redraws", "acc_topped", "acc_moved", "acc_closed",
-           "acc_foreign")
+           "acc_foreign", "acc_buttons", "acc_keys", "acc_untopped")
 
 problems = []
 
@@ -266,6 +276,69 @@ def main():
               f"the window moved ({acc_frame} -> {moved})")
         shot("4-moved")
 
+        # ---- 13. the input -----------------------------------------------
+        def inside(p, r):
+            return r[0] <= p[0] < r[0] + r[2] and r[1] <= p[1] < r[1] + r[3]
+
+        mx, my, mw, mh = moved
+        t.click((mx + mw // 2, my + mh // 2))       # its work area
+        b.frames(30)
+        t.run([K("Z", ord("z")), F(30)])
+        t.settle()
+        s = got()
+        print(f"  a press and a key, on top: {s['acc_buttons']} press(es), "
+              f"{s['acc_keys']} key(s)")
+        check((s["acc_buttons"], s["acc_keys"]) == (1, 1),
+              f"with its window on top it was given the press and the key "
+              f"({s['acc_buttons']} and {s['acc_keys']}, 1 and 1 wanted)")
+        # the desktop's window, where the accessory's does not cover it
+        dx, dy, dw, dh = frame(dwh)
+        spot = next(((x, y) for y in range(dy + 24, dy + dh - 4, 8)
+                     for x in range(dx + 8, dx + dw - 8, 8)
+                     if not inside((x, y), moved)), None)
+        check(spot is not None, "some of the desktop's window shows")
+        if spot:
+            t.click(spot)
+            b.frames(60)
+            t.settle()
+        check(b.peek16(syms["gl_wtop"]) == dwh,
+              f"a click on the desktop's window topped it (gl_wtop "
+              f"{b.peek16(syms['gl_wtop'])})")
+        # several, since the accessory is given turns by its timer and
+        # one key might arrive on the desktop's turn by chance
+        t.run([K("Z", ord("z")), F(20)] * 6)
+        # ...and the bare desk: right of both windows, below the icons
+        bare = next(((x, y) for x in range(600, 300, -16)
+                     for y in range(200, 60, -16)
+                     if not inside((x, y), moved)
+                     and not inside((x, y), frame(dwh))), None)
+        check(bare is not None, "some bare desk shows")
+        if bare:
+            t.click(bare)
+            b.frames(30)
+        t.settle()
+        s = got()
+        print(f"  the desktop's window on top, a key, the bare desk at "
+              f"{bare}: {s['acc_buttons']} press(es), {s['acc_keys']} key(s)")
+        check(s["acc_keys"] == 1, f"a key typed with the desktop's window on "
+                                  f"top did not reach the accessory (its "
+                                  f"count is {s['acc_keys']}, 1 wanted)")
+        check(s["acc_buttons"] == 1, f"a press on the bare desk did not reach "
+                                     f"the accessory (its count is "
+                                     f"{s['acc_buttons']}, 1 wanted)")
+        shot("5-input")
+        # its title bar, from behind, for the close box
+        bar2 = next(((x, my + 4) for x in range(mx + 20, mx + mw - 8, 8)
+                     if not inside((x, my + 4), frame(dwh))), None)
+        check(bar2 is not None, "some of its title bar shows")
+        if bar2:
+            t.click(bar2)
+            b.frames(60)
+            t.settle()
+        check(b.peek16(syms["gl_wtop"]) == wh,
+              f"its title bar topped it again (gl_wtop "
+              f"{b.peek16(syms['gl_wtop'])})")
+
         # Closed by its close box, at the frame's top left.
         mx, my = moved[0], moved[1]
         t.click((mx + 4, my + 4))
@@ -282,7 +355,7 @@ def main():
         check(b.peek16(syms["gl_wtop"]) == dwh,
               f"the desktop's window {dwh} is on top at the end "
               f"(gl_wtop {b.peek16(syms['gl_wtop'])})")
-        shot("5-closed")
+        shot("6-closed")
         check(b.peek16(syms["gem_bad"]) == 0,
               f"{b.peek16(syms['gem_bad'])} call(s) refused")
     finally:

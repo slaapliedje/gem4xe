@@ -89,6 +89,18 @@ static WORD     ct_x, ct_y;     /* where that press was */
 /* TRUE when the application's waits may look at the input. */
 #define ct_mine()   (ct_inside || !ct_owns)
 
+/* ...and when THIS process's may: the input owner's, or anybody's while
+ * the control manager runs, since its waits are nested inside whichever
+ * process saw the press.  GEM gives the keys and the presses inside the
+ * top window to that window's owner (gl_mowner, geminput.c); here the
+ * owner is proc_input, which follows the top window (src/aes/wind.c,
+ * w_topchanged) and goes to the application when the bare desk is
+ * pressed (bchange).  Until phase 134 any process in a wait took
+ * whatever arrived, which was harmless while an accessory could only
+ * hold the screen with a dialog -- and is what stopped one having a
+ * window that takes clicks while the desktop goes on working. */
+#define in_mine()   (ct_inside || (!ct_owns && rlr == proc_input))
+
 /* ---- the message pipe (gemqueue.c) --------------------------------------
  * GEM gives each process a 256-byte queue of 16-byte messages, which the
  * window manager, the menu and appl_write post into and evnt_mesag /
@@ -253,8 +265,16 @@ static WORD ct_chkown(WORD mx, WORD my)
  * if this is what it asked for (post_button) -- and if it may see it. */
 static void bchange(WORD new, WORD clicks)
 {
+    PROC *to;
+
     if (!gl_ctmown && new == 1 && button == 0 && !ct_inside) {
-        ct_owns = (ct_chkown(xrat, yrat) < 0);
+        WORD own = ct_chkown(xrat, yrat);
+
+        ct_owns = (own < 0);
+        /* the bare desk is the application's: a press there takes the
+         * input back from an accessory whose window is on top */
+        if (own == 0)
+            proc_input = proc_app;
         if (ct_owns) {
             ct_click = TRUE;
             ct_x = xrat;
@@ -269,15 +289,20 @@ static void bchange(WORD new, WORD clicks)
     button = new;
     mclick = clicks;
 
-    if (bw_active && ct_mine() && downorup(new, bw_parm)) {
-        if (bw_want > 1)
+    /* THE OWNER'S WAITER, not the running process's.  This runs in
+     * whichever process's poll saw the transition -- one with a message
+     * to read, say -- and the press belongs to the input owner, who is
+     * always ready to run and finds it done when it next looks. */
+    to = ct_inside ? rlr : proc_input;
+    if (to->p_bwactive && ct_mine() && downorup(new, to->p_bwparm)) {
+        if (to->p_bwwant > 1)
             gl_bpend--;
-        if (clicks > bw_want)
-            bw_clicks = bw_want;
+        if (clicks > to->p_bwwant)
+            to->p_bwclicks = to->p_bwwant;
         else
-            bw_clicks = clicks;
-        bw_done = TRUE;
-        bw_active = FALSE;
+            to->p_bwclicks = clicks;
+        to->p_bwdone = TRUE;
+        to->p_bwactive = FALSE;
     }
 }
 
@@ -394,14 +419,16 @@ void get_ctrl(GRECT *pt)
  * posted to a waiter, in case that is what it was waiting for. */
 static void ct_release(void)
 {
+    PROC *to = proc_input;              /* the owner's waiter: see bchange */
+
     ct_owns = FALSE;
     ct_arrow_stop();
-    if (bw_active && downorup(button, bw_parm)) {
-        if (bw_want > 1)
+    if (to->p_bwactive && downorup(button, to->p_bwparm)) {
+        if (to->p_bwwant > 1)
             gl_bpend--;
-        bw_clicks = 1;
-        bw_done = TRUE;
-        bw_active = FALSE;
+        to->p_bwclicks = 1;
+        to->p_bwdone = TRUE;
+        to->p_bwactive = FALSE;
     }
 }
 
@@ -854,8 +881,8 @@ static WORD ev_wait(WORD flags, const MOBLK *pmo1, const MOBLK *pmo2,
     ev_poll();
 
     /* quick checks: anything already there?  The input ones only for the
-     * mouse's owner. */
-    if (ct_mine()) {
+     * input's owner (in_mine). */
+    if (in_mine()) {
         if ((flags & MU_KEYBD) && ev_getkey(&k)) {
             prets[4] = k;
             what |= MU_KEYBD;
@@ -909,7 +936,7 @@ static WORD ev_wait(WORD flags, const MOBLK *pmo1, const MOBLK *pmo2,
             proc_input = proc_app;
         for (;;) {
             ev_poll();
-            if (ct_mine()) {
+            if (in_mine()) {
                 if ((flags & MU_KEYBD) && ev_getkey(&k)) {
                     prets[4] = k;
                     which |= MU_KEYBD;
@@ -992,13 +1019,13 @@ WORD ev_block(WORD code, uint32_t lvalue)
     case MU_KEYBD:
         ev_poll();
         for (;;) {
-            if (ct_mine() && ev_getkey(&r))
+            if (in_mine() && ev_getkey(&r))
                 return r;
             ev_poll();
         }
     case MU_BUTTON:
         ev_poll();
-        if (ct_mine() && downorup(button, lvalue))
+        if (in_mine() && downorup(button, lvalue))
             return 1;
         bw_register(lvalue);
         do
@@ -1030,7 +1057,7 @@ WORD ev_keybd(void)
 WORD ev_keyq(WORD *pkey)
 {
     ev_poll();
-    return (WORD)(ct_mine() && ev_getkey(pkey));
+    return (WORD)(in_mine() && ev_getkey(pkey));
 }
 
 WORD ev_button(WORD clicks, UWORD mask, UWORD state, WORD *rets)

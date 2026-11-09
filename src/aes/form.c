@@ -10,6 +10,7 @@
  */
 #include "portab.h"
 #include "aes.h"
+#include "proc.h"
 
 /* ---- screen ownership -----------------------------------------------------
  * GEM's fm_own suspends the menu bar, takes the mouse's control rectangle
@@ -26,19 +27,34 @@
  * fm_own is. */
 WORD  ml_ocnt;
 static GRECT ml_ctrl;       /* the application's rectangle, held */
+static PROC *ml_input;      /* ...and who had the input (phase 134) */
 
+/* THE DIALOG TAKES THE INPUT too, as GEM's BEG_MCTRL makes its caller the
+ * mouse's owner: since phase 134 the keys and the presses go to
+ * proc_input only (src/aes/event.c, in_mine), and a dialog put up by a
+ * process that is not the owner -- the application's alert while an
+ * accessory's window is on top -- would otherwise wait for ever.  The
+ * owner is given back afterwards, or the top window's when it has gone
+ * meanwhile. */
 void fm_own(WORD beg_ownit)
 {
     if (beg_ownit) {
         if (ml_ocnt == 0) {
             get_ctrl(&ml_ctrl);
             ct_chgown(&gl_rscreen);
+            ml_input = proc_input;
+            proc_input = rlr;
         }
         ml_ocnt++;
     } else {
         ml_ocnt--;
-        if (ml_ocnt == 0)
+        if (ml_ocnt == 0) {
             ct_chgown(&ml_ctrl);
+            if (ml_input && (ml_input == proc_app || ml_input->p_stat == P_LIVE))
+                proc_input = ml_input;
+            else
+                proc_input = wm_owner(gl_wtop != NIL ? gl_wtop : DESKWH);
+        }
     }
 }
 

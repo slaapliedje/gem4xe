@@ -70,7 +70,10 @@ Each says how it is tested; a check is believed only once it has failed.
    listed.  Every list of what ships changes from `.g4a` to `.cpx`:
    the Makefile's disks, `mkcf`'s APPS, `mkdist`'s SYSTEM.
 
-2. **The window.**  CONTROL.ACC opens the window above, with the clock
+2. **The window.**  First, input that follows the top window -- BUILT,
+   phase 134 ([phase134.md](phase134.md)): any process in a wait took
+   whatever came, so a windowed accessory would have taken the
+   desktop's clicks and keys too.  Then CONTROL.ACC opens the window above, with the clock
    strip and the slot list, and opens a CPX inside it.  A form CPX runs
    `Xform_do`: the panel's form loop over the module's tree, placed in the
    work area, that handles redraws through the rectangle list, moves, the
