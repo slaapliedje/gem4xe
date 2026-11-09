@@ -808,8 +808,8 @@ $(eval $(call g4a,clockacc,$(CLOCKACC_OBJS),1152,128,384,,))
 # the clock is one and a stronger one besides: the moment somebody wants
 # the double-click rate changed is the moment one did not register, and
 # the Desk menu is the only door open from inside a program.  It draws
-# nothing itself -- the AES draws the form -- so it needs no workstation
-# and less near memory than the clock.
+# nothing itself -- since phase 135 a window of objects the AES draws --
+# so it needs no workstation and less near memory than the clock.
 build/cpanel.rsc build/cpanelrsc.h: tools/cpanelrsc.py tools/rsc.py tools/aesref.py
 	@mkdir -p build
 	python3 tools/cpanelrsc.py build/cpanel.rsc build/cpanelrsc.h
@@ -2362,14 +2362,14 @@ test-m41: build/gem-shots.atr build/desktop.sym
 
 # The Color control panel extension (phase 69): a pen stepped live,
 # Cancel putting it back, and OK's palette restored at the next boot.
-test-m42: build/gem-shots.atr build/color.cpx
+test-m42: build/gem-shots.atr build/color.cpx build/cpanelacc.sym
 	python3 tests/emu/m42_color.py
 
 # Options -> Install icon (phase 74): a drive icon added, saved across a
 # cold reset, and removed.
 test-m43: build/gem-shots.atr
 	python3 tests/emu/m43_icons.py
-test-m44: build/gem-shots.atr
+test-m44: build/gem-shots.atr build/cpanelacc.sym build/desktop.sym build/calc.sym
 	python3 tests/emu/m44_cpanel.py
 # Options -> Install devices: the drives asked (Dprobe), an icon for
 # each that answers and none for one that does not, on DOS 2 and on the
@@ -2710,7 +2710,7 @@ movie: build/m3-boot.atr
 # into docs/shots/ as 640x480 PNGs for the README and the release page.
 # Coordinates are read out of the running desktop's own object trees, so
 # it is a tour, not a script of pixel positions; it is not a gate.
-shots: build/gem-shots.atr build/desktop.sym build/calc.sym
+shots: build/gem-shots.atr build/desktop.sym build/calc.sym build/cpanelacc.sym
 	python3 tests/emu/shots.py --disk build/gem-shots.atr
 
 # README.md's facts, put back from the tree they describe: how many tests

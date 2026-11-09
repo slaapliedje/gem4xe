@@ -1,30 +1,27 @@
-/* cpanel.c -- the control panel: the settings the AES already honours at
- * run time, and that nothing could reach until now.
+/* cpanel.c -- the control panel: a WINDOW listing the extensions, XControl's
+ * shape (phase 135, docs/cpanel-plan.md step 2).
  *
- * TWO SETTINGS, BOTH LIVE.  The double-click rate (evnt_dclick) and how
- * long the pointer must rest on an item before its sub-menu opens
- * (menu_settings' mn_display).  menu_settings carries five numbers and
- * the other four are kept and handed back rather than obeyed -- there is
- * no drag tracking and nothing scrolls, which appl_getinfo(AES_MENU)
- * says out loud -- so they are not offered.  A control that moves and
- * changes nothing teaches a wrong model of the machine, and the person
- * finds out by being surprised later.
+ * A strip along the top with the time and the date; under it the list,
+ * one slot per extension -- its icon, the icon's text, its title, all out
+ * of the header in front of the module's file (phase 133) -- and a
+ * scroll bar when there are more than fit.  Double-click a slot, or pick
+ * one with the arrow keys and press Return, and the module opens.  The
+ * closer or Escape shuts the panel.
  *
- * EVERY PICK APPLIES IMMEDIATELY, not on OK.  That is what makes the test
- * box worth having: "can I double-click this fast?" is the only question
- * a number from 1 to 5 raises, and the box can only answer it about the
- * rate the AES is using right now.  The cost is that Cancel has real work
- * to do, so the entry values are kept and put back -- the delay as the
- * LONG it was, not as the button that was nearest it.
+ * A WINDOW, NOT A DIALOG.  Until phase 135 the panel was a form_do inside
+ * wind_update(BEG_UPDATE): it held the screen, and nothing else could be
+ * clicked or redrawn until it was put away.  Now the desktop and its
+ * windows go on working beside it, and the panel takes the keys and the
+ * presses only while its window is on top -- the AES's rule since phase
+ * 134, which is what made a window like this possible.
  *
- * NO WORKSTATION.  Unlike the clock, this panel draws nothing itself: the
- * AES draws the tree and form_do runs it.  So there is no v_opnvwk here
- * and nothing to hold across an AC_CLOSE.
+ * WHAT A MODULE GETS.  The window's whole work area, as XControl gives:
+ * an EVENT CPX draws into it and is driven from here, one event at a
+ * time, with the window's redraws, moves and closer handled around it.
+ * A FORM CPX still runs its own dialog (General and Color, until phase
+ * 136 gives them Xform_do and the window).
  *
- * NOTHING IS PERSISTED, and that is a gap rather than a decision.  The
- * desktop owns DESKTOP.INF and nothing at all writes GEM4XE.CFG, so these
- * settings last as long as the machine is up.  A writer for the config is
- * the next piece of work, and it is shared with the resolution picker.
+ * NO WORKSTATION.  Everything here is objects the AES draws.
  */
 #include "gem.h"
 #include "cpx.h"
@@ -43,94 +40,390 @@ WORD acc_far;
 /* Modules boot-initialised, for a gate to read. */
 WORD cp_boots;
 
-/* The delays offered, in milliseconds, against mn_display.  200 is the
- * AES's own initial value (src/aes/menu.c MN_INIT_DISPLAY), so "Normal"
- * is the machine as it starts. */
-static const LONG cp_ms[N_MN] = { 0L, 100L, 200L, 400L };
+/* THE WINDOW AS A GATE SEES IT.  A gate finds these the way test-m45
+ * finds an accessory's variables: by the address the AES holds of the
+ * accessory's title, less its link offset (tests/emu/shots.py,
+ * Tour.panel) -- so the places it clicks are the ones this file chose,
+ * not a copy of the layout in Python. */
+WORD  cp_wh = -1;               /* the window, -1 for none */
+GRECT cp_work;                  /* its work area, as last placed */
+WORD  cp_rows;                  /* extensions listed */
+WORD  cp_top;                   /* the row in the first slot */
+WORD  cp_sel = -1;              /* the selected row, -1 for none */
+WORD  cp_opens;                 /* modules opened from the window */
+WORD  cp_slotr[N_VIS][4];       /* each slot on the screen: x, y, w, h */
 
-/* ---- the extensions -----------------------------------------------------
+#define CP_KIND     (NAME | CLOSER | MOVER)
+#define CP_COLS     32          /* XControl's 256 pixels of 8 */
+#define CP_ICONW    32          /* a CPX icon is 32 x 24 (cpx.h) */
+#define CP_ICONH    24
+#define CP_ICOLS    11          /* the icon's column, its text under it */
+#define CP_TCOLS    17          /* a title: title_txt less its NUL */
+
+#define KEY_UP      0x4800      /* the ST's key words (src/desk/desktop.c) */
+#define KEY_DOWN    0x5000
+#define KEY_ESC     0x011B
+#define KEY_RETURN  0x1C0D
+
+static WORD wchar, hchar;
+
+/* ---- the extensions ---------------------------------------------------
  *
  * The AES reads every module's header off the front of its file into its
  * table, loads at boot the ones that ask, and frees the ones that are not
  * CPX_RESIDENT after this panel has boot-initialised them (src/aes/shel.c,
- * sh_cpx); this panel asks what is there, shows the titles, and has the
- * one the user picks loaded for as long as it is open (cp_opencpx).  That
- * split is the whole shape of a CPX: the HOST owns the window and the
- * event loop, the MODULE owns the dialog.
+ * sh_cpx); this panel asks what is there, lists it, and has the one the
+ * user picks loaded for as long as it is open (cp_opencpx).  That split
+ * is the whole shape of a CPX: the HOST owns the window and the event
+ * loop, the MODULE owns the dialog.
  *
  * A ROW IS NOT A SLOT.  A CPX_SETONLY module acts at boot and has nothing
  * to open, so it is not listed -- XControl drops it too -- and the rows
  * map to the table through cpx_row.
  *
- * THE TITLES ARE COPIED, not pointed at.  A row's ob_spec has to be an
- * address the VDI can read at every redraw, and the AES's table is far
- * memory this panel does not own -- copying eighteen bytes once is
- * cheaper to reason about than a lifetime shared with the shell. */
+ * THE WORDS ARE COPIED, not pointed at: an object's ob_spec has to be an
+ * address the VDI can read at every redraw, and a copy is simpler to
+ * reason about than a lifetime shared with the shell.  The ICON is
+ * pointed at, in the AES's table -- 96 bytes a module, kept for as long
+ * as the machine is up. */
+#define CP_MAXROWS 16           /* src/aes/shel.c CPX_MAX */
+
 static uint32_t cpx_table;
 static WORD     cpx_stride;
 static WORD     cpx_total;              /* slots in the AES's table */
-static WORD     cpx_n;                  /* rows shown */
-static WORD     cpx_row[N_CPX];         /* row -> slot */
-static char     cpx_titles[N_CPX][19];
+static WORD     cpx_row[CP_MAXROWS];    /* row -> slot */
+static char     cpx_titles[CP_MAXROWS][CP_TCOLS + 1];
+static char     cpx_itext[CP_MAXROWS][14];
+
+/* A CPX icon has no mask (cpx.h), so every slot shares one that is all
+ * set: the icon's 32 x 24 goes down white and the picture black over it,
+ * and SELECTED swaps the two, as for any G_ICON (src/aes/objc.c). */
+static UWORD cp_mask[CP_ICONW / 16 * CP_ICONH];
 
 static void cp_findcpx(void)
 {
     WORD i, j;
 
     cpx_total = cpx_count(&cpx_table, &cpx_stride);
-    cpx_n = 0;
-    for (i = 0; i < cpx_total && cpx_n < N_CPX; i++)
-        if (!(cpx_slot(cpx_table, cpx_stride, i)->hdr.flags & CPX_SETONLY))
-            cpx_row[cpx_n++] = i;
-    for (i = 0; i < N_CPX; i++) {
-        OBJECT *row = &tree[CPX0 + i];
-        if (i < cpx_n) {
-            CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, cpx_row[i]);
-            for (j = 0; j < 18 && sl->hdr.title_txt[j]; j++)
-                cpx_titles[i][j] = sl->hdr.title_txt[j];
-            cpx_titles[i][j] = 0;
-            /* ALL 24 BITS.  This panel is --data-model=large, so its own
-             * strings are far; a 16-bit ob_spec here would name bank $00
-             * and draw whatever is at the same offset (tools/nearcast.py). */
-            row->ob_spec.index = (int32_t)(uint32_t)(char FAR *)cpx_titles[i];
-            row->ob_flags = SELECTABLE | RBUTTON | TOUCHEXIT;
-        } else {
-            row->ob_flags = SELECTABLE | RBUTTON | TOUCHEXIT | HIDETREE;
+    cp_rows = 0;
+    for (i = 0; i < cpx_total && cp_rows < CP_MAXROWS; i++) {
+        CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, i);
+        WORD r;
+
+        if (sl->hdr.flags & CPX_SETONLY)
+            continue;
+        r = cp_rows;
+        cpx_row[r] = i;
+        for (j = 0; j < CP_TCOLS && sl->hdr.title_txt[j]; j++)
+            cpx_titles[r][j] = sl->hdr.title_txt[j];
+        cpx_titles[r][j] = 0;
+        for (j = 0; j < 13 && sl->hdr.i_text[j]; j++)
+            cpx_itext[r][j] = sl->hdr.i_text[j];
+        cpx_itext[r][j] = 0;
+        cp_rows = (WORD)(r + 1);
+    }
+    if (cp_sel >= cp_rows)
+        cp_sel = -1;
+}
+
+/* ---- the objects ------------------------------------------------------
+ *
+ * EVERY PLACE IS SET HERE, from the character cell: a slot is as tall as
+ * an icon and a line of text, which is pixels and characters at once, and
+ * an icon block's offsets are pixels rsrc_obfix never touches.  The tree
+ * in CPANEL.RSC gives the structure and the words (tools/cpanelrsc.py). */
+static void cp_set(WORD ob, WORD x, WORD y, WORD w, WORD h)
+{
+    tree[ob].ob_x = x;
+    tree[ob].ob_y = y;
+    tree[ob].ob_width = w;
+    tree[ob].ob_height = h;
+}
+
+/* Hidden or shown.  Read-modify-write through a temporary: the compiler
+ * has a fault in `p->a = p->a OP e` (tools/ccbug, B15). */
+static void cp_hide(WORD ob, WORD hide)
+{
+    UWORD f = tree[ob].ob_flags;
+
+    if (hide)
+        f |= HIDETREE;
+    else
+        f &= (UWORD)~HIDETREE;
+    tree[ob].ob_flags = f;
+}
+
+static ICONBLK FAR *cp_iconblk(WORD ob)
+{
+    return (ICONBLK FAR *)(uint32_t)tree[ob].ob_spec.index;
+}
+
+static void cp_layout(void)
+{
+    WORD w = CP_COLS * wchar;
+    WORD hs = hchar + 4;                        /* the strip */
+    WORD sh = CP_ICONH + hchar + 4;             /* a slot */
+    WORD lw = w - 4, lh = N_VIS * sh + 2;       /* the list, framed */
+    WORD sb = 2 * wchar, ah = hchar + 2;        /* the scroll bar, an arrow */
+    WORD iw = CP_ICOLS * wchar;
+    WORD k;
+
+    cp_set(CPROOT, 0, 0, w, hs + lh + 2);
+    cp_set(CPTIME, wchar, 2, 5 * wchar, hchar);
+    cp_set(CPDATE, w - 9 * wchar, 2, 8 * wchar, hchar);
+    cp_set(CPLIST, 2, hs, lw, lh);
+    for (k = 0; k < N_VIS; k++) {
+        WORD box = CPSLOT0 + k * SLOT_OBS;
+        ICONBLK FAR *ib = cp_iconblk(box + 1);
+
+        cp_set(box, 1, 1 + k * sh, lw - 2 - sb, sh);
+        cp_set(box + 1, 2, 2, iw, CP_ICONH + hchar);
+        ib->ib_xicon = (WORD)((UWORD)(iw - CP_ICONW) / 2);
+        ib->ib_yicon = 0;
+        ib->ib_wicon = CP_ICONW;
+        ib->ib_hicon = CP_ICONH;
+        ib->ib_xtext = 0;
+        ib->ib_ytext = CP_ICONH;
+        ib->ib_wtext = iw;
+        ib->ib_htext = hchar;
+        ib->ib_pmask = (LONG)(uint32_t)(UWORD FAR *)cp_mask;
+        cp_set(box + 2, iw + 2 + wchar, (WORD)((UWORD)(sh - hchar) / 2),
+               CP_TCOLS * wchar, hchar);
+    }
+    cp_set(CPSBAR, lw - 1 - sb, 1, sb, lh - 2);
+    cp_set(CPUP, 0, 0, sb, ah);
+    cp_set(CPTRACK, 0, ah, sb, lh - 2 - 2 * ah);
+    cp_set(CPDOWN, 0, lh - 2 - ah, sb, ah);
+    cp_set(CPEMPTY, 2 * wchar, 2 * hchar, 27 * wchar, hchar);
+}
+
+/* The rows into the slots, and the scroll bar to match. */
+static void cp_fill(void)
+{
+    WORD k, most = cp_rows > N_VIS ? (WORD)(cp_rows - N_VIS) : 0;
+
+    if (cp_top > most)
+        cp_top = most;
+    if (cp_top < 0)
+        cp_top = 0;
+    for (k = 0; k < N_VIS; k++) {
+        WORD box = CPSLOT0 + k * SLOT_OBS, row = cp_top + k;
+        UWORD st = NORMAL;
+
+        if (row >= cp_rows) {
+            cp_hide(box, 1);
+            continue;
         }
-        row->ob_state = NORMAL;
+        {
+            CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, cpx_row[row]);
+            ICONBLK FAR *ib = cp_iconblk(box + 1);
+            UWORD ic = sl->hdr.i_info;
+
+            ib->ib_pdata = (LONG)(uint32_t)(UWORD FAR *)sl->hdr.icon;
+            ib->ib_ptext = (LONG)(uint32_t)(char FAR *)cpx_itext[row];
+            if (!ic)
+                ic = 0x1000;            /* black on white */
+            ib->ib_char = (WORD)ic;
+        }
+        /* ALL 24 BITS.  This panel is --data-model=large, so its own
+         * strings are far; a 16-bit ob_spec here would name bank $00 and
+         * draw whatever is at the same offset (tools/nearcast.py). */
+        tree[box + 2].ob_spec.index =
+            (int32_t)(uint32_t)(char FAR *)cpx_titles[row];
+        {
+            /* as wide as its words, so that SELECTED inverts the title
+             * and not a bar of blanks after it */
+            WORD n = 0;
+            while (n < CP_TCOLS && cpx_titles[row][n])
+                n++;
+            tree[box + 2].ob_width = (WORD)(n * wchar);
+        }
+        if (row == cp_sel)
+            st = SELECTED;
+        tree[box + 1].ob_state = st;
+        tree[box + 2].ob_state = st;
+        cp_hide(box, 0);
+    }
+    cp_hide(CPSBAR, cp_rows <= N_VIS);
+    if (cp_rows > N_VIS) {
+        WORD th = tree[CPTRACK].ob_height;
+        WORD sh = (WORD)((LONG)th * N_VIS / cp_rows);
+        WORD y;
+
+        if (sh < hchar)
+            sh = hchar;
+        y = (WORD)((LONG)(th - sh) * cp_top / most);
+        cp_set(CPSLIDER, 0, y, tree[CPTRACK].ob_width, sh);
+    }
+    cp_hide(CPEMPTY, cp_rows != 0);
+}
+
+/* Where each slot is on the screen, for a gate (cp_slotr). */
+static void cp_gatexy(void)
+{
+    WORD k, x, y;
+
+    for (k = 0; k < N_VIS; k++) {
+        WORD box = CPSLOT0 + k * SLOT_OBS;
+
+        objc_offset(tree, box, &x, &y);
+        cp_slotr[k][0] = x;
+        cp_slotr[k][1] = y;
+        cp_slotr[k][2] = tree[box].ob_width;
+        cp_slotr[k][3] = tree[box].ob_height;
     }
 }
 
-/* ---- driving an event CPX ----------------------------------------------
- *
- * The module has drawn itself and asked to be driven, so from here the
- * PANEL owns the loop and the module owns what is inside the rectangle.
- * That is the whole reason a CPX is worth the machinery: a module that
- * never blocks its host can show the effect of a control while the
- * control is being moved.
- *
- * WHAT IS FORWARDED is what a dialog needs and no more: a key, a button,
- * a timer tick, and a redraw when something covered it.  Each entry is
- * given a `quit` zeroed first, and the loop ends the moment one comes
- * back non-zero -- so a module says "I am done" once and is not asked
- * again, which is the difference between this and polling it.
- *
- * AN ENTRY MAY BE 0, and most of a simple module's are.  cpx.h promises
- * that, so every call here is guarded rather than assumed; a module that
- * wants only keys writes only cpx_key.
- *
- * THE TIMER IS ALWAYS ASKED FOR, at a rate the panel chooses rather than
- * the module.  Set_Evnt_Mask is how XCONTROL lets a module say what it
- * wants instead, and it is an XCPB callback -- which this panel does not
- * hand out yet (cpxmain.c passes 0 and cpx.h says every callback may be
- * 0).  Until it does, a fixed 100 ms is a rate a clock or a sound can
- * work with and costs a module that ignores cpx_timer nothing.
- */
-#define CPX_TICK  100L
+/* ---- the clock strip ----------------------------------------------------
+ * The time and the date, refreshed when the minute turns: a timer asks
+ * every second, and only a change is drawn.  DD/MM/YY, General's order
+ * (src/apps/general.c); twelve-hour time is step 4's. */
+static char cp_time[6], cp_date[9];
+
+static void cp_two(char *p, UWORD v)
+{
+    p[0] = (char)('0' + (v / 10) % 10);
+    p[1] = (char)('0' + v % 10);
+}
+
+static WORD cp_clock(void)
+{
+    UWORD t = (UWORD)Tgettime(), d = (UWORD)Tgetdate();
+    char tm[6], dt[9];
+    WORD i, changed = 0;
+
+    cp_two(tm, t >> 11);
+    tm[2] = ':';
+    cp_two(tm + 3, (t >> 5) & 63);
+    tm[5] = 0;
+    cp_two(dt, d & 31);
+    dt[2] = '/';
+    cp_two(dt + 3, (d >> 5) & 15);
+    dt[5] = '/';
+    cp_two(dt + 6, ((d >> 9) + 80) % 100);
+    dt[8] = 0;
+    for (i = 0; i < 6; i++)
+        if (cp_time[i] != tm[i]) {
+            cp_time[i] = tm[i];
+            changed = 1;
+        }
+    for (i = 0; i < 9; i++)
+        if (cp_date[i] != dt[i]) {
+            cp_date[i] = dt[i];
+            changed = 1;
+        }
+    return changed;
+}
+
+/* ---- drawing ------------------------------------------------------------
+ * Through the window's rectangle list, inside the screen lock: the window
+ * may be partly covered, and another process may be drawing. */
+static void cp_draw(WORD ob, WORD depth, const GRECT *area)
+{
+    GRECT r;
+
+    if (cp_wh < 0)
+        return;
+    wind_update(BEG_UPDATE);
+    wind_get(cp_wh, WF_FIRSTXYWH, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+    while (r.g_w && r.g_h) {
+        if (rc_intersect(area, &r))
+            objc_draw(tree, ob, depth, r.g_x, r.g_y, r.g_w, r.g_h);
+        wind_get(cp_wh, WF_NEXTXYWH, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+    }
+    wind_update(END_UPDATE);
+}
+
+static void cp_drawlist(void)
+{
+    GRECT r;
+
+    objc_offset(tree, CPLIST, &r.g_x, &r.g_y);
+    r.g_w = tree[CPLIST].ob_width;
+    r.g_h = tree[CPLIST].ob_height;
+    cp_draw(CPLIST, MAX_DEPTH, &r);
+}
+
+/* A slot drawn again from the list's ground up: deselecting must put the
+ * white back under a title, which the title alone does not draw. */
+static void cp_drawslot(WORD k)
+{
+    GRECT r;
+
+    if (k < 0 || k >= N_VIS)
+        return;
+    objc_offset(tree, CPSLOT0 + k * SLOT_OBS, &r.g_x, &r.g_y);
+    r.g_w = tree[CPSLOT0 + k * SLOT_OBS].ob_width;
+    r.g_h = tree[CPSLOT0 + k * SLOT_OBS].ob_height;
+    cp_draw(CPLIST, MAX_DEPTH, &r);
+}
+
+static void cp_drawstrip(void)
+{
+    GRECT r = cp_work;
+
+    r.g_h = (WORD)(hchar + 4);
+    cp_draw(CPROOT, MAX_DEPTH, &r);
+}
+
+/* The window's work area again -- it opened, or moved -- and the tree
+ * placed in it. */
+static void cp_place(void)
+{
+    if (cp_wh < 0)
+        return;
+    wind_get(cp_wh, WF_WORKXYWH, &cp_work.g_x, &cp_work.g_y,
+             &cp_work.g_w, &cp_work.g_h);
+    tree[CPROOT].ob_x = cp_work.g_x;
+    tree[CPROOT].ob_y = cp_work.g_y;
+    cp_gatexy();
+}
+
+/* ---- selecting and scrolling -------------------------------------------- */
+
+static void cp_scrollto(WORD top)
+{
+    WORD most = cp_rows > N_VIS ? (WORD)(cp_rows - N_VIS) : 0;
+
+    if (top > most)
+        top = most;
+    if (top < 0)
+        top = 0;
+    if (top == cp_top)
+        return;
+    cp_top = top;
+    cp_fill();
+    cp_gatexy();
+    cp_drawlist();
+}
+
+static void cp_select(WORD row)
+{
+    WORD old = cp_sel, top = cp_top;
+
+    if (row < 0 || row >= cp_rows || row == old)
+        return;
+    cp_sel = row;
+    if (row < top)
+        top = row;
+    else if (row >= top + N_VIS)
+        top = (WORD)(row - N_VIS + 1);
+    if (top != cp_top) {
+        cp_top = top;
+        cp_fill();
+        cp_gatexy();
+        cp_drawlist();
+        return;
+    }
+    cp_fill();
+    if (old >= 0)
+        cp_drawslot((WORD)(old - cp_top));
+    cp_drawslot((WORD)(row - cp_top));
+}
 
 /* ---- what the panel hands a module -------------------------------------
  *
- * The XCPB, and its one working callback.  These run INSIDE THIS PANEL
+ * The XCPB, and its two working callbacks.  These run INSIDE THIS PANEL
  * and are called BY a module, so they are the same cross-link call as a
  * CPXINFO entry in the other direction and obey the same rules: SAVEDS,
  * and one uint32_t argument, which is the block's own address
@@ -224,17 +517,23 @@ static SAVEDS void cp_gen_alert(uint32_t xcpb)
  * why every entry takes one uint32_t rather than arguments). */
 static CPXPB cp_pb;
 
-static void cp_xcpb_init(void);
-static void cp_findcpx(void);
-static WORD cp_callcpx(CPXSLOT FAR *sl, WORD i, WORD x, WORD y, WORD w,
-                       WORD h);
+static void cp_xcpb_init(void)
+{
+    cp_xcpb.handle = 0;                 /* this panel opens no workstation */
+    cp_xcpb.booting = 0;
+    cp_xcpb.country = 0;
+    cp_xcpb.CPX_Save = cp_cpx_save;
+    cp_xcpb.XGen_Alert = cp_gen_alert;
+    cp_xcpb.alert = 0;
+    cp_xcpb.ok = 0;
+}
 
 /* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT -- or
  * CPX_SETONLY, which has nothing else to do -- is opened once at
- * start-up with xcpb->booting set, so it can put back what it
- * saved -- the double-click rate, a screen setting -- before anybody
- * sees the machine.  It draws nothing: `booting` is how it knows, and
- * cpx.h tells a module to act and return without a dialog.
+ * start-up with xcpb->booting set, so it can put back what it saved --
+ * the double-click rate, a screen setting -- before anybody sees the
+ * machine.  It draws nothing: `booting` is how it knows, and cpx.h tells
+ * a module to act and return without a dialog.
  *
  * This is the PANEL's job and not the AES's.  The AES loads the modules
  * and could call them, but it would have to learn the shape of CPXPB and
@@ -273,23 +572,64 @@ void cp_bootinit(void)
     cp_xcpb.booting = 0;
 }
 
-static void cp_xcpb_init(void)
+/* ---- driving an event CPX, in the window --------------------------------
+ *
+ * The module has drawn itself into the work area and asked to be driven,
+ * so from here the PANEL owns the loop and the module owns what is in the
+ * window.  That is the whole reason a CPX is worth the machinery: a
+ * module that never blocks its host can show the effect of a control
+ * while the control is being moved.
+ *
+ * WHAT IS FORWARDED is a key, a button and a timer tick -- the keys and
+ * the presses only reach this process while the window is on top (the
+ * AES's rule, phase 134) -- and a redraw, rectangle by rectangle, as
+ * XControl's cpx_draw is called: the module draws with the rectangle as
+ * its clip.  The window's own business is done here around it: topped,
+ * moved (cpx_wmove when the module has one; a redraw of the whole work
+ * area when it has not), closed, or taken away by AC_CLOSE.
+ *
+ * Each entry is given a `quit` zeroed first, and the loop ends the moment
+ * one comes back non-zero -- so a module says "I am done" once and is not
+ * asked again.  AN ENTRY MAY BE 0, and most of a simple module's are.
+ *
+ * THE TIMER IS ALWAYS ASKED FOR, at a rate the panel chooses rather than
+ * the module: Set_Evnt_Mask is how XCONTROL lets a module say what it
+ * wants, and that is step 3's.  100 ms is a rate a clock or a sound can
+ * work with and costs a module that ignores cpx_timer nothing.
+ */
+#define CPX_TICK  100L
+
+/* The work area cleared, then the module asked to draw: each rectangle of
+ * the window's list that meets `area`. */
+static void cp_cpxdraw(CPXINFO FAR *info, const GRECT *area)
 {
-    cp_xcpb.handle = 0;                 /* this panel opens no workstation */
-    cp_xcpb.booting = 0;
-    cp_xcpb.country = 0;
-    cp_xcpb.CPX_Save = cp_cpx_save;
-    cp_xcpb.XGen_Alert = cp_gen_alert;
-    cp_xcpb.alert = 0;
-    cp_xcpb.ok = 0;
+    GRECT r;
+
+    if (cp_wh < 0)
+        return;
+    wind_update(BEG_UPDATE);
+    wind_get(cp_wh, WF_FIRSTXYWH, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+    while (r.g_w && r.g_h) {
+        if (rc_intersect(area, &r)) {
+            objc_draw(tree, CPROOT, 0, r.g_x, r.g_y, r.g_w, r.g_h);
+            if (info->cpx_draw) {
+                cp_pb.rect = r;
+                cp_pb.quit = 0;
+                info->cpx_draw((uint32_t)(CPXPB FAR *)&cp_pb);
+            }
+        }
+        wind_get(cp_wh, WF_NEXTXYWH, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+    }
+    wind_update(END_UPDATE);
 }
 
-static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)
+static void cp_close(void);
+
+static void cp_drivecpx(CPXINFO FAR *info)
 {
-    WORD msg[8], mx, my, mb, ks, kr, nc;
+    WORD msg[8], mx, my, mb, ks, kr, nc, gone = 0;
     uint32_t pb = (uint32_t)(CPXPB FAR *)&cp_pb;
 
-    cp_pb.rect = *r;
     for (;;) {
         WORD ev = evnt_multi(MU_KEYBD | MU_BUTTON | MU_TIMER | MU_MESAG,
                              2, 1, 1,
@@ -317,32 +657,54 @@ static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)
         if ((ev & MU_TIMER) && info->cpx_timer)
             info->cpx_timer(pb);
         if (ev & MU_MESAG) {
-            /* A redraw of the panel's own dialog is a redraw of the
-             * module's rectangle too: it is drawn INSIDE ours, so the
-             * module is told rather than the panel guessing what of it
-             * survived. */
             WORD i;
             for (i = 0; i < 8; i++)
                 cp_pb.msg[i] = msg[i];
-            if (msg[0] == WM_REDRAW && info->cpx_draw)
-                info->cpx_draw(pb);
+            if (msg[0] == AC_CLOSE)
+                gone = 2;               /* the AES took the window */
+            else if (msg[0] == AC_OPEN && cp_wh >= 0)
+                wind_set(cp_wh, WF_TOP, 0, 0, 0, 0);
+            else if (msg[3] == cp_wh && cp_wh >= 0) {
+                if (msg[0] == WM_REDRAW) {
+                    GRECT a;
+                    a.g_x = msg[4]; a.g_y = msg[5];
+                    a.g_w = msg[6]; a.g_h = msg[7];
+                    cp_cpxdraw(info, &a);
+                } else if (msg[0] == WM_TOPPED) {
+                    wind_set(cp_wh, WF_TOP, 0, 0, 0, 0);
+                } else if (msg[0] == WM_MOVED) {
+                    wind_set(cp_wh, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
+                    cp_place();
+                    cp_pb.rect = cp_work;
+                    if (info->cpx_wmove)
+                        info->cpx_wmove(pb);
+                    else
+                        cp_cpxdraw(info, &cp_work);
+                } else if (msg[0] == WM_CLOSED) {
+                    gone = 1;
+                }
+            }
         }
         /* A key the module did not take closes it, so a module with no
-         * cpx_key is not a dialog nobody can get out of. */
+         * cpx_key is not a window nobody can get out of. */
         if ((ev & MU_KEYBD) && !info->cpx_key)
             cp_pb.quit = 1;
-        if (cp_pb.quit)
+        if (cp_pb.quit || gone)
             break;
     }
     if (info->cpx_close)
         info->cpx_close(pb);
+    if (gone == 1)
+        cp_close();
+    else if (gone == 2)
+        cp_wh = -1;
 }
 
-/* Open the selected module: its cpx_call, through the vtable it
- * published when it loaded.  A separately linked module reached by a
- * runtime long-indirect call -- which is safe because every entry in a
- * CPXINFO is `saveds` and sets up its own direct page and data bank
- * (src/app/cpx.h).  0 from cpx_call means it declined to open.
+/* Open slot i's module: its cpx_call, through the vtable it published
+ * when it loaded.  A separately linked module reached by a runtime
+ * long-indirect call -- which is safe because every entry in a CPXINFO is
+ * `saveds` and sets up its own direct page and data bank
+ * (src/app/cpx.h).
  *
  * LOADED FOR THE OPEN, FREED AFTER IT.  The AES frees every module that
  * is not CPX_RESIDENT once this panel has boot-initialised it, so a
@@ -350,184 +712,254 @@ static void cp_drivecpx(CPXINFO FAR *info, const GRECT *r)
  * sh_cpxload) -- the ST's rule, and what lets a closed module cost bank
  * $00 nothing.  A module that will not load says so with the canned
  * memory alert, which is what it nearly always is. */
-static WORD cp_opencpx(WORD i, WORD x, WORD y, WORD w, WORD h)
+static void cp_opencpx(WORD i)
 {
     CPXSLOT FAR *sl;
-    WORD ret;
+    CPXINFO FAR *info;
 
     if (i < 0 || i >= cpx_total || !cpx_table)
-        return 0;
+        return;
     sl = cpx_slot(cpx_table, cpx_stride, i);
     if (!sl->info && Cpxload(i, 1) != 0) {
         cp_xcpb.alert = XAL_MEM_ERR;
         cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
-        return 0;
+        return;
     }
-    ret = cp_callcpx(sl, i, x, y, w, h);
-    Cpxload(i, 0);                      /* kept only if CPX_RESIDENT */
-    return ret;
-}
-
-static WORD cp_callcpx(CPXSLOT FAR *sl, WORD i, WORD x, WORD y, WORD w, WORD h)
-{
-    CPXINFO FAR *info;
-    GRECT r;
-
-    if (!sl->info)
-        return 0;
     info = (CPXINFO FAR *)sl->info;
-    if (!info->cpx_call)
-        return 0;
-    r.g_x = x; r.g_y = y; r.g_w = w; r.g_h = h;
-    cp_xcpb.which = i;                  /* who is about to call back */
-    cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
-    cp_pb.xcpb = (uint32_t)(XCPB FAR *)&cp_xcpb;
-    cp_pb.rect = r;
-    cp_pb.quit = 0;
-    cp_pb.ret = 0;
-    info->cpx_call((uint32_t)(CPXPB FAR *)&cp_pb);
-    if (!cp_pb.ret)
-        return 0;                       /* a form CPX: it has finished */
-    cp_drivecpx(info, &r);              /* an event CPX: it wants events */
-    return 1;
-}
-
-/* Which button a live value lights.  NEAREST rather than exact: another
- * program may have set a number this panel does not offer, and a panel
- * with nothing selected would say the machine has no setting at all. */
-static WORD cp_index(LONG ms)
-{
-    WORD i, best = 0;
-    LONG d, bestd;
-
-    bestd = cp_ms[0] - ms;
-    if (bestd < 0)
-        bestd = -bestd;
-    for (i = 1; i < N_MN; i++) {
-        d = cp_ms[i] - ms;
-        if (d < 0)
-            d = -d;
-        if (d < bestd) {
-            bestd = d;
-            best = i;
-        }
+    if (info && info->cpx_call) {
+        cp_xcpb_init();
+        cp_xcpb.which = i;              /* who is about to call back */
+        cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
+        cp_pb.xcpb = (uint32_t)(XCPB FAR *)&cp_xcpb;
+        cp_pb.rect = cp_work;
+        cp_pb.quit = 0;
+        cp_pb.ret = 0;
+        /* the module draws into the whole work area: clear it first */
+        cp_draw(CPROOT, 0, &cp_work);
+        info->cpx_call((uint32_t)(CPXPB FAR *)&cp_pb);
+        if (cp_pb.ret)
+            cp_drivecpx(info);          /* an EVENT CPX: it wants events */
     }
-    return best;
+    Cpxload(i, 0);                      /* kept only if CPX_RESIDENT */
 }
 
-/* A sub-menu delay and nothing else: a SET applies a field only when it
- * is not negative, so -1 leaves the four that are not live alone. */
-static void cp_setdelay(LONG ms)
+static void cp_openrow(WORD row)
 {
-    MN_SET set;
-
-    set.mn_display = ms;
-    set.mn_drag = -1L;
-    set.mn_delay = -1L;
-    set.mn_speed = -1L;
-    set.mn_height = -1;
-    menu_settings(MNS_SET, &set);
+    if (row < 0 || row >= cp_rows)
+        return;
+    cp_opens++;
+    cp_opencpx(cpx_row[row]);
+    if (cp_wh >= 0) {                   /* the list back, unless it went */
+        cp_findcpx();
+        cp_fill();
+        cp_place();
+        cp_draw(CPROOT, MAX_DEPTH, &cp_work);
+    }
 }
 
-/* The resource, once.  Separate from the panel because the two happen at
- * different times in an accessory: the shell takes this while the AES is
- * starting up -- before the first program, the only time an accessory may
- * take anything from bank $00 -- and opens the panel whenever somebody
- * chooses it from the Desk menu (src/apps/cpanelacc.c). */
+/* ---- the window --------------------------------------------------------- */
+
+static char *cp_title;                  /* CPANEL.RSC's: WF_NAME keeps it */
+
+/* The resource, once.  Separate from the window because the two happen
+ * at different times in an accessory: the shell takes this while the AES
+ * is starting up -- before the first program, the only time an accessory
+ * may take anything from bank $00 -- and opens the window whenever
+ * somebody chooses it from the Desk menu (src/apps/cpanelacc.c). */
 WORD cp_start(void)
 {
+    WORD wb, hb, i;
+
     if (!rsrc_load("CPANEL.RSC"))
         return FALSE;
     rsrc_gaddr(R_TREE, ADCPANEL, (void **)&tree);
+    rsrc_gaddr(R_STRING, CPWTITLE, (void **)&cp_title);
+    if (!tree || !cp_title)
+        return FALSE;
     acc_far = (WORD)(((uint32_t)tree) >> 16);
+    graf_handle(&wchar, &hchar, &wb, &hb);
+    for (i = 0; i < (WORD)(sizeof cp_mask / sizeof cp_mask[0]); i++)
+        cp_mask[i] = 0xFFFF;
+    tree[CPTIME].ob_spec.index = (int32_t)(uint32_t)(char FAR *)cp_time;
+    tree[CPDATE].ob_spec.index = (int32_t)(uint32_t)(char FAR *)cp_date;
+    cp_layout();
     return TRUE;
 }
 
-void cp_panel(void)
+/* Desk -> Control Panel: the window, opened -- or brought to the top if
+ * it is open already. */
+void cp_open(void)
 {
-    WORD x, y, w, h, ret, ob = CPCNCL, i, j, dc0;
-    UWORD st;
-    LONG ms0;
-    MN_SET set;
+    WORD dx, dy, dw, dh, bx, by, w, h, x, y;
 
-    /* What the AES is doing NOW, which is what the panel must show: a
-     * program may have changed either of these since it was last open. */
-    dc0 = evnt_dclick(0, 0);
-    menu_settings(MNS_GET, &set);
-    ms0 = set.mn_display;
-
-    for (i = 0; i < N_DC; i++)
-        tree[CPDC0 + i].ob_state = (UWORD)(i == dc0 ? SELECTED : NORMAL);
-    j = cp_index(ms0);
-    for (i = 0; i < N_MN; i++)
-        tree[CPMN0 + i].ob_state = (UWORD)(i == j ? SELECTED : NORMAL);
+    if (cp_wh >= 0) {
+        wind_set(cp_wh, WF_TOP, 0, 0, 0, 0);
+        return;
+    }
     cp_findcpx();
     cp_xcpb_init();
-    tree[CPXOPEN].ob_state = NORMAL;
-    tree[CPTEST].ob_state = NORMAL;
-    tree[CPOK].ob_state = NORMAL;
-    tree[CPCNCL].ob_state = NORMAL;
+    cp_clock();
+    cp_fill();
+    wind_get(0, WF_WORKXYWH, &dx, &dy, &dw, &dh);
+    wind_calc(WC_BORDER, CP_KIND, 0, 0, tree[CPROOT].ob_width,
+              tree[CPROOT].ob_height, &bx, &by, &w, &h);
+    /* Centred on the desk.  NOT `x = dw > w ? ... : dx` -- x was handed
+     * to wind_calc by address, and a ?: joined into an address-taken
+     * variable is wrong at every -O (B9, tools/ccbug): the window opened
+     * at x = $5C01, off the screen.  So x and y are not the variables
+     * wind_calc writes, and they are set by plain ifs. */
+    x = dx;
+    if (dw > w)
+        x = (WORD)(dx + (WORD)((UWORD)(dw - w) / 2));
+    y = dy;
+    if (dh > h)
+        y = (WORD)(dy + (WORD)((UWORD)(dh - h) / 2));
+    cp_wh = wind_create(CP_KIND, x, y, w, h);
+    if (cp_wh < 0) {
+        cp_xcpb.alert = XAL_MEM_ERR;    /* no window left */
+        cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
+        return;
+    }
+    wind_set_str(cp_wh, WF_NAME, cp_title);
+    wind_open(cp_wh, x, y, w, h);
+    cp_place();
+}
 
-    /* The screen is the panel's until it closes, as GEM asks of an
-     * accessory with a dialog up: a dialog is not a window, so nothing
-     * else's redraw knows to stay off it.  Without this, a look switched
-     * in General -- whose OK redraws the whole screen -- had the desktop
-     * repaint its windows over the panel while it was still up (phase
-     * 97); now their redraws wait for END_UPDATE below.  The lock nests,
-     * so a module's own dialog inside it is the same owner's. */
-    wind_update(BEG_UPDATE);
-    form_center(tree, &x, &y, &w, &h);
-    form_dial(FMD_START, 0, 0, 0, 0, x, y, w, h);
-    form_dial(FMD_GROW, 0, 0, 0, 0, x, y, w, h);
-    objc_draw(tree, ROOT, MAX_DEPTH, x, y, w, h);
+/* WM_SIZED: the window has no sizer, so the AES sends this when the LOOK
+ * changes (src/aes/wind.c) -- the 3D frame is thicker, and the same frame
+ * leaves a smaller work area.  The window is made the size the tree needs
+ * again, at the same place, rather than the list losing its bottom edge
+ * (General's Look -> 3D, with the panel open, took 4 pixels off it). */
+static void cp_fit(void)
+{
+    WORD x, y, w, h, bx, by;
 
-    for (;;) {
-        ret = form_do(tree, 0);
-        ob = (WORD)(ret & 0x7FFF);
-        if (ob == CPOK || ob == CPCNCL)
-            break;
-        if (ob >= CPDC0 && ob < CPDC0 + N_DC) {
-            evnt_dclick((WORD)(ob - CPDC0), 1);
-        } else if (ob >= CPMN0 && ob < CPMN0 + N_MN) {
-            cp_setdelay(cp_ms[ob - CPMN0]);
-        } else if (ob == CPXOPEN) {
-            /* Whichever row is lit; none means nothing to open. */
-            WORD k, pick = -1;
-            for (k = 0; k < cpx_n; k++)
-                if (tree[CPX0 + k].ob_state & SELECTED)
-                    pick = k;
-            tree[CPXOPEN].ob_state = NORMAL;
-            objc_draw(tree, CPXOPEN, 0, x, y, w, h);
-            if (pick >= 0) {
-                cp_opencpx(cpx_row[pick], x, y, w, h);
-                objc_draw(tree, ROOT, MAX_DEPTH, x, y, w, h);
-            }
-        } else if (ob >= CPX0 && ob < CPX0 + N_CPX) {
-            /* the radio group does the lighting; nothing else to do */
-        } else if (ob == CPTEST) {
-            /* form_do sets bit 15 when the second click arrived inside
-             * the time the rate above allows.  A single click is the
-             * answer "not that fast" and must change nothing -- but
-             * form_do has already drawn the box SELECTED, so undo that
-             * either way.  Read-modify-write through a temporary: the
-             * compiler has a fault in `p->a = p->a OP e` (tools/ccbug). */
-            st = tree[CPTEST].ob_state;
-            if (ret & 0x8000)
-                st ^= CHECKED;
-            st &= (UWORD)~SELECTED;
-            tree[CPTEST].ob_state = st;
-            objc_draw(tree, CPTEST, 0, x, y, w, h);
+    if (cp_wh < 0)
+        return;
+    wind_get(cp_wh, WF_WORKXYWH, &x, &y, &w, &h);
+    wind_calc(WC_BORDER, CP_KIND, x, y, tree[CPROOT].ob_width,
+              tree[CPROOT].ob_height, &bx, &by, &w, &h);
+    wind_set(cp_wh, WF_CURRXYWH, bx, by, w, h);
+    cp_place();
+}
+
+static void cp_close(void)
+{
+    if (cp_wh < 0)
+        return;
+    wind_close(cp_wh);
+    wind_delete(cp_wh);
+    cp_wh = -1;
+}
+
+/* AC_CLOSE: the AES has destroyed the window already (src/aes/menu.c). */
+void cp_acclose(void)
+{
+    cp_wh = -1;
+}
+
+/* A press in the work area: a slot picked (twice, opened), or the scroll
+ * bar.  Then the button up, so one press is one press. */
+static void cp_button(WORD mx, WORD my, WORD nc)
+{
+    WORD ob = objc_find(tree, CPROOT, MAX_DEPTH, mx, my);
+    WORD x, y, mb, ks;
+
+    if (ob >= CPSLOT0 && ob < CPSBAR) {
+        WORD row = (WORD)(cp_top + (WORD)((UWORD)(ob - CPSLOT0) / SLOT_OBS));
+        if (row < cp_rows) {
+            cp_select(row);
+            if (nc >= 2)
+                cp_openrow(row);
         }
+    } else if (ob == CPUP) {
+        cp_scrollto((WORD)(cp_top - 1));
+    } else if (ob == CPDOWN) {
+        cp_scrollto((WORD)(cp_top + 1));
+    } else if (ob == CPSLIDER && cp_rows > N_VIS) {
+        LONG pos = graf_slidebox(tree, CPTRACK, CPSLIDER, 1);
+        cp_scrollto((WORD)((pos * (cp_rows - N_VIS) + 500L) / 1000L));
+    } else if (ob == CPTRACK) {
+        objc_offset(tree, CPSLIDER, &x, &y);
+        cp_scrollto((WORD)(my < y ? cp_top - N_VIS : cp_top + N_VIS));
     }
+    graf_mkstate(&x, &y, &mb, &ks);
+    if (mb & 1)
+        evnt_button(1, 1, 0, &x, &y, &mb, &ks);
+}
 
-    if (ob == CPCNCL) {                 /* put back exactly what was there */
-        evnt_dclick(dc0, 1);
-        cp_setdelay(ms0);
+static void cp_key(WORD key)
+{
+    switch ((UWORD)key) {
+    case KEY_UP:
+        cp_select(cp_sel > 0 ? (WORD)(cp_sel - 1) : 0);
+        break;
+    case KEY_DOWN:
+        cp_select(cp_sel < 0 ? 0 : (WORD)(cp_sel + 1));
+        break;
+    case KEY_RETURN:
+        if (cp_sel >= 0)
+            cp_openrow(cp_sel);
+        break;
+    case KEY_ESC:
+        cp_close();
+        break;
+    default:
+        break;
     }
+}
 
-    tree[CPOK].ob_state = NORMAL;
-    tree[CPCNCL].ob_state = NORMAL;
-    form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
-    form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
-    wind_update(END_UPDATE);
+/* A message about the window. */
+void cp_message(const WORD *msg)
+{
+    GRECT a;
+
+    if (cp_wh < 0 || msg[3] != cp_wh)
+        return;
+    switch (msg[0]) {
+    case WM_REDRAW:
+        a.g_x = msg[4]; a.g_y = msg[5];
+        a.g_w = msg[6]; a.g_h = msg[7];
+        cp_draw(CPROOT, MAX_DEPTH, &a);
+        break;
+    case WM_TOPPED:
+        wind_set(cp_wh, WF_TOP, 0, 0, 0, 0);
+        break;
+    case WM_MOVED:
+        wind_set(cp_wh, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
+        cp_place();
+        break;
+    case WM_SIZED:
+        cp_fit();
+        break;
+    case WM_CLOSED:
+        cp_close();
+        break;
+    default:
+        break;
+    }
+}
+
+/* One turn of the accessory's loop: a message only while the window is
+ * shut, and while it is open the presses and keys this window owns too,
+ * and the clock's second.  Answers what happened; a message is the
+ * caller's to dispatch. */
+WORD cp_wait(WORD *msg)
+{
+    WORD ev, mx, my, mb, ks, kr, nc;
+
+    if (cp_wh < 0) {
+        evnt_mesag(msg);
+        return MU_MESAG;
+    }
+    ev = evnt_multi(MU_MESAG | MU_BUTTON | MU_KEYBD | MU_TIMER, 2, 1, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    msg, 1000, 0, &mx, &my, &mb, &ks, &kr, &nc);
+    if (ev & MU_BUTTON)
+        cp_button(mx, my, nc);
+    if ((ev & MU_KEYBD) && cp_wh >= 0)
+        cp_key(kr);
+    if ((ev & MU_TIMER) && cp_wh >= 0 && cp_clock())
+        cp_drawstrip();
+    return ev;
 }

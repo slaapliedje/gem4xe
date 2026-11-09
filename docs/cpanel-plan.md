@@ -1,6 +1,7 @@
 # A better control panel: XControl's shape, on gem4xe
 
-Status: step 1 **built** in phase 133.  Decisions taken 2026-11-08: one
+Status: step 1 **built** in phase 133; step 2 in phases 134 (input) and
+135 (the window), with 136 to bring General and Color into it.  Decisions taken 2026-11-08: one
 window that the open CPX fills (XControl's shape, not COPS's window per
 CPX), and the 512-byte header moves in front of the module, as on the ST.
 
@@ -73,7 +74,9 @@ Each says how it is tested; a check is believed only once it has failed.
 2. **The window.**  First, input that follows the top window -- BUILT,
    phase 134 ([phase134.md](phase134.md)): any process in a wait took
    whatever came, so a windowed accessory would have taken the
-   desktop's clicks and keys too.  Then CONTROL.ACC opens the window above, with the clock
+   desktop's clicks and keys too.  Then the window -- BUILT, phase 135
+   ([phase135.md](phase135.md)), with General and Color still in their
+   own dialogs: CONTROL.ACC opens the window above, with the clock
    strip and the slot list, and opens a CPX inside it.  A form CPX runs
    `Xform_do`: the panel's form loop over the module's tree, placed in the
    work area, that handles redraws through the rectangle list, moves, the

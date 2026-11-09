@@ -3,29 +3,27 @@
 
     tools/cpanelrsc.py build/cpanel.rsc build/cpanelrsc.h
 
-One tree, ADCPANEL: the settings the AES already honours at run time and
-that no human being could reach until now -- the double-click rate
-(evnt_dclick) and how long the pointer must rest on an item before its
-sub-menu opens (menu_settings' mn_display).
+One tree, ADCPANEL: what the panel's WINDOW shows (phase 135,
+docs/cpanel-plan.md step 2) -- XControl's shape.  A strip along the top
+with the time and the date; under it the list, one slot per extension,
+its icon with the icon's text beneath and its title beside; a scroll bar
+when there are more extensions than slots.  When a module is opened it
+fills the window until it ends.
 
-NOTHING HERE IS A SETTING THAT DOES NOTHING.  menu_settings carries five
-numbers and only mn_display is live -- there is no drag tracking and
-nothing scrolls, which appl_getinfo(AES_MENU) says out loud -- so the
-other four are not offered.  A control that moves and changes nothing is
-worse than an absent one: it teaches the person a wrong model of the
-machine, and they find out by being surprised later.
+THE PLACES ARE THE PANEL'S, not this file's.  A slot is as tall as a
+32x24 icon and a line of text, which is pixels and characters at once,
+and the icon block's own offsets are pixels that rsrc_obfix never
+touches; so src/apps/cpanel.c lays every object out at run time from the
+character cell, and the sizes here are placeholders.  What this file
+fixes is the tree -- which object is whose child, its type and flags --
+and the words, which are translatable here and nowhere else.
 
-EACH RADIO GROUP SITS IN A G_IBOX OF ITS OWN because RBUTTON is exclusive
-among SIBLINGS: with every button a child of the root, choosing a speed
-would clear the delay (the same trap tools/deskrsc.py's pref_tree
-records, and the reason that one has two boxes too).
+N_VIS SLOTS, and the panel shows as many as fit: four on both screens,
+which is XControl's four.  The rows beyond are reached by scrolling.
 
-THE TEST BOX IS THE POINT OF THE SPEED CONTROL.  A number from 1 to 5 is
-meaningless on its own -- the only question a person actually has is
-"can I double-click this fast?" -- so the box answers it: a real
-double-click ticks it, a single click does not.  Because the panel
-applies each pick immediately rather than on OK, the box is testing the
-rate that is about to be kept.
+The settings this panel used to carry itself -- the double-click rate
+and the sub-menu delay -- are General's (GENERAL.CPX), which has had
+both since phase 48; two places for one setting is one too many.
 """
 import os
 import sys
@@ -33,9 +31,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rsc                                  # noqa: E402
 from rsc import ch, NIL                     # noqa: E402
-from aesref import (G_BOX, G_IBOX, G_STRING, G_BUTTON,   # noqa: E402
-                    NONE, NORMAL, OUTLINED, SELECTABLE, RBUTTON,
-                    TOUCHEXIT, DEFAULT, EXIT, LASTOB)
+from aesref import (G_BOX, G_IBOX, G_STRING, G_BOXCHAR, G_ICON,  # noqa: E402
+                    NONE, NORMAL, SELECTABLE, TOUCHEXIT, LASTOB)
 
 ADCPANEL = 0
 
@@ -78,109 +75,82 @@ XALERTS = [
 ]
 N_XALERT = len(XALERTS)
 
-N_DC = 5                        # evnt_dclick takes 0..4
-N_MN = 4                        # the delays this panel offers
+# The window's own words, after the alerts so the alerts keep Atari's
+# numbers: its title (the two spaces are GEM's, a title clear of the
+# closer) and what the list says when there is nothing in it.
+CPWTITLE = N_XALERT
+CPNONE = N_XALERT + 1
+WTITLE = " Control Panel "
+NONE_TEXT = "No extensions are installed"
 
-N_CPX = 6                       # the AES loads at most this many
+N_VIS = 4                       # slots in the tree
 
-(CPROOT, CPTITLE, CPDCLBL, CPDCBOX,
- CPDC0, _DC1, _DC2, _DC3, _DC4,
- CPTSTLBL, CPTEST,
- CPMNLBL, CPMNBOX,
- CPMN0, _MN1, _MN2, _MN3,
- CPXLBL, CPXBOX,
- CPX0, _CX1, _CX2, _CX3, _CX4, _CX5,
- CPXOPEN,
- CPOK, CPCNCL) = range(28)
-NOBS_CPANEL = 28
+(CPROOT, CPTIME, CPDATE, CPLIST) = range(4)
+CPSLOT0 = 4                     # each slot: a box, its icon, its title
+SLOT_OBS = 3
+CPSBAR = CPSLOT0 + N_VIS * SLOT_OBS
+CPUP, CPTRACK, CPSLIDER, CPDOWN = CPSBAR + 1, CPSBAR + 2, CPSBAR + 3, CPSBAR + 4
+CPEMPTY = CPDOWN + 1
+NOBS_CPANEL = CPEMPTY + 1
 
-W, H = 40, 25
-TITLE = "Control Panel"
-DCLBL = "Double-click speed"
-TSTLBL = "Test"
-TEST = "Double-click here"
-MNLBL = "Sub-menu delay"
-CPXLBLT = "Extensions"
-CPXOPENT = "Open"
-CPX_W = 20           # title_txt is 18 and the frame wants a little
-
-DC_W, DC_STEP = 4, 5            # five numbered boxes, the donor's shape
-MN_W, MN_STEP = 7, 8            # a cell apart: with the 3D look each
-                                # grows two pixels a side (src/aes/objc.c)
-MN_NAMES = ("Instant", "Fast", "Normal", "Slow")
-GROUP_X = 4                     # both groups under their own label, not
-                                # one of them two characters to its left
-
-RADIO = SELECTABLE | RBUTTON | TOUCHEXIT
+# the arrows are the system font's, as the window manager's are
+UPCHAR, DOWNCHAR = 0x01, 0x02
 
 
 def cpanel_tree(r):
+    # a slot's icon block: placeholders, filled from the module's header
+    # by the panel (its picture, its text, its colours)
+    blank = bytes(96)
     objs = [
-        (NIL, CPTITLE, CPCNCL, G_BOX, NONE, OUTLINED, 0x00021100,
-         ch(0), ch(0), ch(W), ch(H)),
-        (CPDCLBL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(TITLE),
-         ch((W - len(TITLE)) // 2), ch(1), ch(len(TITLE)), ch(1)),
-        (CPDCBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(DCLBL),
-         ch(GROUP_X), ch(3, -3), ch(len(DCLBL)), ch(1)),   # up 3: room
-                                # for the 3D look's edge on the row below
-        (CPTSTLBL, CPDC0, CPDC0 + N_DC - 1, G_IBOX, NONE, NORMAL, 0x00000000,
-         ch(GROUP_X), ch(4), ch((N_DC - 1) * DC_STEP + DC_W), ch(1)),
+        # the work area, white and frameless: the window is the frame
+        (NIL, CPTIME, CPLIST, G_BOX, NONE, NORMAL, 0x00001170,
+         ch(0), ch(0), ch(32), ch(20)),
+        (CPDATE, NIL, NIL, G_STRING, NONE, NORMAL, r.string("00:00"),
+         ch(1), ch(0), ch(5), ch(1)),
+        (CPLIST, NIL, NIL, G_STRING, NONE, NORMAL, r.string("00/00/00"),
+         ch(23), ch(0), ch(8), ch(1)),
+        # the list: a box with a one-pixel frame inside it
+        (CPROOT, CPSLOT0, CPEMPTY, G_BOX, NONE, NORMAL, 0x00011170,
+         ch(0), ch(1), ch(32), ch(19)),
     ]
-    # 1..5, the rate evnt_dclick takes as 0..4
-    for i in range(N_DC):
-        objs.append((CPDC0 + i + 1 if i < N_DC - 1 else CPDCBOX,
-                     NIL, NIL, G_BUTTON, RADIO, NORMAL, r.string(str(i + 1)),
-                     ch(i * DC_STEP), ch(0), ch(DC_W), ch(1)))
-    objs.append((CPTEST, NIL, NIL, G_STRING, NONE, NORMAL, r.string(TSTLBL),
-                 ch(GROUP_X), ch(6), ch(len(TSTLBL)), ch(1)))
-    # SELECTABLE|EXIT, not TOUCHEXIT: form_do must see the second click
-    # before it answers, and it sets bit 15 when it did.
-    objs.append((CPMNLBL, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
-                 r.string(TEST), ch(11), ch(6), ch(len(TEST) + 3), ch(1)))
-    objs.append((CPMNBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(MNLBL),
-                 ch(GROUP_X), ch(8, -3), ch(len(MNLBL)), ch(1)))
-    objs.append((CPXLBL, CPMN0, CPMN0 + N_MN - 1, G_IBOX, NONE, NORMAL,
-                 0x00000000,
-                 ch(GROUP_X), ch(9),
-                 ch((N_MN - 1) * MN_STEP + MN_W), ch(1)))
-    for i in range(N_MN):
-        objs.append((CPMN0 + i + 1 if i < N_MN - 1 else CPMNBOX,
-                     NIL, NIL, G_BUTTON, RADIO, NORMAL,
-                     r.string(MN_NAMES[i]),
-                     ch(i * MN_STEP), ch(0), ch(MN_W), ch(1)))
-    # THE EXTENSIONS.  Six rows because that is what the AES loads
-    # (src/aes/shel.c, CPX_MAX); the panel hides the ones it has no
-    # module for rather than showing empty buttons, and the strings here
-    # are PLACEHOLDERS -- cpanel.c points each row's ob_spec at a title
-    # it copied out of the AES's table at start-up.
-    objs.append((CPXBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(CPXLBLT),
-                 ch(GROUP_X), ch(11), ch(len(CPXLBLT)), ch(1)))
-    objs.append((CPXOPEN, CPX0, CPX0 + N_CPX - 1, G_IBOX, NONE, NORMAL,
-                 0x00000000,
-                 ch(GROUP_X), ch(12), ch(CPX_W), ch(N_CPX)))
-    for i in range(N_CPX):
-        objs.append((CPX0 + i + 1 if i < N_CPX - 1 else CPXBOX,
-                     NIL, NIL, G_BUTTON, RADIO, NORMAL, r.string(" " * 18),
-                     ch(0), ch(i), ch(CPX_W), ch(1)))
-    objs.append((CPOK, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
-                 r.string(CPXOPENT), ch(26), ch(12), ch(9), ch(1)))
-    objs.append((CPCNCL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT,
-                 NORMAL, r.string("OK"), ch(9), ch(22), ch(9), ch(1)))
-    objs.append((CPROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB,
-                 NORMAL, r.string("Cancel"), ch(22), ch(22), ch(9), ch(1)))
+    for k in range(N_VIS):
+        box = CPSLOT0 + k * SLOT_OBS
+        nxt = box + SLOT_OBS if k < N_VIS - 1 else CPSBAR
+        objs.append((nxt, box + 1, box + 2, G_IBOX, SELECTABLE | TOUCHEXIT,
+                     NORMAL, 0x00000000, ch(0), ch(k * 4), ch(30), ch(4)))
+        objs.append((box + 2, NIL, NIL, G_ICON, NONE, NORMAL,
+                     r.iconblk(blank, blank, " " * 12, 32, 24, char=0x1000,
+                               xicon=28, yicon=0, xtext=0, ytext=24,
+                               wtext=88, htext=8),
+                     ch(0), ch(0), ch(11), ch(4)))
+        objs.append((box, NIL, NIL, G_STRING, NONE, NORMAL,
+                     r.string(" " * 17), ch(12), ch(1), ch(17), ch(1)))
+    # the scroll bar: arrows at the ends, a track between with the slider
+    objs += [
+        (CPEMPTY, CPUP, CPDOWN, G_IBOX, NONE, NORMAL, 0x00000000,
+         ch(30), ch(0), ch(2), ch(18)),
+        (CPTRACK, NIL, NIL, G_BOXCHAR, TOUCHEXIT, NORMAL,
+         (UPCHAR << 24) | 0x00011100, ch(0), ch(0), ch(2), ch(1)),
+        (CPDOWN, CPSLIDER, CPSLIDER, G_BOX, TOUCHEXIT, NORMAL, 0x00011111,
+         ch(0), ch(1), ch(2), ch(16)),
+        (CPTRACK, NIL, NIL, G_BOX, TOUCHEXIT, NORMAL, 0x00011100,
+         ch(0), ch(0), ch(2), ch(4)),
+        (CPSBAR, NIL, NIL, G_BOXCHAR, TOUCHEXIT, NORMAL,
+         (DOWNCHAR << 24) | 0x00011100, ch(0), ch(17), ch(2), ch(1)),
+        (CPLIST, NIL, NIL, G_STRING, LASTOB, NORMAL, r.string(NONE_TEXT),
+         ch(2), ch(2), ch(len(NONE_TEXT)), ch(1)),
+    ]
     assert len(objs) == NOBS_CPANEL, (len(objs), NOBS_CPANEL)
-    # the extensions are a LIST: its rows stay flat in the 3D look
-    return r.tree(objs, look3d=True, flat=range(CPX0, CPX0 + N_CPX))
+    return r.tree(objs)
 
 
-INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTITLE", CPTITLE),
-           ("CPDCLBL", CPDCLBL), ("CPDCBOX", CPDCBOX), ("CPDC0", CPDC0),
-           ("CPTSTLBL", CPTSTLBL), ("CPTEST", CPTEST), ("CPMNLBL", CPMNLBL),
-           ("CPMNBOX", CPMNBOX), ("CPMN0", CPMN0), ("CPXLBL", CPXLBL), ("CPXBOX", CPXBOX),
-           ("CPX0", CPX0), ("CPXOPEN", CPXOPEN), ("N_CPX", N_CPX),
-           ("CPOK", CPOK),
-           ("CPCNCL", CPCNCL), ("N_DC", N_DC), ("N_MN", N_MN),
+INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTIME", CPTIME),
+           ("CPDATE", CPDATE), ("CPLIST", CPLIST), ("CPSLOT0", CPSLOT0),
+           ("SLOT_OBS", SLOT_OBS), ("N_VIS", N_VIS), ("CPSBAR", CPSBAR),
+           ("CPUP", CPUP), ("CPTRACK", CPTRACK), ("CPSLIDER", CPSLIDER),
+           ("CPDOWN", CPDOWN), ("CPEMPTY", CPEMPTY),
            ("CPXAL0", CPXAL0), ("N_XALERT", N_XALERT),
+           ("CPWTITLE", CPWTITLE), ("CPNONE", CPNONE),
            ("NOBS_CPANEL", NOBS_CPANEL)]
 
 
@@ -189,6 +159,8 @@ def build():
     assert cpanel_tree(r) == ADCPANEL
     for i, name, text in XALERTS:
         assert r.free_string(text) == i, (name, i)
+    assert r.free_string(WTITLE) == CPWTITLE
+    assert r.free_string(NONE_TEXT) == CPNONE
     return r
 
 

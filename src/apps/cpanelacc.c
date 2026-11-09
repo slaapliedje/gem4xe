@@ -18,16 +18,20 @@
  * copy.  The two leading spaces are the donor's convention, lining the
  * name up under the desktop's own "About".
  *
- * THERE IS NO WORKSTATION to open or keep: the panel is a form the AES
- * draws, not a picture this program paints (src/apps/cpanel.c).  And
- * AC_CLOSE has nothing to do, because nothing here was taken from the
- * program that is going away.
+ * THERE IS NO WORKSTATION to open or keep: the panel is objects the AES
+ * draws, not a picture this program paints (src/apps/cpanel.c).  Since
+ * phase 135 it is a WINDOW: while it is open this loop waits for its
+ * presses, its keys and its clock's second as well as for messages
+ * (cp_wait), and AC_CLOSE means the AES has taken the window away.
  */
 #include "gem.h"
 
 WORD cp_start(void);
-void cp_panel(void);
 void cp_bootinit(void);
+void cp_open(void);
+void cp_acclose(void);
+void cp_message(const WORD *msg);
+WORD cp_wait(WORD *msg);
 
 static char acc_title[] = "  Control Panel";
 
@@ -55,12 +59,15 @@ int main(void)
     }
 
     for (;;) {
-        evnt_mesag(msg);
+        if (!(cp_wait(msg) & MU_MESAG))
+            continue;
         if (msg[0] == AC_OPEN && msg[4] == acc_menu) {
             acc_opens++;
-            cp_panel();
+            cp_open();
         } else if (msg[0] == AC_CLOSE) {
             acc_closes++;
-        }
+            cp_acclose();
+        } else
+            cp_message(msg);
     }
 }

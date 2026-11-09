@@ -218,8 +218,8 @@ whatever name it is given:
 | `EDIT.PRG` | a small text editor, for a CONFIG.SYS, a batch file or a README: Show a document from the desktop and press Return.  Atari files keep their $9B line ends and are drawn in the Atari's own characters; ST and PC files keep theirs.  Up to 32 KB |
 | `EDIT.RSC` | its menus, alerts and words |
 | `CLOCK.ACC` | THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside GEM.COM, with CLOCK.RSC, and it appears in the Desk menu: the AES loads it once at start-up and it stays there, ticking, through every program the desktop runs. An accessory goes in the system's own directory, never in \APPS\ -- it is not something the desktop launches |
-| `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: the settings that belong to the machine rather than to a program, and a host for the extensions below.  Beside GEM.COM with CPANEL.RSC |
-| `CPANEL.RSC` | its panel and the list it shows the extensions in |
+| `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: a window listing the extensions below by their icons -- double-click one to open it -- with the time and the date along its top, beside whatever else is on the screen.  Beside GEM.COM with CPANEL.RSC |
+| `CPANEL.RSC` | its window and the words it says |
 | `CALC.ACC` | the same calculator as a desk accessory, so it is reachable from inside whatever you are running.  It shares CALC.RSC with CALC.PRG |
 | `GENERAL.CPX` | A CONTROL PANEL EXTENSION, the ST's .CPX: the double-click speed, the menu delay, and the date and time.  Put it beside GEM.COM with GENERAL.RSC and the control panel grows a page -- the AES lists every *.CPX it finds there and CONTROL.ACC shows them.  What you set is saved and put back at the next boot |
 | `GENERAL.RSC` | its dialog |

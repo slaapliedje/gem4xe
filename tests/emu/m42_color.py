@@ -31,15 +31,13 @@ sys.path.insert(0, HERE)
 from a8test.launcher import launch            # noqa: E402
 import symfile                                # noqa: E402
 import colorrsc as cr                         # noqa: E402
-from shots import (Tour, boot, poke16, PTR_NONE, SYMS, CPX_ROW2,   # noqa: E402
-                   CPX_OPEN)
+from shots import Tour, boot, poke16, PTR_NONE, SYMS, middle   # noqa: E402
 from deskrsc import DESKMENU                  # noqa: E402
 from PIL import Image                         # noqa: E402
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "gem-shots.atr"))
 RAW_X0 = 16                     # a raw VBXE screenshot's left border
 CELL = 8                        # the VBXE face's cell, both ways
-ROW3 = (CPX_ROW2[0], CPX_ROW2[1] + 8)
 RED, DARK_RED = (255, 0, 0), (187, 0, 0)
 
 problems = []
@@ -90,12 +88,14 @@ class Dialog:
         return self.at(cx, cy, w * CELL // 2)
 
 
-def open_color(t):
-    t.choose(DESKMENU, t.desk_acc("Control Panel"))
-    t.b.frames(60)
-    t.click(ROW3)
-    t.b.frames(20)
-    t.click(CPX_OPEN)
+def open_color(t, panel_open=False):
+    """Color, opened by a double-click on its slot -- the panel's third,
+    where the panel says it put it (Tour.panel, phase 135)."""
+    if not panel_open:
+        t.choose(DESKMENU, t.desk_acc("Control Panel"))
+        t.b.frames(60)
+        t.settle()
+    t.dclick(middle(t.panel()["slots"][2]))
     t.b.frames(80)
     t.go((600, 220))
     t.b.frames(20)
@@ -138,18 +138,15 @@ def main():
 
         t.click(d.button(27, 13, 8))            # Cancel
         b.frames(30)
-        t.click(ROW3)
-        b.frames(20)
-        t.click(CPX_OPEN)
-        b.frames(80)
-        t.go((600, 220))
+        t.settle()
+        open_color(t, panel_open=True)          # the window is still up
         c = d.swatch_colour(2, "m42-cancelled")
         check(c == RED, f"...and Cancel put it back: {c}")
 
         step_red_down(t, d, 4)
         t.click(d.button(15, 13, 8))            # OK: saved
         b.frames(60)
-        b.key("RETURN")                         # the panel's own OK
+        b.key("ESC")                            # the panel's window
         b.frames(60)
         t.settle()
 

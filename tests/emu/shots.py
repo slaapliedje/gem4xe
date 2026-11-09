@@ -51,7 +51,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import symfile                              # noqa: E402
-from aesref import W_FULLER, OBJ_SIZE, G_ICON, G_CICON   # noqa: E402
+from aesref import W_FULLER, OBJ_SIZE, G_ICON, G_CICON, ESCAPE   # noqa: E402
 from deskref import g_offset, DROOT, WOBS_START   # noqa: E402
 from deskrsc import (THEBAR, THEACTIVE, THEDROPS,           # noqa: E402
                      DESKMENU, FILEMENU, VIEWMENU,
@@ -63,7 +63,7 @@ from m7_form import (poke16, apply_step, F, M, B, K, CLICK,   # noqa: E402
                      DCLICK, RETURN)
 from m14_sparta import screen               # noqa: E402
 from m17_desktop import (header, DESKTOP, DESK_SYM,   # noqa: E402
-                         desk_g, desk_places)
+                         desk_g, desk_places, g4a)
 from demo_aes import path                   # noqa: E402
 from product_boot import REFUSAL, STEP, BOOT_WAIT, boot_screen   # noqa: E402
 
@@ -77,6 +77,10 @@ BOOT_SHOT = "00-boot.png"
 SYMS = os.path.join(BUILD, "gem.sym")
 CALC = os.path.join(BUILD, "calc.g4a")
 CALC_SYM = os.path.join(BUILD, "calc.sym")
+CPANEL = os.path.join(BUILD, "cpanelacc.g4a")
+CPANEL_SYM = os.path.join(BUILD, "cpanelacc.sym")
+CPANEL_TITLE = "  Control Panel"       # src/apps/cpanelacc.c acc_title
+CPANEL_SLOTS = 4                       # tools/cpanelrsc.py N_VIS
 DISK = os.path.join(BUILD, "gem-shots.atr")
 OUT = os.path.join(ROOT, "docs", "shots")
 
@@ -115,20 +119,6 @@ def children(b, tree, parent):
 # decode, which names neither the tree nor the address.  That is what a
 # far G looked like to a gate that still expected a near one.
 MAX_TREE_DEPTH = 12
-
-# The Extensions list's first row, and the Open button, in the Control
-# Panel as form_center places it.
-#
-# MEASURED OFF docs/shots/10-cpanel.png AND HALVED, which is the part
-# that is easy to get wrong: publish() crops the border and DOUBLES THE
-# ROWS, so a y read off a published picture is twice the y the pointer
-# wants.  The first attempt clicked at the published number, missed both
-# objects, and produced a picture of the panel doing nothing -- which
-# looked like a broken feature rather than a wrong coordinate.
-CPX_ROW1 = (270, 125)
-CPX_ROW2 = (270, 133)           # a row is one 8-pixel cell below the last
-CPX_OPEN = (403, 125)
-
 
 def placed(b, tree, root=0):
     """{obj: (x, y, w, h)} on the screen, for every object under root."""
@@ -331,6 +321,38 @@ class Tour:
                 return i
         raise KeyError(f"{name!r} is not in the Desk menu: {seen}")
 
+    def panel(self):
+        """The Control Panel's window, as the panel itself placed it.
+
+        Read out of the accessory's own variables (src/apps/cpanel.c:
+        cp_wh, cp_work, cp_slotr and the rest) rather than measured off a
+        picture or worked out again here.  Its title's address is in the
+        AES's gl_acctitle, and a packed G4A's far variables are one block
+        (m17_desktop.g4a), so the block starts at that address less
+        acc_title's offset in it -- test-m45's way of finding an
+        accessory's variables, for a large-data one.  Until phase 135 the
+        places were measured off 10-cpanel.png, which is what made the
+        panel's layout impossible to change without re-aiming every gate
+        that opened a module."""
+        asym = symfile.load(CPANEL_SYM)
+        vlink = g4a(CPANEL)["vars_link"] << 16
+        for i in range(6):
+            p = self.b.peek24(self.syms["gl_acctitle"] + 4 * i)
+            if p and cstring(self.b, p, 20) == CPANEL_TITLE:
+                break
+        else:
+            raise KeyError("no Control Panel among the accessories")
+        base = p - (asym["acc_title"] - vlink)
+
+        def w(name, off=0):
+            v = self.b.peek16(base + asym[name] - vlink + off)
+            return v - 0x10000 if v & 0x8000 else v
+        return dict(wh=w("cp_wh"), rows=w("cp_rows"), top=w("cp_top"),
+                    sel=w("cp_sel"), opens=w("cp_opens"),
+                    work=tuple(w("cp_work", 2 * j) for j in range(4)),
+                    slots=[tuple(w("cp_slotr", 8 * k + 2 * j) for j in range(4))
+                           for k in range(CPANEL_SLOTS)])
+
     def dialog(self, field, which):
         """An object of one of the desktop's dialogs, once it is up."""
         rects = placed(self.b, self.tree_of(field))
@@ -495,8 +517,10 @@ def main(argv):
 
         # Each accessory in turn, BY NAME (desk_acc) rather than by the
         # index it happened to have when there were two of them.  RETURN
-        # puts a form away: OK is the DEFAULT button, so no coordinate
-        # arithmetic is needed and the next one can have the screen.
+        # puts the calculator's form away: OK is the DEFAULT button, so no
+        # coordinate arithmetic is needed and the next one can have the
+        # screen.  The Control Panel is a window since phase 135, and
+        # Escape shuts it.
         for name, shot in (("Control Panel", "cpanel"),
                            ("Calculator", "calc-acc")):
             t.choose(DESKMENU, t.desk_acc(name))
@@ -505,38 +529,28 @@ def main(argv):
             b.frames(30)
             t.shot(shot)
             if name == "Control Panel":
-                # ...and one of its extensions, opened.  THE POINT OF THE
-                # WHOLE SHAPE: the panel lists what the AES loaded and
-                # calls that module's cpx_call, so what appears next is a
-                # dialog belonging to a separately linked file the panel
-                # has never heard of.
-                #
-                # The two places clicked are MEASURED off the panel's own
-                # picture (10-cpanel.png) rather than read out of its
-                # tree: the panel is an accessory, so its objects are in
-                # its own memory and reaching them wants symbols and a
-                # near base this tour does not carry.  That is a fair
-                # trade here because the PICTURE is the check -- if the
-                # layout moves, 11-general-cpx.png shows the wrong thing
-                # instead of passing quietly.
-                t.click(CPX_ROW1)
-                b.frames(20)
-                t.click(CPX_OPEN)
+                # ...and one of its extensions, opened by a double-click
+                # on its slot.  THE POINT OF THE WHOLE SHAPE: the panel
+                # lists what the AES loaded and calls that module's
+                # cpx_call, so what appears next belongs to a separately
+                # linked file the panel has never heard of.  The slots
+                # are where the panel says it put them (Tour.panel).
+                p = t.panel()
+                t.dclick(middle(p["slots"][0]))      # General
                 b.frames(60)
                 t.go((400, 200))
                 b.frames(30)
                 t.shot("general-cpx")
                 t.run([K("RETURN", RETURN), F(40)])   # the module's OK
                 # ...and the second module, which is the OTHER kind: an
-                # EVENT CPX.  It draws itself, returns 1, and the panel
-                # then drives it -- so what is photographed here is a
-                # module being fed events by a host that owns the loop,
-                # which is the half of the contract GENERAL does not use.
-                # Any key closes it, which is what the module's cpx_key
-                # does with the `quit` it is given.
-                t.click(CPX_ROW2)
-                b.frames(20)
-                t.click(CPX_OPEN)
+                # EVENT CPX.  It draws itself into the panel's window,
+                # returns 1, and the panel then drives it -- so what is
+                # photographed here is a module being fed events by a host
+                # that owns the loop, which is the half of the contract
+                # GENERAL does not use.  Any key closes it, which is what
+                # the module's cpx_key does with the `quit` it is given.
+                p = t.panel()
+                t.dclick(middle(p["slots"][1]))      # the gate's TEST.CPX
                 b.frames(60)
                 t.go((400, 200))
                 b.frames(30)
@@ -552,7 +566,9 @@ def main(argv):
                 t.run([K("RETURN", RETURN), F(40)])
                 t.shot("cpx-alert")
                 t.run([K("RETURN", RETURN), F(40)])   # ...and it closes
-            t.run([K("RETURN", RETURN), F(40)])
+                t.run([K("ESC", ESCAPE), F(40)])      # the panel's window
+            else:
+                t.run([K("RETURN", RETURN), F(40)])
 
         # The clock last: it has no default button and ends on a key.
         t.choose(DESKMENU, t.desk_acc("Clock"))
