@@ -258,6 +258,17 @@ class HeaderInFront(unittest.TestCase):
         with self.assertRaises(self.m.SpecError):
             self.m.parse(self.SPEC.split("icon")[0])
 
+    def test_a_buffer_goes_in(self):
+        """The settings bytes' start, from the header file -- how
+        FORM.CPX tells the gate module to be a form (src/m35_form.cpxh)."""
+        head = self.SPEC.replace("icon\n", "buffer 46 01 ff\nicon\n")
+        r = self.m.read(self.m.header(self.m.parse(self.spec(head=head))))
+        self.assertEqual(r["buffer"][:4], b"F\x01\xff\x00")
+        for bad in ("buffer 4\nicon\n", "buffer zz\nicon\n",
+                    "buffer " + "00" * 65 + "\nicon\n"):
+            with self.assertRaises(self.m.SpecError, msg=bad):
+                self.m.parse(self.spec(head=self.SPEC.replace("icon\n", bad)))
+
     def test_a_foreign_file_is_not_a_header(self):
         st = (100).to_bytes(2, "big") + bytes(510)
         self.assertIsNone(self.m.read(st), "an ST CPX read as ours")
@@ -276,12 +287,17 @@ class HeaderInFront(unittest.TestCase):
             for f in files:
                 if f.endswith(".cpxh"):
                     found[f] = self.m.parse(text(os.path.join(d, f)), f)
-        for name in ("general.cpxh", "color.cpxh", "m35_cpx.cpxh", "m35_boot.cpxh"):
+        for name in ("general.cpxh", "color.cpxh", "m35_cpx.cpxh",
+                     "m35_boot.cpxh", "m35_form.cpxh"):
             self.assertIn(name, found)
         self.assertEqual(found["general.cpxh"]["flags"], 0x0002)
         self.assertEqual(found["color.cpxh"]["flags"], 0x0002)
         self.assertEqual(found["m35_cpx.cpxh"]["flags"], 0)
         self.assertEqual(found["m35_boot.cpxh"]["flags"], 0x0002)
+        self.assertEqual(found["m35_form.cpxh"]["flags"], 0)
+        self.assertEqual(found["m35_form.cpxh"]["buffer"][:1], b"F",
+                         "FORM.CPX's buffer no longer says 'F': test-m58's "
+                         "form would run as an event CPX")
         ids = [s["id"] for s in found.values()]
         self.assertEqual(len(ids), len(set(ids)), "two modules share an id")
 

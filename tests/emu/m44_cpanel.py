@@ -8,7 +8,8 @@ Until phase 135 the panel was a dialog that held the screen (0.12's item
 and this gate drives it as a person would:
 
   1. Desk -> Control Panel opens a window, on top, listing the disk's
-     three modules -- General, the gate's TEST.CPX, Color -- each slot
+     four modules -- General, the gate's TEST.CPX, Color, and the same
+     gate module as FORM.CPX (test-m58's) -- each slot
      with the icon from the header in front of its file (phase 133).
   2. A double-click on General's slot opens it IN THE WINDOW (phase 136,
      the panel's Xform_do); the window is dragged with it up, and Look ->
@@ -93,7 +94,7 @@ def main():
         # are freed once the panel has boot-initialised them (phase 118).
         n, drops = b.peek16(syms["sh_ncpx"]), b.peek16(syms["sh_cpxdrops"])
         runs = b.peek16(syms["sh_cpxruns"])
-        check(n == 3, f"{n} module(s) listed, the disk's 3")
+        check(n == 4, f"{n} module(s) listed, the disk's 4")
         check(runs == 2, f"{runs} module(s) loaded at boot: General and Color")
         check(drops == runs, f"{drops} of the {runs} module(s) loaded at "
                              f"boot freed after it")
@@ -166,12 +167,12 @@ def main():
         check(p["wh"] > 0 and top() == p["wh"],
               f"Desk -> Control Panel opened a window on top (window "
               f"{p['wh']}, gl_wtop {top()})")
-        check(p["rows"] == 3, f"it lists {p['rows']} module(s), the disk's 3")
+        check(p["rows"] == 4, f"it lists {p['rows']} module(s), the disk's 4")
         if p["wh"] <= 0:
             return 1
         size0 = p["work"][2:]
         im = Image.open(shot("1-open")).convert("L")
-        for k, name in enumerate(("General", "Test", "Color")):
+        for k, name in enumerate(("General", "Test", "Color", "Form")):
             sx, sy = p["slots"][k][:2]
             # the icon: 32 x 24 at the slot's icon column, centred in it
             ix, iy = sx + 2 + (88 - 32) // 2, sy + 2

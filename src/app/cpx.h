@@ -202,7 +202,47 @@ typedef struct {
     WORD  xf_edit;              /* the field to start in; 0, the first */
     WORD  xf_ret;               /* the object, or -1 for a message */
     WORD  xf_msg[8];            /* ...the message */
+
+    /* Set_Evnt_Mask (phase 137): what an EVENT CPX wants besides the
+     * panel's own events -- MU_M1, MU_M2 and their rectangles, and the
+     * timer's period -- as XControl's.  ORed with the panel's keys,
+     * buttons, messages and timer, from the next wait until the module
+     * shuts; the timer's period is XControl's 30 seconds until a module
+     * asks.  em_time -1 leaves the period as it is.  Xform_do ignores
+     * it, as XControl's does. */
+    void (*Set_Evnt_Mask)(uint32_t xcpb);
+    WORD  em_mask;
+    MOBLK em_m1, em_m2;
+    LONG  em_time;
+
+    /* GetFirstRect / GetNextRect (phase 137): the panel window's
+     * rectangle list, each piece cut to the area GetFirstRect was given
+     * in rl_rect; ok is 1 with the next piece in rl_rect, 0 at the end.
+     * A piece the area misses is passed over, where XControl's hands it
+     * back with a width of 0 or less -- a caller that checked still
+     * works. */
+    void (*GetFirstRect)(uint32_t xcpb);
+    void (*GetNextRect)(uint32_t xcpb);
+    GRECT rl_rect;
+
+    /* getcookie (phase 137): ok 1 and ck_value set when the jar has
+     * ck_id.  This machine has no jar (src/app/mint/cookie.h), so the
+     * answer is 0, honestly, for every cookie. */
+    void (*getcookie)(uint32_t xcpb);
+    LONG  ck_id, ck_value;
+
+    /* MFsave (phase 137): the mouse's form saved (mf_save 1) or put
+     * back (0), as graf_mouse M_SAVE / M_RESTORE -- which is what
+     * XControl's does too; the MFORM its prototype takes is not read. */
+    void (*MFsave)(uint32_t xcpb);
+    WORD  mf_save;
 } XCPB;
+
+/* XControl's one message of its own: Xform_do answers -1 with this in
+ * msg[0] and the key word in msg[3] for a key with no character -- a
+ * function key, Help, Undo -- but not the four arrows, which move
+ * between fields. */
+#define CT_KEY  53
 
 /* Xform_do as XControl's reads -- a call with arguments -- over the
  * one-block ABI the callbacks have to keep (see CPXINFO below).  0 when
@@ -221,6 +261,76 @@ static __inline WORD cpx_xform_do(XCPB FAR *pb, OBJECT *tree, WORD edit,
     for (i = 0; i < 8; i++)
         msg[i] = pb->xf_msg[i];
     return pb->xf_ret;
+}
+
+/* The rest of the toolkit as calls with arguments, over the same block
+ * (phase 137).  Each does nothing, or answers 0, when the panel has no
+ * such callback. */
+static __inline void cpx_set_evnt_mask(XCPB FAR *pb, WORD mask,
+                                       const MOBLK *m1, const MOBLK *m2,
+                                       LONG ms)
+{
+    if (!pb || !pb->Set_Evnt_Mask)
+        return;
+    pb->em_mask = mask;
+    /* FIELD BY FIELD: a MOBLK is ten bytes, and a struct copy over eight
+     * between near and far memory is an internal compiler error (B11,
+     * tools/ccbug) */
+    if (m1) {
+        pb->em_m1.m_out = m1->m_out;
+        pb->em_m1.m_x = m1->m_x;
+        pb->em_m1.m_y = m1->m_y;
+        pb->em_m1.m_w = m1->m_w;
+        pb->em_m1.m_h = m1->m_h;
+    }
+    if (m2) {
+        pb->em_m2.m_out = m2->m_out;
+        pb->em_m2.m_x = m2->m_x;
+        pb->em_m2.m_y = m2->m_y;
+        pb->em_m2.m_w = m2->m_w;
+        pb->em_m2.m_h = m2->m_h;
+    }
+    pb->em_time = ms;
+    pb->Set_Evnt_Mask((uint32_t)pb);
+}
+
+static __inline WORD cpx_first_rect(XCPB FAR *pb, const GRECT *area,
+                                    GRECT *r)
+{
+    if (!pb || !pb->GetFirstRect)
+        return 0;
+    pb->rl_rect = *area;
+    pb->GetFirstRect((uint32_t)pb);
+    *r = pb->rl_rect;
+    return pb->ok;
+}
+
+static __inline WORD cpx_next_rect(XCPB FAR *pb, GRECT *r)
+{
+    if (!pb || !pb->GetNextRect)
+        return 0;
+    pb->GetNextRect((uint32_t)pb);
+    *r = pb->rl_rect;
+    return pb->ok;
+}
+
+static __inline WORD cpx_getcookie(XCPB FAR *pb, LONG id, LONG *value)
+{
+    if (!pb || !pb->getcookie)
+        return 0;
+    pb->ck_id = id;
+    pb->getcookie((uint32_t)pb);
+    if (pb->ok && value)
+        *value = pb->ck_value;
+    return pb->ok;
+}
+
+static __inline void cpx_mfsave(XCPB FAR *pb, WORD save)
+{
+    if (!pb || !pb->MFsave)
+        return;
+    pb->mf_save = save;
+    pb->MFsave((uint32_t)pb);
 }
 
 /* XGen_Alert's numbers are Atari's, from the Compendium's table for
@@ -292,7 +402,17 @@ typedef struct {
     WORD  quit;                 /* SET THIS to be closed.  The host zeroes
                                  * it before every call and stops asking
                                  * the moment it comes back non-zero. */
-    WORD  ret;                  /* cpx_call's answer: see below */
+    WORD  ret;                  /* cpx_call's answer: see below; and
+                                 * cpx_hook's -- non-zero takes the event,
+                                 * and the host does nothing more with it */
+    WORD  keep;                 /* cpx_close: 1 for the window's closer --
+                                 * keep what was set, as OK; 0 for
+                                 * AC_CLOSE -- put it back, as Cancel.
+                                 * XControl passes a BOOLEAN whose own
+                                 * notes and the Compendium say TRUE is the
+                                 * closer while its code passes FALSE for
+                                 * it; a field named for what it means
+                                 * cannot be read the wrong way round. */
 } CPXPB;
 
 typedef struct {
@@ -318,7 +438,17 @@ typedef struct {
 
     /* THE REST ARE FOR AN EVENT CPX ONLY.  Any of them may be 0 and a
      * host must check: a module that wants only keys writes only
-     * cpx_key.  Each is given pb->quit zeroed. */
+     * cpx_key.  Each is given pb->quit zeroed.
+     *
+     * XCONTROL'S ORDER, since phase 137: cpx_hook first, with the event
+     * bits, the message, the mouse, the key and the clicks -- non-zero in
+     * pb->ret and the host does nothing more with the event; then
+     * cpx_timer, cpx_key, cpx_button (the keys and the presses only while
+     * the panel's window is on top), cpx_m1 and cpx_m2 (rectangles asked
+     * for with Set_Evnt_Mask), and the window's messages: cpx_draw for a
+     * redraw, a piece at a time, cpx_wmove for a move.  cpx_close comes
+     * when the WINDOW goes -- its closer (pb->keep 1) or AC_CLOSE (0) --
+     * and not when the module itself sets quit, as XControl's. */
     void (*cpx_draw)(uint32_t pb);
     void (*cpx_wmove)(uint32_t pb);
     void (*cpx_timer)(uint32_t pb);
@@ -338,9 +468,17 @@ typedef struct {
  * It returns its vtable, or 0 to decline (a module that finds no
  * hardware it can configure should decline rather than appear and do
  * nothing).  Its header is not its business: that is the file's, in
- * front of the module (the file section above).  `pb` is 0 for now --
- * the panel's block arrives at cpx_call (CPXPB's xcpb) -- and a module
- * must cope with that, as with any callback being 0.
+ * front of the module (the file section above).
+ *
+ * `pb` IS THE PANEL'S XCPB when the panel loads the module to open it
+ * (phase 137), as XControl's is at every open -- so a port's cpx_init
+ * may call the toolkit.  At BOOT the AES loads the modules that ask
+ * before the panel exists, and pb is 0 then; the panel's block arrives
+ * at cpx_call (CPXPB's xcpb) either way, with `booting` set at boot.
+ * HOW IT GETS THERE: the panel writes its address into the first four
+ * bytes of the slot header's `reserved` before it loads the module, and
+ * the kit's glue (src/app/cpxmain.c) reads it back -- gem4xe's, in a
+ * part of the header the ST leaves empty.
  *
  * IT MUST BE saveds, which is the whole reason CPX_ENTRY is a macro and
  * not a comment.  A module is linked separately from the panel, so the

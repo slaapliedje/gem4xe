@@ -25,6 +25,7 @@
  */
 #include "gem.h"
 #include "cpx.h"
+#include "mint/cookie.h"
 #include "cpanelrsc.h"
 
 static OBJECT *tree;
@@ -62,6 +63,8 @@ WORD  cp_slotr[N_VIS][4];       /* each slot on the screen: x, y, w, h */
 
 #define KEY_UP      0x4800      /* the ST's key words (src/desk/desktop.c) */
 #define KEY_DOWN    0x5000
+#define KEY_LEFT    0x4B00
+#define KEY_RIGHT   0x4D00
 #define KEY_ESC     0x011B
 #define KEY_RETURN  0x1C0D
 
@@ -647,6 +650,20 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
                 return;
             }
         }
+        /* A KEY WITH NO CHARACTER -- a function key, Help, Undo -- is the
+         * module's to read, as XControl's CT_KEY: -1, and the key word in
+         * msg[3].  The four arrows move between fields and stay here. */
+        if ((ev & MU_KEYBD) && !(kr & 0xFF) && (UWORD)kr != KEY_UP
+            && (UWORD)kr != KEY_DOWN && (UWORD)kr != KEY_LEFT
+            && (UWORD)kr != KEY_RIGHT) {
+            cp_cursor(t, edit, &idx, ED_END);
+            for (i = 0; i < 8; i++)
+                pb->xf_msg[i] = 0;
+            pb->xf_msg[0] = CT_KEY;
+            pb->xf_msg[3] = kr;
+            pb->xf_ret = -1;
+            return;
+        }
         if (ev & MU_KEYBD) {
             wind_update(BEG_UPDATE);
             cont = form_keybd(t, edit, next, kr, &next, &kr);
@@ -671,6 +688,99 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
     pb->xf_ret = next;
 }
 
+/* ---- the rest of the toolkit (phase 137) -------------------------------
+ *
+ * Set_Evnt_Mask, GetFirstRect / GetNextRect, getcookie and MFsave, each
+ * a one-block callback as cpx.h's ABI requires (src/app/cpx.h says what
+ * each is for, and where it parts from XControl's).
+ */
+#define CPX_TIME  30000L                /* XControl's timer, until asked */
+
+static WORD  cp_emask;                  /* Set_Evnt_Mask: MU_M1 | MU_M2 */
+static MOBLK cp_em1, cp_em2;
+static LONG  cp_etime = CPX_TIME;
+
+static SAVEDS void cp_set_evnt_mask(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+
+    cp_emask = (WORD)(pb->em_mask & (MU_M1 | MU_M2));
+    /* field by field: a MOBLK is ten bytes, and a near <-> far struct
+     * copy over eight is an internal compiler error (B11) */
+    cp_em1.m_out = pb->em_m1.m_out;
+    cp_em1.m_x = pb->em_m1.m_x;
+    cp_em1.m_y = pb->em_m1.m_y;
+    cp_em1.m_w = pb->em_m1.m_w;
+    cp_em1.m_h = pb->em_m1.m_h;
+    cp_em2.m_out = pb->em_m2.m_out;
+    cp_em2.m_x = pb->em_m2.m_x;
+    cp_em2.m_y = pb->em_m2.m_y;
+    cp_em2.m_w = pb->em_m2.m_w;
+    cp_em2.m_h = pb->em_m2.m_h;
+    if (pb->em_time != -1L)
+        cp_etime = pb->em_time;
+}
+
+/* The window's list, each piece cut to the area: the walk goes on through
+ * the AES's own cursor (WF_NEXTXYWH), so a GetFirstRect starts it again. */
+static GRECT cp_rlarea;
+
+static void cp_rlwalk(XCPB FAR *pb, WORD field)
+{
+    GRECT r;
+
+    pb->ok = 0;
+    if (cp_wh < 0)
+        return;
+    for (;;) {
+        wind_get(cp_wh, field, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+        if (!r.g_w || !r.g_h)
+            return;                     /* the end of the list */
+        field = WF_NEXTXYWH;
+        if (rc_intersect(&cp_rlarea, &r)) {
+            pb->rl_rect = r;
+            pb->ok = 1;
+            return;
+        }
+    }
+}
+
+static SAVEDS void cp_first_rect(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+
+    cp_rlarea = pb->rl_rect;
+    cp_rlwalk(pb, WF_FIRSTXYWH);
+}
+
+static SAVEDS void cp_next_rect(uint32_t xcpb)
+{
+    cp_rlwalk((XCPB FAR *)xcpb, WF_NEXTXYWH);
+}
+
+/* No jar on this machine: every cookie is not found, and said so. */
+static SAVEDS void cp_getcookie(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    long v = 0;
+
+    pb->ok = 0;
+    if (Getcookie(pb->ck_id, &v) == C_FOUND) {
+        pb->ck_value = v;
+        pb->ok = 1;
+    }
+}
+
+static SAVEDS void cp_mfsave(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+
+    if (pb->mf_save)
+        graf_mouse(M_SAVE, (const WORD *)0);
+    else
+        graf_mouse(M_RESTORE, (const WORD *)0);
+}
+
 /* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
  * a module is handed its address and reads it there (src/app/cpx.h says
  * why every entry takes one uint32_t rather than arguments). */
@@ -686,6 +796,11 @@ static void cp_xcpb_init(void)
     cp_xcpb.alert = 0;
     cp_xcpb.ok = 0;
     cp_xcpb.Xform_do = cp_xform_do;
+    cp_xcpb.Set_Evnt_Mask = cp_set_evnt_mask;
+    cp_xcpb.GetFirstRect = cp_first_rect;
+    cp_xcpb.GetNextRect = cp_next_rect;
+    cp_xcpb.getcookie = cp_getcookie;
+    cp_xcpb.MFsave = cp_mfsave;
 }
 
 /* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT -- or
@@ -740,25 +855,28 @@ void cp_bootinit(void)
  * module that never blocks its host can show the effect of a control
  * while the control is being moved.
  *
- * WHAT IS FORWARDED is a key, a button and a timer tick -- the keys and
- * the presses only reach this process while the window is on top (the
- * AES's rule, phase 134) -- and a redraw, rectangle by rectangle, as
- * XControl's cpx_draw is called: the module draws with the rectangle as
- * its clip.  The window's own business is done here around it: topped,
- * moved (cpx_wmove when the module has one; a redraw of the whole work
- * area when it has not), closed, or taken away by AC_CLOSE.
+ * XCONTROL'S ORDER (phase 137; src/app/cpx.h, CPXINFO): cpx_hook first,
+ * and the event goes no further if it takes it; then the timer, the key
+ * and the press -- those two only reach this process while the window is
+ * on top, the AES's rule since phase 134 -- then the mouse rectangles a
+ * module asked for with Set_Evnt_Mask, then the window's messages.  A
+ * redraw is done a rectangle at a time, each the module's clip; a move
+ * is cpx_wmove, or a redraw of the work area for a module with none.
+ * XControl takes the update lock around the lot and a hook that takes
+ * the event leaves it held; this takes it only to draw.
  *
  * Each entry is given a `quit` zeroed first, and the loop ends the moment
  * one comes back non-zero -- so a module says "I am done" once and is not
  * asked again.  AN ENTRY MAY BE 0, and most of a simple module's are.
  *
- * THE TIMER IS ALWAYS ASKED FOR, at a rate the panel chooses rather than
- * the module: Set_Evnt_Mask is how XCONTROL lets a module say what it
- * wants, and that is step 3's.  100 ms is a rate a clock or a sound can
- * work with and costs a module that ignores cpx_timer nothing.
+ * cpx_close COMES WHEN THE WINDOW GOES, with pb->keep: 1 for its closer,
+ * 0 for AC_CLOSE -- and not when the module ends itself, as XControl's.
+ * Until phase 137 it came every time, with nothing to say which.
+ *
+ * THE TIMER is XControl's 30 seconds until a module asks for another
+ * period; the mouse rectangles only if it asks.  What it asked for lasts
+ * until it shuts, and the next module starts from nothing.
  */
-#define CPX_TICK  100L
-
 /* The work area cleared, then the module asked to draw: each rectangle of
  * the window's list that meets `area`. */
 static void cp_cpxdraw(CPXINFO FAR *info, const GRECT *area)
@@ -787,39 +905,59 @@ static void cp_close(void);
 
 static void cp_drivecpx(CPXINFO FAR *info)
 {
-    WORD msg[8], mx, my, mb, ks, kr, nc, gone = 0;
+    WORD msg[8], mx, my, mb, ks, kr, nc, gone = 0, i;
     uint32_t pb = (uint32_t)(CPXPB FAR *)&cp_pb;
 
     for (;;) {
-        WORD ev = evnt_multi(MU_KEYBD | MU_BUTTON | MU_TIMER | MU_MESAG,
+        WORD ev = evnt_multi(MU_KEYBD | MU_BUTTON | MU_TIMER | MU_MESAG
+                             | (cp_emask & (MU_M1 | MU_M2)),
                              2, 1, 1,
-                             0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0,
+                             cp_em1.m_out, cp_em1.m_x, cp_em1.m_y,
+                             cp_em1.m_w, cp_em1.m_h,
+                             cp_em2.m_out, cp_em2.m_x, cp_em2.m_y,
+                             cp_em2.m_w, cp_em2.m_h,
                              msg,
-                             (WORD)(CPX_TICK & 0xFFFFL),
-                             (WORD)(CPX_TICK >> 16),
+                             (WORD)(cp_etime & 0xFFFFL),
+                             (WORD)((uint32_t)cp_etime >> 16),
                              &mx, &my, &mb, &ks, &kr, &nc);
         cp_pb.mouse.x = mx;
         cp_pb.mouse.y = my;
         cp_pb.mouse.buttons = mb;
         cp_pb.mouse.kstate = ks;
+        cp_pb.kstate = ks;
+        cp_pb.key = kr;
+        cp_pb.nclicks = nc;
+        cp_pb.event = ev;
+        /* plain ifs, not ?: or a comparison's value: cp_pb's address is
+         * taken, and a join into an address-taken variable is wrong at
+         * every -O (B9, tools/ccbug) */
+        for (i = 0; i < 8; i++) {
+            cp_pb.msg[i] = 0;
+            if (ev & MU_MESAG)
+                cp_pb.msg[i] = msg[i];
+        }
         cp_pb.quit = 0;
 
-        if ((ev & MU_KEYBD) && info->cpx_key) {
-            cp_pb.kstate = ks;
-            cp_pb.key = kr;
-            info->cpx_key(pb);
-        }
-        if ((ev & MU_BUTTON) && info->cpx_button) {
-            cp_pb.nclicks = nc;
-            info->cpx_button(pb);
+        if (info->cpx_hook) {
+            cp_pb.ret = 0;
+            info->cpx_hook(pb);
+            if (cp_pb.ret) {            /* it took the event */
+                if (cp_pb.quit)
+                    break;
+                continue;
+            }
         }
         if ((ev & MU_TIMER) && info->cpx_timer)
             info->cpx_timer(pb);
+        if ((ev & MU_KEYBD) && info->cpx_key)
+            info->cpx_key(pb);
+        if ((ev & MU_BUTTON) && info->cpx_button)
+            info->cpx_button(pb);
+        if ((ev & MU_M1) && info->cpx_m1)
+            info->cpx_m1(pb);
+        if ((ev & MU_M2) && info->cpx_m2)
+            info->cpx_m2(pb);
         if (ev & MU_MESAG) {
-            WORD i;
-            for (i = 0; i < 8; i++)
-                cp_pb.msg[i] = msg[i];
             if (msg[0] == AC_CLOSE)
                 gone = 2;               /* the AES took the window */
             else if (msg[0] == AC_OPEN && cp_wh >= 0)
@@ -840,6 +978,8 @@ static void cp_drivecpx(CPXINFO FAR *info)
                         info->cpx_wmove(pb);
                     else
                         cp_cpxdraw(info, &cp_work);
+                } else if (msg[0] == WM_SIZED) {
+                    cp_fit();
                 } else if (msg[0] == WM_CLOSED) {
                     gone = 1;
                 }
@@ -852,8 +992,12 @@ static void cp_drivecpx(CPXINFO FAR *info)
         if (cp_pb.quit || gone)
             break;
     }
-    if (info->cpx_close)
+    if (gone && info->cpx_close) {
+        cp_pb.keep = 0;
+        if (gone == 1)
+            cp_pb.keep = 1;
         info->cpx_close(pb);
+    }
     if (gone == 1)
         cp_close();
     else if (gone == 2)
@@ -871,7 +1015,12 @@ static void cp_drivecpx(CPXINFO FAR *info)
  * slot's vtable is 0 until Cpxload runs the module again (src/aes/shel.c
  * sh_cpxload) -- the ST's rule, and what lets a closed module cost bank
  * $00 nothing.  A module that will not load says so with the canned
- * memory alert, which is what it nearly always is. */
+ * memory alert, which is what it nearly always is.
+ *
+ * THE BLOCK GOES TO cpx_init (phase 137): its address in the first four
+ * reserved bytes of the slot's header before the load, which the kit's
+ * glue reads (src/app/cpxmain.c) -- so a module has the toolkit at init,
+ * as XControl's has. */
 static void cp_opencpx(WORD i)
 {
     CPXSLOT FAR *sl;
@@ -880,6 +1029,12 @@ static void cp_opencpx(WORD i)
     if (i < 0 || i >= cpx_total || !cpx_table)
         return;
     sl = cpx_slot(cpx_table, cpx_stride, i);
+    cp_xcpb_init();
+    cp_xcpb.which = i;                  /* who is about to call back */
+    cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
+    cp_emask = 0;                       /* nothing asked for yet */
+    cp_etime = CPX_TIME;
+    *(uint32_t FAR *)sl->hdr.reserved = (uint32_t)(XCPB FAR *)&cp_xcpb;
     if (!sl->info && Cpxload(i, 1) != 0) {
         cp_xcpb.alert = XAL_MEM_ERR;
         cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
@@ -887,19 +1042,19 @@ static void cp_opencpx(WORD i)
     }
     info = (CPXINFO FAR *)sl->info;
     if (info && info->cpx_call) {
-        cp_xcpb_init();
-        cp_xcpb.which = i;              /* who is about to call back */
-        cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
         cp_pb.xcpb = (uint32_t)(XCPB FAR *)&cp_xcpb;
         cp_pb.rect = cp_work;
         cp_pb.quit = 0;
         cp_pb.ret = 0;
+        cp_pb.keep = 0;
         /* the module draws into the whole work area: clear it first */
         cp_draw(CPROOT, 0, &cp_work);
         info->cpx_call((uint32_t)(CPXPB FAR *)&cp_pb);
         if (cp_pb.ret)
             cp_drivecpx(info);          /* an EVENT CPX: it wants events */
     }
+    cp_emask = 0;
+    cp_etime = CPX_TIME;
     Cpxload(i, 0);                      /* kept only if CPX_RESIDENT */
 }
 

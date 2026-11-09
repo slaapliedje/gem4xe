@@ -269,10 +269,14 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
         ret = cpx_xform_do(cl_xcpb, tree, 0, msg);
         if (ret == -1) {
             /* the closer keeps the palette, as OK; AC_CLOSE puts it
-             * back, as Cancel (XControl's rule) */
-            gone = 2;
+             * back, as Cancel (XControl's rule); CT_KEY and the rest go
+             * on */
             if (msg[0] == WM_CLOSED)
                 gone = 1;
+            else if (msg[0] == AC_CLOSE)
+                gone = 2;
+            else
+                continue;
             break;
         }
         ob = (WORD)(ret & 0x7FFF);

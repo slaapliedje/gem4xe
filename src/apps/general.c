@@ -312,10 +312,15 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
         ret = cpx_xform_do(gn_xcpb, tree, GNDATE, msg);
         if (ret == -1) {
             /* XControl's rule: the closer keeps what was set, as OK;
-             * AC_CLOSE -- the window gone -- puts it back, as Cancel */
-            gone = 2;
+             * AC_CLOSE -- the window gone -- puts it back, as Cancel.
+             * Anything else -- CT_KEY, a key with no character -- is
+             * not this form's, and it goes on. */
             if (msg[0] == WM_CLOSED)
                 gone = 1;
+            else if (msg[0] == AC_CLOSE)
+                gone = 2;
+            else
+                continue;
             break;
         }
         ob = (WORD)(ret & 0x7FFF);

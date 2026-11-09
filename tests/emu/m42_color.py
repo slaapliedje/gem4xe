@@ -118,8 +118,8 @@ def main():
         t = Tour(b, syms, out)
         b.frames(20)
         t.settle()
-        check(b.peek16(syms["sh_ncpx"]) == 3 and b.peek16(syms["sh_cpxbad"]) == 0,
-              f"three modules loaded, none refused "
+        check(b.peek16(syms["sh_ncpx"]) == 4 and b.peek16(syms["sh_cpxbad"]) == 0,
+              f"four modules listed, none refused "
               f"({b.peek16(syms['sh_ncpx'])}, {b.peek16(syms['sh_cpxbad'])})")
 
         open_color(t)

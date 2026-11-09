@@ -45,15 +45,18 @@ int main(void)
         return 1;
     slot = (CPXSLOT FAR *)addr;
 
-    /* No block yet: the panel hands its own over at cpx_call.  cpx.h
-     * promises a module that every callback may be 0, which is what lets
-     * this grow without breaking a module built against an older one.
+    /* THE PANEL'S BLOCK, when the panel is loading this to open it: it
+     * wrote the block's address into the first four reserved bytes of the
+     * slot's header first (src/apps/cpanel.c, cp_opencpx).  0 at boot,
+     * when the AES loads a module before there is a panel; cpx.h promises
+     * a module that every callback may be 0, which is what lets this grow
+     * without breaking a module built against an older one.
      *
      * AND NO HEADER.  The slot's was read from the file's front at boot,
      * with the settings file laid over its buffer (src/aes/shel.c); a
      * module that wrote one here would put its defaults over what was
      * saved. */
-    info = cpx_init((XCPB FAR *)0);
+    info = cpx_init((XCPB FAR *)*(uint32_t FAR *)slot->hdr.reserved);
     if (!info)
         return 1;                       /* it declined: the shell frees it */
 

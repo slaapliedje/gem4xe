@@ -19,6 +19,8 @@ an editor and reviewed in a diff:
     text     General        i_text, under the icon, 13 at most
     icolor   0x1000         the ICONBLK's ib_char word (default)
     tcolor   0x1180         the TEDINFO's te_color word (default: Atari's)
+    buffer   46 00          the 64 settings bytes' first ones, in hex
+                            (default: all 0)
     icon                    then 24 rows of 32, '#' set and '.' clear
     ................................
 
@@ -83,6 +85,14 @@ def parse(text, name="header"):
             spec[key] = val
         elif key in ("icolor", "tcolor"):
             spec[key] = int(val, 0) & 0xFFFF
+        elif key == "buffer":
+            try:
+                data = bytes.fromhex(val)
+            except ValueError:
+                raise SpecError(f"{name}:{n}: buffer is hex bytes, not {val!r}")
+            if len(data) > LEN_BUFFER:
+                raise SpecError(f"{name}:{n}: buffer is {LEN_BUFFER} bytes at most")
+            spec["buffer"] = data
         else:
             raise SpecError(f"{name}:{n}: no field {key!r}")
     for need in ("id", "version", "title", "text"):
@@ -124,6 +134,8 @@ def header(spec):
     h[OFF_ICOLOR:OFF_ICOLOR + 2] = spec["icolor"].to_bytes(2, "little")
     h[OFF_TITLE:OFF_TITLE + len(spec["title"])] = spec["title"].encode()
     h[OFF_TCOLOR:OFF_TCOLOR + 2] = spec["tcolor"].to_bytes(2, "little")
+    buf = spec.get("buffer", b"")
+    h[OFF_BUFFER:OFF_BUFFER + len(buf)] = buf
     return bytes(h)
 
 

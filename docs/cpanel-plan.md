@@ -91,7 +91,8 @@ Each says how it is tested; a check is believed only once it has failed.
    pictures of the panel and of General and Color inside it, on ANTIC
    and on the VBXE.
 
-3. **The toolkit.**  The rest of XControl's XCPB, each a one-block
+3. **The toolkit** -- the events BUILT, phase 137
+   ([phase137.md](phase137.md)); the widgets next.  The rest of XControl's XCPB, each a one-block
    callback in cpx.h's ABI: `Popup`, `Sl_size`, `Sl_x`, `Sl_y`,
    `Sl_arrow`, `Sl_dragx`, `Sl_dragy`, `GetFirstRect`/`GetNextRect`,
    `Set_Evnt_Mask`, `MFsave`, `getcookie`, `rsh_obfix`, and the panel's
