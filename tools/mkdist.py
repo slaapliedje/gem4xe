@@ -171,9 +171,9 @@ SYSTEM = [
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
     ("calcacc.g4a", "CALC.ACC"),
-    ("general.g4a", "GENERAL.CPX"),
+    ("general.cpx", "GENERAL.CPX"),
     ("general.rsc", "GENERAL.RSC"),
-    ("color.g4a", "COLOR.CPX"),
+    ("color.cpx", "COLOR.CPX"),
     ("color.rsc", "COLOR.RSC"),
     ("qed/QED.PRG", "QED.PRG"),
     ("qed/QED.RSC", "QED.RSC"),
@@ -249,8 +249,8 @@ WHAT_IT_IS = {
     "GENERAL.CPX": "A CONTROL PANEL EXTENSION, the ST's .CPX: the "
                    "double-click speed, the menu delay, and the date and "
                    "time.  Put it beside GEM.COM with GENERAL.RSC and the "
-                   "control panel grows a page -- the AES loads every "
-                   "*.CPX it finds there and CONTROL.ACC lists them.  What "
+                   "control panel grows a page -- the AES lists every "
+                   "*.CPX it finds there and CONTROL.ACC shows them.  What "
                    "you set is saved and put back at the next boot",
     "GENERAL.RSC": "its dialog",
     "COLOR.CPX": "THE SCREEN'S COLOURS, a second control panel "

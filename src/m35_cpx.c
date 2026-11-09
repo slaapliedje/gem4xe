@@ -35,7 +35,7 @@
 static WORD m35_sig = M35_SIG;
 
 /* What the gate reads. */
-WORD m35_seen_hdr;        /* cpx_init filled the header */
+WORD m35_inits;           /* cpx_init calls: once a load */
 WORD m35_n_call;          /* ...and each entry the panel reached */
 WORD m35_n_key;
 WORD m35_n_button;
@@ -169,22 +169,11 @@ static CPXINFO m35_info = {
     m35_cpx_button, 0, 0, 0, m35_cpx_close
 };
 
-CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
+/* The header is src/m35_cpx.cpxh (and src/m35_boot.cpxh: one module,
+ * two files), in front of this module (tools/mkcpx.py). */
+CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
 {
-    WORD i;
-    static const char title[] = "Test CPX";
-
     (void)pb;
-    hdr->magic = CPX_MAGIC;
-    hdr->flags = 0;
-    hdr->cpx_id = 0x4D333500L;          /* 'M35\0' */
-    hdr->cpx_version = 1;
-    for (i = 0; title[i] && i < 17; i++)
-        hdr->title_txt[i] = title[i];
-    hdr->title_txt[i] = 0;
-    for (i = 0; title[i] && i < 13; i++)
-        hdr->i_text[i] = title[i];
-    hdr->i_text[i] = 0;
-    m35_seen_hdr = 1;
+    m35_inits++;
     return &m35_info;
 }

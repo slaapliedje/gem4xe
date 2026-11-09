@@ -18,10 +18,10 @@
  * WHAT IS NOT THE ST'S, AND WHY.
  *
  * A .CPX ON AN ST IS A 68000 GEMDOS EXECUTABLE.  Nothing can change that,
- * so a gem4xe CPX is a .G4A (tools/mkg4a.py) carrying this header INSIDE
- * it -- see the file section below for why it is not in front.  The
- * header travels; the machine code cannot.  A port is a recompile plus
- * whatever the two AESes differ by, not a translation.
+ * so a gem4xe CPX is this header followed by a .G4A (tools/mkg4a.py) --
+ * see the file section below.  The header travels; the machine code
+ * cannot.  A port is a recompile plus whatever the two AESes differ by,
+ * not a translation.
  *
  * THE CALLBACKS TAKE ORDINARY ARGUMENTS.  COPS passes every multi-argument
  * callback as a STRUCT BY VALUE -- `struct Sl_xy_args`, `struct
@@ -50,22 +50,24 @@
 #include <stddef.h>          /* offsetof, for the slot layout check below */
 
 /* ---- the file ---------------------------------------------------------
- * A gem4xe CPX is a .G4A named *.CPX.  Nothing is in front of it: the
- * header below is a variable INSIDE the module, which the module copies
- * into the panel's when its entry is called.
+ * A gem4xe CPX is the 512-byte header below, then a .G4A, named *.CPX.
+ * tools/mkcpx.py writes the header from a text file beside the module
+ * (src/apps/general.cpxh is one) and puts it in front.
  *
- * THE ST PUTS THE HEADER IN THE FILE so XCONTROL can list every module
- * without loading any -- it reads 512 bytes and closes the file again.
- * Here every module is RUN once at boot instead (src/aes/shel.c, sh_cpx),
- * which fills its header into the AES's table, lets the panel boot-init
- * it, and then -- unless it is CPX_RESIDENT -- frees it again.  The panel
- * lists modules from the table and has a module loaded when it is opened
- * and freed when it closes (Cpxload in gem.h), as XCONTROL does.
+ * THE HEADER IS IN FRONT SO THE PANEL CAN LIST A MODULE WITHOUT RUNNING
+ * IT, as XCONTROL does: the AES reads each file's 512 bytes at boot into
+ * its table (src/aes/shel.c, sh_cpxscan) and closes it again.  Only a
+ * module whose flags ask is loaded then -- CPX_BOOTINIT, CPX_RESIDENT,
+ * CPX_SETONLY -- so the panel can boot-init it; the rest are loaded when
+ * they are opened and freed when they close (Cpxload in gem.h).  The
+ * loader skips the header when it loads one.
  *
- * So the header travels in the module rather than in front of it, which
- * means the loader needs no special case and a CPX is a .G4A the
- * ordinary tools already build.  What it costs is that boot runs every
- * module once.
+ * Until phase 133 the header was a variable inside the module, filled in
+ * by cpx_init, so boot had to run every module once just to list it.
+ *
+ * NOT THE ST's BYTES: the words are the 65816's, little-endian, because
+ * the AES and the panel read them as native words.  The offsets are
+ * Atari's.
  */
 #define CPX_MAGIC    0x6811         /* 'CPX' for this machine: not $601A,
                                      * which is a 68000 `bra.s` and would
@@ -94,11 +96,10 @@
  *  122  char title_txt[18]   the dialog's title
  *  140  u16  t_info          the title's colours
  *  142  char buffer[64]      THE MODULE'S OWN SETTINGS.  The ST writes
- *                            these back into the .CPX itself, which it
- *                            can because its header is in the file;
- *                            CPX_Save here puts them in a file beside
- *                            the module, so a module is never written
- *                            to while it is loaded
+ *                            these back into the .CPX itself; CPX_Save
+ *                            here puts them in a file beside the
+ *                            module, so a module is never written to
+ *                            while it is loaded
  *  206  char reserved[306]
  *  512
  */
@@ -108,26 +109,20 @@ typedef struct {
     LONG   cpx_id;
     UWORD  cpx_version;
     char   i_text[14];
-    UWORD  icon[48];
-    /* BIT-FIELDS ARE DECLARED BACKWARDS HERE, as ob_spec's are in gem.h
-     * and for the same reason: this compiler allocates them low-end-first
-     * within a 16-bit unit and the 68000 allocates high-end-first, so the
-     * ST's `i_color:4; reserved:4; i_char:8` is this order to land on the
-     * same bits of the same word. */
-    UWORD  i_info;              /* i_char<<8 | reserved<<4 | i_color */
+    UWORD  icon[48];            /* four bytes a row, most significant bit
+                                 * the leftmost pixel, as every bitmap
+                                 * here is laid out (tools/rsc.py) */
+    /* THE TWO COLOUR WORDS ARE GEM'S OWN, not bit-fields: XCONTROL hands
+     * i_info straight to its slot's ICONBLK as ib_char and t_info to its
+     * TEDINFO as te_color (its SLOTS.C), so a panel does the same.  An
+     * earlier note here read them as bit-fields, backwards; nothing ever
+     * set or read them then. */
+    UWORD  i_info;              /* ib_char: fg<<12 | bg<<8 | letter */
     char   title_txt[18];
-    UWORD  t_info;              /* c_back<<12 | pattern<<8 | c_text<<4 | c_board */
+    UWORD  t_info;              /* te_color; Atari's own CPXs use $1180 */
     char   buffer[64];
     char   reserved[306];
 } CPXHEAD;
-
-/* i_info / t_info, since they are words here rather than bit-fields. */
-#define CPX_ICOLOR(i)   ((i) & 0x000F)
-#define CPX_ICHAR(i)    (((i) >> 8) & 0x00FF)
-#define CPX_TBOARD(t)   ((t) & 0x000F)
-#define CPX_TTEXT(t)    (((t) >> 4) & 0x000F)
-#define CPX_TPATTERN(t) (((t) >> 8) & 0x000F)
-#define CPX_TBACK(t)    (((t) >> 12) & 0x000F)
 
 /* The mouse as a module is handed it (XCONTROL's MRETS). */
 typedef struct {
@@ -169,11 +164,10 @@ typedef struct {
     /* Write `buffer` to the module's settings file.  ok is 1 when it
      * went, 0 when it did not.
      *
-     * THE ST WRITES THOSE BYTES BACK INTO THE .CPX ITSELF, which it can
-     * because its header is in the file.  Here the header travels inside
-     * the module, so the settings go to a file of their own beside it --
-     * which also means a module is never written to while it is loaded,
-     * and a module that will not save cannot corrupt itself trying. */
+     * THE ST WRITES THOSE BYTES BACK INTO THE .CPX ITSELF.  Here they go
+     * to a file of their own beside it, so a module is never written to
+     * while it is loaded, one that will not save cannot corrupt itself
+     * trying, and a module on read-only media can still be set. */
     void (*CPX_Save)(uint32_t xcpb);
 
     /* One of the canned alerts, so every module says the same thing in
@@ -297,14 +291,16 @@ typedef struct {
 } CPXINFO;
 
 /* THE ENTRY POINT.  A module defines exactly one, named cpx_init, and
- * the panel calls it ONCE after loading:
+ * it is called each time the module is loaded:
  *
- *     CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr);
+ *     CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb);
  *
- * It fills *hdr with its own header -- its title, its icon, its flags,
- * and the 64 bytes it keeps settings in -- and returns its vtable, or 0
- * to decline (a module that finds no hardware it can configure should
- * decline rather than appear and do nothing).
+ * It returns its vtable, or 0 to decline (a module that finds no
+ * hardware it can configure should decline rather than appear and do
+ * nothing).  Its header is not its business: that is the file's, in
+ * front of the module (the file section above).  `pb` is 0 for now --
+ * the panel's block arrives at cpx_call (CPXPB's xcpb) -- and a module
+ * must cope with that, as with any callback being 0.
  *
  * IT MUST BE saveds, which is the whole reason CPX_ENTRY is a macro and
  * not a comment.  A module is linked separately from the panel, so the
@@ -313,10 +309,10 @@ typedef struct {
  * silently, which is this project's oldest failure shape.  Every other
  * entry in CPXINFO needs SAVEDS on it too, for the same reason.
  *
- * cpx_init is the ONE EXCEPTION to the one-argument rule above, and it
- * gets away with two because it is not called through the vtable: the
- * kit's glue calls it (src/app/cpxmain.c), compiled INTO the module and
- * so sharing its direct page.  Everything the PANEL calls obeys the
+ * cpx_init takes a pointer, which the one-argument rule above forbids,
+ * and gets away with it because it is not called through the vtable:
+ * the kit's glue calls it (src/app/cpxmain.c), compiled INTO the module
+ * and so sharing its direct page.  Everything the PANEL calls obeys the
  * rule.
  *
  * AND A MODULE MUST BE BUILT --data-model=large, the panel's model.  A
@@ -325,9 +321,8 @@ typedef struct {
  * its parameter block from the wrong place.
  *
  * WHERE SETTINGS GO.  The ST writes the 64 bytes back into the .CPX file
- * itself, which it can because the header is in the file.  Here they go
- * to a file of their own beside the module, so that a module is never
- * written to while it is loaded -- see CPX_Save. */
+ * itself.  Here they go to a file of their own beside the module, so
+ * that a module is never written to while it is loaded -- see CPX_Save. */
 #define CPX_ENTRY  SAVEDS
 
 /* ---- what the PANEL uses ----------------------------------------------
@@ -362,7 +357,8 @@ typedef struct {
                                  * settings file is named after -- the
                                  * module never knows it and never has to.
                                  * SIXTEEN, not fourteen: see above. */
-    CPXHEAD  hdr;               /* what it filled in at load time */
+    CPXHEAD  hdr;               /* read from the file's front at boot,
+                                 * its buffer from the settings file */
 } CPXSLOT;
 
 /* The check.  A negative array bound is a compile error, so a slot whose

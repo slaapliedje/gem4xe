@@ -660,6 +660,11 @@ int16_t app_load_cio(const char *cio, APP *app)
     uint32_t blob, len;
     uint8_t own = far_new_owner(), keep = far_owner, keept = far_tag;
     uint8_t tag = OWN_TAG(app_kind ? app_kind : OWN_APP, 0);
+    /* A CONTROL PANEL MODULE has its 512-byte header in front of the
+     * .G4A (src/app/cpx.h), which the panel lists it from and the loader
+     * steps over.  The shell read the header already and refused a
+     * foreign one, so here it is only checked again, not trusted. */
+    uint16_t skip = (app_kind == OWN_CPX) ? APP_CPX_HDR : 0;
     int16_t st;
 
     app_kind = 0;                       /* for this load only */
@@ -669,8 +674,15 @@ int16_t app_load_cio(const char *cio, APP *app)
     far_owner = own;
     far_tag = tag;
     st = far_read_file(cio, &blob, &len);
+    if (st == APP_OK && skip
+        && (len < skip || far_read8(blob) != (APP_CPX_MAGIC & 0xFF)
+            || far_read8(blob + 1) != (APP_CPX_MAGIC >> 8))) {
+        far_free(blob);
+        st = APP_E_MAGIC;
+    }
     if (st == APP_OK) {
-        st = app_load_as((const uint8_t FAR *)blob, len, app, own);
+        st = app_load_as((const uint8_t FAR *)(blob + skip), len - skip,
+                         app, own);
         /* The file has been copied into place and patched, and nothing
          * reads it again: its memory is free now rather than at the
          * program's end, which the bump heap could not do. */

@@ -40,6 +40,13 @@
 #define APP_E_OLDSDK -8     /* a G4A of format 1 or 2, built for the old COP
                                signatures (src/sys/abi.h): rebuild it */
 
+/* A control panel module is a header and then a G4A (src/app/cpx.h);
+ * loaded as OWN_CPX, the loader checks the header's magic and steps
+ * over it.  The AES knows the same two numbers as CPX_HDR_SZ and
+ * CPX_MAGICW (src/aes/shel.c), and test_cpx.py holds the three to one. */
+#define APP_CPX_HDR   512
+#define APP_CPX_MAGIC 0x6811
+
 typedef struct {
     uint16_t near_base;     /* where the near part landed, page aligned */
     uint16_t near_size;

@@ -78,10 +78,11 @@ APPS = [("build/clockacc.g4a", "GEM>CLOCK.ACC"),
         ("build/calc.rsc", "GEM>CALC.RSC"),
         # ...and the control panel's extensions, which are modules rather
         # than accessories: the AES loads them beside the accessories and
-        # CONTROL.ACC hosts them (src/app/cpx.h).  A .CPX is a .G4A too.
-        ("build/general.g4a", "GEM>GENERAL.CPX"),
+        # CONTROL.ACC hosts them (src/app/cpx.h).  A .CPX is its header,
+        # then a .G4A (tools/mkcpx.py).
+        ("build/general.cpx", "GEM>GENERAL.CPX"),
         ("build/general.rsc", "GEM>GENERAL.RSC"),
-        ("build/color.g4a", "GEM>COLOR.CPX"),
+        ("build/color.cpx", "GEM>COLOR.CPX"),
         ("build/color.rsc", "GEM>COLOR.RSC"),
         ("build/hello_app.g4a", "APPS>HELLO.PRG"),
         ("build/calc.g4a", "APPS>CALC.PRG"),

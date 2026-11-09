@@ -1291,8 +1291,8 @@ ACC_DEPS  = build/m28_acc.g4a
 # directory rather than \APPS\, because an accessory is not a program the
 # desktop launches -- the AES loads it once at start-up and it outlives
 # every program (src/aes/shel.c).
-ACCP_DEPS = build/general.g4a build/general.rsc \
-            build/color.g4a build/color.rsc \
+ACCP_DEPS = build/general.cpx build/general.rsc \
+            build/color.cpx build/color.rsc \
             build/clockacc.g4a build/clock.rsc \
             build/cpanelacc.g4a build/cpanel.rsc \
             build/calcacc.g4a build/calc.rsc
@@ -1369,6 +1369,20 @@ build/appsld/m35_cpx.o: src/m35_cpx.c src/app/cpx.h src/app/gem.h
 	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -o $@ $<
 CPX_OBJS = $(G4A_LIB_LD) build/appsld/cpxmain.o build/appsld/m35_cpx.o
 $(eval $(call g4a,m35_cpx,$(CPX_OBJS),1024,256,512,,,$(LIB_LD)))
+
+# A .CPX is its 512-byte header and then the module (phase 133): the
+# header from the .cpxh beside the source (tools/mkcpx.py), so the panel
+# lists a module without running it.  The gate module goes out under two
+# headers -- one module, two files -- because only the header says
+# whether it is loaded at boot.
+build/general.cpx: tools/mkcpx.py src/apps/general.cpxh build/general.g4a
+	python3 tools/mkcpx.py src/apps/general.cpxh build/general.g4a $@
+build/color.cpx: tools/mkcpx.py src/apps/color.cpxh build/color.g4a
+	python3 tools/mkcpx.py src/apps/color.cpxh build/color.g4a $@
+build/m35_cpx.cpx: tools/mkcpx.py src/m35_cpx.cpxh build/m35_cpx.g4a
+	python3 tools/mkcpx.py src/m35_cpx.cpxh build/m35_cpx.g4a $@
+build/m35_boot.cpx: tools/mkcpx.py src/m35_boot.cpxh build/m35_cpx.g4a
+	python3 tools/mkcpx.py src/m35_boot.cpxh build/m35_cpx.g4a $@
 
 # The far-resource gate application (src/m33_farrsc.c), built TWICE from
 # one source: --data-model=large, whose kit asks for far addresses, and
@@ -1684,14 +1698,14 @@ SP_APPS   = --mkdir APPS \
 	    --add build/cpanel.rsc "GEM>CPANEL.RSC" \
 	    --add build/calcacc.g4a "GEM>CALC.ACC" \
 	    --add build/calc.rsc "GEM>CALC.RSC" \
-	    --add build/general.g4a "GEM>GENERAL.CPX" \
+	    --add build/general.cpx "GEM>GENERAL.CPX" \
 	    --add build/general.rsc "GEM>GENERAL.RSC" \
-	    --add build/m35_cpx.g4a "GEM>TEST.CPX" \
-	    --add build/color.g4a "GEM>COLOR.CPX" \
+	    --add build/m35_cpx.cpx "GEM>TEST.CPX" \
+	    --add build/color.cpx "GEM>COLOR.CPX" \
 	    --add build/color.rsc "GEM>COLOR.RSC" \
 	    --add build/calc.g4a "APPS>CALC.PRG" --add build/calc.rsc "APPS>CALC.RSC" \
 	    --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
-SP_DEPS   = build/gem.xex build/deskicon.rsc build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.g4a build/general.g4a build/general.rsc tools/mkspdisk.py tools/atr.py
+SP_DEPS   = build/gem.xex build/deskicon.rsc build/lang.rsc build/816.com build/gem4xe.cfg $(DESK_DEPS) $(APP_DEPS) $(ACCP_DEPS) build/m35_cpx.cpx build/general.cpx build/general.rsc tools/mkspdisk.py tools/atr.py
 
 build/gem-shots.atr: $(SP_DEPS)
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
@@ -1868,15 +1882,23 @@ build/m34-boot.atr: build/m3.xex build/m34_auto.g4a build/m34_go.g4a \
 	    --mkdir AUTO --add build/m34_auto.g4a "AUTO>M34RES.PRG" \
 	    --add build/m34_go.g4a "AUTO>M34GO.PRG"
 
-# The CPX gate's disk (test-m35): test-m16's, with one module in the
-# system directory, which is where the shell scans for *.CPX.
-build/m35-boot.atr: build/m3.xex build/m35_cpx.g4a tests/fixtures/test.txt \
+# The CPX gate's disk (test-m35): test-m16's, with modules in the system
+# directory, which is where the shell scans for *.CPX: one that asks to
+# be loaded at boot, seven that do not -- more than the six there used
+# to be room for -- and a bare .G4A named .CPX, which has no header and
+# must be refused.
+build/m35-boot.atr: build/m3.xex build/m35_cpx.g4a build/m35_cpx.cpx build/m35_boot.cpx \
+                    tests/fixtures/test.txt \
                     tests/fixtures/out.txt build/test.rsc $(SHELL_DEPS) \
                     tools/mkspdisk.py tools/atr.py
 	@test -n "$(SRC_SP32)" || { echo "no SpartaDOS fixture: set [spartados].disk_32 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkspdisk.py "$(SRC_SP32)" $< $@ $(SP_SECTORS) --tree $(DISK_FILES) $(SHELL_FILES) \
-	    --add build/m35_cpx.g4a M35.CPX
+	    --add build/m35_boot.cpx M35B.CPX --add build/m35_cpx.cpx M35.CPX \
+	    --add build/m35_cpx.cpx T1.CPX --add build/m35_cpx.cpx T2.CPX \
+	    --add build/m35_cpx.cpx T3.CPX --add build/m35_cpx.cpx T4.CPX \
+	    --add build/m35_cpx.cpx T5.CPX --add build/m35_cpx.cpx T6.CPX \
+	    --add build/m35_cpx.g4a BAD.CPX
 
 # The accessories' disk (test-m22): test-m16's, with the two programs
 # and their resources added.  A disk of its own rather than SHELL_FILES,
@@ -2294,10 +2316,12 @@ test-m37: build/gem4xe.car build/gem4xe-d1.car build/gem4xe-sys.car build/cart-f
 test-m34: build/m34-boot.atr
 	python3 tests/emu/m34_auto.py
 
-# A control panel extension: loaded beside the accessories, entered
-# through its own crt, and called back into through the vtable it
-# published.
-test-m35: build/m35-boot.atr
+# Control panel extensions: listed from the headers in front of them,
+# loaded at boot only when they ask (phase 133), and freed again.  The
+# base disk is the same system with no module, which the gate boots to
+# measure "nothing stayed" -- a dependency, or it is whatever the last
+# test-m14 left.
+test-m35: build/m35-boot.atr build/m14-boot.atr
 	python3 tests/emu/m35_cpx.py
 
 # A module's settings, saved and put back at the NEXT boot.
@@ -2338,7 +2362,7 @@ test-m41: build/gem-shots.atr build/desktop.sym
 
 # The Color control panel extension (phase 69): a pen stepped live,
 # Cancel putting it back, and OK's palette restored at the next boot.
-test-m42: build/gem-shots.atr build/color.g4a
+test-m42: build/gem-shots.atr build/color.cpx
 	python3 tests/emu/m42_color.py
 
 # Options -> Install icon (phase 74): a drive icon added, saved across a

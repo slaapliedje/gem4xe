@@ -963,6 +963,7 @@ uint32_t sh_cpxtable(void);     /* the flat table, for appl_getinfo */
 WORD     sh_cpxstride(void);    /* one entry's size */
 uint32_t sh_cpxhdr(WORD i);
 extern WORD sh_cpxdrops;                /* freed after boot-init */
+extern WORD sh_cpxruns;                 /* loaded at boot, because they asked */
 /* The desktop's resource files, kept purgeable (src/aes/rsrc.c, phase 120):
  * forgotten when purged, thrown away whole on any write. */
 void     rs_cache_purged(uint32_t addr);

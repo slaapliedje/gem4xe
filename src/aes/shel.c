@@ -1247,15 +1247,20 @@ static void sh_auto(void)
 
 /* ---- the control panel's extensions ------------------------------------
  *
- * \GEM\*.CPX, loaded here beside the accessories: each one RUN once at
- * boot, so that it fills in its header and the panel can boot-init it
- * (CPX_BOOTINIT), and then -- unless its header says CPX_RESIDENT --
- * FREED again before the keep mark (sh_cpxdropall), its header, its file
- * name and its settings kept in the table.  The panel lists modules from
- * the headers, and when you open one it asks for it to be loaded again
- * (Cpxload, sh_cpxload below) and freed when you close it: the ST's
- * rule, and phase 118's.  A module costs the pool nothing while it is
- * closed.
+ * \GEM\*.CPX, listed here beside the accessories.  Each file is the
+ * module's 512-byte header, then the module (src/app/cpx.h), so the
+ * table is filled by READING headers, as XControl does -- nothing runs to
+ * be listed (phase 133).  Only a module whose flags ask is loaded at
+ * boot: CPX_BOOTINIT, so the panel can boot-init it; CPX_RESIDENT, which
+ * is never freed; CPX_SETONLY, which acts at boot and has no dialog.
+ * After the panel has boot-initialised them, every one that is not
+ * resident is FREED again before the keep mark (sh_cpxdropall).  The rest
+ * are loaded when they are opened (Cpxload, sh_cpxload below) and freed
+ * when they close: the ST's rule, and phase 118's.  A module costs the
+ * pool nothing while it is closed.
+ *
+ * Until phase 133 every module was run at boot just to fill a header
+ * kept inside it, and six was the most there could be.
  *
  * ON DEMAND became possible in phase 117.  Until then bank $00's pool
  * was a bump allocator, and a module loaded while the desktop was up sat
@@ -1263,22 +1268,25 @@ static void sh_auto(void)
  * panel the moment the desktop exited to run a program.  Both allocators
  * free by owner now, and a module is an owner of its own.
  *
- * WHAT THE SHELL DOES AND DOES NOT DO.  It finds them, loads them, calls
- * each one's entry, and keeps the vtable and the header.  It does not
+ * WHAT THE SHELL DOES AND DOES NOT DO.  It finds them, reads their
+ * headers, loads the ones that ask, and keeps the vtables.  It does not
  * draw anything: the panel (CONTROL.ACC) asks for the list and drives
  * whichever the user picks.  That split is the point of a CPX -- the
  * host owns the window and the event loop, the module owns the dialog.
  */
 #define CPX_EXT     "CPX"
-#define CPX_MAX     6                   /* as the accessories are */
+#define CPX_MAX     16                  /* a ceiling: the table is sized to
+                                         * what the scan finds, and XControl
+                                         * lists ten before it scrolls */
 
-WORD sh_ncpx;                           /* modules loaded */
+WORD sh_ncpx;                           /* modules listed */
 WORD sh_cpxbad;                         /* ...and found but refused: the gate */
 WORD sh_cpxcfgs;                        /* settings files found and read */
 ZWIN WORD sh_cpxdrops;                  /* ...freed after boot-init, for the gate;
                                          * zwin: LoRAM is at its floor */
-static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD),
-                                         * then CPX_MAX owners (CPXE_OWN) */
+ZWIN WORD sh_cpxruns;                   /* ...loaded at boot, for the gate */
+static uint32_t sh_cpx_far;             /* CPX_MAX owners (CPXE_OWN), then
+                                         * sh_ncpx slots (CPXE_SLOT) */
 
 /* One entry of the table, laid out by hand because this file must agree
  * with src/app/cpx.h without including it -- the AES is small-data and
@@ -1293,11 +1301,19 @@ static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD),
 #define CPXE_HDR    20                  /* CPX_HDR_SIZE bytes of header    */
 #define CPX_HDR_SZ  512
 #define CPXE_SIZE   (CPXE_HDR + CPX_HDR_SZ)
-/* Each loaded module's owner, a byte a slot after the slots themselves,
- * where the panel's stride never reaches: what frees it.  0: not loaded. */
-#define CPXE_OWN(i) (sh_cpx_far + CPX_MAX * CPXE_SIZE + (uint32_t)(i))
-#define CPXH_FLAGS  2                   /* the header's flags word */
-#define CPXF_RESIDENT 0x0004            /* src/app/cpx.h CPX_RESIDENT */
+/* Each loaded module's owner, a byte a slot IN FRONT of the slots, where
+ * the panel's stride never reaches: what frees it.  0: not loaded.  In
+ * front because the table is as long as the scan found, and the owners
+ * cannot sit after an end only the scan knows without a second near
+ * variable to remember it. */
+#define CPXE_OWN(i)  (sh_cpx_far + (uint32_t)(i))
+#define CPXE_SLOT(i) (sh_cpx_far + CPX_MAX + (uint32_t)(i) * CPXE_SIZE)
+#define CPXH_MAGIC  0                   /* the header's magic word */
+#define CPXH_FLAGS  2                   /* ...and its flags word */
+#define CPX_MAGICW  0x6811              /* src/app/cpx.h CPX_MAGIC */
+#define CPXF_SETONLY  0x0001            /* src/app/cpx.h's three flags */
+#define CPXF_BOOTINIT 0x0002
+#define CPXF_RESIDENT 0x0004
 /* Where a module's settings live inside its header, and how many.  The
  * panel reaches them through XCPB's `buffer` and writes them back with
  * CPX_Save; the shell reads them off the disk below.  Atari's offsets
@@ -1305,14 +1321,6 @@ static uint32_t sh_cpx_far;             /* CPX_MAX x (CPXINFO* + CPXHEAD),
 #define CPXH_BUF    142
 #define CPXH_BUFLEN 64
 #define CPX_CFGEXT  "CFG"
-
-/* What the module is handed.  Far, because the module holds it for as
- * long as it lives and this file's near memory is the AES's.  Only the
- * first three words are filled today -- cpx.h says every callback may be
- * 0 and a module must cope, which is how this grows without breaking a
- * module built against it. */
-static uint32_t sh_xcpb;
-#define XCPB_SIZE   64
 
 /* ONE MODULE, AND WHY IT IS RUN RATHER THAN CALLED.
  *
@@ -1333,22 +1341,17 @@ static uint32_t sh_xcpb;
  * HOW IT PUBLISHES.  Its command tail carries the address of its own
  * slot in the table below -- three bytes, in the ST's tail shape, a
  * length byte then the bytes -- and the kit's cpx glue writes the
- * header and the CPXINFO pointer there before returning.  The tail is
- * how a program has always been told what to do, so nothing new had to
- * be invented for it. */
-/* A MODULE'S SETTINGS, read off the disk into its header AFTER its entry
- * has run -- which is the order that works here and is not the ST's.
- *
- * The ST keeps the whole header in the .CPX file, so XCONTROL reads the
- * saved bytes BEFORE the module runs and hands them over with everything
- * else.  Here the header travels inside the module, so the module fills
- * it first (with its defaults) and the saved bytes are laid over the top
- * afterwards.  A module therefore sees them at cpx_call, not at
- * cpx_init -- which src/app/cpx.h says, so a module that wants a setting
- * at BOOT reads its own file and does not wait to be told.
+ * CPXINFO pointer there before returning.  The tail is how a program has
+ * always been told what to do, so nothing new had to be invented for
+ * it. */
+/* A MODULE'S SETTINGS, read off the disk into its header's buffer once
+ * the header itself has been read, which is the ST's order: XControl
+ * keeps the saved bytes in the .CPX and hands them over with the rest.
+ * Here they are in a file beside the module, so they are laid over the
+ * header's defaults.  A module sees them at cpx_call, as XCPB's buffer.
  *
  * A missing file is the normal case and is silent: it means nothing has
- * been saved yet, and the defaults the module just wrote stand. */
+ * been saved yet, and the defaults in the header stand. */
 static void sh_cpxcfg(uint32_t e, const char *name)
 {
     char cfg[CIO_NAME_MAX + 1], base[ACC_NAMELEN + 8];
@@ -1376,17 +1379,58 @@ static void sh_cpxcfg(uint32_t e, const char *name)
     cio_close(fd);
 }
 
-static void sh_ldcpx(const char *path, const char *name)
+/* A MODULE'S HEADER, the file's first 512 bytes, into slot e -- in
+ * pieces, through a buffer the size of the settings, because 512 bytes
+ * of bank $00's stack is not there to spend.  1 if it is a header of
+ * ours; 0 for a short file or a foreign one (an ST's CPX begins with
+ * 100, a bare .G4A with 'G4A'), which is then not listed. */
+static WORD sh_cpxhead(uint32_t e, const char *name)
+{
+    char cio[CIO_NAME_MAX + 1];
+    uint8_t buf[CPXH_BUFLEN];
+    int16_t fd;
+    uint16_t got;
+    WORD k, ok = 1;
+
+    sh_cioname(name, cio);
+    fd = cio_open(cio, CIO_A_READ, 0);
+    if (fd < 0)
+        return 0;
+    for (k = 0; ok && k < CPX_HDR_SZ / CPXH_BUFLEN; k++) {
+        uint8_t st;
+
+        got = 0;
+        st = cio_read(fd, buf, (uint16_t)CPXH_BUFLEN, &got);
+        /* CIO answers 1 for a read, and 3 when the next would find the
+         * end -- either is a whole piece if every byte came */
+        if ((st != CIO_OK && st != CIO_OK_EOF) || got != CPXH_BUFLEN
+            || (k == 0 && (buf[CPXH_MAGIC] != (CPX_MAGICW & 0xFF)
+                           || buf[CPXH_MAGIC + 1] != (CPX_MAGICW >> 8))))
+            ok = 0;
+        else
+            far_put(e + CPXE_HDR + (uint32_t)k * CPXH_BUFLEN, buf,
+                    CPXH_BUFLEN);
+    }
+    cio_close(fd);
+    return ok;
+}
+
+/* MODULE i LOADED AT BOOT, because its header asks: run, as above, with
+ * its slot's address in the tail.  A module that declines, or ends
+ * without asking to stay, stays LISTED -- its header is good -- with no
+ * vtable, and opening it tries again and says why it could not. */
+static void sh_ldcpx(WORD i)
 {
     APP      app;
-    uint32_t e = sh_cpx_far + (uint32_t)sh_ncpx * CPXE_SIZE;
+    uint32_t e = CPXE_SLOT(i);
     uint8_t  tail[5];
     uint32_t info = 0;
     RSHOLD   held;
+    char     name[CPXE_FILELEN];
 
-    (void)name;
+    far_strget(name, e + CPXE_FILE, CPXE_FILELEN);
     app_kind = OWN_CPX;
-    if (app_load_file(path, &app) != APP_OK) {
+    if (app_load_file(name, &app) != APP_OK) {
         sh_cpxbad++;
         return;
     }
@@ -1396,8 +1440,7 @@ static void sh_ldcpx(const char *path, const char *name)
     tail[3] = (uint8_t)((e >> 16) & 0xFF);
     tail[4] = 0x0D;
     far_put(sh_tail_far, tail, sizeof tail);
-    far_strput(e + CPXE_FILE, name, CPXE_FILELEN);   /* for CPX_Save */
-    far_strput(sh_cmd_far, path, SH_CMDLEN);
+    far_strput(sh_cmd_far, name, SH_CMDLEN);
     gd_termres = 0;
     rs_hold(&held);                     /* its resource is its own */
     (void)app_exec(&app);               /* as its own owner */
@@ -1408,31 +1451,63 @@ static void sh_ldcpx(const char *path, const char *name)
          * there is nothing to keep and keeping it would be a leak that
          * never comes back, since this is below the keep mark. */
         app_free(&app);
+        info = 0;
+        far_put(e + CPXE_INFO, (const uint8_t *)&info, 4);
         sh_cpxbad++;
         gd_termres = 0;
         return;
     }
     gd_termres = 0;
-    sh_cpxcfg(e, name);                 /* what it saved last time */
-    far_write8(CPXE_OWN(sh_ncpx), (uint8_t)app.owner);
-    sh_ncpx++;                          /* kept, until sh_cpxdropall */
+    far_write8(CPXE_OWN(i), (uint8_t)app.owner);
+    sh_cpxruns++;
 }
 
-/* The scan, in a frame of its own, for sh_autoscan's reason: sh_ldcpx
- * RUNS the module's entry, and the scan's buffers must not be under it. */
-WORD sh_cpxscan(void)
+/* The directory, once to count and once to fill: one pass would need
+ * the names kept somewhere until the table could be sized, which is
+ * bank $00's stack again.  With tab 0 it counts the *.CPX names; with a
+ * table it reads each one's header into the next slot, and a file that
+ * is not one of ours is passed over and counted as refused.  Either way
+ * it answers how many it took, at most `most`. */
+static WORD sh_cpxdir(uint32_t tab, WORD most)
 {
     char cio[CIO_NAME_MAX + 1], line[ACC_DIRLINE + 8], fname[ACC_NAMELEN];
     WORD n = 0;
     int16_t fd;
 
-    char names[CPX_MAX][ACC_NAMELEN];
-    WORD i;
-
     sh_cioname("*." CPX_EXT, cio);
     fd = cio_open(cio, CIO_A_DIR, 0);
     if (fd < 0)
         return 0;
+    while (n < most) {
+        uint16_t got = 0;
+        uint8_t  st = cio_getrec(fd, line, sizeof line, &got);
+        if (st != CIO_OK && st != CIO_OK_EOF)
+            break;
+        if ((dos_dirline(line, got, fname, 0) & DOS_ENT_KIND) == DOS_ENT_FILE
+            && dos_wildcmp("*." CPX_EXT, fname)) {
+            if (!tab)
+                n++;
+            else if (sh_cpxhead(CPXE_SLOT(n), fname)) {
+                far_strput(CPXE_SLOT(n) + CPXE_FILE, fname, CPXE_FILELEN);
+                sh_cpxcfg(CPXE_SLOT(n), fname);
+                n++;
+            } else
+                sh_cpxbad++;
+        }
+        if (st == CIO_OK_EOF)
+            break;
+    }
+    cio_close(fd);
+    return n;
+}
+
+/* The scan, in a frame of its own, for sh_autoscan's reason: the
+ * modules that load at boot are RUN afterwards (sh_cpx), and the scan's
+ * buffers must not be under them. */
+WORD sh_cpxscan(void)
+{
+    WORD n;
+
     /* THE NAMES FIRST, AND THE TABLE ONLY IF THERE ARE ANY.  Opening a
      * WILDCARD as a directory succeeds whether or not anything matches
      * -- unlike the AUTO folder, where a missing directory fails to open
@@ -1441,37 +1516,18 @@ WORD sh_cpxscan(void)
      * modules to put in, and test-m16 said so: it checks that the far
      * heap moved by the desktop's file and nothing else, which is
      * exactly the kind of quiet growth it exists to catch. */
-    while (n < CPX_MAX) {
-        uint16_t got = 0;
-        uint8_t  st = cio_getrec(fd, line, sizeof line, &got);
-        if (st != CIO_OK && st != CIO_OK_EOF)
-            break;
-        if ((dos_dirline(line, got, fname, 0) & DOS_ENT_KIND) == DOS_ENT_FILE
-            && dos_wildcmp("*." CPX_EXT, fname)) {
-            for (i = 0; i < ACC_NAMELEN && fname[i]; i++)
-                names[n][i] = fname[i];
-            names[n][i] = 0;
-            n++;
-        }
-        if (st == CIO_OK_EOF)
-            break;
-    }
-    cio_close(fd);
+    n = sh_cpxdir(0, CPX_MAX);
     if (!n)
         return 0;                       /* no modules: nothing is taken */
-    if (!sh_cpx_far) {
-        sh_cpx_far = far_alloc(CPX_MAX * CPXE_SIZE + CPX_MAX);
-        sh_xcpb    = far_alloc(XCPB_SIZE);
-        if (sh_xcpb)
-            far_fill(sh_xcpb, 0, XCPB_SIZE);
-    }
-    if (!sh_cpx_far || !sh_xcpb)
+    if (!sh_cpx_far)
+        sh_cpx_far = far_alloc(CPX_MAX + (uint32_t)n * CPXE_SIZE);
+    if (!sh_cpx_far)
         return 0;
-    far_fill(sh_cpx_far, 0, CPX_MAX * CPXE_SIZE + CPX_MAX);
-    for (i = 0; i < n; i++)             /* the name, until it fills it */
-        far_strput(sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR,
-                   names[i], ACC_NAMELEN);
-    return n;
+    far_fill(sh_cpx_far, 0, CPX_MAX + (uint32_t)n * CPXE_SIZE);
+    /* the second pass takes no more than the first counted: the table
+     * has room for exactly that many */
+    sh_ncpx = sh_cpxdir(sh_cpx_far, n);
+    return sh_ncpx;
 }
 
 /* WHAT THE PANEL ASKS FOR.  The module's vtable, by index, or 0.  This
@@ -1485,17 +1541,17 @@ uint32_t sh_cpxinfo(WORD i)
 
     if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
         return 0;
-    far_get((uint8_t *)&info, sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_INFO, 4);
+    far_get((uint8_t *)&info, CPXE_SLOT(i) + CPXE_INFO, 4);
     return info;
 }
 
 /* THE WHOLE TABLE, for appl_getinfo(AI_CPX): a program strides it
  * itself rather than asking for one field at a time, which would be a
- * call per icon per redraw.  0 when nothing is loaded -- and nothing is
+ * call per icon per redraw.  0 when nothing is listed -- and nothing is
  * allocated then either, so a machine with no modules pays nothing. */
 uint32_t sh_cpxtable(void)
 {
-    return sh_ncpx ? sh_cpx_far : 0;
+    return sh_ncpx ? CPXE_SLOT(0) : 0;
 }
 
 WORD sh_cpxstride(void)
@@ -1503,13 +1559,13 @@ WORD sh_cpxstride(void)
     return CPXE_SIZE;
 }
 
-/* ...and its header, copied out for a lister: the title, the icon and
- * the flags the module filled in at load time. */
+/* ...and its header, for a lister: the title, the icon and the flags,
+ * read from the front of its file. */
 uint32_t sh_cpxhdr(WORD i)
 {
     if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
         return 0;
-    return sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR;
+    return CPXE_SLOT(i) + CPXE_HDR;
 }
 
 /* MODULE i FREED, unless it asked to stay: its owner's blocks in both
@@ -1520,7 +1576,7 @@ uint32_t sh_cpxhdr(WORD i)
  * 1 if it was freed. */
 static WORD sh_cpxdrop(WORD i)
 {
-    uint32_t e = sh_cpx_far + (uint32_t)i * CPXE_SIZE;
+    uint32_t e = CPXE_SLOT(i);
     uint32_t zero = 0;
     uint8_t  own;
     UWORD    flags = 0;
@@ -1546,12 +1602,9 @@ static void sh_cpxdropall(void)
 {
     WORD i;
 
-    for (i = 0; i < sh_ncpx; i++)
-        sh_cpxdrop(i);
     sh_cpxdrops = 0;
     for (i = 0; i < sh_ncpx; i++)
-        if (!sh_cpxinfo(i))
-            sh_cpxdrops++;
+        sh_cpxdrops += sh_cpxdrop(i);
 }
 
 /* Cpxload (GEMDOS 0x1F3, src/sys/gemdos.h): module i loaded again, or
@@ -1562,8 +1615,8 @@ static void sh_cpxdropall(void)
  * cpx_init builds its dialog and publishes its vtable.  It is run through
  * gd_run, Pexec's own machinery, because this is a call from inside the
  * panel's process and the module makes calls of its own; it is kept
- * because it ends with Ptermres.  Its saved settings are laid over its
- * header again after, as at boot. */
+ * because it ends with Ptermres.  Its header and settings are the slot's
+ * already, and the module leaves them alone (src/app/cpxmain.c). */
 int32_t sh_cpxload(WORD i, WORD on)
 {
     uint32_t e, info = 0;
@@ -1583,7 +1636,7 @@ int32_t sh_cpxload(WORD i, WORD on)
         return 0;                       /* resident, or still open */
     if (!gd_room_to_run())
         return GD_ENSMEM;
-    e = sh_cpx_far + (uint32_t)i * CPXE_SIZE;
+    e = CPXE_SLOT(i);
     far_strget(name, e + CPXE_FILE, CPXE_FILELEN);
     sh_cioname(name, cio);
     near = app_near;
@@ -1610,21 +1663,21 @@ int32_t sh_cpxload(WORD i, WORD on)
         far_put(e + CPXE_INFO, (const uint8_t *)&info, 4);
         return GD_EPLFMT;
     }
-    sh_cpxcfg(e, name);                 /* what it saved last time */
     far_write8(CPXE_OWN(i), (uint8_t)app.owner);
     return 0;
 }
 
+/* The scan, then the modules that asked to be loaded at boot. */
 static void sh_cpx(void)
 {
     WORD n = sh_cpxscan();
     WORD i;
 
     for (i = 0; i < n; i++) {
-        char name[ACC_NAMELEN];
-        far_strget(name, sh_cpx_far + (uint32_t)i * CPXE_SIZE + CPXE_HDR,
-                   ACC_NAMELEN);
-        sh_ldcpx(name, name);
+        UWORD flags = 0;
+        far_get((uint8_t *)&flags, CPXE_SLOT(i) + CPXE_HDR + CPXH_FLAGS, 2);
+        if (flags & (CPXF_BOOTINIT | CPXF_RESIDENT | CPXF_SETONLY))
+            sh_ldcpx(i);
     }
 }
 

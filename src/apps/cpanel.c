@@ -50,12 +50,17 @@ static const LONG cp_ms[N_MN] = { 0L, 100L, 200L, 400L };
 
 /* ---- the extensions -----------------------------------------------------
  *
- * The AES runs every module once at boot, so its header is in the AES's
- * table, and frees the ones that are not CPX_RESIDENT after this panel
- * has boot-initialised them (src/aes/shel.c, sh_cpx); this panel asks
- * what is there, shows the titles, and has the one the user picks loaded
- * again for as long as it is open (cp_opencpx).  That split is the whole shape of a CPX: the HOST owns the
- * window and the event loop, the MODULE owns the dialog.
+ * The AES reads every module's header off the front of its file into its
+ * table, loads at boot the ones that ask, and frees the ones that are not
+ * CPX_RESIDENT after this panel has boot-initialised them (src/aes/shel.c,
+ * sh_cpx); this panel asks what is there, shows the titles, and has the
+ * one the user picks loaded for as long as it is open (cp_opencpx).  That
+ * split is the whole shape of a CPX: the HOST owns the window and the
+ * event loop, the MODULE owns the dialog.
+ *
+ * A ROW IS NOT A SLOT.  A CPX_SETONLY module acts at boot and has nothing
+ * to open, so it is not listed -- XControl drops it too -- and the rows
+ * map to the table through cpx_row.
  *
  * THE TITLES ARE COPIED, not pointed at.  A row's ob_spec has to be an
  * address the VDI can read at every redraw, and the AES's table is far
@@ -63,20 +68,24 @@ static const LONG cp_ms[N_MN] = { 0L, 100L, 200L, 400L };
  * cheaper to reason about than a lifetime shared with the shell. */
 static uint32_t cpx_table;
 static WORD     cpx_stride;
-static WORD     cpx_n;
+static WORD     cpx_total;              /* slots in the AES's table */
+static WORD     cpx_n;                  /* rows shown */
+static WORD     cpx_row[N_CPX];         /* row -> slot */
 static char     cpx_titles[N_CPX][19];
 
 static void cp_findcpx(void)
 {
     WORD i, j;
 
-    cpx_n = cpx_count(&cpx_table, &cpx_stride);
-    if (cpx_n > N_CPX)
-        cpx_n = N_CPX;
+    cpx_total = cpx_count(&cpx_table, &cpx_stride);
+    cpx_n = 0;
+    for (i = 0; i < cpx_total && cpx_n < N_CPX; i++)
+        if (!(cpx_slot(cpx_table, cpx_stride, i)->hdr.flags & CPX_SETONLY))
+            cpx_row[cpx_n++] = i;
     for (i = 0; i < N_CPX; i++) {
         OBJECT *row = &tree[CPX0 + i];
         if (i < cpx_n) {
-            CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, i);
+            CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, cpx_row[i]);
             for (j = 0; j < 18 && sl->hdr.title_txt[j]; j++)
                 cpx_titles[i][j] = sl->hdr.title_txt[j];
             cpx_titles[i][j] = 0;
@@ -149,7 +158,7 @@ static SAVEDS void cp_cpx_save(uint32_t xcpb)
     WORD i, j;
 
     pb->ok = 0;
-    if (pb->which < 0 || pb->which >= cpx_n || !cpx_table)
+    if (pb->which < 0 || pb->which >= cpx_total || !cpx_table)
         return;
     sl = cpx_slot(cpx_table, cpx_stride, pb->which);
     for (i = 0; i < 13 && sl->file[i] && sl->file[i] != '.'; i++)
@@ -220,8 +229,9 @@ static void cp_findcpx(void);
 static WORD cp_callcpx(CPXSLOT FAR *sl, WORD i, WORD x, WORD y, WORD w,
                        WORD h);
 
-/* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT is opened
- * once at start-up with xcpb->booting set, so it can put back what it
+/* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT -- or
+ * CPX_SETONLY, which has nothing else to do -- is opened once at
+ * start-up with xcpb->booting set, so it can put back what it
  * saved -- the double-click rate, a screen setting -- before anybody
  * sees the machine.  It draws nothing: `booting` is how it knows, and
  * cpx.h tells a module to act and return without a dialog.
@@ -238,14 +248,14 @@ void cp_bootinit(void)
 
     cp_findcpx();
     cp_xcpb_init();
-    if (!cpx_n)
+    if (!cpx_total)
         return;
     cp_xcpb.booting = 1;
-    for (i = 0; i < cpx_n; i++) {
+    for (i = 0; i < cpx_total; i++) {
         CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, i);
         CPXINFO FAR *info;
 
-        if (!sl->info || !(sl->hdr.flags & CPX_BOOTINIT))
+        if (!sl->info || !(sl->hdr.flags & (CPX_BOOTINIT | CPX_SETONLY)))
             continue;
         info = (CPXINFO FAR *)sl->info;
         if (!info->cpx_call)
@@ -345,7 +355,7 @@ static WORD cp_opencpx(WORD i, WORD x, WORD y, WORD w, WORD h)
     CPXSLOT FAR *sl;
     WORD ret;
 
-    if (i < 0 || i >= cpx_n || !cpx_table)
+    if (i < 0 || i >= cpx_total || !cpx_table)
         return 0;
     sl = cpx_slot(cpx_table, cpx_stride, i);
     if (!sl->info && Cpxload(i, 1) != 0) {
@@ -489,7 +499,7 @@ void cp_panel(void)
             tree[CPXOPEN].ob_state = NORMAL;
             objc_draw(tree, CPXOPEN, 0, x, y, w, h);
             if (pick >= 0) {
-                cp_opencpx(pick, x, y, w, h);
+                cp_opencpx(cpx_row[pick], x, y, w, h);
                 objc_draw(tree, ROOT, MAX_DEPTH, x, y, w, h);
             }
         } else if (ob >= CPX0 && ob < CPX0 + N_CPX) {

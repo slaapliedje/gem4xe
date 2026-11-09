@@ -345,11 +345,10 @@ static SAVEDS void gn_cpx_close(uint32_t pbaddr)
     (void)pbaddr;
 }
 
-CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
+/* The header -- title, icon, CPX_BOOTINIT -- is src/apps/general.cpxh,
+ * in front of this module in the file (tools/mkcpx.py). */
+CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
 {
-    static const char title[] = "General";
-    WORD i;
-
     (void)pb;
     /* THE RESOURCE IS TAKEN ONCE AND NEVER FREED, which is right rather
      * than lazy: a module is loaded before the keep mark and kept for
@@ -361,17 +360,6 @@ CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
     rsrc_gaddr(R_TREE, ADGENRL, (void **)&tree);
     if (!tree)
         return (CPXINFO FAR *)0;
-
-    hdr->magic = CPX_MAGIC;
-    hdr->flags = CPX_BOOTINIT;          /* put my settings back at boot */
-    hdr->cpx_id = 0x47454E4CL;          /* 'GENL' */
-    hdr->cpx_version = 1;
-    for (i = 0; title[i] && i < 17; i++)
-        hdr->title_txt[i] = title[i];
-    hdr->title_txt[i] = 0;
-    for (i = 0; title[i] && i < 13; i++)
-        hdr->i_text[i] = title[i];
-    hdr->i_text[i] = 0;
 
     ginfo.cpx_call = gn_cpx_call;
     ginfo.cpx_close = gn_cpx_close;

@@ -1,44 +1,43 @@
-"""A control panel extension: loaded, entered, published, then freed.
+"""Control panel extensions: listed from their headers, and loaded only
+when they ask.
 
 A CPX is the shape XCONTROL made: the HOST owns the window and the event
 loop, the MODULE owns the dialog, and they meet at a vtable the module
-publishes when it loads (src/app/cpx.h).  This gate proves the meeting
-point, which is the part that can go silently wrong.
+publishes when it loads (src/app/cpx.h).  Since phase 133 the file is the
+module's 512-byte header and then the module, and the AES lists a module
+by READING its header -- nothing runs to be listed -- and loads at boot
+only the ones whose flags ask (src/aes/shel.c, sh_cpx).
+
+THE DISK carries nine *.CPX: M35B.CPX, whose header says CPX_BOOTINIT;
+M35.CPX and T1-T6.CPX, the same module under a header with no flags --
+seven, more than the six there used to be room for; and BAD.CPX, a bare
+.G4A with no header at all.
 
 WHAT IT CHECKS, and why each would otherwise be invisible:
 
-  IT LOADED.  sh_ncpx is 1 and sh_cpxbad is 0.  A scan that finds
-  nothing, or a module that declines, leaves the machine working
-  perfectly and the panel simply empty.
+  EIGHT LISTED, ONE REFUSED.  sh_ncpx is 8 and sh_cpxbad is 1.  A scan
+  that stopped at six, or listed a file with no header, leaves the
+  machine working perfectly and the panel quietly wrong.
 
-  IT FILLED THE HEADER, AND ITS DATA WAS REAL WHEN IT DID.  The title in
-  the slot is "Test CPX" -- written by cpx_init, across a bank boundary,
-  into memory the SHELL owns.  That is also what says the module was
-  entered through its own crt: a program's initialised data is installed
-  by data_init_table and is NOT in the image, so a module whose cpx_init
-  had been called straight through a far pointer would have written
-  whatever was in that memory before.  The pointer call compiles to a
-  proper long-indirect jsl and would have looked like it worked.
+  THE TITLES CAME FROM THE FILES.  One slot says "Boot CPX" and seven
+  say "Test CPX", read from the headers' title fields -- one module
+  under two headers, which only a header in front of the code allows.
 
-  IT WENT, AND LEFT ITS HEADER.  Since phase 118 a module that is not
-  CPX_RESIDENT is freed once the panel has boot-initialised it, and the
-  panel loads it again when it is opened (src/aes/shel.c sh_cpxload).
-  So its slot's vtable is 0 -- a vtable left pointing into freed memory
-  is what the next program would overwrite -- the header is still there
-  for the panel to list it from, sh_cpxdrops is 1, and the desktop's
-  near region lands exactly where it does on the same system with no
-  module on the disk: nothing of the module's was kept.  Loading it again
-  is test-m44's, which opens General and Color from the panel.
+  ONE LOADED AT BOOT, AND IT WENT.  sh_cpxruns is 1: the module that
+  asked was run, and the seven that did not were not.  Since phase 118 a
+  module that is not CPX_RESIDENT is freed once the panel has
+  boot-initialised it (there is no panel on this disk, so nothing calls
+  it), so sh_cpxdrops is 1, every slot's vtable is 0 -- a vtable left
+  pointing into freed memory is what the next program would overwrite --
+  and the desktop's near region lands exactly where it does on the same
+  system with no module on the disk: nothing of any module's was kept.
+  Loading one when it is opened is test-m44's, which opens General and
+  Color from the panel.
 
-WHAT IT DOES NOT CHECK YET, said here rather than left to be assumed:
-calling back INTO the module through the published vtable.  That needs
-an application-visible way to ask the AES for a module's CPXINFO, which
-is the panel's API and a decision of its own -- appl_getinfo has a
-subject mechanism made for exactly this question and is the likely
-answer.  The runner cannot stand in: it is blocked inside the shell loop,
-which is what loaded the module in the first place.  Until that exists
-this gate proves the module is there and correct, not that it can be
-driven.
+WHAT IT DOES NOT CHECK, said here rather than left to be assumed:
+calling back INTO a module through its vtable.  The runner cannot stand
+in for the panel -- it is blocked inside the shell loop, which is what
+loaded the module -- so that is the panel's gates' (test-m44, make shots).
 """
 import os
 import sys
@@ -59,14 +58,24 @@ BASE = os.path.abspath(os.path.join(ROOT, "build", "m14-boot.atr"))
 SYMS = symfile.load(M3_SYMS)
 MOD_SYM = os.path.join(ROOT, "build", "m35_cpx.sym")
 
-M35_SIG = 0x3535
-WANT_TITLE = "Test CPX"
-CPXE_HDR = 20                    # src/aes/shel.c: info, the file name,
-                                 # then the header.  tests/host/test_cpx.py
-                                 # holds all three writings of this to one
-                                 # number; this one is the fourth, from the
-                                 # running machine.
+WANT = {"Boot CPX": 1, "Test CPX": 7}     # titles, from the headers
 HDR_TITLE = 122                  # src/app/cpx.h's map
+SHEL_C = os.path.join(ROOT, "src", "aes", "shel.c")
+
+
+def define(name):
+    """A number out of src/aes/shel.c, where the table is laid out: the
+    owners in front, then the slots.  Read rather than restated, since a
+    restated layout is a second place for it to drift."""
+    import re
+    src = open(SHEL_C).read()
+    m = re.search(rf"^#define\s+{name}\s+(\S+)", src, re.M)
+    return int(m.group(1), 0)
+
+
+CPX_MAX = define("CPX_MAX")
+CPXE_HDR = define("CPXE_HDR")
+CPXE_SIZE = CPXE_HDR + define("CPX_HDR_SZ")
 
 problems = []
 
@@ -96,7 +105,7 @@ def start(b):
 
 def main():
     print("gem4xe-m35: a control panel extension")
-    for s in ("sh_ncpx", "sh_cpxbad", "app_near", "sh_cpxdrops"):
+    for s in ("sh_ncpx", "sh_cpxbad", "app_near", "sh_cpxdrops", "sh_cpxruns"):
         if s not in SYMS:
             print(f"  FAIL: build/m3.sym has no {s}")
             return 1
@@ -113,28 +122,33 @@ def main():
 
         n = b.peek16(SYMS["sh_ncpx"])
         bad = b.peek16(SYMS["sh_cpxbad"])
-        print(f"  {n} module(s) loaded, {bad} refused")
-        check(n == 1, f"sh_ncpx is {n}, not the 1 module on the disk")
-        check(bad == 0, f"{bad} module(s) were found and refused")
-        if n != 1:
+        print(f"  {n} module(s) listed, {bad} refused")
+        check(n == 8, f"sh_ncpx is {n}, not the 8 modules with headers")
+        check(bad == 1, f"sh_cpxbad is {bad}, not 1: BAD.CPX has no header")
+        if n < 1:
             return 1
 
-        # The header the module wrote into the shell's table.
-        hdr = b.peek24(SYMS["sh_cpx_far"]) if "sh_cpx_far" in SYMS else 0
-        title = ""
-        if hdr:
-            raw = bytes(b.memdump(hdr + CPXE_HDR + HDR_TITLE, 18))
-            title = raw.split(b"\0")[0].decode("latin-1")
-        print(f"  its header says {title!r}")
-        check(title == WANT_TITLE,
-              f"the title in the slot is {title!r}, not {WANT_TITLE!r}")
+        # The headers, as read off the front of each file into the table.
+        far = b.peek24(SYMS["sh_cpx_far"]) if "sh_cpx_far" in SYMS else 0
+        titles, infos = {}, []
+        for i in range(n if far else 0):
+            slot = far + CPX_MAX + i * CPXE_SIZE
+            raw = bytes(b.memdump(slot + CPXE_HDR + HDR_TITLE, 18))
+            t = raw.split(b"\0")[0].decode("latin-1")
+            titles[t] = titles.get(t, 0) + 1
+            infos.append(b.peek24(slot))
+        print(f"  their headers say {titles}")
+        check(titles == WANT, f"the titles in the table are {titles}, not {WANT}")
 
-        info = b.peek24(hdr) if hdr else -1
+        runs = b.peek16(SYMS["sh_cpxruns"])
         drops = b.peek16(SYMS["sh_cpxdrops"])
-        print(f"  its vtable reads ${info:06X}; {drops} module(s) freed after boot")
-        check(info == 0, f"the slot's vtable is ${info:06X}, not 0: the "
-                         f"module was not freed, or left a pointer behind")
+        print(f"  {runs} loaded at boot, {drops} freed after it; vtables "
+              f"{' '.join(f'${v:06X}' for v in infos)}")
+        check(runs == 1, f"sh_cpxruns is {runs}, not 1: only M35B.CPX asks")
         check(drops == 1, f"sh_cpxdrops is {drops}, not 1")
+        check(infos and not any(infos),
+              "a slot's vtable is not 0: a module was kept, or left a "
+              "pointer behind")
         floor = b.peek16(SYMS["app_near"])
         print(f"  the desktop's near region is at ${floor:04X}")
     finally:

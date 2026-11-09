@@ -98,14 +98,15 @@ class AccessoriesShip(unittest.TestCase):
         """Where each binary in ACCP_DEPS lands in \\GEM\\, by extension.
 
         Deliberately NOT keyed off the build name.  An accessory is
-        build/<x>acc.g4a and a module is build/<x>.g4a, so a rule that
+        build/<x>acc.g4a and a module is build/<x>.cpx -- its header and
+        then a .g4a, since phase 133 -- so a rule that
         reads the source name has to be taught every new kind; this asks
         the only question that matters -- what the AES will see in its own
         directory -- and a kind nobody thought of still has to answer it.
         """
         kinds = {}
         for dep in sorted(self.deps):
-            if not dep.endswith(".g4a"):
+            if not dep.endswith((".g4a", ".cpx")):
                 continue
             dsts = self.carried.get(dep, set())
             sysd = {d for d in dsts if d.startswith("GEM>")}

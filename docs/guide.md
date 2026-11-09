@@ -221,7 +221,7 @@ whatever name it is given:
 | `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: the settings that belong to the machine rather than to a program, and a host for the extensions below.  Beside GEM.COM with CPANEL.RSC |
 | `CPANEL.RSC` | its panel and the list it shows the extensions in |
 | `CALC.ACC` | the same calculator as a desk accessory, so it is reachable from inside whatever you are running.  It shares CALC.RSC with CALC.PRG |
-| `GENERAL.CPX` | A CONTROL PANEL EXTENSION, the ST's .CPX: the double-click speed, the menu delay, and the date and time.  Put it beside GEM.COM with GENERAL.RSC and the control panel grows a page -- the AES loads every *.CPX it finds there and CONTROL.ACC lists them.  What you set is saved and put back at the next boot |
+| `GENERAL.CPX` | A CONTROL PANEL EXTENSION, the ST's .CPX: the double-click speed, the menu delay, and the date and time.  Put it beside GEM.COM with GENERAL.RSC and the control panel grows a page -- the AES lists every *.CPX it finds there and CONTROL.ACC shows them.  What you set is saved and put back at the next boot |
 | `GENERAL.RSC` | its dialog |
 | `COLOR.CPX` | THE SCREEN'S COLOURS, a second control panel extension: pick a pen, step its red, green and blue, and the screen changes as you do.  OK keeps the palette and puts it back at every boot; Reset is gem4xe's own.  Beside GEM.COM with COLOR.RSC.  On ANTIC the screen has two pens, and only their brightness shows |
 | `COLOR.RSC` | its dialog |

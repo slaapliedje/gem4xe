@@ -31,6 +31,8 @@ CPX_H = os.path.join(ROOT, "src", "app", "cpx.h")
 GEM_H = os.path.join(ROOT, "src", "app", "gem.h")
 SHEL_C = os.path.join(ROOT, "src", "aes", "shel.c")
 APPL_C = os.path.join(ROOT, "src", "aes", "appl.c")
+APP_H = os.path.join(ROOT, "src", "sys", "app.h")
+APP_C = os.path.join(ROOT, "src", "sys", "app.c")
 
 # Atari's header, stated here from the format and nowhere else.
 HDR_SIZE = 512
@@ -170,6 +172,118 @@ class CpxContract(unittest.TestCase):
             self.assertTrue(
                 re.search(rf"SAVEDS\s+\w[\w ]*\*?\s*{fn}\b", mod),
                 f"{fn} is in a CPXINFO and is not SAVEDS")
+
+
+class HeaderInFront(unittest.TestCase):
+    """Since phase 133 a .CPX is the header and then the .G4A: the AES
+    reads the header to list a module (src/aes/shel.c sh_cpxhead), the
+    loader steps over it (src/sys/app.c), and tools/mkcpx.py writes it.
+    Four writings of two numbers, held to one here."""
+
+    def setUp(self):
+        import mkcpx
+        self.m = mkcpx
+
+    def test_the_magic_agrees(self):
+        want = define(text(CPX_H), "CPX_MAGIC")
+        self.assertEqual(define(text(SHEL_C), "CPX_MAGICW"), want,
+                         "the AES checks a different magic from cpx.h's")
+        self.assertEqual(define(text(APP_H), "APP_CPX_MAGIC"), want,
+                         "the loader checks a different magic from cpx.h's")
+        self.assertEqual(self.m.MAGIC, want, "mkcpx writes another magic")
+        self.assertNotEqual(want, 100, "100 is an ST CPX's: a 68000 module "
+                                       "must be refused, not loaded")
+
+    def test_the_size_agrees(self):
+        self.assertEqual(define(text(APP_H), "APP_CPX_HDR"), HDR_SIZE)
+        self.assertEqual(self.m.SIZE, HDR_SIZE)
+
+    def test_the_loader_steps_over_it(self):
+        self.assertIn("APP_CPX_HDR", text(APP_C),
+                      "src/sys/app.c no longer skips a module's header")
+
+    def test_the_tool_writes_the_map(self):
+        """mkcpx's offsets against the map above, not against cpx.h."""
+        at = {name: off for off, _size, name in HDR_FIELDS}
+        for name, off in (("magic", self.m.OFF_MAGIC), ("flags", self.m.OFF_FLAGS),
+                          ("cpx_id", self.m.OFF_ID), ("cpx_version", self.m.OFF_VERSION),
+                          ("i_text", self.m.OFF_ITEXT), ("icon", self.m.OFF_ICON),
+                          ("i_info", self.m.OFF_ICOLOR), ("title_txt", self.m.OFF_TITLE),
+                          ("t_info", self.m.OFF_TCOLOR), ("buffer", self.m.OFF_BUFFER)):
+            self.assertEqual(off, at[name], f"mkcpx puts {name} at {off}")
+
+    SPEC = ("id ABCD\nversion 1.30\nflags bootinit, resident\n"
+            "title A title\ntext Icon\nicon\n")
+
+    def spec(self, rows=None, head=None):
+        rows = rows or ["." * 32] * 24
+        return (head or self.SPEC) + "\n".join(rows) + "\n"
+
+    def test_a_header_reads_back(self):
+        h = self.m.header(self.m.parse(self.spec()))
+        self.assertEqual(len(h), HDR_SIZE)
+        r = self.m.read(h)
+        self.assertEqual(r["id"], "ABCD")
+        self.assertEqual(r["version"], 0x0130, "1.30 is $0130, as XControl shows it")
+        self.assertEqual(r["flags"], 0x0006)
+        self.assertEqual((r["title"], r["text"]), ("A title", "Icon"))
+        self.assertEqual(r["tcolor"], 0x1180, "the title colour's default is Atari's")
+        self.assertEqual(r["buffer"], bytes(64), "the settings start empty")
+        # the ID is the ST's LONG 'ABCD', stored as the 65816 stores one
+        self.assertEqual(h[4:8], b"DCBA")
+
+    def test_the_icon_is_msb_first(self):
+        rows = ["." * 32] * 24
+        rows[0] = "#" + "." * 30 + "#"
+        rows[1] = "#" + "." * 31
+        icon = self.m.read(self.m.header(self.m.parse(self.spec(rows))))["icon"]
+        self.assertEqual(icon[0], 0x80, "the top-left pixel is not bit 7")
+        self.assertEqual(icon[3], 0x01, "pixel 31 is not bit 0 of byte 3")
+        self.assertEqual(icon[4], 0x80, "a row is not four bytes")
+
+    def test_a_bad_header_is_refused(self):
+        bad = [
+            self.SPEC.replace("ABCD", "ABC"),
+            self.SPEC.replace("bootinit", "booting"),
+            self.SPEC.replace("1.30", "1.3"),
+            self.SPEC.replace("A title", "x" * 18),
+        ]
+        for head in bad:
+            with self.assertRaises(self.m.SpecError, msg=head):
+                self.m.parse(self.spec(head=head))
+        with self.assertRaises(self.m.SpecError):
+            self.m.parse(self.spec(rows=["." * 31] * 24))
+        with self.assertRaises(self.m.SpecError):
+            self.m.parse(self.spec(rows=["." * 32] * 23))
+        with self.assertRaises(self.m.SpecError):
+            self.m.parse(self.SPEC.split("icon")[0])
+
+    def test_a_foreign_file_is_not_a_header(self):
+        st = (100).to_bytes(2, "big") + bytes(510)
+        self.assertIsNone(self.m.read(st), "an ST CPX read as ours")
+        self.assertIsNone(self.m.read(b"G4A\x05" + bytes(508)),
+                          "a bare .G4A read as a header")
+        good = self.m.header(self.m.parse(self.spec()))
+        self.assertIsNone(self.m.read(good[:500]), "a short file read as one")
+
+    def test_the_shipped_headers(self):
+        """Every .cpxh in the tree parses, and the flags the gates lean on
+        are what they say: General and Color are loaded at boot to put
+        their settings back; the gate module is not, and its second
+        header is."""
+        found = {}
+        for d, _dirs, files in os.walk(os.path.join(ROOT, "src")):
+            for f in files:
+                if f.endswith(".cpxh"):
+                    found[f] = self.m.parse(text(os.path.join(d, f)), f)
+        for name in ("general.cpxh", "color.cpxh", "m35_cpx.cpxh", "m35_boot.cpxh"):
+            self.assertIn(name, found)
+        self.assertEqual(found["general.cpxh"]["flags"], 0x0002)
+        self.assertEqual(found["color.cpxh"]["flags"], 0x0002)
+        self.assertEqual(found["m35_cpx.cpxh"]["flags"], 0)
+        self.assertEqual(found["m35_boot.cpxh"]["flags"], 0x0002)
+        ids = [s["id"] for s in found.values()]
+        self.assertEqual(len(ids), len(set(ids)), "two modules share an id")
 
 
 class XGenAlert(unittest.TestCase):

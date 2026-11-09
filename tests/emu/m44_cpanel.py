@@ -69,9 +69,11 @@ def run(window):
         if not window:
             # THE POOL'S FLOOR, while this disk is up anyway: what
             # tools/memreport.py predicts for the product's accessories and
-            # modules -- this disk carries the gate's TEST.CPX too -- must
-            # be where a running machine puts it.  The model had a stale
-            # size for the process records and was a page out (phase 100).
+            # modules -- this disk carries the gate's TEST.CPX too, which
+            # since phase 133 is listed and not loaded, and the tool reads
+            # that from its header -- must be where a running machine puts
+            # it.  The model had a stale size for the process records and
+            # was a page out (phase 100).
             want = memreport.main([], extra_modules=("m35_cpx",), want_floor=True)
             got = b.peek16(syms["pool_low"])
             check(got == want, f"the pool's permanent floor: the machine's "
@@ -80,9 +82,15 @@ def run(window):
             # panel had boot-initialised it: none is CPX_RESIDENT, and the
             # panel loads one again when it is opened (phase 118), which
             # is what the tour below does with General and Color.
+            # Only the two that ask are loaded at boot -- General and Color
+            # are CPX_BOOTINIT, TEST.CPX is not (phase 133) -- and both go.
             n, drops = b.peek16(syms["sh_ncpx"]), b.peek16(syms["sh_cpxdrops"])
-            check(n > 0 and drops == n, f"{drops} of {n} module(s) freed "
-                                        f"after boot")
+            runs = b.peek16(syms["sh_cpxruns"])
+            check(n == 3, f"{n} module(s) listed, not the disk's 3")
+            check(runs == 2, f"{runs} module(s) loaded at boot, not General "
+                             f"and Color")
+            check(drops == runs, f"{drops} of the {runs} module(s) loaded at "
+                                 f"boot freed after it")
             # ...and every block says what owns it (phase 119): the
             # desktop's near region is the desktop's kind, and each
             # accessory's near region an accessory's -- the tag's top

@@ -32,6 +32,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mkcpx                                # noqa: E402
 import mkg4a                                # noqa: E402
 import poolref                              # noqa: E402
 
@@ -237,19 +238,26 @@ def main(argv, extra_modules=(), want_floor=False):
         return out
 
     def modules(*names):
-        """(name, near) for each control panel module that loads.  The AES
-        loads *.CPX BEFORE the accessories (src/aes/shel.c), and since
-        phase 118 frees each one again once the panel has boot-initialised
-        it -- none the product ships is CPX_RESIDENT -- leaving a hole
-        below the accessories that the desktop is then placed in.  A module
-        has no process and no queue, and its resource goes far (it is
-        large-data).  Left out until phase 69, which is how a second module
-        nearly took the room QED is launched in without this tool
-        noticing."""
+        """(name, near) for each control panel module that loads at boot.
+        The AES loads, BEFORE the accessories (src/aes/shel.c), the *.CPX
+        whose header asks -- bootinit, resident, set-only; since phase 133
+        the rest are only listed -- and since phase 118 frees each one
+        again once the panel has boot-initialised it -- none the product
+        ships is CPX_RESIDENT -- leaving a hole below the accessories that
+        the desktop is then placed in.  A module has no process and no
+        queue, and its resource goes far (it is large-data).  Left out
+        until phase 69, which is how a second module nearly took the room
+        QED is launched in without this tool noticing.  The flags are read
+        from the built .cpx's header, so this cannot drift from what the
+        AES decides."""
         out = []
         for name in names:
             p = os.path.join(BUILD, name + ".g4a")
-            if os.path.exists(p):
+            c = os.path.join(BUILD, name + ".cpx")
+            if not (os.path.exists(p) and os.path.exists(c)):
+                continue
+            hdr = mkcpx.read(open(c, "rb").read(mkcpx.SIZE))
+            if hdr and hdr["flags"] & 0x0007:
                 out.append((name.upper() + ".CPX", g4a_near(p)))
         return out
 

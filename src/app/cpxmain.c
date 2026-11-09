@@ -22,7 +22,7 @@
 #include "cpx.h"
 
 /* The module's own, which it must define. */
-extern CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr);
+extern CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb);
 
 /* CPXSLOT is src/app/cpx.h's -- the same layout the panel reads through
  * cpx_slot().  The AES lays it out again by hand (src/aes/shel.c's
@@ -45,11 +45,15 @@ int main(void)
         return 1;
     slot = (CPXSLOT FAR *)addr;
 
-    /* The panel's parameter block is the shell's, far, and lives as long
-     * as this module does.  cpx.h promises a module that every callback
-     * may be 0, which is what lets this grow without breaking a module
-     * built against an older one. */
-    info = cpx_init((XCPB FAR *)0, &slot->hdr);
+    /* No block yet: the panel hands its own over at cpx_call.  cpx.h
+     * promises a module that every callback may be 0, which is what lets
+     * this grow without breaking a module built against an older one.
+     *
+     * AND NO HEADER.  The slot's was read from the file's front at boot,
+     * with the settings file laid over its buffer (src/aes/shel.c); a
+     * module that wrote one here would put its defaults over what was
+     * saved. */
+    info = cpx_init((XCPB FAR *)0);
     if (!info)
         return 1;                       /* it declined: the shell frees it */
 

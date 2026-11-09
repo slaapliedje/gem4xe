@@ -307,11 +307,10 @@ static SAVEDS void cl_cpx_close(uint32_t pbaddr)
     (void)pbaddr;
 }
 
-CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
+/* The header -- title, icon, CPX_BOOTINIT -- is src/apps/color.cpxh,
+ * in front of this module in the file (tools/mkcpx.py). */
+CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
 {
-    static const char title[] = "Color";
-    WORD i;
-
     (void)pb;
     /* Taken once and kept, as GENERAL.CPX's is: a module lives as long
      * as the machine (src/aes/shel.c). */
@@ -320,17 +319,6 @@ CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
     rsrc_gaddr(R_TREE, ADCOLOR, (void **)&tree);
     if (!tree)
         return (CPXINFO FAR *)0;
-
-    hdr->magic = CPX_MAGIC;
-    hdr->flags = CPX_BOOTINIT;          /* the saved palette at boot */
-    hdr->cpx_id = 0x434F4C52L;          /* 'COLR' */
-    hdr->cpx_version = 1;
-    for (i = 0; title[i] && i < 17; i++)
-        hdr->title_txt[i] = title[i];
-    hdr->title_txt[i] = 0;
-    for (i = 0; title[i] && i < 13; i++)
-        hdr->i_text[i] = title[i];
-    hdr->i_text[i] = 0;
 
     cinfo.cpx_call = cl_cpx_call;
     cinfo.cpx_close = cl_cpx_close;
