@@ -512,6 +512,165 @@ static SAVEDS void cp_gen_alert(uint32_t xcpb)
     pb->ok = (WORD)(form_alert(1, str) == 1);
 }
 
+/* ---- Xform_do: a module's form, in the window (phase 136) ---------------
+ *
+ * form_do's loop (src/aes/form.c fm_do), run by the panel over the
+ * module's tree in the window's work area -- XControl's Xform_do.  The
+ * difference from form_do is everything around the form: it does NOT
+ * take the screen (no fm_own, no BEG_UPDATE while it waits), so the
+ * desktop and its windows go on working, and the window's own messages
+ * come here between a person's clicks:
+ *
+ *   WM_REDRAW   the form drawn again through the rectangle list;
+ *   WM_TOPPED   the window to the top;
+ *   WM_MOVED    the window moved, and the tree's root with it, so the
+ *               module finds its place in tree[ROOT];
+ *   WM_SIZED    the look changed (cp_fit), the work area kept;
+ *   WM_CLOSED, AC_CLOSE   answered as -1 with the message: the module
+ *               keeps or puts back what it set, and returns.
+ *
+ * Presses and keys reach it only while the window is on top (phase 134),
+ * so form_button, form_keybd and objc_edit draw on a window nothing
+ * covers; each is done inside the screen lock, as GEM's own drawing is.
+ */
+static void cp_fit(void);
+
+/* The first EDITABLE field, as form_do's fm_inifld finds it. */
+static WORD cp_firstedit(OBJECT *t)
+{
+    WORD i = 0;
+
+    for (;;) {
+        UWORD f = t[i].ob_flags;
+
+        if ((f & EDITABLE) && !(f & HIDETREE))
+            return i;
+        if (f & LASTOB)
+            return 0;
+        i++;
+    }
+}
+
+static void cp_formdraw(OBJECT *t, const GRECT *area)
+{
+    GRECT r;
+
+    if (cp_wh < 0)
+        return;
+    wind_update(BEG_UPDATE);
+    wind_get(cp_wh, WF_FIRSTXYWH, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+    while (r.g_w && r.g_h) {
+        if (rc_intersect(area, &r))
+            objc_draw(t, ROOT, MAX_DEPTH, r.g_x, r.g_y, r.g_w, r.g_h);
+        wind_get(cp_wh, WF_NEXTXYWH, &r.g_x, &r.g_y, &r.g_w, &r.g_h);
+    }
+    wind_update(END_UPDATE);
+}
+
+/* the field's cursor, on or off, inside the screen lock */
+static void cp_cursor(OBJECT *t, WORD edit, WORD *idx, WORD kind)
+{
+    if (!edit)
+        return;
+    wind_update(BEG_UPDATE);
+    objc_edit(t, edit, 0, idx, kind);
+    wind_update(END_UPDATE);
+}
+
+static SAVEDS void cp_xform_do(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    OBJECT *t = (OBJECT *)pb->xf_tree;
+    WORD edit = 0, next, idx = 0, cont = 1, i;
+    WORD msg[8], mx, my, mb, ks, kr, nc;
+
+    /* NOT `next = edit ? edit : first` -- next is handed to form_keybd
+     * and form_button by address, and a ?: joined into an address-taken
+     * variable is wrong at every -O (B9, tools/ccbug). */
+    next = pb->xf_edit;
+    if (!next)
+        next = cp_firstedit(t);
+    for (i = 0; i < 8; i++)
+        pb->xf_msg[i] = 0;
+    while (cont) {
+        WORD ev;
+
+        if (next != 0 && edit != next) {
+            edit = next;
+            next = 0;
+            cp_cursor(t, edit, &idx, ED_INIT);
+        }
+        ev = evnt_multi(MU_KEYBD | MU_BUTTON | MU_MESAG, 2, 1, 1,
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        msg, 0, 0, &mx, &my, &mb, &ks, &kr, &nc);
+        if (ev & MU_MESAG) {
+            WORD gone = 0;
+
+            if (msg[0] == AC_CLOSE) {
+                cp_wh = -1;             /* the AES took the window */
+                gone = 1;
+            } else if (msg[0] == AC_OPEN && cp_wh >= 0) {
+                wind_set(cp_wh, WF_TOP, 0, 0, 0, 0);
+            } else if (cp_wh >= 0 && msg[3] == cp_wh) {
+                if (msg[0] == WM_REDRAW) {
+                    GRECT a;
+
+                    a.g_x = msg[4]; a.g_y = msg[5];
+                    a.g_w = msg[6]; a.g_h = msg[7];
+                    cp_cursor(t, edit, &idx, ED_END);
+                    cp_formdraw(t, &a);
+                    cp_cursor(t, edit, &idx, ED_INIT);
+                } else if (msg[0] == WM_TOPPED) {
+                    wind_set(cp_wh, WF_TOP, 0, 0, 0, 0);
+                } else if (msg[0] == WM_MOVED) {
+                    WORD ox = cp_work.g_x, oy = cp_work.g_y, v;
+
+                    wind_set(cp_wh, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
+                    cp_place();
+                    /* through temporaries: B15, `p->a = p->a OP e` */
+                    v = (WORD)(t[ROOT].ob_x + cp_work.g_x - ox);
+                    t[ROOT].ob_x = v;
+                    v = (WORD)(t[ROOT].ob_y + cp_work.g_y - oy);
+                    t[ROOT].ob_y = v;
+                } else if (msg[0] == WM_SIZED) {
+                    cp_fit();
+                } else if (msg[0] == WM_CLOSED) {
+                    gone = 1;
+                }
+            }
+            if (gone) {
+                if (cp_wh >= 0)
+                    cp_cursor(t, edit, &idx, ED_END);
+                for (i = 0; i < 8; i++)
+                    pb->xf_msg[i] = msg[i];
+                pb->xf_ret = -1;
+                return;
+            }
+        }
+        if (ev & MU_KEYBD) {
+            wind_update(BEG_UPDATE);
+            cont = form_keybd(t, edit, next, kr, &next, &kr);
+            if (kr && edit)
+                objc_edit(t, edit, kr, &idx, ED_CHAR);
+            wind_update(END_UPDATE);
+        }
+        if ((ev & MU_BUTTON) && cont) {
+            next = objc_find(t, ROOT, MAX_DEPTH, mx, my);
+            if (next == NIL)
+                next = 0;
+            else {
+                wind_update(BEG_UPDATE);
+                cont = form_button(t, next, nc, &next);
+                wind_update(END_UPDATE);
+            }
+        }
+        /* leaving the field: take the cursor away */
+        if (!cont || (next != 0 && next != edit))
+            cp_cursor(t, edit, &idx, ED_END);
+    }
+    pb->xf_ret = next;
+}
+
 /* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
  * a module is handed its address and reads it there (src/app/cpx.h says
  * why every entry takes one uint32_t rather than arguments). */
@@ -526,6 +685,7 @@ static void cp_xcpb_init(void)
     cp_xcpb.XGen_Alert = cp_gen_alert;
     cp_xcpb.alert = 0;
     cp_xcpb.ok = 0;
+    cp_xcpb.Xform_do = cp_xform_do;
 }
 
 /* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT -- or

@@ -10,10 +10,11 @@ and this gate drives it as a person would:
   1. Desk -> Control Panel opens a window, on top, listing the disk's
      three modules -- General, the gate's TEST.CPX, Color -- each slot
      with the icon from the header in front of its file (phase 133).
-  2. A double-click on General's slot opens it (a form CPX: still its own
-     dialog until phase 136): Look -> 3D and OK switch the look, and the
-     panel's window is still open afterwards -- its work area the size it
-     was, though the 3D frame is thicker (WM_SIZED).
+  2. A double-click on General's slot opens it IN THE WINDOW (phase 136,
+     the panel's Xform_do); the window is dragged with it up, and Look ->
+     3D clicked where it now is and OK switch the look -- and the panel's
+     window is still open afterwards with the list back, its work area
+     the size it was, though the 3D frame is thicker (WM_SIZED).
   3. THE DESKTOP GOES ON WORKING BESIDE IT: drive D1's icon double-clicked
      opens the desktop's window on top, with the panel's still open --
      which the AES's input rule (phase 134) is what allows.
@@ -29,8 +30,8 @@ and this gate drives it as a person would:
 
 The places clicked are the panel's own (tests/emu/shots.py, Tour.panel):
 it says where its window and slots are, so nothing is measured off a
-picture.  General's "3D" is still measured: General's dialog is
-form_center's until phase 136.
+picture.  General's "3D" is its work area's corner and General's own
+layout (tools/generalrsc.py), since General fills the work area.
 """
 import os
 import sys
@@ -48,9 +49,10 @@ from calcrsc import CQUIT                     # noqa: E402
 from m7_form import K, F, M, B                # noqa: E402
 from aesref import RETURN, ESCAPE, ARROW_DOWN  # noqa: E402
 import memreport                              # noqa: E402
+import generalrsc as gr                       # noqa: E402
 
 OUT = os.path.join(HERE, "..", "..", "build", "shots", "m44")
-GN_3D = (319, 148)          # General's "Look: 3D", on the screen
+CELL = 8                    # the 8-pixel cell, both ways
 D1_ICON = (40, 38)          # drive D1's icon on the desk (Tour.desk_icon
                             # reads the flat look's label, and General has
                             # just switched to 3D)
@@ -182,23 +184,57 @@ def main():
         look0 = b.peek16(syms["gl_3d"])
         t.dclick(middle(p["slots"][0]))           # General
         b.frames(60)
-        t.click(GN_3D)
+        wx, wy = p["work"][:2]
+        im = Image.open(shot("2-general")).convert("L")
+        # General's OK button, at the foot of the work area: its frame,
+        # which for a DEFAULT button is drawn outside the object -- so the
+        # darkest of the rows just above the object's top
+        okx, oky = wx + 6 * CELL, wy + gr.BTN_Y * CELL
+        edge = max(sum(1 for x in range(okx + 2, okx + 9 * CELL - 2)
+                       if im.getpixel((x + RAW_X0, y)) < 64)
+                   for y in range(oky - 4, oky + 2))
+        check(edge > 50, f"General opened in the panel's window: its OK at "
+                         f"the work area's foot ({edge} black pixels along "
+                         f"its top edge)")
+        # the window dragged with General up: Xform_do moves General's
+        # tree with it, or the click below lands on nothing
+        fx, fy, fw, fh = frame(p["wh"])
+        grab = (fx + fw // 2, fy + 4)
+        t.go(grab)
+        t.run([B(1), F(6)] + [M(grab[0] - 8 * k, grab[1] + 4 * k)
+                              for k in range(1, 5)] + [F(6), B(0), F(10)])
+        b.frames(60)
+        t.settle()
+        wx, wy = t.panel()["work"][:2]
+        check((wx, wy) != tuple(p["work"][:2]),
+              f"dragged with General up, the window moved "
+              f"({tuple(p['work'][:2])} -> {(wx, wy)})")
+        gn3d = (wx + (gr.LOOK_X + gr.LOOK_STEP + gr.LOOK_W // 2) * CELL,
+                wy + gr.LOOK_Y * CELL + CELL // 2)
+        t.click(gn3d)
         b.frames(60)
         t.run([K("RETURN", RETURN), F(100)])      # General's OK
         t.settle()
         p = t.panel()
         check((look0, b.peek16(syms["gl_3d"])) == (0, 1),
-              f"General, opened from its slot, switched the look "
-              f"({look0} -> {b.peek16(syms['gl_3d'])})")
+              f"General, opened from its slot and its window moved, switched "
+              f"the look where it now is ({look0} -> "
+              f"{b.peek16(syms['gl_3d'])})")
         check(p["wh"] > 0 and p["opens"] == 1 and p["sel"] == 0,
               f"...and the window is still open with General picked "
               f"(window {p['wh']}, {p['opens']} opened, row {p['sel']})")
+        im = Image.open(shot("2-back")).convert("L")
+        sx, sy = p["slots"][0][:2]
+        black = sum(1 for y in range(sy + 2, sy + 26)
+                    for x in range(sx + 30, sx + 62)
+                    if im.getpixel((x + RAW_X0, y)) < 64)
+        check(black > 40, f"...and the list is back over General's form "
+                          f"({black} black pixels in General's icon)")
         # the 3D frame is thicker: the AES sends WM_SIZED, and the panel
         # makes the window the size its contents need again
         check(p["work"][2:] == size0,
               f"...its work area the size it was, in the new look "
               f"({size0} -> {p['work'][2:]})")
-        shot("2-general")
 
         # ---- 3. the desktop beside it -------------------------------------
         calls = b.peek16(syms["app_calls"])

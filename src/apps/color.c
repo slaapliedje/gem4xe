@@ -2,8 +2,10 @@
  *
  * The ST's Color panel: pick a pen from the row, move its red, green and
  * blue a step at a time, and the screen changes as you do.  A FORM CPX,
- * like GENERAL.CPX, and for the same reason: form_do is the right tool
- * for a page of buttons, and the panel's loop can wait while it is up.
+ * like GENERAL.CPX, and for the same reason: a form loop is the right
+ * tool for a page of buttons.  Since phase 136 it runs in the panel's
+ * window, through the panel's Xform_do (src/app/cpx.h), as XControl's
+ * modules do.
  *
  * EVERY STEP APPLIES AT ONCE, through vs_color on the AES's own
  * workstation, because a colour can only be judged on the screen.  So
@@ -138,7 +140,6 @@ static void cl_remember(void)
 
 /* ---- the dialog ------------------------------------------------------- */
 
-static WORD dx, dy, dw, dh;
 
 /* An object, from the dialog's own background up: the root drawn,
  * clipped to the object.  A G_STRING is drawn transparently, so drawing
@@ -209,10 +210,19 @@ static void draw_row(void)
               (WORD)(tree[CLSWBOX].ob_height * 2));
 }
 
+/* The whole form, where the window has it now (the panel moves tree[ROOT]
+ * with the window, phase 136). */
+static void draw_all(void)
+{
+    objc_draw(tree, ROOT, MAX_DEPTH, tree[ROOT].ob_x, tree[ROOT].ob_y,
+              tree[ROOT].ob_width, tree[ROOT].ob_height);
+}
+
 static SAVEDS void cl_cpx_call(uint32_t pbaddr)
 {
     CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
-    WORD ret, ob, p, k, c, b;
+    WORD ret, ob = CLCNCL, p, k, c, b, gone = 0;
+    WORD msg[8];
 
     pb->ret = 0;                        /* a FORM CPX, like GENERAL's */
     if (!tree)
@@ -224,6 +234,10 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
         cl_restore();
         return;
     }
+    /* IN THE PANEL'S WINDOW, through its Xform_do (phase 136), as
+     * GENERAL.CPX is: no Xform_do, no window, nothing to show. */
+    if (!cl_xcpb || !cl_xcpb->Xform_do)
+        return;
 
     for (p = 0; p < N_PENS; p++) {
         WORD rgb[3];
@@ -244,12 +258,23 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
     tree[CLOK].ob_state = NORMAL;
     tree[CLCNCL].ob_state = NORMAL;
 
-    form_center(tree, &dx, &dy, &dw, &dh);
-    form_dial(FMD_START, 0, 0, 0, 0, dx, dy, dw, dh);
-    objc_draw(tree, ROOT, MAX_DEPTH, dx, dy, dw, dh);
+    /* the whole work area, which the panel has cleared */
+    tree[ROOT].ob_x = pb->rect.g_x;
+    tree[ROOT].ob_y = pb->rect.g_y;
+    tree[ROOT].ob_width = pb->rect.g_w;
+    tree[ROOT].ob_height = pb->rect.g_h;
+    draw_all();
 
     for (;;) {
-        ret = form_do(tree, 0);
+        ret = cpx_xform_do(cl_xcpb, tree, 0, msg);
+        if (ret == -1) {
+            /* the closer keeps the palette, as OK; AC_CLOSE puts it
+             * back, as Cancel (XControl's rule) */
+            gone = 2;
+            if (msg[0] == WM_CLOSED)
+                gone = 1;
+            break;
+        }
         ob = (WORD)(ret & 0x7FFF);
         if (ob == CLOK || ob == CLCNCL)
             break;
@@ -270,7 +295,7 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
             }
             tree[CLRESET].ob_state = NORMAL;
             show_all();
-            objc_draw(tree, ROOT, MAX_DEPTH, dx, dy, dw, dh);
+            draw_all();
             continue;
         }
         for (c = 0; c < N_CHANNELS; c++) {
@@ -291,7 +316,7 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
         }
     }
 
-    if (ob == CLOK) {
+    if (ob == CLOK || gone == 1) {
         cl_remember();
     } else {                            /* exactly what was there */
         for (p = 0; p < npens; p++)
@@ -299,7 +324,7 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
     }
     tree[CLOK].ob_state = NORMAL;
     tree[CLCNCL].ob_state = NORMAL;
-    form_dial(FMD_FINISH, 0, 0, 0, 0, dx, dy, dw, dh);
+    /* the panel draws its list back over the form */
 }
 
 static SAVEDS void cl_cpx_close(uint32_t pbaddr)

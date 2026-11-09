@@ -59,6 +59,7 @@ from deskrsc import (THEBAR, THEACTIVE, THEDROPS,           # noqa: E402
                      VIEWBOX, ICONITEM, TEXTITEM,
                      DEOK, FICNCL)
 from calcrsc import (C1, C2, C3, C4, C5, C6, CMUL, CEQ, CQUIT)   # noqa: E402
+import colorrsc                             # noqa: E402
 from m7_form import (poke16, apply_step, F, M, B, K, CLICK,   # noqa: E402
                      DCLICK, RETURN)
 from m14_sparta import screen               # noqa: E402
@@ -542,6 +543,19 @@ def main(argv):
                 b.frames(30)
                 t.shot("general-cpx")
                 t.run([K("RETURN", RETURN), F(40)])   # the module's OK
+                # ...and Color, in the window too since phase 136, put
+                # away with its Cancel: OK would save a palette onto the
+                # disk the tour is running from
+                p = t.panel()
+                t.dclick(middle(p["slots"][2]))      # Color
+                b.frames(60)
+                t.go((400, 200))
+                b.frames(30)
+                t.shot("color-cpx")
+                wx, wy = p["work"][:2]
+                t.click((wx + (colorrsc.CANCEL_X + colorrsc.BTN_W // 2) * 8,
+                         wy + colorrsc.BTN_Y * 8 + 4))
+                b.frames(40)
                 # ...and the second module, which is the OTHER kind: an
                 # EVENT CPX.  It draws itself into the panel's window,
                 # returns 1, and the panel then drives it -- so what is

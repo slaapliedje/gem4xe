@@ -16,10 +16,10 @@ On the VBXE desk, through the Control Panel as a person reaches it:
      the same boot without a save, so this is the saved palette and not
      a default.
 
-The swatch is found by its colour in the screenshot, and every other
-place is worked out from it and the resource's own layout
-(tools/colorrsc.py), so the gate does not depend on where form_center
-puts the dialog.
+Since phase 136 Color fills the panel's window, so every place is the
+window's work area (Tour.panel) and the resource's own layout
+(tools/colorrsc.py) -- and the red swatch being red where that says it
+is, is the check that the two agree.
 """
 import os
 import sys
@@ -50,19 +50,13 @@ def check(ok, what):
 
 
 class Dialog:
-    """Where the Color dialog is, from the red swatch in a screenshot."""
+    """Where Color is: the corner of the panel's work area, which it
+    fills (phase 136)."""
 
     def __init__(self, t, name):
         self.t = t
-        self.px, (w, h) = self.grab(name)
-        pts = [(x, y) for y in range(h) for x in range(w)
-               if self.px[x, y] == RED]
-        if not pts:
-            raise SystemExit(f"FAIL: no red swatch in {name}: is the dialog up?")
-        sx, sy = min(p[0] for p in pts) - RAW_X0, min(p[1] for p in pts)
-        # the fill is one pixel inside the swatch's border
-        self.ox = sx - 1 - (cr.SW_X + 2 * cr.SW_W) * CELL
-        self.oy = sy - 1 - cr.SW_Y * CELL
+        self.ox, self.oy = t.panel()["work"][:2]
+        self.px, _ = self.grab(name)
 
     def grab(self, name):
         self.t.b.frames(4)
@@ -77,7 +71,8 @@ class Dialog:
                 self.oy + cy * CELL + CELL // 2)
 
     def swatch(self, pen):
-        return self.at(cr.SW_X + cr.SW_W * pen, cr.SW_Y, CELL)
+        return (self.ox + cr.SW_X * CELL + cr.SW_PX * pen + cr.SW_PX // 2,
+                self.oy + cr.SW_Y * CELL + CELL // 2)
 
     def swatch_colour(self, pen, name):
         px, _ = self.grab(name)
@@ -104,7 +99,7 @@ def open_color(t, panel_open=False):
 def step_red_down(t, d, n):
     t.click(d.swatch(2))
     t.b.frames(10)
-    minus = d.button(10, cr.CH_Y, 3)            # Red's "-" (colorrsc)
+    minus = d.button(cr.MINUS_X, cr.CH_Y, cr.STEP_W)   # Red's "-" 
     for _ in range(n):
         t.click(minus)
         t.b.frames(10)
@@ -136,7 +131,7 @@ def main():
         c = d.swatch_colour(2, "m42-stepped")
         check(c == DARK_RED, f"four steps down and it is (187, 0, 0) at once: {c}")
 
-        t.click(d.button(27, 13, 8))            # Cancel
+        t.click(d.button(cr.CANCEL_X, cr.BTN_Y, cr.BTN_W))     # Cancel
         b.frames(30)
         t.settle()
         open_color(t, panel_open=True)          # the window is still up
@@ -144,7 +139,7 @@ def main():
         check(c == RED, f"...and Cancel put it back: {c}")
 
         step_red_down(t, d, 4)
-        t.click(d.button(15, 13, 8))            # OK: saved
+        t.click(d.button(cr.OK_X, cr.BTN_Y, cr.BTN_W))         # OK: saved
         b.frames(60)
         b.key("ESC")                            # the panel's window
         b.frames(60)

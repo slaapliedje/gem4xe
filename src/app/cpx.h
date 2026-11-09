@@ -181,7 +181,47 @@ typedef struct {
     void (*XGen_Alert)(uint32_t xcpb);
     WORD  alert;
     WORD  ok;                   /* what the last callback answered */
+
+    /* Xform_do (phase 136): the module's form, run IN THE PANEL'S
+     * WINDOW, as XControl's is.  Place the tree at cpx_call's rectangle,
+     * draw it, then call this -- through cpx_xform_do below, which fills
+     * the block -- until it answers an EXIT or TOUCHEXIT object, with bit
+     * 15 set for a double click, as form_do does.
+     *
+     * OR -1, WITH THE MESSAGE IN xf_msg: WM_CLOSED (the window's closer:
+     * XControl's rule is to keep what was set, as OK would) or AC_CLOSE
+     * (the window is gone already: put back what was there, as Cancel
+     * would).  Either way the module returns from cpx_call.
+     *
+     * What a person does with the window meanwhile -- a redraw, a move,
+     * topping it -- is the panel's to answer, and it moves the tree's
+     * root with the window, so the module reads its place back out of
+     * tree[ROOT] rather than keeping the rectangle it was given. */
+    void (*Xform_do)(uint32_t xcpb);
+    uint32_t xf_tree;           /* OBJECT FAR *: the form */
+    WORD  xf_edit;              /* the field to start in; 0, the first */
+    WORD  xf_ret;               /* the object, or -1 for a message */
+    WORD  xf_msg[8];            /* ...the message */
 } XCPB;
+
+/* Xform_do as XControl's reads -- a call with arguments -- over the
+ * one-block ABI the callbacks have to keep (see CPXINFO below).  0 when
+ * the panel has no Xform_do: an older one, which has no window to put a
+ * form in, so the module has nothing to show and returns. */
+static __inline WORD cpx_xform_do(XCPB FAR *pb, OBJECT *tree, WORD edit,
+                                  WORD *msg)
+{
+    WORD i;
+
+    if (!pb || !pb->Xform_do)
+        return 0;
+    pb->xf_tree = (uint32_t)tree;
+    pb->xf_edit = edit;
+    pb->Xform_do((uint32_t)pb);
+    for (i = 0; i < 8; i++)
+        msg[i] = pb->xf_msg[i];
+    return pb->xf_ret;
+}
 
 /* XGen_Alert's numbers are Atari's, from the Compendium's table for
  * (*xcpb->XGen_Alert)().  That table has these four and no others.

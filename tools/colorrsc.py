@@ -17,6 +17,11 @@ which would invert its colour and show the wrong one.
 
 The links are computed from each object's parent (`build_tree`), so the
 tree cannot be threaded wrongly by hand.
+
+IT FILLS THE PANEL'S WINDOW (phase 136): 32 columns by 20 rows, no frame
+of its own.  The sixteen swatches are 14 pixels each rather than two
+cells, which is what fits them across 256; the steppers are two cells
+wide.  The columns are named here, and test-m42 clicks by these names.
 """
 import os
 import sys
@@ -34,7 +39,7 @@ N_PENS = 16
 N_LEVELS = 16                   # 0..15 a channel
 CHANNELS = ("Red", "Green", "Blue")
 
-W, H = 38, 15
+W, H = 32, 20
 TITLE = "Color"
 
 CLROOT, CLTITLE, CLSWBOX = 0, 1, 2
@@ -48,14 +53,25 @@ CLOK = CLRESET + 1
 CLCNCL = CLOK + 1
 NOBS_COLOR = CLCNCL + 1         # 41
 
-SW_X, SW_Y, SW_W = 3, 3, 2      # the swatch row: 16 x 2 cells = 32
+SW_X, SW_Y = 2, 3               # the swatch row, in cells
+SW_PX = 14                      # ...a swatch's width in pixels: 16 x 14 = 224
 CH_Y, CH_DY = 6, 2
-BAR_X = 21
+LBL_X, MINUS_X, VALUE_X, PLUS_X, STEP_W = 1, 7, 10, 13, 2
+BAR_X = 16                      # the level bar: 15 cells, to column 31
+BTN_Y, BTN_W = 13, 8
+RESET_X, OK_X, CANCEL_X = 2, 12, 22
 
 # ob_spec colour words: border, text, opaque/pattern, interior
 SOLID = 7 << 4
 BLACK_BAR = 0x00001000 | 0x100 | SOLID | 1     # no border, solid black
 FRAME = 0x00011100                             # a one-pixel black frame
+
+
+def px(n):
+    """n pixels as a rectangle word: whole cells and the rest, since a
+    word carries at most 128 pixels besides its cells (tools/rsc.py ch).
+    The cell is 8 pixels wide on both screens gem4xe has."""
+    return ch(n // 8, n % 8)
 
 
 def swatch(pen):
@@ -87,37 +103,40 @@ def build_tree(objs):
 
 def color_tree(r):
     objs = [None] * NOBS_COLOR
-    objs[CLROOT] = (NIL, G_BOX, NONE, OUTLINED, 0x00021100,
+    # no frame: the window is the frame
+    objs[CLROOT] = (NIL, G_BOX, NONE, NORMAL, 0x00001100,
                     ch(0), ch(0), ch(W), ch(H))
     objs[CLTITLE] = (CLROOT, G_STRING, NONE, NORMAL, r.string(TITLE),
                      ch((W - len(TITLE)) // 2), ch(1), ch(len(TITLE)), ch(1))
     objs[CLSWBOX] = (CLROOT, G_IBOX, NONE, NORMAL, 0,
-                     ch(SW_X), ch(SW_Y), ch(SW_W * N_PENS), ch(1))
+                     ch(SW_X), ch(SW_Y), px(SW_PX * N_PENS), ch(1))
     for p in range(N_PENS):
         objs[CLSW0 + p] = (CLSWBOX, G_BOX, TOUCHEXIT, NORMAL, swatch(p),
-                           ch(SW_W * p), ch(0), ch(SW_W), ch(1))
+                           px(SW_PX * p), ch(0), px(SW_PX), ch(1))
     objs[CLMARK] = (CLROOT, G_BOX, NONE, NORMAL, BLACK_BAR,
-                    ch(SW_X), ch(SW_Y + 1, 1), ch(SW_W), ch(0, 2))
+                    ch(SW_X), ch(SW_Y + 1, 1), px(SW_PX), ch(0, 2))
     for c, name in enumerate(CHANNELS):
         b, y = CLCH0 + c * CH_STEP, CH_Y + c * CH_DY
         objs[b + CH_LBL] = (CLROOT, G_STRING, NONE, NORMAL, r.string(name),
-                            ch(SW_X), ch(y), ch(len(name)), ch(1))
+                            ch(LBL_X), ch(y), ch(len(name)), ch(1))
         objs[b + CH_MINUS] = (CLROOT, G_BUTTON, TOUCHEXIT, NORMAL,
-                              r.string("-"), ch(10), ch(y), ch(3), ch(1))
+                              r.string("-"), ch(MINUS_X), ch(y), ch(STEP_W),
+                              ch(1))
         objs[b + CH_VALUE] = (CLROOT, G_STRING, NONE, NORMAL, r.string("15"),
-                              ch(14), ch(y), ch(2), ch(1))
+                              ch(VALUE_X), ch(y), ch(2), ch(1))
         objs[b + CH_PLUS] = (CLROOT, G_BUTTON, TOUCHEXIT, NORMAL,
-                             r.string("+"), ch(17), ch(y), ch(3), ch(1))
+                             r.string("+"), ch(PLUS_X), ch(y), ch(STEP_W),
+                             ch(1))
         objs[b + CH_FRAME] = (CLROOT, G_BOX, NONE, NORMAL, FRAME,
                               ch(BAR_X), ch(y), ch(N_LEVELS - 1), ch(1))
         objs[b + CH_BAR] = (b + CH_FRAME, G_BOX, NONE, NORMAL, BLACK_BAR,
                             ch(0), ch(0), ch(N_LEVELS - 1), ch(1))
     objs[CLRESET] = (CLROOT, G_BUTTON, SELECTABLE | EXIT, NORMAL,
-                     r.string("Reset"), ch(3), ch(13), ch(8), ch(1))
+                     r.string("Reset"), ch(RESET_X), ch(BTN_Y), ch(BTN_W), ch(1))
     objs[CLOK] = (CLROOT, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
-                  r.string("OK"), ch(15), ch(13), ch(8), ch(1))
+                  r.string("OK"), ch(OK_X), ch(BTN_Y), ch(BTN_W), ch(1))
     objs[CLCNCL] = (CLROOT, G_BUTTON, SELECTABLE | EXIT, NORMAL,
-                    r.string("Cancel"), ch(27), ch(13), ch(8), ch(1))
+                    r.string("Cancel"), ch(CANCEL_X), ch(BTN_Y), ch(BTN_W), ch(1))
     assert all(o is not None for o in objs)
     return r.tree(build_tree(objs), look3d=True)
 

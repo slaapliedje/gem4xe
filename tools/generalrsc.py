@@ -28,6 +28,12 @@ template cannot say that September has thirty days.
 
 This is a MODULE, so its tree belongs to it and not to the panel -- the
 host draws nothing of this and knows only the title in the header.
+
+IT FILLS THE PANEL'S WINDOW (phase 136): XControl's 32 columns, 20 rows
+of the 8-pixel cell -- 256 x 160 -- with no frame of its own, the window
+being the frame.  The module sizes the root to the work area it is given
+and runs it with the panel's Xform_do.  "None" was "Instant", which with
+the 3D look's cell between buttons made the row too wide for 32.
 """
 import os
 import sys
@@ -57,7 +63,7 @@ LOOKLBL = "Look"
 LOOK_NAMES = ("Flat", "3D")
 LOOK_W, LOOK_STEP = 6, 7
 
-W, H = 38, 17
+W, H = 32, 20
 TITLE = "General"
 DCLBL = "Double-click speed"
 MNLBL = "Sub-menu delay"
@@ -65,9 +71,11 @@ DTLBL = "Date"
 TMLBL = "Time"
 
 DC_W, DC_STEP = 4, 5
-MN_W, MN_STEP = 7, 8            # a cell apart, for the 3D look's edges
-MN_NAMES = ("Instant", "Fast", "Normal", "Slow")
-GROUP_X = 3
+MN_W, MN_STEP = 6, 7            # a cell apart, for the 3D look's edges
+MN_NAMES = ("None", "Fast", "Normal", "Slow")
+GROUP_X = 2
+BTN_Y = 17                      # OK and Cancel, at the foot of the window
+LOOK_Y, LOOK_X = 11, GROUP_X + 6  # the Look row, its buttons' column
 
 # The ST's order, and a template a person reads as the order to type in.
 DATE_TMPL = "__/__/__"
@@ -80,7 +88,8 @@ RADIO = SELECTABLE | RBUTTON | TOUCHEXIT
 def general_tree(r):
     dtmpl = r.string(DATE_TMPL)
     objs = [
-        (NIL, GNTITLE, GN3DBOX, G_BOX, NONE, OUTLINED, 0x00021100,
+        # no frame: the window is the frame
+        (NIL, GNTITLE, GN3DBOX, G_BOX, NONE, NORMAL, 0x00001100,
          ch(0), ch(0), ch(W), ch(H)),
         (GNDCLBL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(TITLE),
          ch((W - len(TITLE)) // 2), ch(1), ch(len(TITLE)), ch(1)),
@@ -114,15 +123,15 @@ def general_tree(r):
                  r.ted("", TIME_TMPL, DIGITS),
                  ch(GROUP_X + 24), ch(9), ch(len(TIME_TMPL)), ch(1)))
     objs.append((GNCNCL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT,
-                 NORMAL, r.string("OK"), ch(8), ch(14), ch(9), ch(1)))
+                 NORMAL, r.string("OK"), ch(6), ch(BTN_Y), ch(9), ch(1)))
     objs.append((GN3DLBL, NIL, NIL, G_BUTTON, SELECTABLE | EXIT,
-                 NORMAL, r.string("Cancel"), ch(21), ch(14), ch(9), ch(1)))
+                 NORMAL, r.string("Cancel"), ch(17), ch(BTN_Y), ch(9), ch(1)))
     # The 3D look (src/aes/objc.c): last in the array so every index
     # above is what it always was.
     objs.append((GN3DBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(LOOKLBL),
-                 ch(GROUP_X), ch(11), ch(len(LOOKLBL)), ch(1)))
+                 ch(GROUP_X), ch(LOOK_Y), ch(len(LOOKLBL)), ch(1)))
     objs.append((GNROOT, GN3D0, GN3D0 + N_LOOK - 1, G_IBOX, NONE, NORMAL,
-                 0x00000000, ch(GROUP_X + 6), ch(11),
+                 0x00000000, ch(LOOK_X), ch(LOOK_Y),
                  ch((N_LOOK - 1) * LOOK_STEP + LOOK_W), ch(1)))
     for i in range(N_LOOK):
         last = i == N_LOOK - 1

@@ -12,12 +12,14 @@
  * the panel has never heard of and can be shipped without.
  *
  * A FORM CPX, AND IT SAYS SO BY RETURNING 0.  XCONTROL has two kinds:
- * a form CPX that runs its own dialog and is finished when cpx_call
+ * a form CPX that runs its own form and is finished when cpx_call
  * returns, and an event CPX that draws itself, returns 1, and is then
  * handed events one at a time by the host.  This is the first, which is
- * the honest shape for a settings dialog -- form_do is exactly the right
- * tool for a page of radio buttons and two fields, and blocking the
- * panel's loop for the seconds it is up costs nothing.
+ * the honest shape for a page of radio buttons and two fields.  Since
+ * phase 136 the form is in the PANEL'S WINDOW, through the panel's
+ * Xform_do (src/app/cpx.h), as XControl's are: the desktop goes on
+ * working beside it, and the panel answers the window's redraws and
+ * moves while the form is up.
  *
  * The other kind is worth having for a module whose control has to show
  * its own effect while it is being moved -- a mouse speed, a sound --
@@ -255,7 +257,8 @@ static void gn_remember(WORD dc, WORD mn, WORD look)
 static SAVEDS void gn_cpx_call(uint32_t pbaddr)
 {
     CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
-    WORD x, y, w, h, ret, ob, i, j;
+    WORD ret, ob = GNCNCL, i, j, gone = 0;
+    WORD msg[8];
 
     pb->ret = 0;                        /* a FORM CPX: see the end */
     if (!tree)
@@ -271,6 +274,11 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
      * CPX_BOOTINIT module once at start-up purely so it can do the line
      * above; there is nobody to show anything to yet (src/app/cpx.h). */
     if (gn_xcpb && gn_xcpb->booting)
+        return;
+    /* IN THE PANEL'S WINDOW (phase 136), through its Xform_do: a panel
+     * without one has no window to put this form in, and the module has
+     * nothing to show there. */
+    if (!gn_xcpb || !gn_xcpb->Xform_do)
         return;
 
     dc0 = evnt_dclick(0, 0);
@@ -291,13 +299,25 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
     tree[GNCNCL].ob_state = NORMAL;
     gn_show();
 
-    form_center(tree, &x, &y, &w, &h);
-    form_dial(FMD_START, 0, 0, 0, 0, x, y, w, h);
-    form_dial(FMD_GROW, 0, 0, 0, 0, x, y, w, h);
-    objc_draw(tree, ROOT, MAX_DEPTH, x, y, w, h);
+    /* the whole work area, the panel's window being the frame: the panel
+     * has cleared it, and moves tree[ROOT] with the window from here */
+    tree[ROOT].ob_x = pb->rect.g_x;
+    tree[ROOT].ob_y = pb->rect.g_y;
+    tree[ROOT].ob_width = pb->rect.g_w;
+    tree[ROOT].ob_height = pb->rect.g_h;
+    objc_draw(tree, ROOT, MAX_DEPTH, pb->rect.g_x, pb->rect.g_y,
+              pb->rect.g_w, pb->rect.g_h);
 
     for (;;) {
-        ret = form_do(tree, GNDATE);
+        ret = cpx_xform_do(gn_xcpb, tree, GNDATE, msg);
+        if (ret == -1) {
+            /* XControl's rule: the closer keeps what was set, as OK;
+             * AC_CLOSE -- the window gone -- puts it back, as Cancel */
+            gone = 2;
+            if (msg[0] == WM_CLOSED)
+                gone = 1;
+            break;
+        }
         ob = (WORD)(ret & 0x7FFF);
         if (ob == GNOK || ob == GNCNCL)
             break;
@@ -307,13 +327,16 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
             gn_setdelay(gn_ms[ob - GNMN0]);
         else if (ob >= GN3D0 && ob < GN3D0 + N_LOOK
                  && (WORD)(ob - GN3D0) != gn_look()) {
-            /* the look, at once, and this dialog in it to show it */
+            /* the look, at once, and this form in it to show it -- where
+             * the window has it now, which a move may have changed */
             gn_setlook((WORD)(ob - GN3D0));
-            objc_draw(tree, ROOT, MAX_DEPTH, x, y, w, h);
+            objc_draw(tree, ROOT, MAX_DEPTH, tree[ROOT].ob_x,
+                      tree[ROOT].ob_y, tree[ROOT].ob_width,
+                      tree[ROOT].ob_height);
         }
     }
 
-    if (ob == GNOK) {
+    if (ob == GNOK || gone == 1) {
         gn_apply_clock();
         gn_remember(evnt_dclick(0, 0), gn_index(ms_now()), gn_look());
     }
@@ -325,19 +348,17 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
 
     tree[GNOK].ob_state = NORMAL;
     tree[GNCNCL].ob_state = NORMAL;
-    form_dial(FMD_SHRINK, 0, 0, 0, 0, x, y, w, h);
     if (gn_look() != look0) {
         /* everything on the screen was drawn in the other look: the
          * whole desktop is redrawn, every window with it */
         WORD dx, dy, dw, dh;
         wind_get(0, WF_CURRXYWH, &dx, &dy, &dw, &dh);
         form_dial(FMD_FINISH, 0, 0, 0, 0, dx, dy, dw, dh);
-    } else
-        form_dial(FMD_FINISH, 0, 0, 0, 0, x, y, w, h);
-    /* pb->ret stays 0: A FORM CPX, and finished.  The dialog above ran
-     * and has already closed, so there is nothing for the host to drive
-     * -- a 1 here would leave the panel forwarding events to a module
-     * with no dialog left to put them in (src/app/cpx.h). */
+    }
+    /* pb->ret stays 0: A FORM CPX, and finished.  Its form ran in the
+     * panel's window, and the panel draws its list back over it -- a 1
+     * here would leave the panel forwarding events to a module with no
+     * form left to put them in (src/app/cpx.h). */
 }
 
 static SAVEDS void gn_cpx_close(uint32_t pbaddr)
