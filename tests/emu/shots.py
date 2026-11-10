@@ -335,15 +335,7 @@ class Tour:
         places were measured off 10-cpanel.png, which is what made the
         panel's layout impossible to change without re-aiming every gate
         that opened a module."""
-        asym = symfile.load(CPANEL_SYM)
-        vlink = g4a(CPANEL)["vars_link"] << 16
-        for i in range(6):
-            p = self.b.peek24(self.syms["gl_acctitle"] + 4 * i)
-            if p and cstring(self.b, p, 20) == CPANEL_TITLE:
-                break
-        else:
-            raise KeyError("no Control Panel among the accessories")
-        base = p - (asym["acc_title"] - vlink)
+        asym, vlink, base = self._panel_base()
 
         def w(name, off=0):
             v = self.b.peek16(base + asym[name] - vlink + off)
@@ -354,6 +346,22 @@ class Tour:
                     work=tuple(w("cp_work", 2 * j) for j in range(4)),
                     slots=[tuple(w("cp_slotr", 8 * k + 2 * j) for j in range(4))
                            for k in range(CPANEL_SLOTS)])
+
+    def _panel_base(self):
+        asym = symfile.load(CPANEL_SYM)
+        vlink = g4a(CPANEL)["vars_link"] << 16
+        for i in range(6):
+            p = self.b.peek24(self.syms["gl_acctitle"] + 4 * i)
+            if p and cstring(self.b, p, 20) == CPANEL_TITLE:
+                break
+        else:
+            raise KeyError("no Control Panel among the accessories")
+        return asym, vlink, p - (asym["acc_title"] - vlink)
+
+    def panel_bytes(self, name, n):
+        """n bytes of one of the panel's far variables, by its symbol."""
+        asym, vlink, base = self._panel_base()
+        return bytes(self.b.memdump(base + asym[name] - vlink, n))
 
     def dialog(self, field, which):
         """An object of one of the desktop's dialogs, once it is up."""
@@ -432,6 +440,12 @@ def boot(b, syms, out):
             break
     else:
         raise SystemExit("the boot screen never showed its hint")
+    # ...and a few frames more: the hint row is written just BEFORE
+    # logo_on() turns the logo's rows to the rainbow (src/sys/bootinfo.c,
+    # boot_end), and a picture taken in between shows the logo as plain
+    # inverse blocks -- black.  A kernel change that moved nothing but
+    # code addresses moved which side of it the picture fell (phase 140).
+    b.frames(10)
     raw = os.path.join(BUILD, "shots", "tour-boot.png")
     b.screenshot(raw)
     fn = os.path.join(out, BOOT_SHOT)

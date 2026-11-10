@@ -734,6 +734,23 @@ int16_t app_load_cio(const char *cio, APP *app)
     far_owner = own;
     far_tag = tag;
     st = far_read_file(cio, &blob, &len);
+    /* THE FILE OUT OF THE PROGRAM'S WAY (phase 140).  far_read_file reads
+     * into the foot of the largest free run -- where this program's code
+     * then wants to go -- and the file is gone again as soon as the
+     * program is placed.  So it moves to the top of the heap first.  On a
+     * machine with three banks the control panel's code missed its bank
+     * by 74 bytes, the panel's own file under it, and took the foot of
+     * the bank the desktop's code needs.  No room at the top: it stays. */
+    if (st == APP_OK) {
+        uint32_t top = far_alloc_top(len);
+
+        if (top > blob) {
+            far_copy_span(top, blob, len);
+            far_free(blob);
+            blob = top;
+        } else if (top)
+            far_free(top);
+    }
     if (st == APP_OK && skip
         && (len < skip || far_read8(blob) != (APP_CPX_MAGIC & 0xFF)
             || far_read8(blob + 1) != (APP_CPX_MAGIC >> 8))) {

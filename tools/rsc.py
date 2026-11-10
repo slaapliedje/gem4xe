@@ -250,6 +250,49 @@ def overlaps3d(objs, wchar=8, hchar=8):
     return bad
 
 
+def check_links(objs):
+    """A TREE'S LINKS, checked where every generator builds one.  GEM keeps
+    no parent link: it finds an object's parent by walking its siblings to
+    the one whose TAIL points back (src/aes/objc.c, ob_get_par), so a
+    parent whose ob_tail is not its last child sends that walk off the end
+    of the tree -- into garbage, or round for ever.  Phase 140 appended a
+    button to the control panel's root and left the root's tail on the
+    list: every offset under it was measured from nowhere and the panel
+    drew itself twice.  Every object below the root is a child exactly
+    once, in a chain from its parent's head to its tail that ends back at
+    the parent; LASTOB is on the last object and no other."""
+    n = len(objs)
+    seen = [0] * n
+    if objs[0][0] != NIL:
+        raise ValueError("a tree's root has a next")
+    for i, o in enumerate(objs):
+        nxt, head, tail = o[0], o[1], o[2]
+        if (head == NIL) != (tail == NIL):
+            raise ValueError(f"object {i}: head {head} but tail {tail}")
+        if head == NIL:
+            continue
+        k, last, steps = head, NIL, 0
+        while k != i:
+            if not 0 < k < n:
+                raise ValueError(f"object {i}'s children run to {k}, "
+                                 f"outside the tree")
+            seen[k] += 1
+            last, k = k, objs[k][0]
+            steps += 1
+            if steps > n:
+                raise ValueError(f"object {i}'s children never come back")
+        if last != tail:
+            raise ValueError(f"object {i}: its last child is {last} but its "
+                             f"tail says {tail}")
+    for i in range(1, n):
+        if seen[i] != 1:
+            raise ValueError(f"object {i} is a child {seen[i]} times")
+    lastob = [i for i, o in enumerate(objs) if o[4] & 0x20]
+    if lastob != [n - 1]:
+        raise ValueError(f"LASTOB on {lastob}, not on the last object "
+                         f"({n - 1})")
+
+
 class Rsc:
     def __init__(self):
         self.strings, self.images, self.bitblks, self.iconblks = [], [], [], []
@@ -338,6 +381,7 @@ class Rsc:
         resource carrying them is right on both (src/aes/objc.c)."""
         if look3d:
             objs = flags3d(objs, flat)
+        check_links(objs)
         first = len(self.objects)
         for o in objs:
             self.objects.append(RObj(*o))

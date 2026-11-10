@@ -204,6 +204,27 @@ def model():
     return out
 
 
+class TestTopUnderTheMegabyte(unittest.TestCase):
+    """far_alloc_top on a heap that runs past $100000, as a Rapidus's does
+    (phase 140): a block goes at the top of the first megabyte -- the
+    Rapidus's SRAM -- when it fits there, and above only when it does
+    not.  In the model: the simulator's heap is banks 2-9 and never
+    reaches the megabyte, where the target's code is the same rule."""
+
+    def test_the_first_megabyte_first(self):
+        h = farref.Heap(0x0E, 0x11)
+        a = h.alloc_top(0x8000)
+        self.assertEqual(a, 0x100000 - 0x8000, "the top of bank $0F, not $11")
+        b = h.alloc_top(0x1C000)        # no longer fits under the megabyte
+        self.assertGreaterEqual(b, 0x100000, "too big for what is left "
+                                "under the megabyte: above it")
+        self.assertEqual(b + 0x1C000, 0x120000, "...at the heap's top")
+
+    def test_a_heap_under_the_megabyte_is_as_before(self):
+        h = farref.Heap(0x05, 0x07)
+        self.assertEqual(h.alloc_top(0x100), 0x080000 - 0x100)
+
+
 class TestFarAlloc(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

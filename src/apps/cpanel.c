@@ -173,8 +173,9 @@ static void cp_layout(void)
     WORD k;
 
     cp_set(CPROOT, 0, 0, w, hs + lh + 2);
-    cp_set(CPTIME, wchar, 2, 5 * wchar, hchar);
+    cp_set(CPTIME, wchar, 2, 6 * wchar, hchar);
     cp_set(CPDATE, w - 9 * wchar, 2, 8 * wchar, hchar);
+    cp_set(CPOPTS, 11 * wchar, 2, 9 * wchar, hchar);
     cp_set(CPLIST, 2, hs, lw, lh);
     for (k = 0; k < N_VIS; k++) {
         WORD box = CPSLOT0 + k * SLOT_OBS;
@@ -282,7 +283,12 @@ static void cp_gatexy(void)
  * The time and the date, refreshed when the minute turns: a timer asks
  * every second, and only a change is drawn.  DD/MM/YY, General's order
  * (src/apps/general.c); twelve-hour time is step 4's. */
-static char cp_time[6], cp_date[9];
+static char cp_time[7], cp_date[9];
+
+/* THE CLOCK'S WAY (phase 140): 0 for 24-hour, 1 for 12 -- XControl's
+ * Setup choice, kept in CONTROL.INF where the modules' settings are kept
+ * (cp_readinf) and read by a gate here. */
+WORD cp_hour12;
 
 static void cp_two(char *p, UWORD v)
 {
@@ -293,20 +299,36 @@ static void cp_two(char *p, UWORD v)
 static WORD cp_clock(void)
 {
     UWORD t = (UWORD)Tgettime(), d = (UWORD)Tgetdate();
-    char tm[6], dt[9];
+    UWORD h = t >> 11;
+    char tm[7], dt[9];
     WORD i, changed = 0;
 
-    cp_two(tm, t >> 11);
+    if (cp_hour12) {                    /* " 1:05p", "12:30a" */
+        UWORD h12 = h % 12;
+
+        if (!h12)
+            h12 = 12;
+        tm[0] = ' ';
+        if (h12 >= 10)
+            tm[0] = '1';
+        tm[1] = (char)('0' + h12 % 10);
+        tm[5] = 'a';
+        if (h >= 12)
+            tm[5] = 'p';
+    } else {
+        cp_two(tm, h);
+        tm[5] = ' ';
+    }
     tm[2] = ':';
     cp_two(tm + 3, (t >> 5) & 63);
-    tm[5] = 0;
+    tm[6] = 0;
     cp_two(dt, d & 31);
     dt[2] = '/';
     cp_two(dt + 3, (d >> 5) & 15);
     dt[5] = '/';
     cp_two(dt + 6, ((d >> 9) + 80) % 100);
     dt[8] = 0;
-    for (i = 0; i < 6; i++)
+    for (i = 0; i < 7; i++)
         if (cp_time[i] != tm[i]) {
             cp_time[i] = tm[i];
             changed = 1;
@@ -1536,6 +1558,57 @@ static void cp_openrow(WORD row)
 
 static char *cp_title;                  /* CPANEL.RSC's: WF_NAME keeps it */
 
+/* ---- the options' state (phase 140; the options themselves are below) */
+#define CP_NWORDS   (CPNO - CPOPABOUT + 1)
+#define CP_WORD(i)  cp_words[(i) - CPOPABOUT]
+#define CP_CLOSER   (-1)                /* a form ended by the closer: OK */
+#define CP_GONE     (-2)                /* ...by AC_CLOSE: Cancel */
+#define CP_INF      "CONTROL.INF"       /* a bare name, as NAME.CFG: where
+                                         * the modules' settings go */
+
+static OBJECT *cp_infot, *cp_setupt;
+static char *cp_words[CP_NWORDS];
+WORD cp_optpick = -1;                   /* the last option picked: a gate's */
+static char cp_ifile[14], cp_iver[6], cp_iid[5];
+
+/* CONTROL.INF: a line, "CLOCK 12" or "CLOCK 24".  Missing or not
+ * understood, the clock is 24-hour. */
+static void cp_readinf(void)
+{
+    char buf[32];
+    LONG h = Fopen(CP_INF, 0), n;
+    WORD i;
+
+    if (h < 0)
+        return;
+    n = Fread((WORD)h, (LONG)sizeof buf - 1, buf);
+    Fclose((WORD)h);
+    for (i = 0; i + 8 <= (WORD)n; i++)
+        if (buf[i] == 'C' && buf[i + 1] == 'L' && buf[i + 2] == 'O'
+            && buf[i + 3] == 'C' && buf[i + 4] == 'K' && buf[i + 5] == ' ') {
+            cp_hour12 = 0;
+            if (buf[i + 6] == '1' && buf[i + 7] == '2')
+                cp_hour12 = 1;
+        }
+}
+
+static WORD cp_writeinf(WORD h12)
+{
+    static const char l12[] = "CLOCK 12\x9b", l24[] = "CLOCK 24\x9b";
+    const char *s = l24;
+    LONG h;
+    WORD ok;
+
+    if (h12)
+        s = l12;
+    h = Fcreate(CP_INF, 0);
+    if (h < 0)
+        return 0;
+    ok = (WORD)(Fwrite((WORD)h, 9L, s) == 9L);
+    Fclose((WORD)h);
+    return ok;
+}
+
 /* The resource, once.  Separate from the window because the two happen
  * at different times in an accessory: the shell takes this while the AES
  * is starting up -- before the first program, the only time an accessory
@@ -1558,6 +1631,13 @@ WORD cp_start(void)
     tree[CPTIME].ob_spec.index = (int32_t)(uint32_t)(char FAR *)cp_time;
     tree[CPDATE].ob_spec.index = (int32_t)(uint32_t)(char FAR *)cp_date;
     cp_layout();
+    /* the options' forms and words, now: taken later, in a module's
+     * time, the words could be looked up in the wrong resource */
+    rsrc_gaddr(R_TREE, ADCPINFO, (void **)&cp_infot);
+    rsrc_gaddr(R_TREE, ADCPSETUP, (void **)&cp_setupt);
+    for (i = 0; i < CP_NWORDS; i++)
+        rsrc_gaddr(R_STRING, CPOPABOUT + i, (void **)&cp_words[i]);
+    cp_readinf();
     return TRUE;
 }
 
@@ -1633,6 +1713,210 @@ void cp_acclose(void)
     cp_wh = -1;
 }
 
+/* ---- the options (phase 140, docs/cpanel-plan.md step 4) ---------------
+ *
+ * XControl's: an Options button in the strip, and its pop-up -- About and
+ * Setup always, Open CPX and CPX Info with a module picked -- and two
+ * forms of the panel's own, run in the window as a module's form is run.
+ * Reload, Unload, Activate and Deactivate are step 4's second half.
+ */
+/* One of the panel's own forms, in the window: its root over the work
+ * area, drawn; then each end of it, as the object, or CP_CLOSER for the
+ * window's closer (OK, XControl's rule) or CP_GONE for AC_CLOSE (Cancel).
+ * Through the panel's Xform_do, as a module's form. */
+static void cp_formopen(OBJECT *ft)
+{
+    ft[ROOT].ob_x = cp_work.g_x;
+    ft[ROOT].ob_y = cp_work.g_y;
+    ft[ROOT].ob_width = cp_work.g_w;
+    ft[ROOT].ob_height = cp_work.g_h;
+    cp_formdraw(ft, &cp_work);
+}
+
+static WORD cp_formnext(OBJECT *ft)
+{
+    WORD msg[8], r;
+
+    for (;;) {
+        r = cpx_xform_do((XCPB FAR *)&cp_xcpb, ft, 0, msg);
+        if (r != -1)
+            return (WORD)(r & 0x7FFF);
+        if (msg[0] == WM_CLOSED)
+            return CP_CLOSER;
+        if (msg[0] == AC_CLOSE)
+            return CP_GONE;
+    }
+}
+
+/* ...and the list back, unless the window went */
+static void cp_formdone(void)
+{
+    if (cp_wh < 0)
+        return;
+    cp_fill();
+    cp_place();
+    cp_draw(CPROOT, MAX_DEPTH, &cp_work);
+}
+
+static void cp_obgrect(OBJECT *t, WORD ob, GRECT *r)
+{
+    objc_offset(t, ob, &r->g_x, &r->g_y);
+    r->g_w = t[ob].ob_width;
+    r->g_h = t[ob].ob_height;
+}
+
+/* one object of a form again, with the margin a button's frame takes */
+static void cp_redrawob(OBJECT *t, WORD ob)
+{
+    GRECT b;
+
+    cp_obgrect(t, ob, &b);
+    b.g_x = (WORD)(b.g_x - 2);
+    b.g_y = (WORD)(b.g_y - 2);
+    b.g_w = (WORD)(b.g_w + 4);
+    b.g_h = (WORD)(b.g_h + 4);
+    cp_formdraw(t, &b);
+}
+
+/* the panel's own pop-up, as a module's: through its block */
+static WORD cp_pick(char **items, WORD n, WORD dflt, OBJECT *t, WORD ob)
+{
+    cp_xcpb.pu_items = (uint32_t)items;
+    cp_xcpb.pu_n = n;
+    cp_xcpb.pu_default = dflt;
+    cp_xcpb.pu_font = 3;
+    cp_obgrect(t, ob, &cp_xcpb.pu_button);
+    cp_xcpb.pu_world = cp_work;
+    /* through the block's pointer, as a module calls it: called by name,
+     * the compiler inlined all 1,900 bytes of cp_popup here -- a second
+     * copy of it in an accessory that has to fit three banks */
+    cp_xcpb.Popup((uint32_t)(XCPB FAR *)&cp_xcpb);
+    return cp_xcpb.pu_ret;
+}
+
+static void cp_spec(OBJECT *t, WORD ob, const char *s)
+{
+    t[ob].ob_spec.index = (int32_t)(uint32_t)(const char FAR *)s;
+}
+
+/* CPX INFO: what the picked module's header says -- its file, version,
+ * id, whether it stays and whether it is loaded at boot -- XControl's
+ * four and one more. */
+static void cp_info(void)
+{
+    CPXSLOT FAR *sl;
+    UWORD v, f;
+    uint32_t id;
+    WORD i;
+
+    if (cp_sel < 0 || !cp_infot)
+        return;
+    sl = cpx_slot(cpx_table, cpx_stride, cpx_row[cp_sel]);
+    for (i = 0; i < 13 && sl->file[i]; i++)
+        cp_ifile[i] = sl->file[i];
+    cp_ifile[i] = 0;
+    v = sl->hdr.cpx_version;            /* BCD, as XControl prints it */
+    cp_iver[0] = (char)('0' + ((v >> 12) & 15));
+    cp_iver[1] = (char)('0' + ((v >> 8) & 15));
+    cp_iver[2] = '.';
+    cp_iver[3] = (char)('0' + ((v >> 4) & 15));
+    cp_iver[4] = (char)('0' + (v & 15));
+    cp_iver[5] = 0;
+    id = (uint32_t)sl->hdr.cpx_id;
+    for (i = 0; i < 4; i++) {
+        char c = (char)((id >> (24 - 8 * i)) & 0xFF);
+
+        if (c < ' ' || c > '~')
+            c = '.';
+        cp_iid[i] = c;
+    }
+    cp_iid[4] = 0;
+    f = sl->hdr.flags;
+    cp_spec(cp_infot, CIFILE, cp_ifile);
+    cp_spec(cp_infot, CIVER, cp_iver);
+    cp_spec(cp_infot, CIID, cp_iid);
+    cp_spec(cp_infot, CIRES, CP_WORD(CPNO));
+    if (f & CPX_RESIDENT)
+        cp_spec(cp_infot, CIRES, CP_WORD(CPYES));
+    cp_spec(cp_infot, CIBOOT, CP_WORD(CPNO));
+    if (f & (CPX_BOOTINIT | CPX_SETONLY))
+        cp_spec(cp_infot, CIBOOT, CP_WORD(CPYES));
+    cp_formopen(cp_infot);
+    (void)cp_formnext(cp_infot);        /* OK, the closer or AC_CLOSE */
+    cp_infot[CIOK].ob_state = NORMAL;
+    cp_formdone();
+}
+
+/* SETUP: the clock's way, a pop-up; Save writes it to CONTROL.INF; OK
+ * (or the closer) uses it, Cancel (or AC_CLOSE) does not. */
+static void cp_setup(void)
+{
+    char *ways[2];
+    WORD h12 = cp_hour12, r;
+
+    if (!cp_setupt)
+        return;
+    ways[0] = CP_WORD(CPH24);
+    ways[1] = CP_WORD(CPH12);
+    cp_spec(cp_setupt, CSCLOCK, ways[h12]);
+    cp_formopen(cp_setupt);
+    for (;;) {
+        r = cp_formnext(cp_setupt);
+        if (r == CSCLOCK) {
+            WORD k = cp_pick(ways, 2, h12, cp_setupt, CSCLOCK);
+
+            if (k >= 0)
+                h12 = k;
+            cp_spec(cp_setupt, CSCLOCK, ways[h12]);
+            cp_setupt[CSCLOCK].ob_state = NORMAL;
+            cp_redrawob(cp_setupt, CSCLOCK);
+            continue;
+        }
+        if (r == CSSAVE) {
+            if (!cp_writeinf(h12)) {
+                cp_xcpb.alert = XAL_FILE_ERR;
+                cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
+            }
+            cp_setupt[CSSAVE].ob_state = NORMAL;
+            cp_redrawob(cp_setupt, CSSAVE);
+            continue;
+        }
+        if (r == CSOK || r == CP_CLOSER)
+            cp_hour12 = h12;
+        break;
+    }
+    cp_setupt[CSOK].ob_state = NORMAL;
+    cp_setupt[CSCANCEL].ob_state = NORMAL;
+    cp_clock();
+    cp_formdone();
+}
+
+/* THE OPTIONS BUTTON: its pop-up, and what was picked */
+static void cp_options(void)
+{
+    char *items[4];
+    WORD n = 2, k;
+
+    items[0] = CP_WORD(CPOPABOUT);
+    items[1] = CP_WORD(CPOPSETUP);
+    if (cp_sel >= 0) {
+        items[2] = CP_WORD(CPOPOPEN);
+        items[3] = CP_WORD(CPOPINFO);
+        n = 4;
+    }
+    k = cp_pick(items, n, -1, tree, CPOPTS);
+    cp_optpick = k;
+    tree[CPOPTS].ob_state = NORMAL;
+    if (k == 0)
+        (void)form_alert(1, CP_WORD(CPABOUT));
+    else if (k == 1)
+        cp_setup();
+    else if (k == 2)
+        cp_openrow(cp_sel);
+    else if (k == 3)
+        cp_info();
+}
+
 /* A press in the work area: a slot picked (twice, opened), or the scroll
  * bar.  Then the button up, so one press is one press. */
 static void cp_button(WORD mx, WORD my, WORD nc)
@@ -1657,6 +1941,8 @@ static void cp_button(WORD mx, WORD my, WORD nc)
     } else if (ob == CPTRACK) {
         objc_offset(tree, CPSLIDER, &x, &y);
         cp_scrollto((WORD)(my < y ? cp_top - N_VIS : cp_top + N_VIS));
+    } else if (ob == CPOPTS) {
+        cp_options();
     }
     graf_mkstate(&x, &y, &mb, &ks);
     if (mb & 1)

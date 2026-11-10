@@ -32,7 +32,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rsc                                  # noqa: E402
 from rsc import ch, NIL                     # noqa: E402
 from aesref import (G_BOX, G_IBOX, G_STRING, G_BOXCHAR, G_ICON,  # noqa: E402
-                    NONE, NORMAL, SELECTABLE, TOUCHEXIT, LASTOB)
+                    G_BUTTON, NONE, NORMAL, SELECTABLE, TOUCHEXIT, LASTOB,
+                    DEFAULT, EXIT)
 
 ADCPANEL = 0
 
@@ -83,6 +84,22 @@ CPNONE = N_XALERT + 1
 WTITLE = " Control Panel "
 NONE_TEXT = "No extensions are installed"
 
+# THE OPTIONS (phase 140, docs/cpanel-plan.md step 4): the pop-up's items
+# -- XControl's, the last two only with a module picked -- the About
+# alert, the clock's two ways, and the words the Info form shows
+OPTION_WORDS = [
+    ("CPOPABOUT", "About..."),
+    ("CPOPSETUP", "Setup..."),
+    ("CPOPOPEN", "Open CPX"),
+    ("CPOPINFO", "CPX Info..."),
+    ("CPABOUT", "[1][Control Panel|One window, the modules|in it, as XControl's.][ OK ]"),
+    ("CPH24", "24 hour"),
+    ("CPH12", "12 hour"),
+    ("CPYES", "Yes"),
+    ("CPNO", "No"),
+]
+CPOPABOUT = CPNONE + 1
+
 N_VIS = 4                       # slots in the tree
 
 (CPROOT, CPTIME, CPDATE, CPLIST) = range(4)
@@ -91,7 +108,24 @@ SLOT_OBS = 3
 CPSBAR = CPSLOT0 + N_VIS * SLOT_OBS
 CPUP, CPTRACK, CPSLIDER, CPDOWN = CPSBAR + 1, CPSBAR + 2, CPSBAR + 3, CPSBAR + 4
 CPEMPTY = CPDOWN + 1
-NOBS_CPANEL = CPEMPTY + 1
+CPOPTS = CPEMPTY + 1            # the Options button, LAST so that nothing
+                                # before it moved when it came (phase 140)
+NOBS_CPANEL = CPOPTS + 1
+OPTS_TEXT = "Options"
+
+# CPX INFO and SETUP (phase 140): forms the panel runs in its window as a
+# module's form is run, the root sized to the work area at run time.
+ADCPINFO, ADCPSETUP = 1, 2
+(CIROOT, CITITLE, CIFILEL, CIFILE, CIVERL, CIVER, CIIDL, CIID,
+ CIRESL, CIRES, CIBOOTL, CIBOOT, CIOK) = range(13)
+NOBS_CPINFO = 13
+INFO_ROWS = [("File", CIFILEL, CIFILE, 12), ("Version", CIVERL, CIVER, 5),
+             ("ID", CIIDL, CIID, 4), ("Resident", CIRESL, CIRES, 3),
+             ("At boot", CIBOOTL, CIBOOT, 3)]
+(CSROOT, CSTITLE, CSCLKL, CSCLOCK, CSSAVE, CSOK, CSCANCEL) = range(7)
+NOBS_CPSETUP = 7
+LABEL_X, VALUE_X, ROW0 = 2, 12, 4
+BTN_Y = 17
 
 # the arrows are the system font's, as the window manager's are
 UPCHAR, DOWNCHAR = 0x01, 0x02
@@ -103,14 +137,14 @@ def cpanel_tree(r):
     blank = bytes(96)
     objs = [
         # the work area, white and frameless: the window is the frame
-        (NIL, CPTIME, CPLIST, G_BOX, NONE, NORMAL, 0x00001170,
+        (NIL, CPTIME, CPOPTS, G_BOX, NONE, NORMAL, 0x00001170,
          ch(0), ch(0), ch(32), ch(20)),
-        (CPDATE, NIL, NIL, G_STRING, NONE, NORMAL, r.string("00:00"),
-         ch(1), ch(0), ch(5), ch(1)),
+        (CPDATE, NIL, NIL, G_STRING, NONE, NORMAL, r.string("00:00 "),
+         ch(1), ch(0), ch(6), ch(1)),
         (CPLIST, NIL, NIL, G_STRING, NONE, NORMAL, r.string("00/00/00"),
          ch(23), ch(0), ch(8), ch(1)),
         # the list: a box with a one-pixel frame inside it
-        (CPROOT, CPSLOT0, CPEMPTY, G_BOX, NONE, NORMAL, 0x00011170,
+        (CPOPTS, CPSLOT0, CPEMPTY, G_BOX, NONE, NORMAL, 0x00011170,
          ch(0), ch(1), ch(32), ch(19)),
     ]
     for k in range(N_VIS):
@@ -137,10 +171,60 @@ def cpanel_tree(r):
          ch(0), ch(0), ch(2), ch(4)),
         (CPSBAR, NIL, NIL, G_BOXCHAR, TOUCHEXIT, NORMAL,
          (DOWNCHAR << 24) | 0x00011100, ch(0), ch(17), ch(2), ch(1)),
-        (CPLIST, NIL, NIL, G_STRING, LASTOB, NORMAL, r.string(NONE_TEXT),
+        (CPLIST, NIL, NIL, G_STRING, NONE, NORMAL, r.string(NONE_TEXT),
          ch(2), ch(2), ch(len(NONE_TEXT)), ch(1)),
+        # the Options button, in the strip between the time and the date:
+        # TOUCHEXIT and not SELECTABLE, so its pop-up comes up on the
+        # press (src/app/cpx.h, Popup)
+        (CPROOT, NIL, NIL, G_BUTTON, TOUCHEXIT | LASTOB, NORMAL,
+         r.string(OPTS_TEXT), ch(12), ch(0), ch(len(OPTS_TEXT) + 2), ch(1)),
     ]
     assert len(objs) == NOBS_CPANEL, (len(objs), NOBS_CPANEL)
+    return r.tree(objs)
+
+
+def info_tree(r):
+    """CPX INFO: what the module's header says about it, XControl's
+    four and whether it is loaded at boot.  The values are the panel's
+    own strings, pointed at when the form is shown."""
+    title = "CPX Info"
+    objs = [(NIL, CITITLE, CIOK, G_BOX, NONE, NORMAL, 0x00001170,
+             ch(0), ch(0), ch(32), ch(20)),
+            (CIFILEL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(title),
+             ch((32 - len(title)) // 2), ch(1), ch(len(title)), ch(1))]
+    for k, (label, lob, vob, width) in enumerate(INFO_ROWS):
+        objs.append((vob, NIL, NIL, G_STRING, NONE, NORMAL, r.string(label),
+                     ch(LABEL_X), ch(ROW0 + 2 * k), ch(len(label)), ch(1)))
+        objs.append((vob + 1, NIL, NIL, G_STRING, NONE, NORMAL,
+                     r.string(" " * width),
+                     ch(VALUE_X), ch(ROW0 + 2 * k), ch(width), ch(1)))
+    objs.append((CIROOT, NIL, NIL, G_BUTTON,
+                 SELECTABLE | DEFAULT | EXIT | LASTOB, NORMAL, r.string("OK"),
+                 ch(12), ch(BTN_Y), ch(8), ch(1)))
+    assert len(objs) == NOBS_CPINFO
+    return r.tree(objs)
+
+
+def setup_tree(r):
+    """SETUP: the clock's way, 24 or 12 hour, a pop-up; Save writes
+    CONTROL.INF where the modules' settings go; OK and Cancel."""
+    title, clock = "Setup", "Clock"
+    objs = [(NIL, CSTITLE, CSCANCEL, G_BOX, NONE, NORMAL, 0x00001170,
+             ch(0), ch(0), ch(32), ch(20)),
+            (CSCLKL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(title),
+             ch((32 - len(title)) // 2), ch(1), ch(len(title)), ch(1)),
+            (CSCLOCK, NIL, NIL, G_STRING, NONE, NORMAL, r.string(clock),
+             ch(LABEL_X), ch(ROW0), ch(len(clock)), ch(1)),
+            # the clock's pop-up: its text is pointed at CPH24 or CPH12
+            (CSSAVE, NIL, NIL, G_BUTTON, TOUCHEXIT, NORMAL,
+             r.string("24 hour"), ch(VALUE_X), ch(ROW0), ch(10), ch(1)),
+            (CSOK, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
+             r.string("Save"), ch(VALUE_X), ch(ROW0 + 3), ch(10), ch(1)),
+            (CSCANCEL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
+             r.string("OK"), ch(6), ch(BTN_Y), ch(9), ch(1)),
+            (CSROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
+             r.string("Cancel"), ch(17), ch(BTN_Y), ch(9), ch(1))]
+    assert len(objs) == NOBS_CPSETUP
     return r.tree(objs)
 
 
@@ -151,16 +235,26 @@ INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTIME", CPTIME),
            ("CPDOWN", CPDOWN), ("CPEMPTY", CPEMPTY),
            ("CPXAL0", CPXAL0), ("N_XALERT", N_XALERT),
            ("CPWTITLE", CPWTITLE), ("CPNONE", CPNONE),
-           ("NOBS_CPANEL", NOBS_CPANEL)]
+           ("CPOPTS", CPOPTS), ("NOBS_CPANEL", NOBS_CPANEL),
+           ("ADCPINFO", ADCPINFO), ("ADCPSETUP", ADCPSETUP),
+           ("CITITLE", CITITLE), ("CIFILE", CIFILE), ("CIVER", CIVER),
+           ("CIID", CIID), ("CIRES", CIRES), ("CIBOOT", CIBOOT),
+           ("CIOK", CIOK), ("CSCLOCK", CSCLOCK), ("CSSAVE", CSSAVE),
+           ("CSOK", CSOK), ("CSCANCEL", CSCANCEL)] + [
+           (name, CPOPABOUT + k) for k, (name, _) in enumerate(OPTION_WORDS)]
 
 
 def build():
     r = rsc.Rsc()
     assert cpanel_tree(r) == ADCPANEL
+    assert info_tree(r) == ADCPINFO
+    assert setup_tree(r) == ADCPSETUP
     for i, name, text in XALERTS:
         assert r.free_string(text) == i, (name, i)
     assert r.free_string(WTITLE) == CPWTITLE
     assert r.free_string(NONE_TEXT) == CPNONE
+    for k, (name, text) in enumerate(OPTION_WORDS):
+        assert r.free_string(text) == CPOPABOUT + k, name
     return r
 
 

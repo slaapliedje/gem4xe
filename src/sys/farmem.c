@@ -580,23 +580,34 @@ uint32_t far_alloc_top(uint32_t bytes)
     return a;
 }
 
+/* THE TOP OF THE FIRST MEGABYTE FIRST (phase 140).  On a Rapidus the
+ * first megabyte is SRAM and the rest SDRAM behind a cache, and nothing
+ * goes up there on purpose (banks1, below, for the same reason): a
+ * moment's block goes at the top of the highest gap under $100000 when
+ * it fits there, and only then higher.  A machine whose heap ends below
+ * the megabyte sees no difference. */
+#define FAR_SRAM_TOP 0x100000UL
+
 static uint32_t top1(uint32_t bytes)
 {
-    uint16_t i;
+    uint16_t i, pass;
     uint32_t lo, hi, a;
 
     if (!far_table || bytes == 0)
         return 0;
-    for (i = (uint16_t)(far_blocks + 1); i-- > 0; ) {
-        lo = gap_lo(i);
-        hi = gap_hi(i);
-        if (hi - lo < bytes)
-            continue;
-        a = (hi - bytes) & ~3UL;
-        if (a < lo)
-            continue;
-        return fb_insert(i, a, bytes);
-    }
+    for (pass = 0; pass < 2; pass++)
+        for (i = (uint16_t)(far_blocks + 1); i-- > 0; ) {
+            lo = gap_lo(i);
+            hi = gap_hi(i);
+            if (pass == 0 && hi > FAR_SRAM_TOP)
+                hi = FAR_SRAM_TOP;
+            if (hi <= lo || hi - lo < bytes)
+                continue;
+            a = (hi - bytes) & ~3UL;
+            if (a < lo)
+                continue;
+            return fb_insert(i, a, bytes);
+        }
     return 0;
 }
 

@@ -399,25 +399,27 @@ def small_machines():
         # modules, the desktop -- measured 184 KB in three banks; it was
         # nineteen before phase 79 and twelve after it.
         #
-        # THIS IS WHERE THE BOOT SETTLES with room to spare, and for 58
+        # THIS IS WHERE THE BOOT SETTLES WITH ROOM TO SPARE, and for 58
         # phases it was read as "the boot fits three banks" while a machine
-        # with exactly three was refused the desktop -- loading the
-        # squeezed desktop wanted its file, its unpacked copy and its code
-        # at once.  Phase 138's 5 KB of control panel moved this into a
-        # fourth bank, which is what showed it; phase 139 unpacks a packed
-        # program around its code, and m37three, below, boots three banks.
+        # with exactly three was refused the desktop (phases 138-139).  It
+        # is not that guarantee: on a machine with room nothing is purged,
+        # so the caches stay and the desktop's later blocks take a fourth
+        # bank, where on three the same requests purge a cache and fit.
+        # m37three, below, boots three banks: that is the guarantee.  This
+        # catches what it was written for (phase 80) -- programs that stop
+        # sharing banks, which took nineteen before phase 79.
         from farheap import far_heap
         h = far_heap(b, syms)
         top = max(a + n for a, n, _ in h.blocks)
         used = sum(n for _, n, _ in h.blocks)
         print(f"    the far heap: {len(h.blocks)} blocks, {used:,} bytes, "
               f"up to ${top:06X}")
-        if top > (fm[1] + 3) << 16:
+        if top > (fm[1] + 4) << 16:
             # the map, so a failure says what moved where
             for a, n, o in sorted(h.blocks):
                 print(f"      ${a:06X} +{n:6d}  owner {o:#07x}")
-        check(top <= (fm[1] + 3) << 16,
-              f"m37k960: the boot reaches ${top:06X}, past three banks from "
+        check(top <= (fm[1] + 4) << 16,
+              f"m37k960: the boot reaches ${top:06X}, past four banks from "
               f"${fm[1]:02X}: small programs are not sharing banks")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37k960.png"))
     finally:

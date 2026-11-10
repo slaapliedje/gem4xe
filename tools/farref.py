@@ -152,18 +152,24 @@ class Heap:
     def alloc_banks(self, k):
         return self._reclaiming(self._banks1, k)
 
+    SRAM_TOP = 0x100000                 # farmem.c FAR_SRAM_TOP (phase 140)
+
     def _top1(self, n):
-        """far_alloc_top: the top of the highest gap it fits."""
+        """far_alloc_top: the top of the highest gap it fits under the
+        first megabyte's end, and only then the top of the highest gap."""
         if n == 0:
             return 0
-        for i in range(len(self.blocks), -1, -1):
-            lo, hi = self.gap_lo(i), self.gap_hi(i)
-            if hi - lo < n:
-                continue
-            a = (hi - n) & ~3
-            if a < lo:
-                continue
-            return self._insert(i, a, n)
+        for capped in (True, False):
+            for i in range(len(self.blocks), -1, -1):
+                lo, hi = self.gap_lo(i), self.gap_hi(i)
+                if capped and hi > self.SRAM_TOP:
+                    hi = self.SRAM_TOP
+                if hi <= lo or hi - lo < n:
+                    continue
+                a = (hi - n) & ~3
+                if a < lo:
+                    continue
+                return self._insert(i, a, n)
         return 0
 
     def _claim1(self, at, n):
