@@ -121,7 +121,10 @@ int16_t app_load(const uint8_t FAR *blob, uint32_t len, APP *app)
  * under $D500 wherever it goes, and the variables inside their bank. */
 #define HDR_V5 48
 
-static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
+/* code_in: the code is already there, unpacked in place (phase 139,
+ * app_load_v6); 0 to place it and copy it as usual */
+static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app,
+                           uint32_t code_in)
 {
     uint16_t near_size, code_off, vars_off, k, l, n, o;
     uint16_t stk_linked, stk_asked, extra = 0;
@@ -161,7 +164,10 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
     app->near_base = (uint16_t)near;
     app_near = app->near_base;
     app->near_size = (uint16_t)(near_size + extra);
-    code = far_alloc_page(code_size, 0xD500UL);
+    /* the code where it was unpacked, if app_load_v6 put it in place */
+    code = code_in;
+    if (!code)
+        code = far_alloc_page(code_size, 0xD500UL);
     vars = vars_size ? far_alloc_page(vars_size, 0x10000UL) : 0;
     if (!code || (vars_size && !vars)) {
         pool_free(near);
@@ -178,7 +184,8 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
 
     for (k = 0; k < near_size; k++)
         near[k] = rd8(b + HDR_V5 + k);
-    far_copy_span(code, b + HDR_V5 + near_size, code_size);
+    if (!code_in)                       /* in place: already there */
+        far_copy_span(code, b + HDR_V5 + near_size, code_size);
 
     /* near page, code bank, code page, vars bank, vars page */
     d[0] = (uint8_t)((app->near_base - app->link_near) >> 8);
@@ -267,9 +274,50 @@ static int16_t app_load_v5(uint32_t b, uint32_t len, APP *app)
 
 extern int16_t g4z_unpack(uint32_t src, uint32_t dst, uint32_t count);
 
+/* AROUND ITS CODE (phase 139).  A packed program's image is its header,
+ * its near part, its code and its fixup lists, in that order -- its
+ * variables are not in the file.  So the image is unpacked into a block
+ * placed where its CODE can run (far_alloc_inner), the code is patched
+ * where it lies, and afterwards everything round it is given back: the
+ * code is never a second copy.  Before, the image went at the top of the
+ * heap "out of the program's way" and the code was copied out of it --
+ * the file, the image and the code at once, about 200 KB for the
+ * desktop, and on a machine with three banks the top of the heap was the
+ * one place the code could go (docs/phase139.md).  The header is
+ * unpacked first, into a scratch block, to know where the code is:
+ * g4z_unpack writes exactly the count it is given and stops. */
+
+static uint32_t app_v6_inner(uint32_t b, uint32_t n, uint32_t *code,
+                             uint32_t *size)
+{
+    uint32_t h, wide = 0, off;
+    uint16_t near_size;
+
+    *code = 0;
+    if (n < HDR_V5)
+        return 0;
+    h = far_alloc(HDR_V5);
+    if (!h)
+        return 0;
+    (void)g4z_unpack(b + HDR_V6, h, HDR_V5);   /* 1: it wanted to go on */
+    if (rd8(h) == 'G' && rd8(h + 1) == '4' && rd8(h + 2) == 'A'
+        && rd8(h + 3) == 5) {
+        near_size = rd16(h + 6);
+        *size = rd32(h + 10);
+        off = (uint32_t)HDR_V5 + near_size;
+        if (*size <= 0xD500UL && off + *size <= n) {
+            wide = far_alloc_inner(n, off, *size, 0xD500UL);
+            if (wide)
+                *code = wide + off;
+        }
+    }
+    far_free(h);
+    return wide;
+}
+
 static int16_t app_load_v6(uint32_t b, uint32_t len, APP *app, uint8_t own)
 {
-    uint32_t n, wide;
+    uint32_t n, wide, code = 0, size = 0;
     int16_t st;
 
     if (len <= HDR_V6)
@@ -277,16 +325,28 @@ static int16_t app_load_v6(uint32_t b, uint32_t len, APP *app, uint8_t own)
     n = rd32(b + 4);
     if (n < HDR_SIZE)
         return APP_E_SHORT;
-    wide = far_alloc_top(n);            /* out of the program's way */
+    wide = app_v6_inner(b, n, &code, &size);
+    if (!wide)
+        wide = far_alloc_top(n);        /* not packed, or no such place:
+                                         * out of the program's way */
     if (!wide)
         return APP_E_FAR;
     if (g4z_unpack(b + HDR_V6, wide, n) != 0)
         st = APP_E_SHORT;               /* the stream ran past its length */
     else if (far_read8(wide + 3) == 6)
         st = APP_E_MAGIC;               /* squeezed twice: not ours */
-    else
+    else if (code) {
+        /* app_load_as's way into format 5, with the code in place */
+        memset(app, 0, sizeof *app);
+        app->owner = own;
+        st = app_load_v5(wide, n, app, code);
+    } else
         st = app_load_as((const uint8_t FAR *)wide, n, app, own);
     far_free(wide);
+    /* ...and the code taken back, exactly: nothing has been given out in
+     * between, so the claim cannot miss */
+    if (st == APP_OK && code && far_claim(code, size) != code)
+        st = APP_E_FAR;
     return st;
 }
 
@@ -318,7 +378,7 @@ static int16_t app_load_as(const uint8_t FAR *blob, uint32_t len, APP *app,
         app->owner = own;           /* app_free frees by it: without this
                                      * every packed program's blocks outlived
                                      * it (m17 caught the desktop's) */
-        return app_load_v5(b, len, app);
+        return app_load_v5(b, len, app, 0);
     }
     if (rd8(b + 3) != 3 && rd8(b + 3) != 4)
         return APP_E_MAGIC;

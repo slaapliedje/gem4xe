@@ -84,6 +84,8 @@ int main(void)
         case 14: r = far_size(fm_out[a]); break;
         case 15: r = far_set_purge(fm_out[a], (uint16_t)b); break;
         case 16: r = far_purged; break;
+        case 17: r = far_alloc_inner(a, b >> 16, b & 0xFFFFUL, 0xD500UL);
+                 break;
         }
         fm_out[k] = r;
         if (!fm_bad && !table_ok())

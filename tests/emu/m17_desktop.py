@@ -213,20 +213,31 @@ def desk_places(heap, read=True):
     if read:
         h.read_file(os.path.getsize(DESKTOP))   # the shell's, kept
     h.owner = 0xFE                              # the desktop's
-    # SQUEEZED (format 6, phase 94): the loader unpacks into a span at the
-    # top of the heap (far_alloc_top), places the program, and gives the
-    # span back before the desktop runs
+    # SQUEEZED (format 6, phase 94): the loader unpacks into a span and
+    # gives it back before the desktop runs.  A packed program's span is
+    # placed AROUND ITS CODE (phase 139, far_alloc_inner): the code where
+    # it can run, patched in place, and taken back exactly afterwards;
+    # anything else's goes at the top of the heap (far_alloc_top)
     with open(DESKTOP, "rb") as f:
         raw = f.read(8)
-    wide = (h.alloc_top(int.from_bytes(raw[4:8], "little"))
-            if raw[:4] == mkg4a.MAGIC_V6 else 0)
+    squeezed = raw[:4] == mkg4a.MAGIC_V6
+    n = int.from_bytes(raw[4:8], "little") if squeezed else 0
+    wide = code = 0
+    if squeezed and g["fmt"] == 5:
+        off = 48 + near_size                    # app.c HDR_V5, the near part
+        if g["code_size"] <= 0xD500 and off + g["code_size"] <= n:
+            wide = h.alloc_inner(n, off, g["code_size"], 0xD500)
+            code = wide + off if wide else 0
+    if squeezed and not wide:
+        wide = h.alloc_top(n)
     if g["fmt"] == 5:
         # PACKED: the code under the $D5 page, then the variables in one
         # bank (src/sys/app.c app_load_v5).  G is a variable, so the model
         # is handed the variables' place as its base and their link bank
         # as the bank to count from -- the arithmetic Desktop() does is
         # then exactly the loader's.
-        h.alloc_page(g["code_size"], 0xD500)
+        if not code:
+            h.alloc_page(g["code_size"], 0xD500)
         far_base = h.alloc_page(g["vars_size"], 0x10000)
         bank_from = g["vars_link"]
     else:
@@ -234,6 +245,8 @@ def desk_places(heap, read=True):
         bank_from = link_bank(DESKTOP)
     if wide:
         h.free(wide)
+    if code:
+        h.claim(code, g["code_size"])
     large = desk_large()
     rlen = rsc_rssize(DESK_RSC) if large else rsc_imlen(DESK_RSC)
     rsc = h.alloc(rlen) if rlen else 0

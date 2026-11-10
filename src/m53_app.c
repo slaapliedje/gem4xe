@@ -30,7 +30,7 @@ WORD step;                      /* the gate writes 1: put me aside;
                                  * NM_APTERM (phase 131) */
 WORD r_apterms;                 /* AP_TERM received */
 WORD r_filled;                  /* step 6: blocks taken */
-LONG r_lastp, r_lastn;          /* ...the last one, and its size */
+LONG r_bigp, r_bign;            /* ...the biggest of them, and its size */
 WORD r_refuse;                  /* the gate writes 1: answer it AP_TFAIL */
 WORD r_inalert;                 /* in that alert */
 WORD r_alerts;                  /* ...and how many have been answered */
@@ -149,15 +149,22 @@ int main(void)
                 p = Malloc(n);
                 if (!p)
                     break;
-                r_lastp = p;
-                r_lastn = n;
+                /* THE BIGGEST, not the last: the last is the smallest
+                 * gap above 1 KB, which was over 12 KB only while the
+                 * heap happened to fall that way (phase 139 moved a gap
+                 * and step 7 quietly did nothing) */
+                if (n > r_bign) {
+                    r_bigp = p;
+                    r_bign = n;
+                }
                 r_filled++;
             }
         }
-        if (step == 7 && r_lastp && r_lastn > 12288) {
+        if (step == 7 && r_bigp && r_bign > 12288) {
             step = 0;
-            Mfree((void FAR *)r_lastp);
-            r_lastp = Malloc(r_lastn - 12288);
+            Mfree((void FAR *)r_bigp);
+            r_bigp = Malloc(r_bign - 12288);
+            r_bign -= 12288;
         }
         if (!(what & MU_MESAG))
             continue;

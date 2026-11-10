@@ -347,9 +347,14 @@ void far_heap_init(void)
 
 /* Where a request of `bytes` fits in [lo, hi), or 0.
  *   how 0: 4-aligned, inside one bank      2: page-aligned, below `limit`
- *   how 1: 4-aligned, may cross banks          in its bank */
+ *   how 1: 4-aligned, may cross banks          in its bank
+ *   how 3: may cross banks, with a run inside it page-aligned and below
+ *          `limit` in ITS bank: `run` is the run's offset in the block
+ *          << 16 | its length (far_alloc_inner).  A parameter rather than
+ *          a static: LoRAM, where this file's statics live, is at its
+ *          floor. */
 static uint32_t fit(uint32_t lo, uint32_t hi, uint32_t bytes, uint16_t how,
-                    uint32_t limit)
+                    uint32_t limit, uint32_t run)
 {
     uint32_t a;
 
@@ -359,6 +364,15 @@ static uint32_t fit(uint32_t lo, uint32_t hi, uint32_t bytes, uint16_t how,
             a = (a | 0xFFFFUL) + 1;     /* the next bank's foot */
         if ((a & 0xFFFFUL) + bytes > limit)
             return 0;
+    } else if (how == 3) {
+        uint32_t off = run >> 16, inner = run & 0xFFFFUL;
+        uint32_t in = (lo + off + 0xFFUL) & ~0xFFUL;
+
+        if ((in & 0xFFFFUL) + inner > limit)
+            in = (in | 0xFFFFUL) + 1;   /* the next bank's foot */
+        if ((in & 0xFFFFUL) + inner > limit)
+            return 0;
+        a = in - off;
     } else {
         a = (lo + 3) & ~3UL;
         if (how == 0 && (a & 0xFFFFUL) + bytes > 0x10000UL)
@@ -455,7 +469,8 @@ uint16_t far_set_purge(uint32_t addr, uint16_t level)
     return 0;
 }
 
-static uint32_t take1(uint32_t bytes, uint16_t how, uint32_t limit)
+static uint32_t take1(uint32_t bytes, uint16_t how, uint32_t limit,
+                      uint32_t run)
 {
     uint16_t i;
     uint32_t a;
@@ -465,28 +480,47 @@ static uint32_t take1(uint32_t bytes, uint16_t how, uint32_t limit)
     if (how == 0 && bytes > 0x10000UL)  /* no block can be indexed past */
         return 0;                       /* its own bank */
     for (i = 0; i <= far_blocks; i++) {
-        a = fit(gap_lo(i), gap_hi(i), bytes, how, limit);
+        a = fit(gap_lo(i), gap_hi(i), bytes, how, limit, run);
         if (a)
             return fb_insert(i, a, bytes);
     }
     return 0;
 }
 
-static uint32_t take(uint32_t bytes, uint16_t how, uint32_t limit)
+static uint32_t take(uint32_t bytes, uint16_t how, uint32_t limit,
+                     uint32_t run)
 {
     uint16_t level = 4;
     uint32_t a;
 
-    while (!(a = take1(bytes, how, limit)) && purge_next(&level))
+    while (!(a = take1(bytes, how, limit, run)) && purge_next(&level))
         ;
     return a;
 }
 
-uint32_t far_alloc(uint32_t bytes)       { return take(bytes, 0, 0); }
-uint32_t far_alloc_span(uint32_t bytes)  { return take(bytes, 1, 0); }
+uint32_t far_alloc(uint32_t bytes)       { return take(bytes, 0, 0, 0); }
+uint32_t far_alloc_span(uint32_t bytes)  { return take(bytes, 1, 0, 0); }
 uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
 {
-    return take(bytes, 2, limit);
+    return take(bytes, 2, limit, 0);
+}
+
+/* A block of `bytes` that may cross banks, placed so that the `inner`
+ * bytes from `off` into it are page-aligned and end at or below `limit`
+ * in their own bank -- what far_alloc_page would have given those bytes
+ * on their own (phase 139).  A squeezed program is unpacked into one, its
+ * code where its code has to run, so the code is never a second copy:
+ * the load wanted the file, the unpacked image and the code at once,
+ * and on a machine with three banks the image, put at the top of the
+ * heap, was where the code had to go (docs/phase139.md).  `off` must be
+ * a multiple of 4, as every block's start is; 0 if it is not. */
+uint32_t far_alloc_inner(uint32_t bytes, uint32_t off, uint32_t inner,
+                         uint32_t limit)
+{
+    if ((off & 3) || off + inner > bytes || off > 0xFFFFUL
+        || inner > 0xFFFFUL)
+        return 0;
+    return take(bytes, 3, limit, off << 16 | inner);
 }
 
 /* Exactly at..at+bytes, or 0 if any of it is taken or outside the heap:

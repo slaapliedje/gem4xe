@@ -399,25 +399,25 @@ def small_machines():
         # modules, the desktop -- measured 184 KB in three banks; it was
         # nineteen before phase 79 and twelve after it.
         #
-        # FOUR BANKS SINCE PHASE 138.  This is where the boot settles on a
-        # machine with room to spare, and for 58 phases it was read as
-        # "the boot fits three banks".  It did not: cut to three, the
-        # desktop is refused (m37three, below), at phase 137 as now --
-        # loading the squeezed desktop needs its file, its unpacked copy
-        # and its code at once.  Phase 138's 5 KB of control panel moved
-        # the settled layout into a fourth bank, which is what showed it.
+        # THIS IS WHERE THE BOOT SETTLES with room to spare, and for 58
+        # phases it was read as "the boot fits three banks" while a machine
+        # with exactly three was refused the desktop -- loading the
+        # squeezed desktop wanted its file, its unpacked copy and its code
+        # at once.  Phase 138's 5 KB of control panel moved this into a
+        # fourth bank, which is what showed it; phase 139 unpacks a packed
+        # program around its code, and m37three, below, boots three banks.
         from farheap import far_heap
         h = far_heap(b, syms)
         top = max(a + n for a, n, _ in h.blocks)
         used = sum(n for _, n, _ in h.blocks)
         print(f"    the far heap: {len(h.blocks)} blocks, {used:,} bytes, "
               f"up to ${top:06X}")
-        if top > (fm[1] + 4) << 16:
+        if top > (fm[1] + 3) << 16:
             # the map, so a failure says what moved where
             for a, n, o in sorted(h.blocks):
                 print(f"      ${a:06X} +{n:6d}  owner {o:#07x}")
-        check(top <= (fm[1] + 4) << 16,
-              f"m37k960: the boot reaches ${top:06X}, past four banks from "
+        check(top <= (fm[1] + 3) << 16,
+              f"m37k960: the boot reaches ${top:06X}, past three banks from "
               f"${fm[1]:02X}: small programs are not sharing banks")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37k960.png"))
     finally:
@@ -517,14 +517,13 @@ def small_machines():
     finally:
         emu.stop()
 
-    # THREE BANKS -- A 65C816 WITH 512 KB, $05-$07 -- AN OPEN BUG, KNOWN
-    # (phase 138, docs/phase138.md).  The desktop is refused: the squeezed
-    # file, its unpacked copy (put at the top of the heap, which here is
-    # where the desktop's code has to go) and the code itself are wanted at
-    # once, about 200 KB.  Until that is fixed this says so and passes;
-    # the day the desktop runs here it FAILS, so that it is made a real
-    # check rather than left saying "known" about a bug that is gone.
-    print("  the far heap cut to three banks: the desktop (KNOWN OPEN BUG)")
+    # THREE BANKS -- A 65C816 WITH 512 KB, $05-$07 -- THE DESKTOP RUNS.
+    # It was refused until phase 139 (docs/phase139.md): the squeezed file,
+    # its unpacked copy (put at the top of the heap, which here is where
+    # the desktop's code has to go) and the code itself were wanted at
+    # once, about 200 KB.  A packed program is unpacked around its code
+    # now, and the code is never a second copy.
+    print("  the far heap cut to three banks: the desktop")
     emu = launch(tag="m37three", memsize="1088K", rapidus=False, cpu816=15,
                  extra_args=["--cart", CAR_SYS])
     b = emu.bridge
@@ -554,15 +553,32 @@ def small_machines():
             if words["EXIT_NOFAR"] in os_screen(b):
                 refused = True
                 break
-        print(f"    the shell has run {runs} program(s); "
-              f"{'refused' if refused else 'not refused'}")
-        if refused:
-            print("    KNOWN OPEN BUG: the desktop does not fit three banks "
-                  "(docs/phase138.md); the fix is the next phase")
-        else:
-            check(False, f"m37three: the desktop {'ran' if runs else 'did not refuse'} "
-                         f"with three banks -- if the open bug is fixed, "
-                         f"make this a real check (tests/emu/m37_cart.py)")
+        # ...and settled, its calls still for two reads running, as the
+        # 960K case waits: a desktop that started and then ran out of
+        # memory loading its resources is not a desktop
+        n, still = b.peek16(syms["app_calls"]), 0
+        for _ in range(80):
+            if refused or not runs:
+                break
+            b.frames(250)
+            now = b.peek16(syms["app_calls"])
+            loading = int.from_bytes(bytes(b.memdump(syms["rs_src"], 4)), "little")
+            still = still + 1 if now == n and not loading else 0
+            n = now
+            if still >= 2 and now:
+                break
+        from farheap import far_heap
+        h = far_heap(b, syms)
+        top = max(a + ln for a, ln, _ in h.blocks)
+        print(f"    the shell has run {runs} program(s), {n} calls, "
+              f"{'refused' if refused else 'not refused'}; the far heap to "
+              f"${top:06X}")
+        check(runs >= 1 and not refused and still >= 2,
+              f"m37three: with three banks the desktop "
+              f"{'was refused' if refused else 'never settled'} "
+              f"({runs} run(s), {n} calls)")
+        check(top <= (first + 3) << 16,
+              f"m37three: a block at ${top:06X}, past the three banks")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37three.png"))
     finally:
         emu.stop()

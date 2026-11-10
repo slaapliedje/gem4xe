@@ -33,7 +33,13 @@ import farref                              # noqa: E402
 
 FIRST, LAST = 2, 9                         # eight banks
 (ALLOC, SPAN, PAGE, BANKS, FREE, FREE_OWNER, SHRINK, OWNER, LARGEST, TOP, CLAIM,
- TAG, FREE_SUB, SIZE, PURGE, PURGED) = range(1, 17)
+ TAG, FREE_SUB, SIZE, PURGE, PURGED, INNER) = range(1, 18)
+
+
+def inner(off, run):
+    """An INNER step's b: the run's offset in the block and its length,
+    each sixteen bits; the limit is always the $D5 page."""
+    return off << 16 | run
 
 # (op, a, b); a FREE or SHRINK's `a` is the index of an earlier step
 SCRIPT = [
@@ -134,6 +140,22 @@ SCRIPT = [
     (BANKS, 2, 0),              # 91 two banks: everything purgeable
                                 #    goes, and they are still not there
     (PURGED, 0, 0),             # 92 4: the level-1 bank went too
+    # INNER (phase 139): a span whose inner run lands page-aligned under
+    # $D5 in its own bank -- a squeezed program's image, its code in place
+    (FREE_OWNER, 11, 0),        # 93 only the table again, in bank 2
+    (ALLOC, 0x2000, 0),         # 94 bank 2 to $2800: the run cannot
+                                #    start at $020800 and end under $D5
+    (INNER, 0xE000, inner(0x530, 0xBF98)),  # 95 the desktop's shape: the
+                                #    run at $030000, so the block starts
+                                #    $530 before it, in bank 2
+    (INNER, 0x1000, inner(0x100, 0x200)),   # 96 a small one: into the
+                                #    hole under bank 2's table and #94?
+    (INNER, 0x2000, inner(0x102, 0x100)),   # 97 off not a multiple of 4
+    (INNER, 0x1000, inner(0x800, 0x900)),   # 98 a run past the block's end
+    (INNER, 0x10000, inner(0x100, 0xD500)), # 99 a run as long as the limit
+    (INNER, 0x10000, inner(0x100, 0xD501)), # 100 ...and a byte longer
+    (FREE, 95, 0),              # 101
+    (SIZE, 95, 0),              # 102 gone
 ]
 
 
@@ -176,6 +198,8 @@ def model():
             r = h.set_purge(out[a], b)
         elif op == PURGED:
             r = len(h.purged)
+        elif op == INNER:
+            r = h.alloc_inner(a, b >> 16, b & 0xFFFF, 0xD500)
         out.append(r)
     return out
 
@@ -261,6 +285,17 @@ class TestFarAlloc(unittest.TestCase):
         self.assertEqual(w[45], 0x069F00, "a claim may end where a block starts")
         self.assertEqual(w[47], 0x07BFFC, "a claim's start rounds down to 4")
         self.assertEqual(w[57], 0x80, "a shrunk block's length has no tag in it")
+        self.assertEqual(w[95], 0x030000 - 0x530,
+                         "an inner run lands at a bank's foot, its block "
+                         "starting in the bank below")
+        self.assertTrue(w[96] and ((w[96] + 0x100) & 0xFF) == 0
+                        and ((w[96] + 0x100) & 0xFFFF) + 0x200 <= 0xD500,
+                        "a small inner run, page-aligned under the limit")
+        self.assertEqual((w[97], w[98], w[100]), (0, 0, 0),
+                         "an odd offset, a run past the block, a run past "
+                         "the limit: refused")
+        self.assertEqual(w[99], 0x040000 - 0x100,
+                         "a run exactly as long as the limit fits")
         self.assertEqual(w[62], w[54], "a freed sub-pool's hole is used again")
         self.assertEqual((w[64], w[65]), (0x100, 0x100),
                          "the owner's own block and another owner's sub-pool 3 "

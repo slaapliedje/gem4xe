@@ -58,6 +58,8 @@ uint32_t far_alloc_span(uint32_t bytes);
 uint32_t far_alloc_top(uint32_t bytes);
 /* Page-aligned, and ending at or below `limit` within its bank. */
 uint32_t far_alloc_page(uint32_t bytes, uint32_t limit);
+uint32_t far_alloc_inner(uint32_t bytes, uint32_t off, uint32_t inner,
+                         uint32_t limit);
 /* Exactly at..at+bytes, all of it free heap, or 0: Mclaim's. */
 uint32_t far_claim(uint32_t at, uint32_t bytes);
 uint16_t far_alloc_banks(uint16_t n);   /* n whole banks, the lowest free

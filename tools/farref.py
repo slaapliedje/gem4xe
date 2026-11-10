@@ -60,14 +60,21 @@ class Heap:
         self.blocks.insert(i, (a, n, self.owner | self.tag << 8))
         return a
 
-    @staticmethod
-    def _fit(lo, hi, n, how, limit):
+    def _fit(self, lo, hi, n, how, limit):
         if how == 2:
             a = (lo + 0xFF) & ~0xFF
             if (a & 0xFFFF) + n > limit:
                 a = (a | 0xFFFF) + 1
             if (a & 0xFFFF) + n > limit:
                 return 0
+        elif how == 3:                  # far_alloc_inner (phase 139)
+            off, inner = self.fit_inner
+            i = (lo + off + 0xFF) & ~0xFF
+            if (i & 0xFFFF) + inner > limit:
+                i = (i | 0xFFFF) + 1
+            if (i & 0xFFFF) + inner > limit:
+                return 0
+            a = i - off
         else:
             a = up4(lo)
             if how == 0 and (a & 0xFFFF) + n > 0x10000:
@@ -129,6 +136,12 @@ class Heap:
 
     def alloc_page(self, n, limit):
         return self._reclaiming(self._take, n, 2, limit)
+
+    def alloc_inner(self, n, off, inner, limit):
+        if off & 3 or off + inner > n or off > 0xFFFF or inner > 0xFFFF:
+            return 0
+        self.fit_inner = (off, inner)
+        return self._reclaiming(self._take, n, 3, limit)
 
     def alloc_top(self, n):
         return self._reclaiming(self._top1, n)
