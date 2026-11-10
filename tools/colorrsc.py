@@ -3,9 +3,9 @@
     tools/colorrsc.py build/color.rsc build/colorrsc.h
 
 THE ST'S COLOR PANEL, in its shape: a row of the screen's pens to pick
-one from, the pen's red, green and blue as sixteen steps each with a
-button either side and a bar that shows the level, and Reset, OK and
-Cancel.  Sixteen steps because the standard palette is exactly
+one from, the pen's red, green and blue as sixteen steps each -- a
+slider, its thumb dragged or stepped by a button either side (phase 138,
+the panel's Sl_dragx and Sl_arrow) -- and Reset, OK and Cancel.  Sixteen steps because the standard palette is exactly
 expressible in them -- FF, BB and 77 are 15, 11 and 7 -- so Reset puts
 back the palette gem4xe starts with and not an approximation of it.
 
@@ -46,7 +46,7 @@ CLROOT, CLTITLE, CLSWBOX = 0, 1, 2
 CLSW0 = 3                       # ..CLSW0 + 15
 CLMARK = CLSW0 + N_PENS         # 19
 CLCH0 = CLMARK + 1              # 20: the first channel's first object
-CH_LBL, CH_MINUS, CH_VALUE, CH_PLUS, CH_FRAME, CH_BAR = range(6)
+CH_LBL, CH_MINUS, CH_TRACK, CH_THUMB, CH_PLUS, CH_VALUE = range(6)
 CH_STEP = 6
 CLRESET = CLCH0 + CH_STEP * len(CHANNELS)   # 38
 CLOK = CLRESET + 1
@@ -56,8 +56,8 @@ NOBS_COLOR = CLCNCL + 1         # 41
 SW_X, SW_Y = 2, 3               # the swatch row, in cells
 SW_PX = 14                      # ...a swatch's width in pixels: 16 x 14 = 224
 CH_Y, CH_DY = 6, 2
-LBL_X, MINUS_X, VALUE_X, PLUS_X, STEP_W = 1, 7, 10, 13, 2
-BAR_X = 16                      # the level bar: 15 cells, to column 31
+LBL_X, MINUS_X, TRACK_X, PLUS_X, VALUE_X, STEP_W = 1, 7, 10, 27, 30, 2
+TRACK_W = 16                    # the slider's track, in cells: to column 25
 BTN_Y, BTN_W = 13, 8
 RESET_X, OK_X, CANCEL_X = 2, 12, 22
 
@@ -65,6 +65,8 @@ RESET_X, OK_X, CANCEL_X = 2, 12, 22
 SOLID = 7 << 4
 BLACK_BAR = 0x00001000 | 0x100 | SOLID | 1     # no border, solid black
 FRAME = 0x00011100                             # a one-pixel black frame
+TRACK = 0x00011111                             # framed, a grey fill
+THUMB = 0x00011170                             # framed, white
 
 
 def px(n):
@@ -122,15 +124,17 @@ def color_tree(r):
         objs[b + CH_MINUS] = (CLROOT, G_BUTTON, TOUCHEXIT, NORMAL,
                               r.string("-"), ch(MINUS_X), ch(y), ch(STEP_W),
                               ch(1))
-        objs[b + CH_VALUE] = (CLROOT, G_STRING, NONE, NORMAL, r.string("15"),
-                              ch(VALUE_X), ch(y), ch(2), ch(1))
+        # the thumb's width and place are the panel's to set (Sl_size,
+        # Sl_x): a placeholder cell here
+        objs[b + CH_TRACK] = (CLROOT, G_BOX, TOUCHEXIT, NORMAL, TRACK,
+                              ch(TRACK_X), ch(y), ch(TRACK_W), ch(1))
+        objs[b + CH_THUMB] = (b + CH_TRACK, G_BOX, TOUCHEXIT, NORMAL, THUMB,
+                              ch(0), ch(0), ch(1), ch(1))
         objs[b + CH_PLUS] = (CLROOT, G_BUTTON, TOUCHEXIT, NORMAL,
                              r.string("+"), ch(PLUS_X), ch(y), ch(STEP_W),
                              ch(1))
-        objs[b + CH_FRAME] = (CLROOT, G_BOX, NONE, NORMAL, FRAME,
-                              ch(BAR_X), ch(y), ch(N_LEVELS - 1), ch(1))
-        objs[b + CH_BAR] = (b + CH_FRAME, G_BOX, NONE, NORMAL, BLACK_BAR,
-                            ch(0), ch(0), ch(N_LEVELS - 1), ch(1))
+        objs[b + CH_VALUE] = (CLROOT, G_STRING, NONE, NORMAL, r.string("15"),
+                              ch(VALUE_X), ch(y), ch(2), ch(1))
     objs[CLRESET] = (CLROOT, G_BUTTON, SELECTABLE | EXIT, NORMAL,
                      r.string("Reset"), ch(RESET_X), ch(BTN_Y), ch(BTN_W), ch(1))
     objs[CLOK] = (CLROOT, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
@@ -144,7 +148,7 @@ def color_tree(r):
 INDICES = [("ADCOLOR", ADCOLOR), ("CLROOT", CLROOT), ("CLSWBOX", CLSWBOX),
            ("CLSW0", CLSW0), ("CLMARK", CLMARK), ("CLCH0", CLCH0),
            ("CH_MINUS", CH_MINUS), ("CH_VALUE", CH_VALUE),
-           ("CH_PLUS", CH_PLUS), ("CH_FRAME", CH_FRAME), ("CH_BAR", CH_BAR),
+           ("CH_PLUS", CH_PLUS), ("CH_TRACK", CH_TRACK), ("CH_THUMB", CH_THUMB),
            ("CH_STEP", CH_STEP), ("CLRESET", CLRESET), ("CLOK", CLOK),
            ("CLCNCL", CLCNCL), ("N_PENS", N_PENS), ("N_LEVELS", N_LEVELS),
            ("N_CHANNELS", len(CHANNELS)), ("NOBS_COLOR", NOBS_COLOR)]

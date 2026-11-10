@@ -32,6 +32,11 @@
  *   say there is no 'NVDI'; MFsave; cpx_close and its `keep`; and, as a
  *   form, Xform_do's CT_KEY for Help and the way the form ended.
  *
+ *   THE WIDGETS (phase 138, test-m58).  As a form it has a Popup of
+ *   seven items -- past five, so it scrolls -- and a vertical slider, a
+ *   list's: ten rows, three showing, Sl_size and Sl_y with the first row
+ *   at the top, its arrows Sl_arrow and its thumb Sl_dragy, foo counted.
+ *
  * WHERE THE TOOLKIT'S COUNTS GO: the module's own 64 settings bytes, the
  * buffer in the AES's table (XCPB's buffer) -- which outlives the module,
  * freed as it is when it shuts, so a gate reads them there afterwards
@@ -64,6 +69,9 @@
                          * 3 AC_CLOSE */
 #define K_MFSAVE  13    /* MFsave calls */
 #define K_CALL    14    /* cpx_call calls, not booting */
+#define K_POPUP   15    /* the Popup's pick, plus 1; 0 for none yet */
+#define K_SLVAL   16    /* the slider's value after it last moved */
+#define K_FOO     17    /* calls of the slider's foo, to 255 */
 
 /* Where the box and the form's button are, from the work area's corner:
  * test-m58 points at them by these numbers. */
@@ -74,6 +82,17 @@
 #define DONE_Y    120
 #define DONE_W    64
 #define DONE_H    12
+#define POP_X     24            /* the Popup's button */
+#define POP_Y     20
+#define POP_W     80
+#define POP_H     12
+#define SL_X      200           /* the slider: its up arrow, the track, */
+#define SL_Y      20            /* its down arrow, one under the other */
+#define SL_W      16
+#define SL_AH     12            /* an arrow's height */
+#define SL_TH     64            /* the track's */
+#define SL_ROWS   10            /* a list of ten rows, three showing */
+#define SL_SHOW   3
 
 /* INITIALISED, deliberately: see above. */
 static WORD m35_sig = M35_SIG;
@@ -96,10 +115,17 @@ static WORD m35_quit;     /* our own copy, to notice a host that ignores it */
 static XCPB FAR *m35_x;   /* the panel's block, from cpx_init or cpx_call */
 static MOBLK m35_m1;      /* the rectangle asked for: the box */
 
-static OBJECT m35_tree[3];
+static OBJECT m35_tree[8];
 static const char m35_msg[] = " Event CPX -- press a key ";
 static const char m35_fmsg[] = " Form CPX -- press Help ";
 static const char m35_done[] = "Done";
+static char m35_i0[] = "One", m35_i1[] = "Two", m35_i2[] = "Three",
+            m35_i3[] = "Four", m35_i4[] = "Five", m35_i5[] = "Six",
+            m35_i6[] = "Seven";
+static char *m35_items[7] = { m35_i0, m35_i1, m35_i2, m35_i3, m35_i4,
+                              m35_i5, m35_i6 };
+static WORD m35_pick;                   /* the Popup's item in force */
+static WORD m35_row;                    /* the slider's: the first row shown */
 
 static void m35_note(void)
 {
@@ -155,25 +181,94 @@ static void m35_obj(WORD i, WORD next, WORD head, WORD tail, UWORD type,
     m35_tree[i].ob_height = h;
 }
 
-/* AS A FORM: a line and a button over the whole work area, run through
- * Xform_do until the button, the closer or AC_CLOSE.  CT_KEY -- Help --
- * is counted and the form goes on. */
+/* The slider's foo: called by the panel after every move. */
+static SAVEDS void m35_foo(uint32_t xcpb)
+{
+    (void)xcpb;
+    m35_count(K_FOO);
+}
+
+/* AS A FORM: a line, a Done button, the Popup's button and a slider over
+ * the whole work area, run through Xform_do until Done, the closer or
+ * AC_CLOSE.  CT_KEY -- Help -- is counted and the form goes on. */
 static void m35_form(CPXPB FAR *pb)
 {
-    WORD msg[8], r;
+    WORD msg[8], r, x, y;
+    GRECT bt, world;
 
-    m35_obj(0, NIL, 1, 2, G_BOX, NONE, NORMAL, 0x00001100L,
+    m35_obj(0, NIL, 1, 7, G_BOX, NONE, NORMAL, 0x00001100L,
             pb->rect.g_x, pb->rect.g_y, pb->rect.g_w, pb->rect.g_h);
     m35_obj(1, 2, NIL, NIL, G_STRING, NONE, NORMAL,
             (int32_t)(uint32_t)(const char FAR *)m35_fmsg,
             BOX_X, BOX_Y, (WORD)((sizeof m35_fmsg - 1) * 8), 8);
-    m35_obj(2, 0, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
+    m35_obj(2, 3, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
             (int32_t)(uint32_t)(const char FAR *)m35_done,
             DONE_X, DONE_Y, DONE_W, DONE_H);
+    /* TOUCHEXIT alone: a selectable button is tracked until its release
+     * (form_button's gr_watchbox), and the menu must come up on the press */
+    m35_obj(3, 4, NIL, NIL, G_BUTTON, TOUCHEXIT, NORMAL,
+            (int32_t)(uint32_t)m35_items[m35_pick],
+            POP_X, POP_Y, POP_W, POP_H);
+    m35_obj(4, 6, 5, 5, G_BOX, TOUCHEXIT, NORMAL, 0x00011111L,
+            SL_X, SL_Y + SL_AH, SL_W, SL_TH);
+    m35_obj(5, 4, NIL, NIL, G_BOX, TOUCHEXIT, NORMAL, 0x00011170L,
+            0, 0, SL_W, 8);
+    m35_obj(6, 7, NIL, NIL, G_BOXCHAR, TOUCHEXIT, NORMAL,
+            (int32_t)((uint32_t)0x01 << 24) | 0x00011100L,
+            SL_X, SL_Y, SL_W, SL_AH);
+    m35_obj(7, 0, NIL, NIL, G_BOXCHAR, TOUCHEXIT | LASTOB, NORMAL,
+            (int32_t)((uint32_t)0x02 << 24) | 0x00011100L,
+            SL_X, SL_Y + SL_AH + SL_TH, SL_W, SL_AH);
+    /* a list's slider: SL_ROWS rows, SL_SHOW showing, the first row at the
+     * top -- Sl_y's minimum is at the bottom, so min is the last first
+     * row and max 0 (XControl's own list does the same) */
+    m35_row = 0;
+    cpx_sl_size(m35_x, m35_tree, 4, 5, SL_ROWS, SL_SHOW, SL_VERTICAL, 8);
+    cpx_sl_xy(m35_x, m35_tree, 4, 5, m35_row, SL_ROWS - SL_SHOW, 0,
+              SL_VERTICAL, (void (*)(uint32_t))0);
     objc_draw(m35_tree, ROOT, MAX_DEPTH, pb->rect.g_x, pb->rect.g_y,
               pb->rect.g_w, pb->rect.g_h);
     for (;;) {
         r = cpx_xform_do(m35_x, m35_tree, 0, msg);
+        if (r == 3) {                   /* the Popup's button */
+            objc_offset(m35_tree, 3, &x, &y);
+            bt.g_x = x;
+            bt.g_y = y;
+            bt.g_w = POP_W;
+            bt.g_h = POP_H;
+            world.g_x = m35_tree[0].ob_x;
+            world.g_y = m35_tree[0].ob_y;
+            world.g_w = m35_tree[0].ob_width;
+            world.g_h = m35_tree[0].ob_height;
+            r = cpx_popup(m35_x, m35_items, 7, m35_pick, 3, &bt, &world);
+            if (r >= 0) {
+                m35_pick = r;
+                m35_put(K_POPUP, (WORD)(r + 1));
+                m35_tree[3].ob_spec.index = (int32_t)(uint32_t)m35_items[r];
+            }
+            m35_tree[3].ob_state = NORMAL;
+            objc_draw(m35_tree, ROOT, MAX_DEPTH, x - 2, y - 2,
+                      POP_W + 4, POP_H + 4);
+            continue;
+        }
+        if (r == 5) {                   /* the thumb */
+            cpx_sl_drag(m35_x, m35_tree, 4, 5, SL_ROWS - SL_SHOW, 0,
+                        &m35_row, SL_VERTICAL, m35_foo);
+            m35_put(K_SLVAL, m35_row);
+            continue;
+        }
+        if (r == 6 || r == 7) {         /* an arrow: up is toward row 0 */
+            WORD inc = 1;
+
+            if (r == 6)
+                inc = -1;
+            cpx_sl_arrow(m35_x, m35_tree, 4, 5, r, inc, SL_ROWS - SL_SHOW,
+                         0, &m35_row, SL_VERTICAL, m35_foo);
+            m35_put(K_SLVAL, m35_row);
+            continue;
+        }
+        if (r == 4)                     /* the track: nothing here */
+            continue;
         if (r != -1) {
             m35_put(K_FORMX, 1);
             break;

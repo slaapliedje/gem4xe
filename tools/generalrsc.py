@@ -32,8 +32,12 @@ host draws nothing of this and knows only the title in the header.
 IT FILLS THE PANEL'S WINDOW (phase 136): XControl's 32 columns, 20 rows
 of the 8-pixel cell -- 256 x 160 -- with no frame of its own, the window
 being the frame.  The module sizes the root to the work area it is given
-and runs it with the panel's Xform_do.  "None" was "Instant", which with
-the 3D look's cell between buttons made the row too wide for 32.
+and runs it with the panel's Xform_do.
+
+THE SUB-MENU DELAY IS A POP-UP (phase 138, the panel's Popup): one button
+showing the delay, and its four names as free strings here, which the
+module hands the Popup and points the button at -- "Instant" again,
+which as one of four radio buttons did not fit 32 columns.
 """
 import os
 import sys
@@ -52,12 +56,11 @@ N_MN = 4
 
 (GNROOT, GNTITLE, GNDCLBL, GNDCBOX,
  GNDC0, _D1, _D2, _D3, _D4,
- GNMNLBL, GNMNBOX,
- GNMN0, _M1, _M2, _M3,
+ GNMNLBL, GNMNBTN,
  GNDTLBL, GNDATE, GNTMLBL, GNTIME,
  GNOK, GNCNCL,
- GN3DLBL, GN3DBOX, GN3D0, _L1) = range(25)
-NOBS_GENRL = 25
+ GN3DLBL, GN3DBOX, GN3D0, _L1) = range(21)
+NOBS_GENRL = 21
 N_LOOK = 2
 LOOKLBL = "Look"
 LOOK_NAMES = ("Flat", "3D")
@@ -71,8 +74,9 @@ DTLBL = "Date"
 TMLBL = "Time"
 
 DC_W, DC_STEP = 4, 5
-MN_W, MN_STEP = 6, 7            # a cell apart, for the 3D look's edges
-MN_NAMES = ("None", "Fast", "Normal", "Slow")
+MN_NAMES = ("Instant", "Fast", "Normal", "Slow")   # the pop-up's items
+MN_W = 10                       # the button: the longest name and room
+GNMNSTR0 = 0                    # the names' free strings, first
 GROUP_X = 2
 BTN_Y = 17                      # OK and Cancel, at the foot of the window
 LOOK_Y, LOOK_X = 11, GROUP_X + 6  # the Look row, its buttons' column
@@ -103,15 +107,15 @@ def general_tree(r):
         objs.append((GNDC0 + i + 1 if i < N_DC - 1 else GNDCBOX,
                      NIL, NIL, G_BUTTON, RADIO, NORMAL, r.string(str(i + 1)),
                      ch(i * DC_STEP), ch(0), ch(DC_W), ch(1)))
-    objs.append((GNMNBOX, NIL, NIL, G_STRING, NONE, NORMAL, r.string(MNLBL),
+    objs.append((GNMNBTN, NIL, NIL, G_STRING, NONE, NORMAL, r.string(MNLBL),
                  ch(GROUP_X), ch(6, -3), ch(len(MNLBL)), ch(1)))
-    objs.append((GNDTLBL, GNMN0, GNMN0 + N_MN - 1, G_IBOX, NONE, NORMAL,
-                 0x00000000,
-                 ch(GROUP_X), ch(7), ch((N_MN - 1) * MN_STEP + MN_W), ch(1)))
-    for i in range(N_MN):
-        objs.append((GNMN0 + i + 1 if i < N_MN - 1 else GNMNBOX,
-                     NIL, NIL, G_BUTTON, RADIO, NORMAL, r.string(MN_NAMES[i]),
-                     ch(i * MN_STEP), ch(0), ch(MN_W), ch(1)))
+    # the pop-up's button: its text is pointed at one of the names below.
+    # TOUCHEXIT and NOT SELECTABLE: form_button tracks a selectable button
+    # (gr_watchbox) until the release, so the menu would only ever open
+    # with the button up -- no press, drag and let go
+    objs.append((GNDTLBL, NIL, NIL, G_BUTTON, TOUCHEXIT, NORMAL,
+                 r.string(MN_NAMES[2]),
+                 ch(GROUP_X), ch(7), ch(MN_W), ch(1)))
     objs.append((GNDATE, NIL, NIL, G_STRING, NONE, NORMAL, r.string(DTLBL),
                  ch(GROUP_X), ch(9), ch(len(DTLBL)), ch(1)))
     objs.append((GNTMLBL, NIL, NIL, G_FTEXT, EDITABLE, NORMAL,
@@ -144,7 +148,8 @@ def general_tree(r):
 
 
 INDICES = [("ADGENRL", ADGENRL), ("GNROOT", GNROOT), ("GNTITLE", GNTITLE),
-           ("GNDC0", GNDC0), ("GNMN0", GNMN0), ("GNDATE", GNDATE),
+           ("GNDC0", GNDC0), ("GNMNBTN", GNMNBTN), ("GNMNSTR0", GNMNSTR0),
+           ("GNDATE", GNDATE),
            ("GNTIME", GNTIME), ("GNOK", GNOK), ("GNCNCL", GNCNCL),
            ("GN3D0", GN3D0), ("N_LOOK", N_LOOK),
            ("N_DC", N_DC), ("N_MN", N_MN), ("NOBS_GENRL", NOBS_GENRL)]
@@ -153,6 +158,8 @@ INDICES = [("ADGENRL", ADGENRL), ("GNROOT", GNROOT), ("GNTITLE", GNTITLE),
 def build():
     r = rsc.Rsc()
     assert general_tree(r) == ADGENRL
+    for i, name in enumerate(MN_NAMES):
+        assert r.free_string(name) == GNMNSTR0 + i
     return r
 
 

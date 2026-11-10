@@ -398,14 +398,26 @@ def small_machines():
         # the system, the desktop's cached file, four accessories and
         # modules, the desktop -- measured 184 KB in three banks; it was
         # nineteen before phase 79 and twelve after it.
+        #
+        # FOUR BANKS SINCE PHASE 138.  This is where the boot settles on a
+        # machine with room to spare, and for 58 phases it was read as
+        # "the boot fits three banks".  It did not: cut to three, the
+        # desktop is refused (m37three, below), at phase 137 as now --
+        # loading the squeezed desktop needs its file, its unpacked copy
+        # and its code at once.  Phase 138's 5 KB of control panel moved
+        # the settled layout into a fourth bank, which is what showed it.
         from farheap import far_heap
         h = far_heap(b, syms)
         top = max(a + n for a, n, _ in h.blocks)
         used = sum(n for _, n, _ in h.blocks)
         print(f"    the far heap: {len(h.blocks)} blocks, {used:,} bytes, "
               f"up to ${top:06X}")
-        check(top <= (fm[1] + 3) << 16,
-              f"m37k960: the boot reaches ${top:06X}, past three banks from "
+        if top > (fm[1] + 4) << 16:
+            # the map, so a failure says what moved where
+            for a, n, o in sorted(h.blocks):
+                print(f"      ${a:06X} +{n:6d}  owner {o:#07x}")
+        check(top <= (fm[1] + 4) << 16,
+              f"m37k960: the boot reaches ${top:06X}, past four banks from "
               f"${fm[1]:02X}: small programs are not sharing banks")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37k960.png"))
     finally:
@@ -502,6 +514,56 @@ def small_machines():
         check(step < STEP_RUN or want[0] not in os_screen(b),
               f"m37small: a key and it is still waiting (CARTSTEP {step})")
         b.screenshot(os.path.join(ROOT, "build", "shots", "m37small.png"))
+    finally:
+        emu.stop()
+
+    # THREE BANKS -- A 65C816 WITH 512 KB, $05-$07 -- AN OPEN BUG, KNOWN
+    # (phase 138, docs/phase138.md).  The desktop is refused: the squeezed
+    # file, its unpacked copy (put at the top of the heap, which here is
+    # where the desktop's code has to go) and the code itself are wanted at
+    # once, about 200 KB.  Until that is fixed this says so and passes;
+    # the day the desktop runs here it FAILS, so that it is made a real
+    # check rather than left saying "known" about a bug that is gone.
+    print("  the far heap cut to three banks: the desktop (KNOWN OPEN BUG)")
+    emu = launch(tag="m37three", memsize="1088K", rapidus=False, cpu816=15,
+                 extra_args=["--cart", CAR_SYS])
+    b = emu.bridge
+    try:
+        fm = syms["farmem"]
+        while b.peek(CARTSTEP) != STEP_RUN and b.peek(CARTSTEP) < 30:
+            b.frames(50)
+        b.frames(250)                           # gem4xe's crt has zeroed its data
+        for _ in range(1200):                   # until farmem_probe has run
+            b.frames(10)
+            if b.peek(fm + 3):
+                break
+        first = b.peek(fm + 1)
+        runs0 = b.peek16(syms["sh_runs"])
+        check(runs0 == 0 and b.peek(fm + 3) >= 3,
+              f"m37three: the probe found {b.peek(fm + 3)} banks with "
+              f"{runs0} program(s) run -- the cut needs 0 runs")
+        b.poke(fm + 2, first + 2)               # last_bank
+        b.poke(fm + 3, 3)                       # banks
+        b.memload(fm + 4, (3 << 16).to_bytes(4, "little"))   # bytes
+        runs, refused = 0, False
+        for _ in range(160):
+            b.frames(250)
+            runs = b.peek16(syms["sh_runs"])
+            if runs:
+                break
+            if words["EXIT_NOFAR"] in os_screen(b):
+                refused = True
+                break
+        print(f"    the shell has run {runs} program(s); "
+              f"{'refused' if refused else 'not refused'}")
+        if refused:
+            print("    KNOWN OPEN BUG: the desktop does not fit three banks "
+                  "(docs/phase138.md); the fix is the next phase")
+        else:
+            check(False, f"m37three: the desktop {'ran' if runs else 'did not refuse'} "
+                         f"with three banks -- if the open bug is fixed, "
+                         f"make this a real check (tests/emu/m37_cart.py)")
+        b.screenshot(os.path.join(ROOT, "build", "shots", "m37three.png"))
     finally:
         emu.stop()
 

@@ -348,7 +348,8 @@ class Tour:
         def w(name, off=0):
             v = self.b.peek16(base + asym[name] - vlink + off)
             return v - 0x10000 if v & 0x8000 else v
-        return dict(wh=w("cp_wh"), rows=w("cp_rows"), top=w("cp_top"),
+        return dict(form=self.b.peek24(base + asym["cp_form"] - vlink),
+                    wh=w("cp_wh"), rows=w("cp_rows"), top=w("cp_top"),
                     sel=w("cp_sel"), opens=w("cp_opens"),
                     work=tuple(w("cp_work", 2 * j) for j in range(4)),
                     slots=[tuple(w("cp_slotr", 8 * k + 2 * j) for j in range(4))

@@ -788,7 +788,12 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
                         ipat = IP_SOLID;
                         icol = BLACK;
                     } else {
-                        icol = xor_color(icol);
+                        /* through a local: icol's address is taken, and
+                         * xor_color's three returns would be a join into
+                         * it were it ever inlined (B9, tools/ccbug) */
+                        WORD c = xor_color(icol);
+
+                        icol = c;
                     }
                 }
                 gr_rect(icol, ipat, &t);
@@ -800,8 +805,10 @@ static void just_draw(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy)
         }
 
         if (changecol && (state & SELECTED)) {
+            WORD c = xor_color(tcol);           /* through a local: B9 */
+
             tmode = MD_TRANS;
-            tcol = xor_color(tcol);
+            tcol = c;
         }
         gsx_attr(1, tmode, tcol);
 

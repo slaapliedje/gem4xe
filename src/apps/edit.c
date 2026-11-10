@@ -419,7 +419,12 @@ static void set_slider(void)
 static void set_title(void)
 {
     uint16_t k;
-    const char FAR *s = path[0] ? (const char FAR *)path : str(ST_TITLE);
+    const char FAR *s = str(ST_TITLE);
+
+    /* not a ?: -- its arms differed only in const, and cc65816 makes
+     * such a ?: NEAR, bank byte and all (B27, tools/ccbug) */
+    if (path[0])
+        s = (const char FAR *)path;
 
     title[0] = ' ';
     scpy(title + 1, s, PATHLEN);

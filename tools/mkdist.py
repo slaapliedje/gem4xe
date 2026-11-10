@@ -255,8 +255,9 @@ WHAT_IT_IS = {
                    "you set is saved and put back at the next boot",
     "GENERAL.RSC": "its dialog",
     "COLOR.CPX": "THE SCREEN'S COLOURS, a second control panel "
-                 "extension: pick a pen, step its red, green and blue, and "
-                 "the screen changes as you do.  OK keeps the palette and "
+                 "extension: pick a pen, slide its red, green and blue -- "
+                 "drag a slider's thumb, or step it with the buttons either "
+                 "side -- and the screen changes as you do.  OK keeps the palette and "
                  "puts it back at every boot; Reset is gem4xe's own.  "
                  "Beside GEM.COM with COLOR.RSC.  On ANTIC the screen has "
                  "two pens, and only their brightness shows",

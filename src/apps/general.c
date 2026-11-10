@@ -254,6 +254,45 @@ static void gn_remember(WORD dc, WORD mn, WORD look)
     gn_xcpb->CPX_Save((uint32_t)gn_xcpb);
 }
 
+/* THE SUB-MENU DELAY'S POP-UP (phase 138, the panel's Popup): its four
+ * names are GENERAL.RSC's free strings, the button's text is pointed at
+ * the one in force, and the pick applies at once, as every pick here
+ * does.  The names are taken at cpx_init, beside the tree: at cpx_call
+ * this runs in the panel's process, and rsrc_gaddr answered from the
+ * PANEL's resource -- the button read "...not be read or written". */
+static char *gn_mnname[N_MN];
+
+static void gn_mnshow(WORD j)
+{
+    if (j >= 0 && j < N_MN && gn_mnname[j])
+        tree[GNMNBTN].ob_spec.index = (int32_t)(uint32_t)gn_mnname[j];
+}
+
+static void gn_mnpick(void)
+{
+    GRECT bt, world;
+    WORD x, y, r;
+
+    objc_offset(tree, GNMNBTN, &x, &y);
+    bt.g_x = x;
+    bt.g_y = y;
+    bt.g_w = tree[GNMNBTN].ob_width;
+    bt.g_h = tree[GNMNBTN].ob_height;
+    world.g_x = tree[ROOT].ob_x;
+    world.g_y = tree[ROOT].ob_y;
+    world.g_w = tree[ROOT].ob_width;
+    world.g_h = tree[ROOT].ob_height;
+    r = cpx_popup(gn_xcpb, gn_mnname, N_MN, gn_index(ms_now()), 3, &bt,
+                  &world);
+    tree[GNMNBTN].ob_state = NORMAL;
+    if (r >= 0 && r < N_MN) {
+        gn_setdelay(gn_ms[r]);
+        gn_mnshow(r);
+    }
+    objc_draw(tree, ROOT, MAX_DEPTH, bt.g_x - 2, bt.g_y - 2,
+              bt.g_w + 4, bt.g_h + 4);
+}
+
 static SAVEDS void gn_cpx_call(uint32_t pbaddr)
 {
     CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
@@ -290,8 +329,7 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
     for (i = 0; i < N_DC; i++)
         tree[GNDC0 + i].ob_state = (UWORD)(i == dc0 ? SELECTED : NORMAL);
     j = gn_index(ms0);
-    for (i = 0; i < N_MN; i++)
-        tree[GNMN0 + i].ob_state = (UWORD)(i == j ? SELECTED : NORMAL);
+    gn_mnshow(j);
     look0 = gn_look();
     for (i = 0; i < N_LOOK; i++)
         tree[GN3D0 + i].ob_state = (UWORD)(i == look0 ? SELECTED : NORMAL);
@@ -328,8 +366,8 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
             break;
         if (ob >= GNDC0 && ob < GNDC0 + N_DC)
             evnt_dclick((WORD)(ob - GNDC0), 1);
-        else if (ob >= GNMN0 && ob < GNMN0 + N_MN)
-            gn_setdelay(gn_ms[ob - GNMN0]);
+        else if (ob == GNMNBTN)
+            gn_mnpick();
         else if (ob >= GN3D0 && ob < GN3D0 + N_LOOK
                  && (WORD)(ob - GN3D0) != gn_look()) {
             /* the look, at once, and this form in it to show it -- where
@@ -375,6 +413,8 @@ static SAVEDS void gn_cpx_close(uint32_t pbaddr)
  * in front of this module in the file (tools/mkcpx.py). */
 CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
 {
+    WORD i;
+
     (void)pb;
     /* THE RESOURCE IS TAKEN ONCE AND NEVER FREED, which is right rather
      * than lazy: a module is loaded before the keep mark and kept for
@@ -386,6 +426,8 @@ CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
     rsrc_gaddr(R_TREE, ADGENRL, (void **)&tree);
     if (!tree)
         return (CPXINFO FAR *)0;
+    for (i = 0; i < N_MN; i++)
+        rsrc_gaddr(R_STRING, GNMNSTR0 + i, (void **)&gn_mnname[i]);
 
     ginfo.cpx_call = gn_cpx_call;
     ginfo.cpx_close = gn_cpx_close;

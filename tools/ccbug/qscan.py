@@ -39,6 +39,20 @@ variable, and it is read off the source because the generated code
 cannot tell the store from a right one.  The fix is an if/else, or the
 choice made into another local first.
 
+AN INLINED FUNCTION'S RETURNS ARE A JOIN TOO (phase 138).  The panel's
+Xform_do started its text cursor on object 32443 of a 41-object form:
+
+    next = pb->xf_edit;
+    if (!next)
+        next = cp_firstedit(t);     /* return i; ... return 0; */
+    ... form_button(t, next, nc, &next);
+
+-O2 inlined cp_firstedit, left its answer in 1,s, and copied `next`
+from 19,s, a slot nothing had written -- B9's own store, reached through
+a call.  So a call counts as a join when the function is defined in the
+same translation unit (a static, or an inline from a header) and has two
+returns with values, or a return whose value has a join in it.
+
     python3 tools/ccbug/qscan.py [FILE.c ...]     (default: every src/**/*.c)
     python3 tools/ccbug/qscan.py --self-test      the shapes, found and not
 
@@ -61,7 +75,52 @@ void __disable_interrupts(void);
 void *__memcpy_far();
 """
 
-FLAGS = ["-fsyntax-only", "-std=gnu11", "-w", "-ferror-limit=0",
+# calypsi/stubs.h's nine entry points, which src/app/gemstub.c defines
+FAKE_STUBS = """
+#include <stdio.h>
+int _Stub_open(const char *path, int oflag, ...);
+int _Stub_close(int fd);
+long _Stub_lseek(int fd, long offset, int whence);
+int _Stub_fgetpos(int fd, fpos_t *pos);
+int _Stub_fsetpos(int fd, const fpos_t *pos);
+size_t _Stub_read(int fd, void *buf, size_t count);
+size_t _Stub_write(int fd, const void *buf, size_t count);
+int _Stub_rename(const char *oldpath, const char *newpath);
+int _Stub_remove(const char *path);
+void _Stub_exit(int status);
+"""
+
+# The host's <stdlib.h> brings in its struct timeval, which Calypsi's
+# does not and gem.h declares for Tgettimeofday: the host's is renamed.
+FAKE_STDLIB = """
+#define timeval qscan_host_timeval
+#define timezone qscan_host_timezone
+#include_next <stdlib.h>
+#undef timeval
+#undef timezone
+"""
+
+# ...and its <stdio.h> a struct fpos_t, which is a number in Calypsi's
+# and src/app/gemstub.c does arithmetic on
+FAKE_STDIO = """
+#define fpos_t qscan_host_fpos_t
+#include_next <stdio.h>
+#undef fpos_t
+typedef long fpos_t;
+"""
+
+# The flags the Makefile gives one file and not the rest
+PER_FILE = {
+    "src/vdi/dev_vbxe.c": ["-DGEM4XE_DEV_IMPL", "-DGEM4XE_DEV_PREFIX=vbd_"],
+    "src/vdi/dev_print.c": ["-DGEM4XE_DEV_IMPL", "-DGEM4XE_DEV_PREFIX=prd_",
+                            "-DGEM4XE_DEV_PRINT"],
+    "src/vdi/dev_antic.c": ["-DGEM4XE_DEV_IMPL", "-DGEM4XE_DEV_PREFIX=and_",
+                            "-DGEM4XE_DEV_ANTIC"],
+}
+
+# -m32: four-byte pointers and longs, as the target's large data model
+# has, so the headers' layout checks (cpx.h's CPXSLOT) hold here too
+FLAGS = ["-fsyntax-only", "-m32", "-std=gnu11", "-w", "-ferror-limit=0",
          "-D__CALYPSI__", f"-D__far={FAR}", "-D__near=",
          "-D__simple_call=", "-D__task=",
          "-Xclang", "-ast-dump=json"]
@@ -153,6 +212,22 @@ def strip(n):
     return n
 
 
+# name -> True when a call to that function is a join (b9_findings fills it
+# per translation unit: defined here, and two returns with values or a
+# return with a join in it)
+JOINY = {}
+
+
+def callee_name(n):
+    """The name of the function a CallExpr calls directly, or None."""
+    inner = n.get("inner") or [{}]
+    d = strip(inner[0])
+    if d.get("kind") != "DeclRefExpr":
+        return None
+    r = d.get("referencedDecl", {})
+    return r.get("name") if r.get("kind") == "FunctionDecl" else None
+
+
 def has_join(n):
     k = n.get("kind")
     if k == "ConditionalOperator" or k == "BinaryConditionalOperator":
@@ -161,7 +236,47 @@ def has_join(n):
         return True
     if k == "UnaryOperator" and n.get("opcode") == "!":
         return True
+    if k == "CallExpr" and JOINY.get(callee_name(n)):
+        return True
     return any(has_join(c) for c in n.get("inner", []) if isinstance(c, dict))
+
+
+def returns_of(fn):
+    """The values of fn's return statements (not those of nested
+    blocks' lambdas -- C has none)."""
+    out = []
+
+    def walk(n):
+        if not isinstance(n, dict):
+            return
+        if n.get("kind") == "ReturnStmt" and n.get("inner"):
+            out.append(n["inner"][0])
+        for c in n.get("inner", []):
+            walk(c)
+
+    walk(fn)
+    return out
+
+
+def find_joiny(tree):
+    """JOINY for this translation unit: every function with a body, to a
+    fixed point, as one may return another's value."""
+    rets = {}
+    for n in tree.get("inner", []):
+        if n.get("kind") == "FunctionDecl" and any(
+                c.get("kind") == "CompoundStmt" for c in n.get("inner", [])):
+            rets[n.get("name")] = returns_of(n)
+    JOINY.clear()
+    for name, rs in rets.items():
+        if len(rs) >= 2:
+            JOINY[name] = True
+    changed = True
+    while changed:
+        changed = False
+        for name, rs in rets.items():
+            if not JOINY.get(name) and any(has_join(r) for r in rs):
+                JOINY[name] = True
+                changed = True
 
 
 def var_of(n):
@@ -185,6 +300,7 @@ def b9_findings(tree, want_file):
     a value with a join in it."""
     out, last, here = [], {"file": None, "line": 0}, {"file": None, "line": 0}
     fns = []
+    find_joiny(tree)
 
     def bare_loc(loc):
         if "file" in loc:
@@ -242,13 +358,30 @@ def b9_findings(tree, want_file):
     return out
 
 
+# Every directory the Makefile hands the compiler with -I.  Without
+# src/app, every application's gem.h was missing and every function in
+# it was an invalid declaration clang left the body off -- so the scan
+# read nothing in src/apps and said so with a zero (phase 138).  An error
+# is now "not parsed", which fails the scan -- all but the one B27's own
+# shape draws from today's clang (the docstring says why).
+INCS = ["src", "src/sys", "build", "src/app", "src/apps", "src/vdi",
+        "src/vbxe", "src/antic"]
+
+
 def scan(path, inc):
-    r = subprocess.run(["clang", *FLAGS, "-I", inc, "-I", os.path.join(ROOT, "src"),
-                        "-I", os.path.join(ROOT, "src", "sys"),
-                        "-I", os.path.join(ROOT, "build"), path],
+    incs = [a for d in INCS for a in ("-I", os.path.join(ROOT, d))]
+    own = PER_FILE.get(os.path.relpath(os.path.abspath(path), ROOT), [])
+    r = subprocess.run(["clang", *FLAGS, *own, "-I", inc, *incs, path],
                        capture_output=True, text=True)
-    if not r.stdout.strip():
-        return None, r.stderr.strip().splitlines()[:3]
+    # two errors are the far model's, not a failure to read the file: a
+    # far pointer handed where a near one goes (B27's own shape), and a ?:
+    # of a near and a far pointer, which a large-data program writes
+    # because its plain pointers ARE far -- this clang cannot know that
+    errs = [ln for ln in r.stderr.splitlines() if "error:" in ln
+            and "changes address space of pointer" not in ln
+            and "non-overlapping address spaces" not in ln]
+    if not r.stdout.strip() or errs:
+        return None, (errs or r.stderr.strip().splitlines())[:3]
     tree = json.loads(r.stdout)
     return (findings(tree, path), b9_findings(tree, path)), None
 
@@ -258,6 +391,12 @@ def fake_dir():
     os.makedirs(os.path.join(d, "calypsi"))
     with open(os.path.join(d, "calypsi", "intrinsics65816.h"), "w") as f:
         f.write(FAKE_INTRINSICS)
+    with open(os.path.join(d, "calypsi", "stubs.h"), "w") as f:
+        f.write(FAKE_STUBS)
+    with open(os.path.join(d, "stdlib.h"), "w") as f:
+        f.write(FAKE_STDLIB)
+    with open(os.path.join(d, "stdio.h"), "w") as f:
+        f.write(FAKE_STDIO)
     return d
 
 
@@ -311,6 +450,21 @@ void bad(int app)
     x = app ? 2 : 4;                      /* fine: x's address is not taken */
     g = x;
 }
+static int first(int c) { if (c) return 7; return 0; }
+static int one(int c) { return c + 1; }
+static int pick(int c) { return c ? 2 : 4; }
+void inl(int app)
+{
+    int n, m, k, j;
+    n = first(app);                       /* B9: two returns, inlined */
+    take(&n);
+    k = pick(app);                        /* B9: a return with a join */
+    take(&k);
+    m = one(app);                         /* fine: one plain return */
+    take(&m);
+    j = first(app);                       /* fine: j's address is not taken */
+    g = j;
+}
 void good(int app)
 {
     int t, k;
@@ -326,7 +480,7 @@ void good(int app)
     g = k;
 }
 """
-WANT9 = [11, 13, 15, 17, 19, 21, 23]
+WANT9 = [11, 13, 15, 17, 19, 21, 23, 34, 36]
 
 
 def self_test(inc):

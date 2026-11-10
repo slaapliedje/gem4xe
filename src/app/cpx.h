@@ -236,7 +236,73 @@ typedef struct {
      * XControl's does too; the MFORM its prototype takes is not read. */
     void (*MFsave)(uint32_t xcpb);
     WORD  mf_save;
+
+    /* Popup (phase 138): a menu of pu_n strings at a button, as
+     * XControl's -- up to five items shown, and past five three of them
+     * between an up and a down arrow, which scroll it; the default
+     * CHECKED; pu_ret the item picked, from 0, or -1 for a click outside.
+     * Placed at the button's corner and moved up or left to stay inside
+     * pu_world.  XControl writes a check into the default's first
+     * character and puts a space back after; this draws the CHECKED state
+     * and leaves the strings alone.  pu_font is taken and ignored: one
+     * face a screen here.  The button held as the menu comes up, the pick
+     * is made on its release, as XControl's -- but not when the pointer
+     * never left the slot it came up under: the menu opens over the
+     * button, and XControl took a slow click for the first item.  Make
+     * the button TOUCHEXIT and not SELECTABLE: form_button tracks a
+     * selectable one until the release, and the menu never sees it held. */
+    void (*Popup)(uint32_t xcpb);
+    uint32_t pu_items;          /* char FAR * FAR *: the strings */
+    WORD  pu_n, pu_default, pu_font;
+    GRECT pu_button, pu_world;
+    WORD  pu_ret;
+
+    /* The sliders (phase 138), XControl's six calls, over one set of
+     * fields: the tree, the track (base) and its thumb (slider).
+     *
+     *   Sl_size   the thumb's length: visible/items of the track's, at
+     *             least sl_minsize; sl_dir 0 is vertical, 1 horizontal.
+     *             Draws nothing.
+     *   Sl_x/Sl_y the thumb placed for sl_value in sl_min..sl_max, then
+     *             sl_foo called.  Draws nothing.  Sl_y's sl_min is at the
+     *             BOTTOM, as XControl's: a list that starts at the top
+     *             passes min = the last first row, max = 0.
+     *   Sl_arrow  sl_obj (a button, or <= 0 for none) shown pressed, and
+     *             *sl_var stepped by sl_inc inside sl_min..sl_max, the
+     *             thumb moved and drawn, for as long as the button is
+     *             held -- after a quarter of a second, and then every
+     *             60 ms, where XControl repeats with no delay at all.
+     *   Sl_dragx/Sl_dragy   the thumb follows the pointer, *sl_var with it,
+     *             sl_foo after every change, until the button comes up.
+     *
+     * sl_foo IS THE MODULE'S, called by the panel, so it is a vtable entry
+     * in all but name: SAVEDS, one uint32_t -- the block's address -- as
+     * every entry here (see CPXINFO below); 0 for none.  sl_var is the
+     * module's own WORD, read and written where it is. */
+    void (*Sl_size)(uint32_t xcpb);
+    void (*Sl_x)(uint32_t xcpb);
+    void (*Sl_y)(uint32_t xcpb);
+    void (*Sl_arrow)(uint32_t xcpb);
+    void (*Sl_dragx)(uint32_t xcpb);
+    void (*Sl_dragy)(uint32_t xcpb);
+    uint32_t sl_tree;           /* OBJECT FAR * */
+    WORD  sl_base, sl_slider, sl_obj;
+    WORD  sl_value, sl_min, sl_max, sl_inc;
+    WORD  sl_items, sl_visible, sl_dir, sl_minsize;
+    uint32_t sl_var;            /* WORD FAR * */
+    void (*sl_foo)(uint32_t xcpb);
+
+    /* rsh_obfix (phase 138): one object's rectangle from characters to
+     * pixels, as rsrc_obfix -- in THIS screen's cell, where XControl's
+     * always uses 8 x 16.  There is no rsh_fix: a module here loads its
+     * resource with rsrc_load. */
+    void (*rsh_obfix)(uint32_t xcpb);
+    uint32_t ob_tree;           /* OBJECT FAR * */
+    WORD  ob_obj;
 } XCPB;
+
+#define SL_VERTICAL     0       /* Sl_size's and Sl_arrow's directions */
+#define SL_HORIZONTAL   1
 
 /* XControl's one message of its own: Xform_do answers -1 with this in
  * msg[0] and the key word in msg[3] for a key with no character -- a
@@ -331,6 +397,119 @@ static __inline void cpx_mfsave(XCPB FAR *pb, WORD save)
         return;
     pb->mf_save = save;
     pb->MFsave((uint32_t)pb);
+}
+
+/* The widgets (phase 138).  -1 from cpx_popup without a Popup. */
+static __inline WORD cpx_popup(XCPB FAR *pb, char **items, WORD n,
+                               WORD dflt, WORD font, const GRECT *button,
+                               const GRECT *world)
+{
+    if (!pb || !pb->Popup)
+        return -1;
+    pb->pu_items = (uint32_t)items;
+    pb->pu_n = n;
+    pb->pu_default = dflt;
+    pb->pu_font = font;
+    pb->pu_button = *button;
+    pb->pu_world = *world;
+    pb->Popup((uint32_t)pb);
+    return pb->pu_ret;
+}
+
+static __inline void cpx_sl_set(XCPB FAR *pb, OBJECT *tree, WORD base,
+                                WORD slider)
+{
+    pb->sl_tree = (uint32_t)tree;
+    pb->sl_base = base;
+    pb->sl_slider = slider;
+}
+
+static __inline void cpx_sl_size(XCPB FAR *pb, OBJECT *tree, WORD base,
+                                 WORD slider, WORD items, WORD visible,
+                                 WORD dir, WORD minsize)
+{
+    if (!pb || !pb->Sl_size)
+        return;
+    cpx_sl_set(pb, tree, base, slider);
+    pb->sl_items = items;
+    pb->sl_visible = visible;
+    pb->sl_dir = dir;
+    pb->sl_minsize = minsize;
+    pb->Sl_size((uint32_t)pb);
+}
+
+/* Sl_x when dir is SL_HORIZONTAL, Sl_y when SL_VERTICAL */
+static __inline void cpx_sl_xy(XCPB FAR *pb, OBJECT *tree, WORD base,
+                               WORD slider, WORD value, WORD min, WORD max,
+                               WORD dir, void (*foo)(uint32_t pb))
+{
+    /* plain ifs, not ?: between the two pointers (B27, tools/ccbug) */
+    if (!pb)
+        return;
+    if (dir == SL_HORIZONTAL) {
+        if (!pb->Sl_x)
+            return;
+    } else if (!pb->Sl_y)
+        return;
+    cpx_sl_set(pb, tree, base, slider);
+    pb->sl_value = value;
+    pb->sl_min = min;
+    pb->sl_max = max;
+    pb->sl_foo = foo;
+    if (dir == SL_HORIZONTAL)
+        pb->Sl_x((uint32_t)pb);
+    else
+        pb->Sl_y((uint32_t)pb);
+}
+
+static __inline void cpx_sl_arrow(XCPB FAR *pb, OBJECT *tree, WORD base,
+                                  WORD slider, WORD obj, WORD inc, WORD min,
+                                  WORD max, WORD *var, WORD dir,
+                                  void (*foo)(uint32_t pb))
+{
+    if (!pb || !pb->Sl_arrow)
+        return;
+    cpx_sl_set(pb, tree, base, slider);
+    pb->sl_obj = obj;
+    pb->sl_inc = inc;
+    pb->sl_min = min;
+    pb->sl_max = max;
+    pb->sl_var = (uint32_t)var;
+    pb->sl_dir = dir;
+    pb->sl_foo = foo;
+    pb->Sl_arrow((uint32_t)pb);
+}
+
+/* Sl_dragx when dir is SL_HORIZONTAL, Sl_dragy when SL_VERTICAL */
+static __inline void cpx_sl_drag(XCPB FAR *pb, OBJECT *tree, WORD base,
+                                 WORD slider, WORD min, WORD max, WORD *var,
+                                 WORD dir, void (*foo)(uint32_t pb))
+{
+    if (!pb)
+        return;
+    if (dir == SL_HORIZONTAL) {
+        if (!pb->Sl_dragx)
+            return;
+    } else if (!pb->Sl_dragy)
+        return;
+    cpx_sl_set(pb, tree, base, slider);
+    pb->sl_min = min;
+    pb->sl_max = max;
+    pb->sl_var = (uint32_t)var;
+    pb->sl_foo = foo;
+    if (dir == SL_HORIZONTAL)
+        pb->Sl_dragx((uint32_t)pb);
+    else
+        pb->Sl_dragy((uint32_t)pb);
+}
+
+static __inline void cpx_rsh_obfix(XCPB FAR *pb, OBJECT *tree, WORD obj)
+{
+    if (!pb || !pb->rsh_obfix)
+        return;
+    pb->ob_tree = (uint32_t)tree;
+    pb->ob_obj = obj;
+    pb->rsh_obfix((uint32_t)pb);
 }
 
 /* XGen_Alert's numbers are Atari's, from the Compendium's table for

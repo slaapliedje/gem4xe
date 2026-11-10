@@ -10,6 +10,9 @@ On the VBXE desk, through the Control Panel as a person reaches it:
      0, 0) at once -- level 11, which is also the standard palette's
      dark red, so the arithmetic is the palette's own.
   4. Cancel puts it back: opened again, the swatch is (255, 0, 0).
+  4a. Red's slider thumb dragged from 15 to 7 (phase 138, the panel's
+     Sl_dragx): the swatch is (118, 0, 0) -- level 7 -- while it moves,
+     and Cancel puts it back again.
   5. The same four steps and OK, then a COLD RESET: the machine boots,
      the panel puts the saved palette back (CPX_BOOTINIT), and the
      swatch is (187, 0, 0) before anybody has touched it.  Step 2 was
@@ -33,12 +36,15 @@ import symfile                                # noqa: E402
 import colorrsc as cr                         # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS, middle   # noqa: E402
 from deskrsc import DESKMENU                  # noqa: E402
+from m7_form import M, B, F                    # noqa: E402
 from PIL import Image                         # noqa: E402
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "gem-shots.atr"))
 RAW_X0 = 16                     # a raw VBXE screenshot's left border
 CELL = 8                        # the VBXE face's cell, both ways
-RED, DARK_RED = (255, 0, 0), (187, 0, 0)
+# level 7 is 467 thousandths, 59 in the VBXE's seven bits, 118 on the
+# screen -- the road that makes level 11 (four steps down) 187
+RED, DARK_RED, RED7 = (255, 0, 0), (187, 0, 0), (118, 0, 0)
 
 problems = []
 
@@ -137,6 +143,29 @@ def main():
         open_color(t, panel_open=True)          # the window is still up
         c = d.swatch_colour(2, "m42-cancelled")
         check(c == RED, f"...and Cancel put it back: {c}")
+
+        # Red's slider: its thumb at the track's right end (level 15),
+        # dragged to where level 7 is -- a thumb one cell wide, so its
+        # middle travels (TRACK_W - 1) cells for 15 levels
+        t.click(d.swatch(2))
+        b.frames(10)
+        ty = d.oy + cr.CH_Y * CELL + CELL // 2
+        x0 = d.ox + cr.TRACK_X * CELL + CELL // 2
+        span = (cr.TRACK_W - 1) * CELL
+        start, end = x0 + span, x0 + span * 7 // 15
+        t.go((start, ty))
+        t.run([B(1), F(24)] + [M(start - (start - end) * k // 6, ty)
+                               for k in range(1, 7)] + [F(10)])
+        c = d.swatch_colour(2, "m42-dragging")
+        t.run([B(0), F(20)])
+        check(c == RED7, f"Red's thumb dragged to level 7, the swatch is "
+                         f"{RED7} while it moves: {c}")
+        t.click(d.button(cr.CANCEL_X, cr.BTN_Y, cr.BTN_W))     # Cancel
+        b.frames(30)
+        t.settle()
+        open_color(t, panel_open=True)
+        c = d.swatch_colour(2, "m42-cancelled2")
+        check(c == RED, f"...and Cancel put it back again: {c}")
 
         step_red_down(t, d, 4)
         t.click(d.button(cr.OK_X, cr.BTN_Y, cr.BTN_W))         # OK: saved

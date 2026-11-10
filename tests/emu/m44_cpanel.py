@@ -16,6 +16,9 @@ and this gate drives it as a person would:
      3D clicked where it now is and OK switch the look -- and the panel's
      window is still open afterwards with the list back, its work area
      the size it was, though the 3D frame is thicker (WM_SIZED).
+     Opened again, its sub-menu delay is a Popup (phase 138): a slow
+     click on the button leaves the delay, a click on "Instant" sets it,
+     and Cancel puts it back.
   3. THE DESKTOP GOES ON WORKING BESIDE IT: drive D1's icon double-clicked
      opens the desktop's window on top, with the panel's still open --
      which the AES's input rule (phase 134) is what allows.
@@ -44,7 +47,7 @@ from PIL import Image                         # noqa: E402
 from a8test.launcher import launch            # noqa: E402
 import symfile                                # noqa: E402
 from shots import (Tour, boot, poke16, PTR_NONE, SYMS, DISK, obj,   # noqa: E402
-                   middle, placed, FOLDER, PROGRAM)
+                   middle, placed, FOLDER, PROGRAM, cstring)
 from deskrsc import DESKMENU                  # noqa: E402
 from calcrsc import CQUIT                     # noqa: E402
 from m7_form import K, F, M, B                # noqa: E402
@@ -237,6 +240,46 @@ def main():
               f"...its work area the size it was, in the new look "
               f"({size0} -> {p['work'][2:]})")
 
+        # ---- 2a. General's sub-menu delay, a Popup (phase 138) ------------
+        # a click on the button brings the menu up over it; a click on
+        # "Instant", its first item, picks it -- the slow click on the
+        # button alone must not (src/app/cpx.h, Popup)
+        t.dclick(middle(p["slots"][0]))           # General again
+        b.frames(60)
+        wx, wy = t.panel()["work"][:2]
+        ms0 = b.peek16(syms["mn_display"])       # a LONG; 400 at most
+
+        def delay_label():
+            # the button's text, out of General's own tree, which the
+            # panel's Xform_do is running (Tour.panel's form)
+            o = obj(b, t.panel()["form"], gr.GNMNBTN)
+            return cstring(b, o["spec"] & 0xFFFFFF, 12)
+        lab0 = delay_label()
+        btn = (wx + (gr.GROUP_X + gr.MN_W // 2) * CELL, wy + 7 * CELL + CELL // 2)
+        # held well past the menu coming up, then let go without moving:
+        # a plain CLICK lets go before the menu samples the button, and
+        # proved nothing (it passed with the rule taken out)
+        t.go(btn)
+        t.run([B(1), F(60), B(0), F(30)])
+        t.settle()
+        ms1 = b.peek16(syms["mn_display"])
+        shot("2a-popup")
+        t.click((wx + (gr.GROUP_X + 2) * CELL, wy + 7 * CELL - 1 + 2 + 4))
+        b.frames(30)
+        t.settle()
+        ms2 = b.peek16(syms["mn_display"])
+        lab2 = delay_label()
+        check((lab0, lab2) == ("Normal", "Instant"),
+              f"its button names the delay: {lab0!r}, then {lab2!r}")
+        check((ms0, ms1, ms2) == (200, 200, 0),
+              f"General's sub-menu delay, a Popup: the button's slow click "
+              f"left it, a click on Instant set it ({ms0} -> {ms1} -> {ms2} ms)")
+        t.click((wx + 21 * CELL, wy + gr.BTN_Y * CELL + CELL // 2))  # Cancel
+        b.frames(60)
+        t.settle()
+        check(b.peek16(syms["mn_display"]) == 200,
+              f"...and Cancel put it back ({b.peek16(syms['mn_display'])} ms)")
+
         # ---- 3. the desktop beside it -------------------------------------
         calls = b.peek16(syms["app_calls"])
         t.dclick(D1_ICON)
@@ -297,7 +340,7 @@ def main():
         t.run([K("RETURN", RETURN), F(80)])       # ...and it closes
         t.settle()
         q = t.panel()
-        check(q["wh"] > 0 and q["opens"] == 2,
+        check(q["wh"] > 0 and q["opens"] == 3,       # General twice, TEST
               f"...and the list came back ({q['opens']} opened, window "
               f"{q['wh']})")
 

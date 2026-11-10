@@ -164,19 +164,43 @@ static void wait_up(void)
     evnt_button(1, 1, 0, &d, &d, &d, &d);
 }
 
-/* The channel's number and its bar, from lvl[sel]. */
-static void show_channel(WORD c)
+/* The channel's number, from lvl[sel]. */
+static void show_value(WORD c)
 {
     WORD b = (WORD)(CLCH0 + c * CH_STEP), l = lvl[sel][c];
     char FAR *s = (char FAR *)(uint32_t)tree[b + CH_VALUE].ob_spec.index;
 
     s[0] = (char)(l >= 10 ? '1' : ' ');
     s[1] = (char)('0' + l % 10);
-    tree[b + CH_BAR].ob_width = (WORD)(l * wchar);
-    if (l)
-        tree[b + CH_BAR].ob_flags &= (UWORD)~HIDETREE;
-    else
-        tree[b + CH_BAR].ob_flags |= HIDETREE;
+}
+
+/* ...and its slider's thumb, sized and placed by the panel (phase 138:
+ * Sl_size, Sl_x) -- sixteen levels, one of them showing. */
+static void show_channel(WORD c)
+{
+    WORD b = (WORD)(CLCH0 + c * CH_STEP);
+
+    show_value(c);
+    cpx_sl_size(cl_xcpb, tree, (WORD)(b + CH_TRACK), (WORD)(b + CH_THUMB),
+                N_LEVELS, 1, SL_HORIZONTAL, wchar);
+    cpx_sl_xy(cl_xcpb, tree, (WORD)(b + CH_TRACK), (WORD)(b + CH_THUMB),
+              lvl[sel][c], 0, N_LEVELS - 1, SL_HORIZONTAL,
+              (void (*)(uint32_t))0);
+}
+
+/* WHILE A SLIDER MOVES: the panel calls this after every step, with the
+ * channel's level already written into lvl (Sl_arrow, Sl_dragx's sl_var)
+ * -- so the pen changes as the thumb does, which is the reason for a
+ * slider at all.  A vtable entry in all but name: SAVEDS, one uint32_t
+ * (src/app/cpx.h). */
+static WORD cl_ch;                      /* the channel moving */
+
+static SAVEDS void cl_slid(uint32_t xcpb)
+{
+    (void)xcpb;
+    set_pen(sel);
+    show_value(cl_ch);
+    redraw((WORD)(CLCH0 + cl_ch * CH_STEP + CH_VALUE));
 }
 
 static void show_all(void)
@@ -195,7 +219,7 @@ static void draw_channels(void)
     for (c = 0; c < N_CHANNELS; c++) {
         b = (WORD)(CLCH0 + c * CH_STEP);
         redraw((WORD)(b + CH_VALUE));
-        redraw((WORD)(b + CH_FRAME));
+        redraw((WORD)(b + CH_TRACK));
     }
 }
 
@@ -302,19 +326,43 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
             draw_all();
             continue;
         }
+        /* THE SLIDERS (phase 138): the panel moves the thumb and writes
+         * the level, and calls cl_slid after every step -- stepped by a
+         * button either side or by a press on the track, which repeat
+         * while the button is held, or dragged */
         for (c = 0; c < N_CHANNELS; c++) {
+            WORD track, thumb, inc = 0;
+
             b = (WORD)(CLCH0 + c * CH_STEP);
-            if (ob == b + CH_MINUS || ob == b + CH_PLUS) {
-                WORD l = lvl[sel][c];
-                wait_up();
-                l = (WORD)(ob == b + CH_PLUS ? l + 1 : l - 1);
-                if (l < 0 || l > 15)
-                    break;
-                lvl[sel][c] = l;
-                set_pen(sel);
-                show_channel(c);
-                redraw((WORD)(b + CH_VALUE));
-                redraw((WORD)(b + CH_FRAME));
+            track = (WORD)(b + CH_TRACK);
+            thumb = (WORD)(b + CH_THUMB);
+            cl_ch = c;
+            if (ob == thumb) {
+                cpx_sl_drag(cl_xcpb, tree, track, thumb, 0, N_LEVELS - 1,
+                            &lvl[sel][c], SL_HORIZONTAL, cl_slid);
+                break;
+            }
+            if (ob == b + CH_MINUS)
+                inc = -1;
+            else if (ob == b + CH_PLUS)
+                inc = 1;
+            else if (ob == track) {
+                WORD mx, my, mb, ks, tx, ty;
+
+                graf_mkstate(&mx, &my, &mb, &ks);
+                objc_offset(tree, thumb, &tx, &ty);
+                inc = 1;
+                if (mx < tx)
+                    inc = -1;
+            }
+            if (inc) {
+                WORD obj = ob;
+
+                if (ob == track)
+                    obj = -1;           /* the track is not drawn pressed */
+                cpx_sl_arrow(cl_xcpb, tree, track, thumb, obj, inc, 0,
+                             N_LEVELS - 1, &lvl[sel][c], SL_HORIZONTAL,
+                             cl_slid);
                 break;
             }
         }

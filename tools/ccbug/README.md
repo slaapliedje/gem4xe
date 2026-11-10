@@ -529,6 +529,42 @@ holds seven wrong shapes found and five right ones not.  The product had
 one, the ctrl.c call, rewritten.  `bugs.c`'s `b9m_bug` is the reduced
 case.
 
+**AN INLINED FUNCTION'S RETURNS ARE A JOIN TOO (phase 138).**  The
+control panel's `Xform_do` (`src/apps/cpanel.c`) hung the machine the
+moment Color opened in it:
+
+    static WORD cp_firstedit(OBJECT *t)      /* return i; ... return 0; */
+    ...
+    next = pb->xf_edit;
+    if (!next)
+        next = cp_firstedit(t);
+    ... form_button(t, next, nc, &next);
+
+-O2 inlined `cp_firstedit`; both its returns stored to `1,s`, and the
+join copied `next` from `19,s`, which nothing had written (`lda 19,s;
+sta 37,s`).  The cursor went on object 32443 of a 41-object form, and
+the AES's `ob_get_par` walked off the tree for ever.  It had worked in
+phase 137 only because that slot held 0.  The out-of-line call is
+right -- the answer comes back in A -- so it is the inlining that makes
+a join of it, and the source cannot say whether a call will be inlined.
+`qscan` therefore counts a call as a join when the function is defined
+in the same translation unit and has two returns with values, or a
+return whose value has a join in it (two more self-test cases).  The
+fix is the one the table already gives, made stronger: `next` no longer
+has its address taken -- `form_keybd` and `form_button` answer into
+variables of their own.  `src/aes/objc.c`'s two `xor_color` calls, not
+inlined today, go through a local.
+
+**THE SCAN WAS BLIND ON THE APPLICATIONS until then.**  It ran clang
+without `-I src/app`, so every application's `gem.h` was missing, every
+function in it an invalid declaration with no body, and it reported "0
+not parsed, 0 shapes" over `src/apps`.  It now passes every directory
+the Makefile does, `-m32` so the headers' layout checks hold, fakes for
+Calypsi's `stubs.h` and the host's `timeval` and `fpos_t`, each device
+file's own `-D`s -- and any clang error but the far model's two counts
+as "not parsed", which fails it.  Its first real run found the B9 above
+and a B27 in `src/apps/edit.c`'s window title.
+
 ## B10 — parameters clamped in place are read from an unwritten slot
 
     static void snap_icon(WORD gx, WORD gy, WORD *px, WORD *py)

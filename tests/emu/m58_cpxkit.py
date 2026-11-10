@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The CPX toolkit's events (phase 137, docs/cpanel-plan.md step 3).
+"""The CPX toolkit (phases 137 and 138, docs/cpanel-plan.md step 3).
 
 The shots disk carries the gate's module twice: TEST.CPX, an event CPX,
 and FORM.CPX, the same module under a header whose buffer starts 'F', a
@@ -17,7 +17,11 @@ them there (K_* below, the module's).
      it.
   4. The window's closer: cpx_close, with keep 1 -- and the panel shut.
   5. FORM.CPX: Help is a key with no character, so Xform_do answers -1
-     with CT_KEY, and the form goes on; its Done button ends it.
+     with CT_KEY, and the form goes on.  Its Popup of seven items (phase
+     138): held on its down arrow until it scrolls no further, its last
+     item shown is picked -- the seventh.  Its list slider: the thumb
+     dragged to the bottom is the last first row, 7, with foo called; the
+     up arrow, once, is 6.  Its Done button ends it.
   6. FORM.CPX again, ended by the window's closer: Xform_do's -1 with
      WM_CLOSED.
 """
@@ -33,7 +37,7 @@ from a8test.launcher import launch            # noqa: E402
 import symfile                                # noqa: E402
 from shots import Tour, boot, poke16, PTR_NONE, SYMS, DISK, obj, middle   # noqa: E402
 from deskrsc import DESKMENU                  # noqa: E402
-from m7_form import K, F                      # noqa: E402
+from m7_form import K, F, M, B                # noqa: E402
 
 OUT = os.path.join(ROOT, "build", "shots", "m58")
 SHEL_C = os.path.join(ROOT, "src", "aes", "shel.c")
@@ -43,9 +47,13 @@ BUF = 142                       # the header's settings bytes (cpx.h's map)
 
 # src/m35_cpx.c's record, and its box and button
 (K_MODE, K_INITX, K_HOOK, K_TAKEN, K_KEY, K_M1, K_TIMER, K_CLOSE, K_KEEP,
- K_RECTS, K_COOKIE, K_CTKEY, K_FORMX, K_MFSAVE, K_CALL) = range(15)
+ K_RECTS, K_COOKIE, K_CTKEY, K_FORMX, K_MFSAVE, K_CALL,
+ K_POPUP, K_SLVAL, K_FOO) = range(18)
 BOX = (24, 96, 27 * 8, 24)      # BOX_X, BOX_Y, the message's cells, BOX_H
 DONE = (96, 120, 64, 12)        # DONE_X, DONE_Y, DONE_W, DONE_H
+POP = (24, 20, 80, 12)          # POP_X, POP_Y, POP_W, POP_H
+SLX, SLY, SLW, SLAH, SLTH = 200, 20, 16, 12, 64   # the slider's (SL_*)
+PU_ROW = 8 + 4                  # a Popup slot: the cell and 4 (cpanel.c)
 
 problems = []
 
@@ -82,7 +90,7 @@ def main():
 
         def record(slot):
             at = far + CPX_MAX + slot * CPXE_SIZE + CPXE_HDR + BUF
-            return list(b.memdump(at, 16))
+            return list(b.memdump(at, 18))
 
         def frame(wh):
             o = obj(b, b.peek24(syms["gl_wtree"]), wh)
@@ -155,6 +163,41 @@ def main():
         check(r[K_CTKEY] == 1, f"Help, a key with no character: Xform_do "
                                f"answered CT_KEY ({r[K_CTKEY]})")
         check(r[K_FORMX] == 0, "...and the form went on")
+
+        # the Popup: past five items, so an up arrow, three items, a down
+        # arrow, at the button's corner less a pixel
+        t.click((wx + POP[0] + POP[2] // 2, wy + POP[1] + POP[3] // 2))
+        b.frames(20)
+        bx, by = wx + POP[0] - 1, wy + POP[1] - 1
+        slot = lambda i: (bx + 40, by + (i - 1) * PU_ROW + 2 + 4)
+        t.go(slot(5))                           # the down arrow
+        t.run([B(1), F(120), B(0), F(10)])      # held: to the end
+        t.go(slot(4))                           # the last item shown
+        b.frames(10)
+        t.run([B(1), F(6), B(0), F(30)])
+        t.settle()
+        r = record(FORM_SLOT)
+        check(r[K_POPUP] == 7, f"the Popup scrolled to its end and its last "
+                               f"item was picked: item {r[K_POPUP]} (7 wanted)")
+
+        # the list slider: its thumb at the top (row 0), dragged below the
+        # track's foot, is the last first row; the up arrow once is 6
+        tx = wx + SLX + SLW // 2
+        top = wy + SLY + SLAH + 4
+        t.go((tx, top))
+        t.run([B(1), F(24)] + [M(tx, top + 14 * k) for k in range(1, 7)]
+              + [F(10), B(0), F(20)])
+        t.settle()
+        r = record(FORM_SLOT)
+        check(r[K_SLVAL] == 7 and r[K_FOO] >= 1,
+              f"the thumb dragged to the foot: row {r[K_SLVAL]} (7 wanted), "
+              f"foo called {r[K_FOO]} time(s)")
+        t.click((tx, wy + SLY + SLAH // 2))     # the up arrow
+        b.frames(20)
+        t.settle()
+        r = record(FORM_SLOT)
+        check(r[K_SLVAL] == 6, f"the up arrow, once: row {r[K_SLVAL]} "
+                               f"(6 wanted)")
         t.click((wx + DONE[0] + DONE[2] // 2, wy + DONE[1] + DONE[3] // 2))
         b.frames(60)
         t.settle()

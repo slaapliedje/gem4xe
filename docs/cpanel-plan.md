@@ -1,7 +1,8 @@
 # A better control panel: XControl's shape, on gem4xe
 
-Status: steps 1 and 2 **built**: phase 133, then 134 (input), 135 (the
-window) and 136 (General and Color in it, through `Xform_do`).  Decisions taken 2026-11-08: one
+Status: steps 1 to 3 **built**: phase 133, then 134 (input), 135 (the
+window), 136 (General and Color in it, through `Xform_do`), 137 (the
+toolkit's events) and 138 (its widgets).  Decisions taken 2026-11-08: one
 window that the open CPX fills (XControl's shape, not COPS's window per
 CPX), and the 512-byte header moves in front of the module, as on the ST.
 
@@ -91,8 +92,9 @@ Each says how it is tested; a check is believed only once it has failed.
    pictures of the panel and of General and Color inside it, on ANTIC
    and on the VBXE.
 
-3. **The toolkit** -- the events BUILT, phase 137
-   ([phase137.md](phase137.md)); the widgets next.  The rest of XControl's XCPB, each a one-block
+3. **The toolkit** -- BUILT: the events in phase 137
+   ([phase137.md](phase137.md)), the widgets in phase 138
+   ([phase138.md](phase138.md)).  The rest of XControl's XCPB, each a one-block
    callback in cpx.h's ABI: `Popup`, `Sl_size`, `Sl_x`, `Sl_y`,
    `Sl_arrow`, `Sl_dragx`, `Sl_dragy`, `GetFirstRect`/`GetNextRect`,
    `Set_Evnt_Mask`, `MFsave`, `getcookie`, `rsh_obfix`, and the panel's

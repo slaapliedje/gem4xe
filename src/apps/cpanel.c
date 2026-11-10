@@ -53,6 +53,7 @@ WORD  cp_top;                   /* the row in the first slot */
 WORD  cp_sel = -1;              /* the selected row, -1 for none */
 WORD  cp_opens;                 /* modules opened from the window */
 WORD  cp_slotr[N_VIS][4];       /* each slot on the screen: x, y, w, h */
+uint32_t cp_form;               /* the form Xform_do last ran: a module's */
 
 #define CP_KIND     (NAME | CLOSER | MOVER)
 #define CP_COLS     32          /* XControl's 256 pixels of 8 */
@@ -585,16 +586,21 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
     XCPB FAR *pb = (XCPB FAR *)xcpb;
     OBJECT *t = (OBJECT *)pb->xf_tree;
     WORD edit = 0, next, idx = 0, cont = 1, i;
-    WORD msg[8], mx, my, mb, ks, kr, nc;
+    WORD msg[8], mx, my, mb, ks, kr, nc, nk, nb;
 
-    /* NOT `next = edit ? edit : first` -- next is handed to form_keybd
-     * and form_button by address, and a ?: joined into an address-taken
-     * variable is wrong at every -O (B9, tools/ccbug). */
+    /* NEXT'S ADDRESS IS NEVER TAKEN: form_keybd and form_button answer
+     * into nk and nb.  Any join given to a variable whose address is
+     * taken is wrong at every -O (B9, tools/ccbug), and an inlined
+     * function's two returns are a join -- cp_firstedit, inlined here,
+     * left its answer in one slot and `next` was copied from another
+     * nothing had written: the cursor went on object 32443 of 41 and
+     * the AES walked off the tree for ever (phase 138). */
     next = pb->xf_edit;
     if (!next)
         next = cp_firstedit(t);
     for (i = 0; i < 8; i++)
         pb->xf_msg[i] = 0;
+    cp_form = pb->xf_tree;
     while (cont) {
         WORD ev;
 
@@ -666,7 +672,8 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
         }
         if (ev & MU_KEYBD) {
             wind_update(BEG_UPDATE);
-            cont = form_keybd(t, edit, next, kr, &next, &kr);
+            cont = form_keybd(t, edit, next, kr, &nk, &kr);
+            next = nk;
             if (kr && edit)
                 objc_edit(t, edit, kr, &idx, ED_CHAR);
             wind_update(END_UPDATE);
@@ -677,7 +684,8 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
                 next = 0;
             else {
                 wind_update(BEG_UPDATE);
-                cont = form_button(t, next, nc, &next);
+                cont = form_button(t, next, nc, &nb);
+                next = nb;
                 wind_update(END_UPDATE);
             }
         }
@@ -781,6 +789,450 @@ static SAVEDS void cp_mfsave(uint32_t xcpb)
         graf_mouse(M_RESTORE, (const WORD *)0);
 }
 
+/* ---- the widgets (phase 138) ---------------------------------------------
+ *
+ * XControl's sliders and pop-up, behaving as its code does (src/app/cpx.h
+ * says where they part from it).  They draw straight onto the screen,
+ * clipped to what changed, inside the screen lock: they run while a
+ * person is pressing inside the window, which the AES gives this process
+ * only while the window is on top (phase 134), so nothing covers it.
+ */
+
+/* An object's rectangle on the screen, and a margin round it. */
+static void cp_obrect(OBJECT *t, WORD ob, WORD m, GRECT *r)
+{
+    objc_offset(t, ob, &r->g_x, &r->g_y);
+    r->g_x = (WORD)(r->g_x - m);
+    r->g_y = (WORD)(r->g_y - m);
+    r->g_w = (WORD)(t[ob].ob_width + 2 * m);
+    r->g_h = (WORD)(t[ob].ob_height + 2 * m);
+}
+
+static void cp_drawclip(OBJECT *t, WORD ob, const GRECT *r)
+{
+    wind_update(BEG_UPDATE);
+    objc_draw(t, ob, MAX_DEPTH, r->g_x, r->g_y, r->g_w, r->g_h);
+    wind_update(END_UPDATE);
+}
+
+static SAVEDS void cp_sl_size(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    OBJECT *t = (OBJECT *)pb->sl_tree;
+    LONG ratio = 1000L, len;
+    WORD base = pb->sl_base, sl = pb->sl_slider;
+
+    if (pb->sl_items > 0 && pb->sl_visible > 0) {
+        ratio = (LONG)pb->sl_visible * 1000L / pb->sl_items;
+        if (ratio > 1000L)
+            ratio = 1000L;
+    }
+    if (pb->sl_dir == SL_HORIZONTAL) {
+        len = ratio * t[base].ob_width / 1000L;
+        if (len < pb->sl_minsize)
+            len = pb->sl_minsize;
+        t[sl].ob_width = (WORD)len;
+    } else {
+        len = ratio * t[base].ob_height / 1000L;
+        if (len < pb->sl_minsize)
+            len = pb->sl_minsize;
+        t[sl].ob_height = (WORD)len;
+    }
+}
+
+/* The thumb for a value: Sl_x's minimum at the left, Sl_y's at the
+ * bottom (XControl's).  Then the module's foo, every time. */
+static void cp_slplace(XCPB FAR *pb, WORD dir, WORD value)
+{
+    OBJECT *t = (OBJECT *)pb->sl_tree;
+    WORD base = pb->sl_base, sl = pb->sl_slider;
+    WORD min = pb->sl_min, max = pb->sl_max;
+    LONG room, at = 0;
+
+    if (dir == SL_HORIZONTAL) {
+        room = (LONG)t[base].ob_width - t[sl].ob_width;
+        if (value == max)
+            at = room;
+        else if (max != min)
+            at = (LONG)(value - min) * room / (LONG)(max - min);
+        t[sl].ob_x = (WORD)at;
+    } else {
+        room = (LONG)t[base].ob_height - t[sl].ob_height;
+        if (value == min)
+            at = room;
+        else if (max != min)
+            at = (LONG)(value - max) * room / (LONG)(min - max);
+        t[sl].ob_y = (WORD)at;
+    }
+    if (pb->sl_foo)
+        pb->sl_foo((uint32_t)pb);
+}
+
+static SAVEDS void cp_sl_x(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+
+    cp_slplace(pb, SL_HORIZONTAL, pb->sl_value);
+}
+
+static SAVEDS void cp_sl_y(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+
+    cp_slplace(pb, SL_VERTICAL, pb->sl_value);
+}
+
+/* The track drawn again where the thumb was and is, from the track up --
+ * the old thumb rubbed out by its background. */
+static void cp_slredraw(XCPB FAR *pb, const GRECT *old)
+{
+    OBJECT *t = (OBJECT *)pb->sl_tree;
+    GRECT now, both;
+
+    cp_obrect(t, pb->sl_slider, 3, &now);
+    both = *old;
+    rc_union(&now, &both);
+    cp_drawclip(t, pb->sl_base, &both);
+}
+
+/* *sl_var stepped toward sl_inc, inside sl_min..sl_max either way round */
+static WORD cp_slclamp(XCPB FAR *pb, WORD v)
+{
+    WORD lo = pb->sl_min, hi = pb->sl_max;
+
+    if (lo > hi) {
+        lo = pb->sl_max;
+        hi = pb->sl_min;
+    }
+    if (v < lo)
+        v = lo;
+    if (v > hi)
+        v = hi;
+    return v;
+}
+
+static WORD cp_button_down(void)
+{
+    WORD x, y, b, k;
+
+    graf_mkstate(&x, &y, &b, &k);
+    return (WORD)(b & 1);
+}
+
+static SAVEDS void cp_sl_arrow(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    OBJECT *t = (OBJECT *)pb->sl_tree;
+    WORD FAR *var = (WORD FAR *)pb->sl_var;
+    WORD obj = pb->sl_obj, first = 1;
+    GRECT old, ob;
+
+    if (obj > 0) {
+        t[obj].ob_state = SELECTED;
+        cp_obrect(t, obj, 2, &ob);
+        cp_drawclip(t, ROOT, &ob);
+    }
+    do {
+        WORD v = cp_slclamp(pb, (WORD)(*var + pb->sl_inc));
+
+        if (v != *var) {
+            cp_obrect(t, pb->sl_slider, 3, &old);
+            *var = v;
+            cp_slplace(pb, pb->sl_dir, v);
+            cp_slredraw(pb, &old);
+        }
+        /* a quarter of a second before the first repeat, 60 ms after:
+         * XControl repeats with no delay, and one click here was eleven
+         * steps */
+        evnt_timer(first ? 250 : 60, 0);
+        first = 0;
+    } while (cp_button_down());
+    if (obj > 0) {
+        t[obj].ob_state = NORMAL;
+        cp_drawclip(t, ROOT, &ob);
+    }
+}
+
+/* The thumb follows the pointer while the button is down; the value from
+ * where its middle is, rounded to the nearest step. */
+static void cp_sldrag(XCPB FAR *pb, WORD dir)
+{
+    OBJECT *t = (OBJECT *)pb->sl_tree;
+    WORD FAR *var = (WORD FAR *)pb->sl_var;
+    WORD base = pb->sl_base, sl = pb->sl_slider;
+    WORD min = pb->sl_min, max = pb->sl_max;
+    WORD mx, my, mb, ks, bx, by, sx, sy, grab, last = (WORD)(min - 1);
+    GRECT old;
+
+    graf_mkstate(&mx, &my, &mb, &ks);
+    objc_offset(t, base, &bx, &by);
+    objc_offset(t, sl, &sx, &sy);
+    if (dir == SL_HORIZONTAL)
+        grab = (WORD)(mx - sx);
+    else
+        grab = (WORD)(my - sy);
+    while (mb & 1) {
+        LONG room, pos, v;
+
+        if (dir == SL_HORIZONTAL) {
+            room = (LONG)t[base].ob_width - t[sl].ob_width;
+            pos = (LONG)(mx - grab) - bx;
+        } else {
+            room = (LONG)t[base].ob_height - t[sl].ob_height;
+            pos = (LONG)(my - grab) - by;
+        }
+        if (pos < 0)
+            pos = 0;
+        if (pos > room)
+            pos = room;
+        if (room <= 0)
+            v = min;
+        else if (dir == SL_HORIZONTAL)
+            v = min + ((LONG)(max - min) * pos * 2 + room) / (room * 2);
+        else
+            v = max + ((LONG)(min - max) * pos * 2 + room) / (room * 2);
+        if ((WORD)v != last) {
+            last = (WORD)v;
+            cp_obrect(t, sl, 3, &old);
+            *var = (WORD)v;
+            cp_slplace(pb, dir, (WORD)v);
+            cp_slredraw(pb, &old);
+        }
+        graf_mkstate(&mx, &my, &mb, &ks);
+    }
+}
+
+static SAVEDS void cp_sl_dragx(uint32_t xcpb)
+{
+    cp_sldrag((XCPB FAR *)xcpb, SL_HORIZONTAL);
+}
+
+static SAVEDS void cp_sl_dragy(uint32_t xcpb)
+{
+    cp_sldrag((XCPB FAR *)xcpb, SL_VERTICAL);
+}
+
+/* Popup: XControl's shape -- five slots, and past five items an up arrow,
+ * three items and a down arrow -- in a tree of the panel's own, drawn
+ * over whatever is there inside the screen and mouse locks, and put away
+ * with FMD_FINISH, which has the windows under it redraw themselves, as
+ * a dialog is put away. */
+#define PU_SLOTS   5
+static OBJECT cp_pu[1 + PU_SLOTS];
+static const char cp_upa[] = "\001", cp_dna[] = "\002";
+
+/* What slot i shows, and its state, from the offset and the slot under
+ * the pointer; then the whole menu drawn. */
+static void cp_pudraw(char **items, WORD n, WORD dflt, WORD k, WORD off,
+                      WORD hot, const GRECT *box)
+{
+    WORD i, scroll = n > PU_SLOTS;
+
+    for (i = 1; i <= k; i++) {
+        WORD item = (WORD)(i - 1);
+        UWORD st = NORMAL;
+
+        if (scroll)
+            item = (WORD)(off + i - 2);
+        if (scroll && i == 1)
+            cp_pu[i].ob_spec.index = (int32_t)(uint32_t)(const char FAR *)cp_upa;
+        else if (scroll && i == k)
+            cp_pu[i].ob_spec.index = (int32_t)(uint32_t)(const char FAR *)cp_dna;
+        else {
+            cp_pu[i].ob_spec.index = (int32_t)(uint32_t)items[item];
+            if (item == dflt)
+                st = CHECKED;
+        }
+        if (i == hot)
+            st |= SELECTED;
+        cp_pu[i].ob_state = st;
+    }
+    objc_draw(cp_pu, ROOT, MAX_DEPTH, box->g_x, box->g_y, box->g_w, box->g_h);
+}
+
+static SAVEDS void cp_popup(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+    char **items = (char **)pb->pu_items;   /* far, as every pointer here */
+    WORD n = pb->pu_n, dflt = pb->pu_default, scroll, off = 0;
+    WORD w = 0, sh = (WORD)(hchar + 4), x, y, h, i, k, hot = -1;
+    WORD mx, my, mb, ks, kr, nc, held, down, pick = -1, msg[8];
+    WORD start = -2, moved = 0;
+    GRECT box;
+
+    pb->pu_ret = -1;
+    if (n <= 0 || !items)
+        return;
+    scroll = n > PU_SLOTS;
+    if (scroll && dflt > 0) {
+        off = (WORD)(dflt - 1);
+        if (off > n - 3)
+            off = (WORD)(n - 3);
+    }
+    for (i = 0; i < n; i++) {
+        WORD len = 0;
+        const char FAR *s = items[i];
+
+        while (s[len])
+            len++;
+        if ((WORD)((len + 1) * wchar) > w)
+            w = (WORD)((len + 1) * wchar);
+    }
+    if (w < pb->pu_button.g_w + 3)
+        w = (WORD)(pb->pu_button.g_w + 3);
+    k = n;
+    if (scroll)
+        k = PU_SLOTS;
+    h = (WORD)(k * sh);
+    /* at the button's corner; up or left so as to stay in the world */
+    x = pb->pu_button.g_x;
+    y = pb->pu_button.g_y;
+    if (y + h >= pb->pu_world.g_y + pb->pu_world.g_h)
+        y = (WORD)(pb->pu_button.g_y + pb->pu_button.g_h + 3 - h);
+    if (x + w >= pb->pu_world.g_x + pb->pu_world.g_w)
+        x = (WORD)(pb->pu_button.g_x + pb->pu_button.g_w + 3 - w);
+    x = (WORD)(x - 1);
+    y = (WORD)(y - 1);
+
+    cp_pu[0].ob_next = NIL;
+    cp_pu[0].ob_head = 1;
+    cp_pu[0].ob_tail = k;
+    cp_pu[0].ob_type = G_BOX;
+    cp_pu[0].ob_flags = NONE;
+    cp_pu[0].ob_state = SHADOWED;
+    cp_pu[0].ob_spec.index = 0x00FF1100L;      /* a one-pixel frame */
+    cp_pu[0].ob_x = x;
+    cp_pu[0].ob_y = y;
+    cp_pu[0].ob_width = w;
+    cp_pu[0].ob_height = h;
+    for (i = 1; i <= k; i++) {
+        cp_pu[i].ob_next = 0;
+        if (i < k)
+            cp_pu[i].ob_next = (WORD)(i + 1);
+        cp_pu[i].ob_head = NIL;
+        cp_pu[i].ob_tail = NIL;
+        cp_pu[i].ob_type = G_STRING;
+        cp_pu[i].ob_flags = NONE;
+        if (i == k)
+            cp_pu[i].ob_flags = LASTOB;
+        cp_pu[i].ob_x = 0;
+        cp_pu[i].ob_y = (WORD)((i - 1) * sh + 2);
+        cp_pu[i].ob_width = w;
+        cp_pu[i].ob_height = hchar;
+    }
+
+    box.g_x = (WORD)(x - 1);
+    box.g_y = (WORD)(y - 1);
+    box.g_w = (WORD)(w + 2 + 2);                /* the frame and the shadow */
+    box.g_h = (WORD)(h + 2 + 2);
+    wind_update(BEG_UPDATE);
+    wind_update(BEG_MCTRL);
+    graf_mkstate(&mx, &my, &mb, &ks);
+    held = (WORD)(mb & 1);
+    down = held;
+    cp_pudraw(items, n, dflt, k, off, hot, &box);
+
+    /* EVENTS, NOT POLLING: a press shorter than one turn of a polling loop
+     * was never seen.  The slot under the pointer is worked out from where
+     * it is (the slots tile the menu, sh apart); then the wait is for the
+     * button to change, the pointer to leave that slot (or, off the menu,
+     * to come onto it), or -- an arrow held -- 125 ms, one item a turn.
+     * Held when the menu came up, the choice is made on the release;
+     * otherwise on the next press.  Off the menu, either is Cancel.
+     *
+     * NOT XCONTROL'S: a release on the slot the menu came up under, the
+     * pointer never off it, picks nothing and the menu stays for a press.
+     * The menu opens over its button, so XControl took a slow click on
+     * the button for its first item. */
+    for (;;) {
+        WORD now = -1, ev, arrow, want, mflag;
+        GRECT r;
+
+        if (mx >= x && mx < x + w && my >= y && my < y + h)
+            now = (WORD)((my - y) / sh + 1);
+        if (start == -2)
+            start = now;
+        if (now != start)
+            moved = 1;
+        if (now != hot) {
+            hot = now;
+            cp_pudraw(items, n, dflt, k, off, hot, &box);
+        }
+        arrow = 0;
+        if (scroll && (hot == 1 || hot == k))
+            arrow = 1;
+        if (arrow && down) {
+            if (hot == 1 && off > 0) {
+                off--;
+                cp_pudraw(items, n, dflt, k, off, hot, &box);
+            } else if (hot == k && off < n - 3) {
+                off++;
+                cp_pudraw(items, n, dflt, k, off, hot, &box);
+            }
+        }
+        r.g_x = x;
+        r.g_w = w;
+        if (hot > 0) {
+            r.g_y = (WORD)(y + (hot - 1) * sh);
+            r.g_h = sh;
+            mflag = 1;                  /* wait to leave the slot */
+        } else {
+            r.g_y = y;
+            r.g_h = h;
+            mflag = 0;                  /* ...or to come onto the menu */
+        }
+        want = 1;
+        if (down)
+            want = 0;
+        ev = evnt_multi((WORD)(MU_BUTTON | MU_M1
+                               | (arrow && down ? MU_TIMER : 0)),
+                        1, 1, want, mflag, r.g_x, r.g_y, r.g_w, r.g_h,
+                        0, 0, 0, 0, 0, msg, 125, 0,
+                        &mx, &my, &mb, &ks, &kr, &nc);
+        if (!(ev & MU_BUTTON))
+            continue;                   /* moved, or the arrow's repeat */
+        down = (WORD)(mb & 1);
+        if (mx >= x && mx < x + w && my >= y && my < y + h)
+            now = (WORD)((my - y) / sh + 1);
+        else
+            now = -1;
+        arrow = 0;
+        if (scroll && (now == 1 || now == k))
+            arrow = 1;
+        if (arrow) {
+            held = 0;                   /* an arrow picks nothing: go on,
+                                         * choosing with a press now */
+            continue;
+        }
+        if (down && held)
+            continue;
+        if (held && !moved) {
+            held = 0;                   /* the slow click: see above */
+            continue;
+        }
+        if (now > 0) {
+            pick = (WORD)(now - 1);
+            if (scroll)
+                pick = (WORD)(off + now - 2);
+        }
+        break;
+    }
+    /* the button up before anything else sees a click */
+    if (down)
+        evnt_button(1, 1, 0, &mx, &my, &mb, &ks);
+    wind_update(END_MCTRL);
+    wind_update(END_UPDATE);
+    form_dial(FMD_FINISH, 0, 0, 0, 0, box.g_x, box.g_y, box.g_w, box.g_h);
+    pb->pu_ret = pick;
+}
+
+static SAVEDS void cp_rsh_obfix(uint32_t xcpb)
+{
+    XCPB FAR *pb = (XCPB FAR *)xcpb;
+
+    rsrc_obfix((OBJECT *)pb->ob_tree, pb->ob_obj);
+}
+
 /* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
  * a module is handed its address and reads it there (src/app/cpx.h says
  * why every entry takes one uint32_t rather than arguments). */
@@ -801,6 +1253,14 @@ static void cp_xcpb_init(void)
     cp_xcpb.GetNextRect = cp_next_rect;
     cp_xcpb.getcookie = cp_getcookie;
     cp_xcpb.MFsave = cp_mfsave;
+    cp_xcpb.Popup = cp_popup;
+    cp_xcpb.Sl_size = cp_sl_size;
+    cp_xcpb.Sl_x = cp_sl_x;
+    cp_xcpb.Sl_y = cp_sl_y;
+    cp_xcpb.Sl_arrow = cp_sl_arrow;
+    cp_xcpb.Sl_dragx = cp_sl_dragx;
+    cp_xcpb.Sl_dragy = cp_sl_dragy;
+    cp_xcpb.rsh_obfix = cp_rsh_obfix;
 }
 
 /* BOOT-TIME INIT.  A module whose header says CPX_BOOTINIT -- or
