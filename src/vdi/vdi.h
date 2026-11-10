@@ -153,6 +153,7 @@ extern const UWORD FAR vdi_sin_tbl[VDI_SIN_SIZE];
 #define GDP_RBOX      8
 #define GDP_RFBOX     9
 #define GDP_JUSTIFIED 10
+#define GDP_BEZ       13    /* v_bez_on / v_bez_off: GDOS's */
 
 /* vsl_ends */
 #define LE_SQUARED 0

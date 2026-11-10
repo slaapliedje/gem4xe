@@ -32,7 +32,7 @@ from vdiref import (V_CLRWK, V_PLINE, VSL_TYPE, VSL_COLOR, VSF_INTERIOR,      # 
                     GDP_BAR, GDP_ARC, GDP_PIE, GDP_CIRCLE, GDP_ELLIPSE,
                     GDP_ELLARC, GDP_ELLPIE, GDP_RBOX, GDP_RFBOX,
                     GDP_JUSTIFIED, V_CONTOURFILL, VSL_ENDS)
-from vdiref import (VST_COLOR, VSWR_MODE, VRT_CPYFM, pack_mfdb,           # noqa: E402
+from vdiref import (VST_COLOR, VSWR_MODE, VRT_CPYFM, VR_TRNFM, pack_mfdb, # noqa: E402
                      VSC_FORM, V_SHOW_C, V_HIDE_C, V_LOCATOR,
                      VSIN_MODE, VQIN_MODE, VEX_TIMV, VSL_UDSTY, VQ_MOUSE,
                      VST_HEIGHT, VQT_ATTRIBUTES, V_ESCAPE, VSF_STYLE, VSF_UDPAT)
@@ -92,6 +92,37 @@ ICON_BITS, ICON_W, ICON_H, ICON_WDW = make_icon()
 MEM_AT, MEM_W, MEM_H = 576, 128, 20
 MEM_BYTES = MEM_W // 2 * MEM_H
 MEM_MFDB = MEM_AT + MEM_BYTES
+
+# vr_trnfm's two small forms after it (phase 143): 16 x 4 at four planes,
+# 32 bytes each -- one in the VDI's standard format, one in the device's
+# -- and four MFDBs: each buffer at four planes and at one.  The room is
+# what vdi_scratch has left; the runner's buffers fill $6800-$7F80.
+TRN_W, TRN_H = 16, 4
+TRN_STD = MEM_MFDB + 20
+TRN_DEV = TRN_STD + 32
+TRN_MFDBS = TRN_DEV + 32                # std, dev, std1, dev1: 20 bytes each
+TRN_END = TRN_MFDBS + 4 * 20
+
+
+def standard_bytes(px, wdwidth, h, planes=4):
+    """A form in the VDI's standard format, from its pixels: the planes
+    one after another, each h rows of wdwidth big-endian words, plane p
+    holding bit p of each pixel.  Written here from the definition, a
+    third time after the driver and tools/vdiref.py."""
+    psize = wdwidth * 2 * h
+    out = bytearray(psize * planes)
+    for y in range(h):
+        for x in range(wdwidth * 16):
+            for p in range(planes):
+                if (px[y][x] >> p) & 1:
+                    out[p * psize + y * wdwidth * 2 + (x >> 3)] |= 0x80 >> (x & 7)
+    return bytes(out)
+
+
+# Every pixel a different pen along a row, and every row shifted: all
+# sixteen values in every plane's both states.
+TRN_PIXELS = [[(x * 3 + y * 5 + 1) & 15 for x in range(TRN_W)]
+              for y in range(TRN_H)]
 
 # --- the cases ----------------------------------------------------------
 # Every case starts from a cleared screen so each is independent.
@@ -1063,6 +1094,68 @@ CASES = [
         (VSF_COLOR, (), (10,)), (VR_RECFL, (70, 50, 109, 89), ()),
         (VRO_CPYFM, (40, 40, 139, 99, 47, 43, 146, 102), (6,)),
         (VRO_CPYFM, (47, 43, 146, 102, 42, 41, 141, 100), (11,))]),
+
+    # --- phase 143: the rest of step 1 ---------------------------------
+    # vrt_cpyfm INTO A FORM, which until then went to the screen whatever
+    # the destination MFDB said: the icon in all four modes over a form
+    # holding two pens, at odd x, the last one past the form's top and
+    # right edges.  A clip rectangle is set and must not apply -- it is
+    # the screen's -- and the form is shown on the screen afterwards.
+    ("vrt_cpyfm into a memory form, every mode", [
+        (VSF_COLOR, (), (6,)), (VR_RECFL, (0, 0, 127, 19), ()),
+        (VSF_COLOR, (), (11,)), (VR_RECFL, (40, 0, 87, 19), ()),
+        (VRO_CPYFM, (0, 0, 127, 19, 0, 0, 127, 19), (3,), "to_mem"),
+        (VS_CLIP, (0, 0, 9, 9), (1,)),
+        (VRT_CPYFM, (0, 0, 31, 19, 1, 0, 32, 19), (1, 2, 9), "icon_to_mem"),
+        (VRT_CPYFM, (0, 0, 31, 19, 34, 0, 65, 19), (2, 4, 0), "icon_to_mem"),
+        (VRT_CPYFM, (0, 0, 31, 19, 67, 0, 98, 19), (3, 0, 0), "icon_to_mem"),
+        (VRT_CPYFM, (0, 0, 31, 19, 101, -3, 132, 16), (4, 0, 13),
+         "icon_to_mem"),
+        (VS_CLIP, (0, 0, 0, 0), (0,)),
+        (VRO_CPYFM, (0, 0, 127, 19, 201, 101, 328, 120), (3,), "from_mem")]),
+
+    # ...and refused into a form of another depth than the screen's,
+    # which written at four planes would be written past its end
+    ("vrt_cpyfm refuses a form of another depth", [
+        (VRT_CPYFM, (0, 0, 15, 3, 0, 0, 15, 3), (1, 2, 9), "icon_to_one")]),
+
+    # vr_trnfm, an empty function until then.  A form in the VDI's
+    # standard format, staged by the harness from its pixels, turned into
+    # the device's and put on the screen; the destination's fd_stand,
+    # staged 1, must come back 0.
+    ("vr_trnfm standard to the device's, and onto the screen", [
+        (VR_TRNFM, (), (), "trn_std_dev"),
+        (VRO_CPYFM, (0, 0, 15, 3, 101, 51, 116, 54), (3,), "from_dev")]),
+
+    # ...the device's to standard IN PLACE, through the driver's far
+    # buffer: the bytes come out as tools/vdiref.py writes the format and
+    # fd_stand becomes 1...
+    ("vr_trnfm in place to standard", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (0, 0, 63, 19), ()),
+        (VSF_COLOR, (), (12,)), (VR_RECFL, (17, 3, 100, 14), ()),
+        (VRO_CPYFM, (0, 0, 127, 19, 0, 0, 127, 19), (3,), "to_mem"),
+        (VR_TRNFM, (), (), "trn_mem")]),
+
+    # ...and there and back, the form as it was and on the screen...
+    ("vr_trnfm in place there and back", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (0, 0, 63, 19), ()),
+        (VSF_COLOR, (), (12,)), (VR_RECFL, (17, 3, 100, 14), ()),
+        (VRO_CPYFM, (0, 0, 127, 19, 0, 0, 127, 19), (3,), "to_mem"),
+        (VR_TRNFM, (), (), "trn_mem"),
+        (VR_TRNFM, (), (), "trn_mem"),
+        (VSF_COLOR, (), (0,)), (VR_RECFL, (0, 0, 127, 19), ()),
+        (VRO_CPYFM, (0, 0, 127, 19, 201, 101, 328, 120), (3,), "from_mem")]),
+
+    # ...and at one plane, where the formats are the same bytes: copied,
+    # and fd_stand turned over.
+    ("vr_trnfm at one plane", [
+        (VR_TRNFM, (), (), "trn_one")]),
+
+    # v_bez_on answers 0, "no curves", where it answered whatever intout
+    # held; v_bez_off, with no point, answers nothing.
+    ("v_bez_on answers 0", [
+        (V_GDP, (0, 0), (), None, vdiref.GDP_BEZ),
+        (V_GDP, (), (), None, vdiref.GDP_BEZ)]),
 ]
 
 
@@ -1133,7 +1226,7 @@ def main(argv):
     count_addr = syms["vdi_result_count"]
     scratch_room = min(a for a in syms.values() if a > scratch_addr) - scratch_addr
     _RESULTS_ADDR[0], _COUNT_ADDR[0] = results_addr, count_addr
-    assert MEM_MFDB + 20 <= scratch_room, "the forms must fit vdi_scratch"
+    assert TRN_END <= scratch_room, "the forms must fit vdi_scratch"
 
     emu = launch(tag="m3", memsize="1088K", extra_args=["--disk", DISK])
     b = emu.bridge
@@ -1189,9 +1282,28 @@ def main(argv):
             save = vdiref.VramForm.save_buffer(scratch_addr + 552, w=gw, h=gh)
             mem = vdiref.MemForm(scratch_addr + MEM_AT, MEM_W, MEM_H,
                                  MEM_W // 16, 4, scratch_addr + MEM_MFDB)
+            # vr_trnfm's (phase 143).  The destinations start with fd_stand
+            # the WRONG way round, so that setting it is seen; the 1-plane
+            # views share the buffers.
+            std_bytes = standard_bytes(TRN_PIXELS, TRN_W // 16, TRN_H)
+            std = vdiref.MemForm(scratch_addr + TRN_STD, TRN_W, TRN_H,
+                                 TRN_W // 16, 4, scratch_addr + TRN_MFDBS,
+                                 stand=1, init=std_bytes)
+            dev = vdiref.MemForm(scratch_addr + TRN_DEV, TRN_W, TRN_H,
+                                 TRN_W // 16, 4, scratch_addr + TRN_MFDBS + 20,
+                                 stand=1)
+            std1 = vdiref.MemForm(std.addr, TRN_W, TRN_H, TRN_W // 16, 1,
+                                  scratch_addr + TRN_MFDBS + 40, stand=1,
+                                  init=std_bytes)
+            dev1 = vdiref.MemForm(dev.addr, TRN_W, TRN_H, TRN_W // 16, 1,
+                                  scratch_addr + TRN_MFDBS + 60, stand=1)
             FORMS = {"icon": (ICON_BITS, ICON_WDW),
                      "to_save": (None, save), "from_save": (save, None),
-                     "to_mem": (None, mem), "from_mem": (mem, None)}
+                     "to_mem": (None, mem), "from_mem": (mem, None),
+                     "icon_to_mem": ((ICON_BITS, ICON_WDW), mem),
+                     "trn_std_dev": (std, dev), "from_dev": (dev, None),
+                     "trn_mem": (mem, mem), "trn_one": (std1, dev1),
+                     "icon_to_one": ((ICON_BITS, ICON_WDW), dev1)}
             run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       script_addr, scratch_addr, results_addr, count_addr,
                       script_room)
@@ -1237,6 +1349,19 @@ def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                  r[4] if len(r) > 4 else 0)
                 for r in full]
             ref = vdiref.VDI(devref.Vbxe(width=gw, height=gh))
+            # The program's own forms as the case starts -- their bytes and
+            # MFDBs, packed BEFORE the model runs, since vr_trnfm changes
+            # fd_stand -- in the model's memory and staged on the target.
+            mems = {f.mfdb_addr: f for v in FORMS.values()
+                    if isinstance(v, tuple) for f in v
+                    if isinstance(f, vdiref.MemForm)}
+            staged = []
+            for f in mems.values():
+                f.stand = f.stand0
+                data = f.init or bytes(f.nbytes)
+                ref.dev.cpu[f.addr:f.addr + len(data)] = data
+                staged.append((f.addr, data))
+                staged.append((f.mfdb_addr, f.pack()))
             ref.run(resolved)
 
             # Stage the forms' MFDBs where the driver will read them: the
@@ -1246,9 +1371,8 @@ def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       pack_mfdb(scratch_addr, ICON_W, ICON_H, ICON_WDW))
             b.memload(scratch_addr + 532, pack_mfdb(0, 0, 0, 0))
             b.memload(scratch_addr + 552, save.pack())
-            mem = FORMS["to_mem"][1]
-            b.memload(mem.addr, bytes(MEM_BYTES))
-            b.memload(mem.mfdb_addr, mem.pack())
+            for a, data in staged:
+                b.memload(a, data)
             poke_script(b, script_addr, resolved, scratch_addr + 512, script_room,
                         screen_mfdb=scratch_addr + 532)
             b.poke(STATUS + ST_DONE, 0)
@@ -1274,15 +1398,25 @@ def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                                f"expected {ref.results[i]}")
                         break
 
-            # A program's memory form: its bytes, which no screenshot shows.
-            if not err and any(len(r) > 3 and r[3] in ("to_mem", "from_mem")
-                               for r in script):
-                got = bytes(b.memdump(mem.addr, MEM_BYTES))
-                want = bytes(ref.dev.cpu[mem.addr:mem.addr + MEM_BYTES])
+            # A program's memory forms: their bytes, which no screenshot
+            # shows, and the fd_stand vr_trnfm leaves in each MFDB.
+            used = {f.mfdb_addr: f for r in script
+                    if len(r) > 3 and r[3] is not None
+                    for f in FORMS[r[3]] if isinstance(f, vdiref.MemForm)}
+            for f in used.values():
+                if err:
+                    break
+                got = bytes(b.memdump(f.addr, f.nbytes))
+                want = bytes(ref.dev.cpu[f.addr:f.addr + f.nbytes])
                 if got != want:
-                    k = next(i for i in range(MEM_BYTES) if got[i] != want[i])
-                    err = (f"memory form byte {k} (row {k // mem.stride}) is "
-                           f"${got[k]:02X}, expected ${want[k]:02X}")
+                    k = next(i for i in range(f.nbytes) if got[i] != want[i])
+                    err = (f"memory form at ${f.addr:04X}: byte {k} (row "
+                           f"{k // f.stride}) is ${got[k]:02X}, expected "
+                           f"${want[k]:02X}")
+                st = b.peek16(f.mfdb_addr + vdiref.MFDB_STAND)
+                if not err and st != f.stand:
+                    err = (f"memory form at ${f.addr:04X}: fd_stand {st}, "
+                           f"expected {f.stand}")
 
             shot = os.path.join(SHOTDIR, f"m3-{px}-{idx:02d}.png")
             b.screenshot(shot)

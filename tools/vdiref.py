@@ -73,6 +73,7 @@ MARKERS = (
 # The GDPs (v_gdp's contrl[5])
 GDP_BAR, GDP_ARC, GDP_PIE, GDP_CIRCLE, GDP_ELLIPSE = 1, 2, 3, 4, 5
 GDP_ELLARC, GDP_ELLPIE, GDP_RBOX, GDP_RFBOX, GDP_JUSTIFIED = 6, 7, 8, 9, 10
+GDP_BEZ = 13                            # v_bez_on / v_bez_off: GDOS's
 HALFPI, GDP_PI, TWOPI = 900, 1800, 3600
 VDI_SIN_ANGLE_MAX = 896
 MIN_ARC_CT, MAX_ARC_CT = 16, 48
@@ -502,8 +503,14 @@ class VDI:
         """Mirrors vdi_vrt_cpyfm(): a 1-plane source expanded into colours.
 
         `form` is (bits, wdwidth) -- the same bytes the harness poked into the
-        target's scratch area, MSB-first, rows fd_wdwidth WORDS apart.
+        target's scratch area, MSB-first, rows fd_wdwidth WORDS apart -- for
+        the screen, or ((bits, wdwidth), VramForm) for a destination form
+        (phase 143): bounded by the form and not by the clip rectangle,
+        which is the screen's, and refused at a depth not the device's.
         """
+        dst = None
+        if isinstance(form[1], VramForm):
+            form, dst = form
         bits, wdwidth = form
         mode = ints[0]
         fg, bg = ints[1] & 15, ints[2] & 15
@@ -513,6 +520,23 @@ class VDI:
         w, h = sx2 - sx1 + 1, sy2 - sy1 + 1
         if w <= 0 or h <= 0:
             return
+        plot, plot_xor = self._plot, self._plot_xor
+        if dst is not None:
+            if dst.planes != self.dev.planes():
+                return
+            c = self._clip_to(dx1, dy1, dx1 + w - 1, dy1 + h - 1, dst.w, dst.h)
+            if c is None:
+                return
+            sx1 += c[0] - dx1
+            sy1 += c[1] - dy1
+            dx1, dy1 = c[0], c[1]
+            w, h = c[2] - c[0] + 1, c[3] - c[1] + 1
+
+            def plot(x, y, pen):
+                self.dev.form_plot(dst.addr, dst.stride, x, y, pen)
+
+            def plot_xor(x, y):
+                self.dev.form_xor(dst.addr, dst.stride, x, y)
         stride = wdwidth * 2
         for row in range(h):
             base = (sy1 + row) * stride
@@ -522,15 +546,56 @@ class VDI:
                 dx, dy = dx1 + col, dy1 + row
                 if mode == MD_TRANS:
                     if on:
-                        self._plot(dx, dy, fg)
+                        plot(dx, dy, fg)
                 elif mode == MD_XOR:
                     if on:
-                        self._plot_xor(dx, dy)
+                        plot_xor(dx, dy)
                 elif mode == MD_ERASE:
                     if not on:
-                        self._plot(dx, dy, bg)
+                        plot(dx, dy, bg)
                 else:
-                    self._plot(dx, dy, fg if on else bg)
+                    plot(dx, dy, fg if on else bg)
+
+    def _trnfm(self, src, dst):
+        """vr_trnfm, from the definitions rather than the driver's loops
+        (phase 143).  STANDARD format is the planes one after another,
+        each h rows of wdwidth big-endian words, plane p holding bit p of
+        every pixel; the DEVICE's is the screen's own packing -- 4-bit
+        chunky here, the left pixel of a byte its high nibble -- and for
+        one plane the two are the same bytes.  The destination's fd_stand
+        becomes the other format.  Pixels are read whole before any is
+        written, so a form converted in place comes out the same."""
+        np, wd, h, was = src.planes, src.wdwidth, src.h, src.stand
+        if np != 1 and (np != 4 or self.dev.planes() != 4):
+            return
+        sm, sa = self.dev.space(src.addr)
+        dm, da = self.dev.space(dst.addr)
+        psize = wd * 2 * h
+        if np == 1:
+            dm[da:da + psize] = bytes(sm[sa:sa + psize])
+            dst.stand = 0 if was else 1
+            return
+        width = wd * 16
+        if was:
+            px = [[sum(((sm[sa + p * psize + y * wd * 2 + (x >> 3)]
+                         >> (7 - (x & 7))) & 1) << p for p in range(4))
+                   for x in range(width)] for y in range(h)]
+        else:
+            px = [[(sm[sa + y * wd * 8 + (x >> 1)] >> (0 if x & 1 else 4))
+                   & 0x0F for x in range(width)] for y in range(h)]
+        out = bytearray(psize * 4)
+        for y in range(h):
+            for x in range(width):
+                v = px[y][x]
+                if was:                 # to the device's: chunky
+                    out[y * wd * 8 + (x >> 1)] |= v << (0 if x & 1 else 4)
+                else:                   # to standard: planes
+                    for p in range(4):
+                        if (v >> p) & 1:
+                            out[p * psize + y * wd * 2 + (x >> 3)] |= \
+                                0x80 >> (x & 7)
+        dm[da:da + len(out)] = out
+        dst.stand = 0 if was else 1
 
     def _align_x(self, x, w):
         """Where the point a string is given puts its first cell, given
@@ -1024,6 +1089,11 @@ class VDI:
             self._gdp_rbox(sub, pts)
         elif sub == GDP_JUSTIFIED:
             self._gdp_justified(pts, ints)
+        elif sub == GDP_BEZ and len(pts) // 2 == 1:
+            # v_bez_on: no curves here, so 0, "not available" (phase 143);
+            # v_bez_off, no points, answers nothing
+            self.intout = [0, 0, 0]
+            self.contrl4 = 1
 
     def _cell(self):
         """What vst_height, vqt_attributes and vst_point all answer:
@@ -1401,6 +1471,9 @@ class VDI:
         elif op == VRT_CPYFM:
             if form:
                 self._vrt_cpyfm(pts, ints, form)
+        elif op == VR_TRNFM:
+            if form:
+                self._trnfm(form[0], form[1])
         elif op == V_GTEXT:
             self._gtext(pts, ints)
         elif op == V_PLINE:
@@ -1509,9 +1582,14 @@ class VramForm:
     from.  mfdb_addr is where the harness staged the 20-byte MFDB on the
     target, for encode(); the reference reads the form's fields directly."""
 
-    def __init__(self, addr, w, h, wdwidth, planes=4, mfdb_addr=0):
+    def __init__(self, addr, w, h, wdwidth, planes=4, mfdb_addr=0, stand=0,
+                 init=None):
         self.addr, self.w, self.h = addr, w, h
         self.wdwidth, self.planes, self.mfdb_addr = wdwidth, planes, mfdb_addr
+        # fd_stand as staged, and as vr_trnfm leaves it; `init` the bytes
+        # the form holds when a case starts (zeros when None)
+        self.stand0 = self.stand = stand
+        self.init = init
 
     @classmethod
     def save_buffer(cls, mfdb_addr=0, w=SCR_W, h=SCR_H):
@@ -1528,7 +1606,12 @@ class VramForm:
         return self.wdwidth * 2 * self.planes
 
     def pack(self):
-        return pack_mfdb(self.addr, self.w, self.h, self.wdwidth, self.planes)
+        return pack_mfdb(self.addr, self.w, self.h, self.wdwidth, self.planes,
+                         self.stand)
+
+    @property
+    def nbytes(self):
+        return self.stride * self.h
 
 
 class MemForm(VramForm):
@@ -1564,8 +1647,12 @@ def encode(script, mfdb_addr=0, screen_mfdb=0):
             raise ValueError(f"op {op}: {len(pts)} ptsin words, not a whole "
                              f"number of points")
         c7 = c8 = c9 = c10 = 0
-        if form and op == VRO_CPYFM:
+        if form and op in (VRO_CPYFM, VR_TRNFM):
             c7, c9 = addr_of(form[0]), addr_of(form[1])
+        elif form and op == VRT_CPYFM and isinstance(form[1], VramForm):
+            # (icon, form): the icon's MFDB where the harness staged it,
+            # and a destination form's own (phase 143)
+            c7, c9 = mfdb_addr & 0xFFFF, form[1].mfdb_addr
         elif form:
             c7 = mfdb_addr & 0xFFFF
             c8 = (mfdb_addr >> 16) & 0xFFFF
@@ -1637,8 +1724,11 @@ def decode_xem1(old, now):
     return (a - 256 if a & 0x80 else a), now    # stx oldX
 
 
-def pack_mfdb(bits_addr, w, h, wdwidth, planes=1):
+def pack_mfdb(bits_addr, w, h, wdwidth, planes=1, stand=0):
     """The 20-byte MFDB the target reads, little-endian."""
     import struct
-    return struct.pack("<Ihhhhhhhh", bits_addr, w, h, wdwidth, 0, planes,
+    return struct.pack("<Ihhhhhhhh", bits_addr, w, h, wdwidth, stand, planes,
                        0, 0, 0)
+
+
+MFDB_STAND = 10                         # fd_stand's offset in an MFDB

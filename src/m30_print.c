@@ -161,6 +161,29 @@ TASK void main(void)
         }
     }
 
+    /* vrt_cpyfm in erase mode over the inked block (phase 143): the
+     * mark's clear bits take colors[1], paper, and its set bits leave the
+     * ink -- the page painted the clear bits in colors[0] until then */
+    {
+        static uint8_t mark[16] = {
+            0xFF, 0xFF, 0x80, 0x01, 0xBF, 0xFD, 0xA0, 0x05,
+            0xA0, 0x05, 0xBF, 0xFD, 0x80, 0x01, 0xF0, 0x0F,
+        };
+        static MFDB mk;
+
+        mk.fd_addr = (uint32_t)(uint16_t)mark;
+        mk.fd_w = 16; mk.fd_h = 8; mk.fd_wdwidth = 1;
+        mk.fd_nplanes = 1;
+        ptsin[0] = 0;  ptsin[1] = 0;  ptsin[2] = 15; ptsin[3] = 7;
+        ptsin[4] = 41; ptsin[5] = 63; ptsin[6] = 56; ptsin[7] = 70;
+        contrl[7] = (WORD)(uint16_t)&mk; contrl[8] = 0;
+        contrl[9] = 0; contrl[10] = 0;
+        intin[0] = MD_ERASE;
+        intin[1] = 1;
+        intin[2] = 0;
+        call(VRT_CPYFM, 4, 3);
+    }
+
     /* -- off the machine, twice ---------------------------------------
      * Through v_updwk both times, because the wiring from the VDI's
      * opcode 4 to pr_emit() is part of what this gate is for.

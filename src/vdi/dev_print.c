@@ -268,7 +268,7 @@ void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
             switch (mode) {
             case MD_TRANS:  if (set) pr_plot(x, y, pen);                 break;
             case MD_XOR:    if (set) pr_plot(x, y, (uint8_t)!pr_get(x, y)); break;
-            case MD_ERASE:  if (!set) pr_plot(x, y, pen);                break;
+            case MD_ERASE:  if (!set) pr_plot(x, y, pap);                break;
             default:        pr_plot(x, y, (uint8_t)(set ? pen : pap));   break;
             }
         }
@@ -410,6 +410,35 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
     }
 }
 
+/* vrt_cpyfm into a form (phase 143), by dev_raster_1bpp's rules. */
+void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
+                     uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
+                     WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
+{
+    uint8_t pen = (uint8_t)(ink ? 1 : 0);
+    uint8_t pap = (uint8_t)(bg ? 1 : 0);
+    WORD r, c;
+
+    for (r = 0; r < h; r++) {
+        const uint8_t FAR *row = bits + (uint16_t)(sy + r) * stride;
+        WORD y = (WORD)(dy + r);
+
+        for (c = 0; c < w; c++) {
+            WORD x = (WORD)(dx + c), sxc = (WORD)(sx + c);
+            WORD set = (WORD)((row[(UWORD)sxc >> 3] >> (7 - (sxc & 7))) & 1);
+
+            switch (mode) {
+            case MD_TRANS:  if (set) form_put(dst, x, y, pen);            break;
+            case MD_XOR:    if (set) form_put(dst, x, y,
+                                              (uint8_t)!form_get(dst, x, y));
+                            break;
+            case MD_ERASE:  if (!set) form_put(dst, x, y, pap);           break;
+            default:        form_put(dst, x, y, (uint8_t)(set ? pen : pap)); break;
+            }
+        }
+    }
+}
+
 /* ---- the rest ---------------------------------------------------------- */
 
 void dev_clear_screen(void)
@@ -483,4 +512,7 @@ const VDIDEV FAR vdev_print = {
     dev_palette_one,
     dev_invalidate,
     dev_flush,
+    0,                  /* text_prefill */
+    0,                  /* text_run */
+    dev_raster_form,
 };

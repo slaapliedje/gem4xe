@@ -1989,6 +1989,17 @@ static void vdi_v_gdp(void)
     case GDP_JUSTIFIED:
         gdp_justified();
         break;
+    case GDP_BEZ:
+        /* v_bez_on (one point) and v_bez_off (none) are a GDOS's, and
+         * gem4xe has no curves: v_bez_on answers 0, "not available", so a
+         * program draws its own (phase 143; it answered whatever intout
+         * held).  v_bez itself, opcode 6 with this sub-function, still
+         * draws its points as a polyline, as TOS does without a GDOS. */
+        if (contrl[1] == 1) {
+            intout[0] = 0;
+            contrl[4] = 1;
+        }
+        break;
     }
 }
 
@@ -2307,6 +2318,7 @@ static void vdi_vro_cpyfm(void)
 static void vdi_vrt_cpyfm(void)
 {
     MFDB *src = (MFDB *)(uint16_t)contrl[7];   /* forms live in bank $00 */
+    const MFDB *dm = (const MFDB *)(uint16_t)contrl[9];
     WORD sx1 = ptsin[0], sy1 = ptsin[1], sx2 = ptsin[2], sy2 = ptsin[3];
     WORD wdwidth;
 
@@ -2314,6 +2326,32 @@ static void vdi_vrt_cpyfm(void)
         return;
     order(&sx1, &sx2); order(&sy1, &sy2);
     wdwidth = src->fd_wdwidth;                              /* WORDS */
+    /* INTO A FORM, when the destination MFDB names one (phase 143; until
+     * then the screen, whatever it named).  Bounded by the form, as
+     * vro_cpyfm's forms are, and no clip rectangle: that is the screen's.
+     * A form of another depth than the device's is refused -- written as
+     * if it had the device's, it would be written past its end. */
+    if (dm && dm->fd_addr) {
+        RFORM dst;
+        WORD nplanes = dm->fd_nplanes;
+        WORD cx1 = ptsin[4], cy1 = ptsin[5], cx2, cy2;
+
+        if (nplanes != dev_planes())
+            return;
+        rform_of(contrl[9], &dst);
+        cx2 = (WORD)(cx1 + (sx2 - sx1));
+        cy2 = (WORD)(cy1 + (sy2 - sy1));
+        sx1 = (WORD)(sx1 - cx1);        /* the source's offset, for now */
+        sy1 = (WORD)(sy1 - cy1);
+        if (!clip_to(&cx1, &cy1, &cx2, &cy2, dst.w, dst.h))
+            return;
+        dev_raster_form(&dst, (const uint8_t FAR *)src->fd_addr,
+                        (uint16_t)((uint16_t)wdwidth * 2u),
+                        (WORD)(sx1 + cx1), (WORD)(sy1 + cy1),
+                        (WORD)(cx2 - cx1 + 1), (WORD)(cy2 - cy1 + 1),
+                        cx1, cy1, intin[0], intin[1], intin[2]);
+        return;
+    }
     /* The form's address WHOLE: fd_addr is 32 bits and it was being cut
      * to sixteen here, which was right only while every memory form was
      * in bank $00.  A resource's icons are in far memory now
@@ -2324,9 +2362,110 @@ static void vdi_vrt_cpyfm(void)
                     ptsin[4], ptsin[5], intin[0], intin[1], intin[2]);
 }
 
-/* vr_trnfm converts between VDI-standard and device-specific form.  This
- * device has exactly one form, so there is nothing to convert. */
-static void vdi_vr_trnfm(void) { }
+/* vr_trnfm -- a form between the VDI's standard format and the device's
+ * (phase 143; until then an empty function).  Standard is the planes one
+ * after another, each fd_h rows of fd_wdwidth words, plane 0 the pixel's
+ * bit 0.  The device's is what vro_cpyfm moves: 4-bit chunky on the
+ * VBXE, two pixels to the byte, the left one high -- and one plane on
+ * ANTIC and the page, where the two are the same bytes.  The
+ * destination's fd_stand becomes the other format, as TOS has it; its
+ * other fields are the caller's.  A form of any other depth is left
+ * alone.  Source and destination may be one form: then a one-plane form
+ * needs nothing, and a deeper one goes through a far buffer -- or, with
+ * no room for one, nowhere, which is EmuTOS's rule too.
+ *
+ * Sixteen pixels at a time, a word of each plane against eight chunky
+ * bytes, through far_get and far_put whatever bank the form is in.
+ * Unsigned words for everything shifted (B12: tools/ccbug). */
+#define TR_PLANES 4
+
+static void tr_copy(uint32_t d, uint32_t s, uint32_t n)
+{
+    while (n) {
+        uint16_t c = (uint16_t)(n > 0x4000UL ? 0x4000UL : n);
+
+        far_copy(d, s, c);
+        d += c;
+        s += c;
+        n -= c;
+    }
+}
+
+static void vdi_vr_trnfm(void)
+{
+    MFDB *src = (MFDB *)(uint16_t)contrl[7];   /* forms live in bank $00 */
+    MFDB *dst = (MFDB *)(uint16_t)contrl[9];
+    WORD np, stand;
+    UWORD wd, h, y, g, p, k;
+    uint32_t sa, da, out, psize;
+    uint8_t in[8], ob[8];
+
+    if (!src || !dst || !src->fd_addr || !dst->fd_addr)
+        return;
+    np = src->fd_nplanes;               /* scalars first (B5) */
+    stand = src->fd_stand;
+    wd = (UWORD)src->fd_wdwidth;
+    h = (UWORD)src->fd_h;
+    sa = src->fd_addr;
+    da = dst->fd_addr;
+    if (np != 1 && (np != TR_PLANES || dev_planes() != TR_PLANES))
+        return;
+    psize = (uint32_t)wd * 2u * h;      /* one plane's bytes */
+    if (np == 1) {
+        if (sa != da)
+            tr_copy(da, sa, psize);
+        dst->fd_stand = (WORD)(stand ? 0 : 1);
+        return;
+    }
+    out = da;
+    if (sa == da) {
+        out = far_alloc_top(psize * TR_PLANES);
+        if (!out)
+            return;
+    }
+    for (y = 0; y < h; y++)
+        for (g = 0; g < wd; g++) {
+            uint32_t row = (uint32_t)y * wd * 2u + (uint32_t)g * 2u;
+            uint32_t chunky = (uint32_t)y * wd * 8u + (uint32_t)g * 8u;
+
+            if (stand) {
+                for (p = 0; p < TR_PLANES; p++)
+                    far_get(&in[p * 2], sa + p * psize + row, 2);
+                for (k = 0; k < 8; k++) {
+                    UWORD hi = 0, lo = 0;
+
+                    for (p = 0; p < TR_PLANES; p++) {
+                        UWORD w = (UWORD)(((UWORD)in[p * 2] << 8) | in[p * 2 + 1]);
+
+                        hi |= (UWORD)(((UWORD)(w >> (15 - 2 * k)) & 1) << p);
+                        lo |= (UWORD)(((UWORD)(w >> (14 - 2 * k)) & 1) << p);
+                    }
+                    ob[k] = (uint8_t)((hi << 4) | lo);
+                }
+                far_put(out + chunky, ob, 8);
+            } else {
+                far_get(in, sa + chunky, 8);
+                for (p = 0; p < TR_PLANES; p++) {
+                    UWORD w = 0;
+
+                    for (k = 0; k < 8; k++) {
+                        UWORD b = in[k];
+
+                        w |= (UWORD)(((UWORD)(b >> (4 + p)) & 1) << (15 - 2 * k));
+                        w |= (UWORD)(((UWORD)(b >> p) & 1) << (14 - 2 * k));
+                    }
+                    ob[0] = (uint8_t)(w >> 8);
+                    ob[1] = (uint8_t)w;
+                    far_put(out + p * psize + row, ob, 2);
+                }
+            }
+        }
+    if (out != da) {
+        tr_copy(da, out, psize * TR_PLANES);
+        far_free(out);
+    }
+    dst->fd_stand = (WORD)(stand ? 0 : 1);
+}
 
 /* ---------------------------------------------------------------------- */
 /* input: modes, vectors, keyboard                                        */

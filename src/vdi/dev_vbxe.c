@@ -1702,6 +1702,56 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
                   db, dst->stride, (WORD)(dx1 + w - 1), dy1, 1, h);
 }
 
+/* vrt_cpyfm into a form (phase 143): the destination's row through the
+ * buffer copy_rows uses, a chunk at a time, each pixel by the rules
+ * raster_1bpp has for the screen -- set bits the ink in replace and
+ * transparent, complemented in XOR; clear bits the background in
+ * replace and erase.  Unsigned words for every value shifted right or
+ * changed in place (B12, B21: tools/ccbug). */
+void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
+                     uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
+                     WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
+{
+    uint8_t row_dst[ROW_CHUNK];
+    UWORD fg = (UWORD)HW(ink) & 0x0F, bk = (UWORD)HW(bg) & 0x0F;
+    WORD r;
+
+    for (r = 0; r < h; r++) {
+        const uint8_t FAR *row = bits + (uint16_t)(sy + r) * stride;
+        uint32_t dr = dst->base + form_row((WORD)(dy + r), (WORD)dst->stride);
+        WORD done = 0;
+
+        while (done < w) {
+            WORD n = (WORD)(w - done), x0 = (WORD)(dx + done);
+            UWORD k, d = (UWORD)(x0 & 1), p = (UWORD)(sx + done), dn;
+
+            if (n > 2 * ROW_CHUNK - 2)
+                n = 2 * ROW_CHUNK - 2;
+            dn = (UWORD)((UWORD)((x0 & 1) + n + 1) >> 1);
+            span_io(dr + (UWORD)((UWORD)x0 >> 1), row_dst, dn, 0);
+            for (k = 0; k < (UWORD)n; k++, d++, p++) {
+                UWORD set = (UWORD)(row[p >> 3] >> (7 - (p & 7))) & 1;
+                UWORD b = row_dst[d >> 1];
+                UWORD v = (d & 1) ? (b & 0x0F) : (b >> 4);
+
+                switch (mode) {
+                case MD_TRANS:  if (set) v = fg;        break;
+                case MD_XOR:    if (set) v ^= 0x0F;     break;
+                case MD_ERASE:  if (!set) v = bk;       break;
+                default:        v = set ? fg : bk;      break;
+                }
+                if (d & 1)
+                    b = (b & 0xF0) | v;
+                else
+                    b = (b & 0x0F) | (v << 4);
+                row_dst[d >> 1] = (uint8_t)b;
+            }
+            span_io(dr + (UWORD)((UWORD)x0 >> 1), row_dst, dn, 1);
+            done = (WORD)(done + n);
+        }
+    }
+}
+
 /* VDI pen -> hardware pen.
  *
  * GEM numbers its pens white=0, black=1, red=2 ... but XOR mode complements
@@ -1860,6 +1910,8 @@ extern const uint8_t FAR font8x8[];
     dev_invalidate,                                                       \
     dev_flush,                                                            \
     1,                  /* text_prefill: a string's background is one fill */ \
+    0,                  /* text_run */                                    \
+    dev_raster_form,                                                      \
 }
 
 /* Every width the overlay has by every height a tube might want, which

@@ -244,6 +244,48 @@ TASK void main(void)
             intin[0] = S_ONLY;
             call(VRO_CPYFM, 4, 1);
         }
+
+        /* -- vrt_cpyfm into that form (phase 143: until then it drew on
+         * the screen whatever the destination said).  A one-plane mark,
+         * in XOR over the text the first hop left there, in replace
+         * beside it, and in erase -- colors[1] the ink -- past the form's
+         * right edge, all at odd x; then the form onto the screen where
+         * it is empty. */
+        {
+            static uint8_t mark[16] = {
+                0xFF, 0xFF, 0x80, 0x01, 0xBF, 0xFD, 0xA0, 0x05,
+                0xA0, 0x05, 0xBF, 0xFD, 0x80, 0x01, 0xF0, 0x0F,
+            };
+            static MFDB mk;
+            static const WORD at[3][3] = {      /* x, y, mode */
+                {   9, 3, MD_XOR },
+                { 107, 5, MD_REPLACE },
+                { 151, 9, MD_ERASE },
+            };
+            static const WORD col[3][2] = { { 1, 0 }, { 1, 0 }, { 0, 1 } };
+
+            mk.fd_addr = (uint32_t)(uint16_t)mark;
+            mk.fd_w = 16; mk.fd_h = 8; mk.fd_wdwidth = 1;
+            mk.fd_nplanes = 1;
+            for (k = 0; k < 3; k++) {
+                ptsin[0] = 0; ptsin[1] = 0; ptsin[2] = 15; ptsin[3] = 7;
+                ptsin[4] = at[k][0]; ptsin[5] = at[k][1];
+                ptsin[6] = (WORD)(at[k][0] + 15);
+                ptsin[7] = (WORD)(at[k][1] + 7);
+                contrl[7] = (WORD)(uint16_t)&mk; contrl[8] = 0;
+                contrl[9] = (WORD)(uint16_t)&mem; contrl[10] = 0;
+                intin[0] = at[k][2];
+                intin[1] = col[k][0];
+                intin[2] = col[k][1];
+                call(VRT_CPYFM, 4, 3);
+            }
+            ptsin[0] = 0;  ptsin[1] = 0;   ptsin[2] = 159; ptsin[3] = 15;
+            ptsin[4] = 51; ptsin[5] = 170; ptsin[6] = 210; ptsin[7] = 185;
+            contrl[7] = (WORD)(uint16_t)&mem; contrl[8] = 0;
+            contrl[9] = (WORD)(uint16_t)&scr; contrl[10] = 0;
+            intin[0] = S_ONLY;
+            call(VRO_CPYFM, 4, 1);
+        }
     }
 
     STATUS[2] = 'K';

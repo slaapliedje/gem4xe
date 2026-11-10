@@ -387,6 +387,15 @@ typedef struct {
      * After text_prefill, and NULL for any device whose initialiser stops
      * short of it, so those devices did not have to change. */
     void (*text_run)(const WORD *chars, WORD n, WORD x, WORD cy);
+
+    /* raster_1bpp into a FORM that is not the screen: vrt_cpyfm's
+     * destination MFDB (phase 143; until then the screen, always).
+     * Already clipped to the form, and planes the device's -- the VDI
+     * has seen to both -- and no clip rectangle, which is the screen's:
+     * EmuTOS applies it only when the destination is the screen. */
+    void (*raster_form)(const RFORM *dst, const uint8_t FAR *bits,
+                        uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
+                        WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
 } VDIDEV;
 
 /* THE DEVICE IN USE.
@@ -473,6 +482,7 @@ void    pr_page_close(void);
 #  define dev_invalidate     DEV_(invalidate)
 #  define dev_flush          DEV_(flush)
 #  define dev_text_run       DEV_(text_run)
+#  define dev_raster_form    DEV_(raster_form)
 #else
 #  define SCR_W         (vdev->w)
 #  define SCR_H         (vdev->h)
@@ -523,6 +533,7 @@ void    pr_page_close(void);
 #  define dev_palette_one   (vdev->palette_one)
 #  define dev_invalidate    (vdev->invalidate)
 #  define dev_flush         (vdev->flush)
+#  define dev_raster_form   (vdev->raster_form)
 #endif /* GEM4XE_DEV_IMPL */
 
 #endif /* GEM4XE_VDIDEV_H */

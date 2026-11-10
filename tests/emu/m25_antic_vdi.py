@@ -116,14 +116,58 @@ COPY_TO = (211, 85)
 COPY_W, COPY_H = 100, 10
 
 
+# vrt_cpyfm into the bank-$00 form (phase 143): the program's 16 x 8 mark,
+# where it goes in the 160 x 16 form and how, and where the form goes on
+# the screen afterwards.
+MARK = [0xFFFF, 0x8001, 0xBFFD, 0xA005, 0xA005, 0xBFFD, 0x8001, 0xF00F]
+MEM_W, MEM_H = 160, 16
+MEM_HOP = ((19, 78), (3, 2))            # the first hop: screen -> form
+MARKS = ((9, 3, "xor", 1, 0), (107, 5, "replace", 1, 0),
+         (151, 9, "erase", 0, 1))
+MEM_TO = (51, 170)
+
+
+def model_mem(dev):
+    """The program's form after the round trip's first hop and the three
+    marks, from the definitions: in XOR a set source bit inverts and a
+    clear one leaves; in replace a set bit takes colors[0] and a clear one
+    colors[1]; in erase a clear bit takes colors[1] and a set one leaves.
+    Bounded by the form, and no clip rectangle."""
+    mem = [[0] * MEM_W for _ in range(MEM_H)]
+    (sx, sy), (dx, dy) = MEM_HOP
+    for y in range(COPY_H):
+        for x in range(COPY_W):
+            mem[dy + y][dx + x] = dev.bit(sx + x, sy + y)
+    for mx, my, how, fg, bg in MARKS:
+        for r in range(8):
+            for c in range(16):
+                x, y = mx + c, my + r
+                if not (0 <= x < MEM_W and 0 <= y < MEM_H):
+                    continue
+                on = (MARK[r] >> (15 - c)) & 1
+                if how == "xor":
+                    mem[y][x] ^= on
+                elif how == "replace":
+                    mem[y][x] = fg if on else bg
+                elif not on:
+                    mem[y][x] = bg
+    return mem
+
+
 def model_copied(dev):
-    """model()'s pixels, and the round trip through memory on top."""
+    """model()'s pixels, the round trip through memory on top, and the
+    program's form with its marks put on the screen."""
     grid = [[dev.bit(x, y) for x in range(AN_W)] for y in range(AN_H)]
+    mem = model_mem(dev)
     sx, sy = COPY_FROM
     dx, dy = COPY_TO
     for y in range(COPY_H):
         for x in range(COPY_W):
             grid[dy + y][dx + x] = dev.bit(sx + x, sy + y)
+    tx, ty = MEM_TO
+    for y in range(MEM_H):
+        for x in range(MEM_W):
+            grid[ty + y][tx + x] = mem[y][x]
     return grid
 
 

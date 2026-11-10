@@ -279,6 +279,22 @@ class Vbxe:
             return self.far.setdefault(a >> 16, bytearray(0x10000)), a & 0xFFFF
         return self.cpu, a
 
+    def space(self, a):
+        """(memory, address) of a form's bytes, for vr_trnfm."""
+        return self._space(a)
+
+    def form_plot(self, base, stride, x, y, pen):
+        """One pixel of a form in a VDI pen: vrt_cpyfm into a form, which
+        the form bounds and no clip rectangle does (phase 143)."""
+        m, a = self._space(base)
+        a += y * stride + (x >> 1)
+        v = self.MAP_COL[pen & 15] & 0x0F
+        m[a] = ((m[a] & 0xF0) | v) if (x & 1) else ((m[a] & 0x0F) | (v << 4))
+
+    def form_xor(self, base, stride, x, y):
+        m, a = self._space(base)
+        m[a + y * stride + (x >> 1)] ^= 0x0F if (x & 1) else 0xF0
+
     def put_cpu(self, a, data):
         """Bytes into the program's memory, near or far, where a form at
         `a` will be read from."""
@@ -500,6 +516,18 @@ class Antic:
         bit = 0x80 >> (x & 7)
         buf[a] = (buf[a] | bit) if value else (buf[a] & ~bit & 0xFF)
 
+    def space(self, a):
+        """(memory, address) of a form's bytes, for vr_trnfm."""
+        return self._buf(a)
+
+    def form_plot(self, base, stride, x, y, pen):
+        """One pixel of a form: vrt_cpyfm into a form (phase 143)."""
+        self.write_pixel(base, stride, x, y, 1 if pen else 0)
+
+    def form_xor(self, base, stride, x, y):
+        self.write_pixel(base, stride, x, y,
+                         1 - self.read_pixel(base, stride, x, y))
+
     def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, mode=3):
         """Mirrors dev_copy_form(): screen to screen is the window
         manager's move and the surface has a byte path for it; anything
@@ -678,6 +706,18 @@ class Printer:
         a = off + y * stride + (x >> 3)
         bit = 0x80 >> (x & 7)
         buf[a] = (buf[a] | bit) if value else (buf[a] & ~bit & 0xFF)
+
+    def space(self, a):
+        """(memory, address) of a form's bytes, for vr_trnfm."""
+        return self._buf(a)
+
+    def form_plot(self, base, stride, x, y, pen):
+        """One pixel of a form: vrt_cpyfm into a form (phase 143)."""
+        self.write_pixel(base, stride, x, y, 1 if pen else 0)
+
+    def form_xor(self, base, stride, x, y):
+        self.write_pixel(base, stride, x, y,
+                         1 - self.read_pixel(base, stride, x, y))
 
     def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, mode=3):
         if mode == 3 and sb < FAR_BASE and db < FAR_BASE:

@@ -1,8 +1,9 @@
 # The VDI after NVDI: what is wrong, slow or missing
 
-Status: **step 1 under way** -- [phase 142](phase142.md) built
-`vro_cpyfm`'s sixteen modes on every device, `v_opnbm` refused and the
-face's name; `vrt_cpyfm`, `vr_trnfm` and Bezier are next.  Planned
+Status: **step 1 built** -- [phase 142](phase142.md): `vro_cpyfm`'s
+sixteen modes on every device, `v_opnbm` refused and the face's name;
+[phase 143](phase143.md): `vrt_cpyfm` into forms, `vr_trnfm`,
+`v_bez_on`, and the page's erase colour.  Step 2 is next.  Planned
 2026-11-10.  The question (2026-11-09): "We know that
 NVDI sped up a lot of the VDI calls, but since we don't/won't have NVDI
 to load for or emuTOS port.  What optimizations and capabilities are we
@@ -49,7 +50,8 @@ Each is a phase with its gate, and each gate is seen to fail first.
    - `v_opnbm`: refused cleanly -- handle 0 -- until step 3 builds it, so
      a program that asks can fall back as it would on TOS.
    - Bezier: `v_bez_on` answers 0, "not available", so a program draws
-     its own; the polyline of control points goes.
+     its own.  *Phase 143 kept `v_bez`'s polyline of points: TOS without
+     a GDOS draws the same, its `v_pline` ignoring the sub-function.*
    - The font's name says what it is on each screen.
    *Gate*: a conformance program -- like test-m3's, which already runs
    258 cases over three screen widths -- draws each mode and each call

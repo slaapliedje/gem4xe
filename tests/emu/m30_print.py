@@ -42,6 +42,7 @@ import devref                               # noqa: E402
 import emitref as E                         # noqa: E402
 import vdiref                               # noqa: E402
 from vdiref import (V_OPNWK, V_GTEXT, V_PLINE, VR_RECFL, VSF_COLOR, VRO_CPYFM,  # noqa: E402
+                    VRT_CPYFM,
                     VSF_INTERIOR, VSL_COLOR, VST_COLOR, VSWR_MODE, WORK_IN)
 from m14_sparta import type_line, wait_prompt, screen    # noqa: E402
 CONFIG_DIR = config_dir_for("m30")          # this run's own (see m19)
@@ -49,7 +50,7 @@ CONFIG_DIR = config_dir_for("m30")          # this run's own (see m19)
 SRC_DISK = os.path.abspath(os.path.join(ROOT, "build", "m30-boot.atr"))
 DISK = os.path.abspath(os.path.join(ROOT, "build", "m30-run.atr"))
 STATUS = 0x0600
-FIS_SOLID, MD_REPLACE, MD_XOR = 1, 1, 3
+FIS_SOLID, MD_REPLACE, MD_XOR, MD_ERASE = 1, 1, 3, 4
 PR_W, PR_H = E.PR_W, E.PR_H
 GS = shutil.which("gs")
 
@@ -89,6 +90,11 @@ SCRIPT = [
     # text, NOT S beside it, at odd x
     (VRO_CPYFM, (37, 60, 122, 140, 41, 190, 126, 270), (6,)),
     (VRO_CPYFM, (37, 60, 122, 140, 201, 190, 286, 270), (12,)),
+    # vrt_cpyfm in erase mode over the block (phase 143): the mark's clear
+    # bits paper (colors[1]), its set bits the ink left alone
+    (VRT_CPYFM, (0, 0, 15, 7, 41, 63, 56, 70), (MD_ERASE, 1, 0),
+     (bytes([0xFF, 0xFF, 0x80, 0x01, 0xBF, 0xFD, 0xA0, 0x05,
+             0xA0, 0x05, 0xBF, 0xFD, 0x80, 0x01, 0xF0, 0x0F]), 1)),
 ]
 
 
