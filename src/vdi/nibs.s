@@ -49,3 +49,54 @@ nib_shift:    sta     dp:.tiny ns_dst
               dex
               bne     10$
 9$:           rtl
+
+;;; ---------------------------------------------------------------------------
+;;; text_row: one row of a string's run, a glyph byte a cell (phase 145).
+;;;
+;;; WHY.  The VBXE draws a string's visible run as one raster
+;;; (src/vdi/dev_vbxe.c, dev_text_run), and that raster is the run's glyph
+;;; rows laid side by side.  In C a byte of it was some thirty-five
+;;; instructions and a call; here it is twelve.  In this file because the
+;;; VBXE device already links it, in every build that has the device.
+;;;
+;;; void text_row(const WORD *chars, uint16_t n)
+;;;
+;;;     tr_dst[i] = tr_src[chars[i] & 0xFF],   i = 0 .. n - 1
+;;;
+;;; tr_src is the face's row and tr_dst the raster's: 24-bit addresses the
+;;; caller leaves in the direct page (a .long each), and neither may cross
+;;; a bank -- the caller checks the face's row, and the raster is a
+;;; far_alloc block, which never does.  chars is in bank $00 (DB).  THE
+;;; CALL: chars in A, n in _Dp+0; _Dp+0..7 and X, Y are scratch.
+;;; ---------------------------------------------------------------------------
+
+              .public text_row, tr_src, tr_dst
+
+              .section ztiny, bss
+tr_src:       .space  4
+tr_dst:       .space  4
+
+tr_chars      .equ    _Dp+2           ; chars, walked
+tr_out        .equ    _Dp+4           ; tr_dst, walked
+
+              .section farcode, noreorder
+text_row:     sta     dp:.tiny tr_chars
+              ldx     dp:.tiny _Dp            ; n
+              beq     9$
+              lda     dp:.tiny tr_dst
+              sta     dp:.tiny tr_out
+              lda     dp:.tiny (tr_dst+2)
+              sta     dp:.tiny (tr_out+2)
+10$:          lda     (dp:.tiny tr_chars)     ; chars[i]
+              and     ##0xFF
+              tay
+              sep     #0x20
+              lda     [dp:.tiny tr_src],y     ; its byte of this row
+              sta     [dp:.tiny tr_out]
+              rep     #0x20
+              inc     dp:.tiny tr_out
+              inc     dp:.tiny tr_chars
+              inc     dp:.tiny tr_chars
+              dex
+              bne     10$
+9$:           rtl

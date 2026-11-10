@@ -571,6 +571,16 @@ CASES = [
         (V_GTEXT, (320, 140), tuple(b"thick and centred")),
         (VST_ALIGNMENT, (), (0, 0)), (VST_EFFECTS, (), (0,))]),
 
+    # ...thickened in transparent mode with glyphs that have ink in their
+    # LAST column, '*' and a few above 127, so the thickening carries into
+    # the next cell and past the last one: the run's carry (phase 145),
+    # which a word of letters never exercises, at even x and odd
+    ("text: thickened across cells, the last column inked", [
+        (VSWR_MODE, (), (2,)), (VST_COLOR, (), (1,)), (VST_EFFECTS, (), (1,)),
+        (V_GTEXT, (16, 20), (42, 42, 65, 42, 0x91, 0xAB, 42, 0xDD, 0xF4, 42)),
+        (V_GTEXT, (17, 40), (0xBD, 42, 66, 42, 42, 0xE6, 0xFB, 42)),
+        (VST_EFFECTS, (), (0,))]),
+
     # Thickened text where the VBXE draws it from one mask when its nine
     # columns fit and as two passes when they do not (src/vdi/dev_vbxe.c,
     # phase 105): odd x, white ink over a fill, a clip through letters at

@@ -377,10 +377,26 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
 
 
 /* The expansions above are caches; this is the VDI saying they are stale. */
+/* text_run's buffer (below), taken here -- at v_opnwk, which runs this --
+ * so that it is taken at boot, as the system, and not in the middle of
+ * the first program to draw a string: a block that appeared during a
+ * program and outlived it is what test-m12's allocators check for. */
+static TINY uint32_t tr_buf;            /* TR_CELLS * FONT_H, far */
+#define TR_CELLS 85                     /* the widest screen's 84, and one */
+
+static void tr_take(void)
+{
+    if (!tr_buf) {
+        tr_buf = far_alloc((uint32_t)TR_CELLS * FONT_H);
+        far_keep(tr_buf);
+    }
+}
+
 void dev_invalidate(void)
 {
     pe_valid = 0;
     lh_valid = lv_valid = 0;
+    tr_take();
 }
 
 /* ---- the pointer ------------------------------------------------------
@@ -1210,6 +1226,75 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
     }
 }
 
+/* A STRING'S RUN AS ONE RASTER (text_run in vdidev.h; phase 145).  The
+ * run's glyph rows are laid side by side in a one-plane buffer -- a byte a
+ * cell, the face being eight wide -- and raster_1bpp puts the lot on the
+ * screen: one strip and one blit, or two, for the whole run, where each
+ * cell was a control block and a blit of its own and the strip bytes
+ * written are fewer than those blocks' were (docs/phase145.md).
+ * Thickened, which text_run asks for in transparent mode only, each row
+ * is ORed with itself one pixel right, carried into the next cell and one
+ * column past the last.
+ *
+ * The buffer is far and taken once, at v_opnwk (tr_take, above), and the
+ * SYSTEM'S: a VDI call runs as the program that made it (phase 144).  Its
+ * address is in the direct page, which has the room LoRAM has not.  A run
+ * too long for it, or no buffer, goes a cell at a time as before. */
+extern TINY uint32_t tr_src, tr_dst;    /* text_row's (src/vdi/nibs.s) */
+void text_row(const WORD *chars, uint16_t n);
+
+void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
+{
+    WORD mode = (WORD)(vwk.wrt_mode + 1);
+    WORD thick = (WORD)(mode == MD_TRANS
+                        && (vwk.text_effects & TXT_THICKEN) != 0);
+    WORD stride = (WORD)(n + thick), r, i;
+    uint8_t ink = (uint8_t)HW(vwk.text_color);
+
+    tr_take();                          /* in case v_opnwk could not */
+    if (!tr_buf || stride > TR_CELLS) {
+        for (i = 0; i < n; i++)
+            dev_glyph(chars[i], (WORD)(x + i * FONT_W), cy,
+                      (WORD)(thick ? GLYPH_THICK : 0));
+        return;
+    }
+    {
+        uint8_t FAR *p = (uint8_t FAR *)tr_buf;
+
+        /* A row of the face by text_row, a long indexed load a byte, which
+         * is safe only while the row's 256 bytes are in one bank -- the
+         * built-in faces' are and a loaded one's are -- and a row that were
+         * not, or a thickened one, goes byte by byte at its full address. */
+        for (r = 0; r < FONT_H; r++, p += stride) {
+            uint32_t f = vdi_font + (uint32_t)r * FONT_STRIDE;
+            UWORD carry = 0;
+
+            if ((UWORD)f <= 0xFF00 && !thick) {
+                tr_src = f;
+                tr_dst = (uint32_t)p;
+                text_row(chars, (uint16_t)n);
+                continue;
+            }
+            for (i = 0; i < n; i++) {
+                UWORD g = *(const uint8_t FAR *)(f + (uint32_t)(chars[i] & 0xFF));
+
+                if (thick) {
+                    UWORD t = (UWORD)(g | (g >> 1) | carry);
+
+                    carry = (UWORD)((g & 1) << 7);
+                    g = t;
+                }
+                p[i] = (uint8_t)g;
+            }
+            if (thick)
+                p[n] = (uint8_t)carry;
+        }
+    }
+    raster_1bpp((const uint8_t FAR *)tr_buf, (uint16_t)stride, 0, 0,
+                (WORD)(n * FONT_W + thick), FONT_H, x, cy, mode, ink,
+                (uint8_t)(mode == MD_ERASE ? ink : HW(0)));
+}
+
 /* vrt_cpyfm's one-plane expansion, with the pens mapped here. */
 void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
                      WORD sx, WORD sy, WORD w, WORD h,
@@ -1910,7 +1995,7 @@ extern const uint8_t FAR font8x8[];
     dev_invalidate,                                                       \
     dev_flush,                                                            \
     1,                  /* text_prefill: a string's background is one fill */ \
-    0,                  /* text_run */                                    \
+    dev_text_run,                                                         \
     dev_raster_form,                                                      \
 }
 
