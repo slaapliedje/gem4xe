@@ -2,8 +2,9 @@
 
 Status: steps 1 to 3 **built**: phase 133, then 134 (input), 135 (the
 window), 136 (General and Color in it, through `Xform_do`), 137 (the
-toolkit's events) and 138 (its widgets); step 4's first half -- the
-Options, About, CPX Info, Setup -- in phase 140.  Decisions taken 2026-11-08: one
+toolkit's events) and 138 (its widgets); step 4 -- the Options, About,
+CPX Info, Setup in phase 140, Reload, Unload, Activate and Deactivate in
+phase 141.  Step 5 is later, if wanted.  Decisions taken 2026-11-08: one
 window that the open CPX fills (XControl's shape, not COPS's window per
 CPX), and the 512-byte header moves in front of the module, as on the ST.
 
@@ -106,9 +107,9 @@ Each says how it is tested; a check is believed only once it has failed.
    the test module grows a page per call and a gate drives each; Color's
    gate drags a slider.
 
-4. **Managing them** -- the Options, About, CPX Info and Setup with the
-   clock BUILT, phase 140 ([phase140.md](phase140.md)); Reload, Unload,
-   Activate and Deactivate next.  An Options pop-up on the panel: About; Setup (12
+4. **Managing them** -- BUILT: the Options, About, CPX Info and Setup
+   with the clock in phase 140 ([phase140.md](phase140.md)), Reload,
+   Unload, Activate and Deactivate in phase 141 ([phase141.md](phase141.md)).  An Options pop-up on the panel: About; Setup (12
    or 24 hour clock, Reload); CPX Info (file, version, id, the flags);
    Activate and Deactivate (`.CPX` <-> `.CPZ`, by rename: SDX 4.49e's
    rename is broken, `docs/` records it, and on that DOS the panel says

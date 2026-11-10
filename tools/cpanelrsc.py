@@ -97,6 +97,11 @@ OPTION_WORDS = [
     ("CPH12", "12 hour"),
     ("CPYES", "Yes"),
     ("CPNO", "No"),
+    # managing them (phase 141): step 4's second half
+    ("CPOPUNLOAD", "Unload CPX"),
+    ("CPOPDEACT", "Deactivate"),
+    ("CPOPACT", "Activate..."),
+    ("CPALRES", "[1][This module stays loaded|until the machine|restarts.][ OK ]"),
 ]
 CPOPABOUT = CPNONE + 1
 
@@ -122,8 +127,9 @@ NOBS_CPINFO = 13
 INFO_ROWS = [("File", CIFILEL, CIFILE, 12), ("Version", CIVERL, CIVER, 5),
              ("ID", CIIDL, CIID, 4), ("Resident", CIRESL, CIRES, 3),
              ("At boot", CIBOOTL, CIBOOT, 3)]
-(CSROOT, CSTITLE, CSCLKL, CSCLOCK, CSSAVE, CSOK, CSCANCEL) = range(7)
-NOBS_CPSETUP = 7
+(CSROOT, CSTITLE, CSCLKL, CSCLOCK, CSSAVE, CSOK, CSCANCEL,
+ CSRELOAD) = range(8)
+NOBS_CPSETUP = 8
 LABEL_X, VALUE_X, ROW0 = 2, 12, 4
 BTN_Y = 17
 
@@ -207,9 +213,10 @@ def info_tree(r):
 
 def setup_tree(r):
     """SETUP: the clock's way, 24 or 12 hour, a pop-up; Save writes
-    CONTROL.INF where the modules' settings go; OK and Cancel."""
+    CONTROL.INF beside the modules; Reload reads the modules' folder
+    again (phase 141, XControl's place for it); OK and Cancel."""
     title, clock = "Setup", "Clock"
-    objs = [(NIL, CSTITLE, CSCANCEL, G_BOX, NONE, NORMAL, 0x00001170,
+    objs = [(NIL, CSTITLE, CSRELOAD, G_BOX, NONE, NORMAL, 0x00001170,
              ch(0), ch(0), ch(32), ch(20)),
             (CSCLKL, NIL, NIL, G_STRING, NONE, NORMAL, r.string(title),
              ch((32 - len(title)) // 2), ch(1), ch(len(title)), ch(1)),
@@ -222,8 +229,10 @@ def setup_tree(r):
              r.string("Save"), ch(VALUE_X), ch(ROW0 + 3), ch(10), ch(1)),
             (CSCANCEL, NIL, NIL, G_BUTTON, SELECTABLE | DEFAULT | EXIT, NORMAL,
              r.string("OK"), ch(6), ch(BTN_Y), ch(9), ch(1)),
+            (CSRELOAD, NIL, NIL, G_BUTTON, SELECTABLE | EXIT, NORMAL,
+             r.string("Cancel"), ch(17), ch(BTN_Y), ch(9), ch(1)),
             (CSROOT, NIL, NIL, G_BUTTON, SELECTABLE | EXIT | LASTOB, NORMAL,
-             r.string("Cancel"), ch(17), ch(BTN_Y), ch(9), ch(1))]
+             r.string("Reload"), ch(VALUE_X), ch(ROW0 + 5), ch(10), ch(1))]
     assert len(objs) == NOBS_CPSETUP
     return r.tree(objs)
 
@@ -240,7 +249,8 @@ INDICES = [("ADCPANEL", ADCPANEL), ("CPROOT", CPROOT), ("CPTIME", CPTIME),
            ("CITITLE", CITITLE), ("CIFILE", CIFILE), ("CIVER", CIVER),
            ("CIID", CIID), ("CIRES", CIRES), ("CIBOOT", CIBOOT),
            ("CIOK", CIOK), ("CSCLOCK", CSCLOCK), ("CSSAVE", CSSAVE),
-           ("CSOK", CSOK), ("CSCANCEL", CSCANCEL)] + [
+           ("CSOK", CSOK), ("CSCANCEL", CSCANCEL),
+           ("CSRELOAD", CSRELOAD)] + [
            (name, CPOPABOUT + k) for k, (name, _) in enumerate(OPTION_WORDS)]
 
 

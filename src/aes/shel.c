@@ -33,6 +33,7 @@
 #include "sys/app.h"
 #include "sys/cio.h"
 #include "sys/dos.h"
+#include "sys/sdcio.h"                  /* sdc_folder: beside the modules */
 #include "sys/gemdos.h"
 #include "sys/farmem.h"
 #include "sys/ctx.h"
@@ -1352,6 +1353,19 @@ static uint32_t sh_cpx_far;             /* CPX_MAX owners (CPXE_OWN), then
  *
  * A missing file is the normal case and is silent: it means nothing has
  * been saved yet, and the defaults in the header stand. */
+/* A MODULE'S FILE NAMED AS THE BOOT FOUND IT (phase 141): a bare name,
+ * through the DOS seam, so it is the DOS's own folder that decides --
+ * where the scan found the modules at boot, before anybody set a GEMDOS
+ * path.  Through sh_cioname a runtime call went by GEMDOS's path
+ * instead, which the desktop sets to the folder of the last program it
+ * ran: a module, its settings and CONTROL.INF were looked for, or
+ * written, somewhere else (docs/phase141.md).  app_load_file names a
+ * file this way already, which is why booting one always worked. */
+static void sh_cpxcio(const char *name, char *cio)
+{
+    dos_cioname(name, cio);
+}
+
 static void sh_cpxcfg(uint32_t e, const char *name)
 {
     char cfg[CIO_NAME_MAX + 1], base[ACC_NAMELEN + 8];
@@ -1367,7 +1381,7 @@ static void sh_cpxcfg(uint32_t e, const char *name)
     base[i++] = CPX_CFGEXT[1];
     base[i++] = CPX_CFGEXT[2];
     base[i] = 0;
-    sh_cioname(base, cfg);
+    sh_cpxcio(base, cfg);
     fd = cio_open(cfg, CIO_A_READ, 0);
     if (fd < 0)
         return;                         /* nothing saved yet */
@@ -1392,7 +1406,7 @@ static WORD sh_cpxhead(uint32_t e, const char *name)
     uint16_t got;
     WORD k, ok = 1;
 
-    sh_cioname(name, cio);
+    sh_cpxcio(name, cio);
     fd = cio_open(cio, CIO_A_READ, 0);
     if (fd < 0)
         return 0;
@@ -1474,7 +1488,7 @@ static WORD sh_cpxdir(uint32_t tab, WORD most)
     WORD n = 0;
     int16_t fd;
 
-    sh_cioname("*." CPX_EXT, cio);
+    sh_cpxcio("*." CPX_EXT, cio);
     fd = cio_open(cio, CIO_A_DIR, 0);
     if (fd < 0)
         return 0;
@@ -1638,7 +1652,7 @@ int32_t sh_cpxload(WORD i, WORD on)
         return GD_ENSMEM;
     e = CPXE_SLOT(i);
     far_strget(name, e + CPXE_FILE, CPXE_FILELEN);
-    sh_cioname(name, cio);
+    sh_cpxcio(name, cio);
     near = app_near;
     app_kind = OWN_CPX;
     st = app_load_cio(cio, &app);
@@ -1665,6 +1679,247 @@ int32_t sh_cpxload(WORD i, WORD on)
     }
     far_write8(CPXE_OWN(i), (uint8_t)app.owner);
     return 0;
+}
+
+/* ---- managing the modules (phase 141, docs/cpanel-plan.md step 4) ------
+ *
+ * Cpxfile (GEMDOS 0x1F6, src/sys/gemdos.h): what the panel's Options do
+ * to the modules' folder and table, here because only here are the
+ * modules' files named as the boot found them (sh_cpxcio). */
+
+/* RELOAD: the folder read again into a table of its own, as at boot.
+ * Refused while a module that is not resident is loaded -- one is open.
+ * A resident module keeps its slot, its vtable, its owner and its live
+ * settings, found again by its file name; one whose file has gone stays
+ * loaded, unlisted, until the machine restarts.  The old table is given
+ * back.  Answers how many are listed. */
+static int32_t sh_cpxreload(void)
+{
+    uint32_t old = sh_cpx_far, tab = 0, oe, info, size;
+    WORD oldn = sh_ncpx, n, i, j;
+    uint8_t keep = far_owner, keept = far_tag, own;
+    UWORD flags;
+    char a[CPXE_FILELEN], b[CPXE_FILELEN];
+    uint8_t buf[CPXH_BUFLEN];
+
+    for (i = 0; i < oldn; i++) {
+        flags = 0;
+        far_get((uint8_t *)&flags, CPXE_SLOT(i) + CPXE_HDR + CPXH_FLAGS, 2);
+        if (sh_cpxinfo(i) && !(flags & CPXF_RESIDENT))
+            return GD_EACCDN;
+    }
+    n = sh_cpxdir(0, CPX_MAX);
+    if (n) {
+        size = CPX_MAX + (uint32_t)n * CPXE_SIZE;
+        far_owner = 0;                  /* the system's, as the first one */
+        far_tag = 0;
+        tab = far_alloc(size);
+        far_owner = keep;
+        far_tag = keept;
+        if (!tab)
+            return GD_ENSMEM;
+        far_fill(tab, 0, size);
+    }
+    sh_cpx_far = tab;
+    sh_cpxbad = 0;
+    sh_ncpx = n ? sh_cpxdir(tab, n) : 0;
+    for (i = 0; old && i < oldn; i++) {
+        oe = old + CPX_MAX + (uint32_t)i * CPXE_SIZE;
+        info = 0;
+        far_get((uint8_t *)&info, oe + CPXE_INFO, 4);
+        if (!info)
+            continue;
+        far_strget(a, oe + CPXE_FILE, CPXE_FILELEN);
+        own = far_read8(old + (uint32_t)i);
+        for (j = 0; j < sh_ncpx; j++) {
+            far_strget(b, CPXE_SLOT(j) + CPXE_FILE, CPXE_FILELEN);
+            if (strcmp(a, b) == 0) {
+                far_put(CPXE_SLOT(j) + CPXE_INFO, (const uint8_t *)&info, 4);
+                far_write8(CPXE_OWN(j), own);
+                far_get(buf, oe + CPXE_HDR + CPXH_BUF, CPXH_BUFLEN);
+                far_put(CPXE_SLOT(j) + CPXE_HDR + CPXH_BUF, buf, CPXH_BUFLEN);
+                break;
+            }
+        }
+    }
+    if (old)
+        far_free(old);
+    return sh_ncpx;
+}
+
+/* UNLOAD: slot i out of the table until the next reload or restart --
+ * XControl's -- refused for one that is loaded: resident, or open. */
+static int32_t sh_cpxunload(WORD i)
+{
+    WORD k;
+
+    if (i < 0 || i >= sh_ncpx || !sh_cpx_far)
+        return GD_ERANGE;
+    if (sh_cpxinfo(i))
+        return GD_EACCDN;
+    for (k = i; k < sh_ncpx - 1; k++) {
+        far_copy(CPXE_SLOT(k), CPXE_SLOT(k + 1), CPXE_SIZE);
+        far_write8(CPXE_OWN(k), far_read8(CPXE_OWN(k + 1)));
+    }
+    far_fill(CPXE_SLOT(sh_ncpx - 1), 0, CPXE_SIZE);
+    far_write8(CPXE_OWN(sh_ncpx - 1), 0);
+    sh_ncpx--;
+    return 0;
+}
+
+/* A FILE MADE BESIDE THE MODULES (phase 141).  On G4DOS a bare name made
+ * goes to the root -- its flat view's rule, src/fdos.s WRITING -- so a
+ * module's NAME.CFG goes into the folder its NAME.CPX was found in, and
+ * anything else into the first module's: where the panel and the AES
+ * look for them, beside the modules, not in the root.  Another DOS makes
+ * a bare name in its own folder, where the boot found the modules, so it
+ * is left a bare name there. */
+static WORD sh_cpxbeside(const char *name, char *cio)
+{
+    char near_[ACC_NAMELEN + 2], pre[CIO_NAME_MAX + 1];
+    WORD i, n;
+
+    if (dos.kind != DOS_G4DOS)
+        return 0;
+    for (i = 0; i < ACC_NAMELEN && name[i] && name[i] != '.'; i++)
+        near_[i] = name[i];
+    n = i;
+    if (name[i] == '.' && (name[i + 1] | 0x20) == 'c'
+        && (name[i + 2] | 0x20) == 'f' && (name[i + 3] | 0x20) == 'g') {
+        near_[n++] = '.';
+        near_[n++] = 'C';
+        near_[n++] = 'P';
+        near_[n++] = 'X';
+        near_[n] = 0;
+    } else if (sh_ncpx && sh_cpx_far)
+        far_strget(near_, CPXE_SLOT(0) + CPXE_FILE, ACC_NAMELEN);
+    else
+        return 0;
+    if (!sdc_folder(near_, pre))
+        return 0;
+    n = (WORD)strlen(pre);
+    for (i = 0; name[i] && n < CIO_NAME_MAX; i++) {
+        int c = (uint8_t)name[i];       /* not a byte: B8/B21, tools/ccbug --
+                                         * a char changed in place left the
+                                         * join after it in either width */
+
+        if (c >= 'a' && c <= 'z')
+            c -= 0x20;
+        pre[n++] = (char)c;
+    }
+    pre[n] = 0;
+    strcpy(cio, pre);
+    return 1;
+}
+
+#define CF_RELOAD   0                   /* src/app/gem.h, Cpxfile */
+#define CF_UNLOAD   1
+#define CF_READ     2
+#define CF_WRITE    3
+#define CF_RENAME   4
+#define CF_FIND     5
+#define CF_MAXIO    64                  /* bytes a read or write: a .CFG */
+
+/* The modules' folder, for the panel: a file of up to CF_MAXIO bytes read
+ * or written, a file renamed, the n-th name matching a pattern -- each
+ * name bare, and named as the boot found the modules.  `a` and `b` are
+ * the caller's far addresses. */
+int32_t sh_cpxfile(WORD op, WORD i, uint32_t a, uint32_t b)
+{
+    char name[ACC_NAMELEN + 2], cio[CIO_NAME_MAX + 1];
+    uint8_t buf[CF_MAXIO];
+    uint16_t got = 0;
+    int16_t fd;
+    uint8_t st;
+    WORD n;
+
+    if (op == CF_RELOAD)
+        return sh_cpxreload();
+    if (op == CF_UNLOAD)
+        return sh_cpxunload(i);
+    if (op < CF_READ || op > CF_FIND || !a)
+        return GD_EINVFN;
+    far_strget(name, a, ACC_NAMELEN);
+    sh_cpxcio(name, cio);
+    if (op == CF_READ || op == CF_WRITE) {
+        if (i < 0 || i > CF_MAXIO || !b)
+            return GD_ERANGE;
+        if (op == CF_READ) {
+            fd = cio_open(cio, CIO_A_READ, 0);
+            if (fd < 0)
+                return GD_EFILNF;
+            st = cio_read(fd, buf, (uint16_t)i, &got);
+            cio_close(fd);
+            if (st != CIO_OK && st != CIO_OK_EOF && !got)
+                return GD_EREADF;
+            far_put(b, buf, got);
+            return (int32_t)got;
+        }
+        far_get(buf, b, (uint16_t)i);
+        n = sh_cpxbeside(name, cio);
+        fd = cio_open(cio, CIO_A_WRITE, 0);
+        if (fd < 0)
+            return GD_EACCDN;
+        st = cio_write(fd, buf, (uint16_t)i);
+        cio_close(fd);
+        if (st != CIO_OK && st != CIO_OK_EOF)
+            return GD_EACCDN;
+        if (n) {
+            /* a copy an older gem4xe saved in the root would be found
+             * before this one, the root being read first: it goes */
+            cio[0] = 'D';
+            cio[1] = '1';
+            cio[2] = ':';
+            cio[3] = (char)dos.dirsep;
+            sh_cpxcio(name, cio + 4);
+            (void)cio_xio(CIO_X_DELETE, cio, 0, 0);
+        }
+        return (int32_t)i;
+    }
+    if (op == CF_RENAME) {
+        char nn[ACC_NAMELEN + 2];
+
+        if (!b)
+            return GD_EINVFN;
+        far_strget(nn, b, ACC_NAMELEN);
+        n = (WORD)strlen(cio);
+        if (n + 1 + (WORD)strlen(nn) > CIO_NAME_MAX)
+            return GD_EPTHNF;
+        cio[n] = ',';
+        strcpy(cio + n + 1, nn);
+        st = cio_xio(CIO_X_RENAME, cio, 0, 0);
+        if (st != CIO_OK && st != CIO_OK_EOF)
+            return GD_EACCDN;           /* SDX 4.49e's XIO 32 says so too */
+        return 0;
+    }
+    /* CF_FIND: the i-th file whose name matches `a`, into b */
+    {
+        char line[ACC_DIRLINE + 8], fname[ACC_NAMELEN];
+        WORD k = 0;
+
+        if (!b)
+            return GD_EINVFN;
+        fd = cio_open(cio, CIO_A_DIR, 0);
+        if (fd < 0)
+            return GD_ENMFIL;
+        for (;;) {
+            uint16_t len = 0;
+
+            st = cio_getrec(fd, line, sizeof line, &len);
+            if (st != CIO_OK && st != CIO_OK_EOF)
+                break;
+            if ((dos_dirline(line, len, fname, 0) & DOS_ENT_KIND)
+                == DOS_ENT_FILE && dos_wildcmp(name, fname) && k++ == i) {
+                cio_close(fd);
+                far_strput(b, fname, ACC_NAMELEN);
+                return 0;
+            }
+            if (st == CIO_OK_EOF)
+                break;
+        }
+        cio_close(fd);
+        return GD_ENMFIL;
+    }
 }
 
 /* The scan, then the modules that asked to be loaded at boot. */

@@ -2090,6 +2090,10 @@ static LONG gd_nopath(WORD fn)
     case GD_CPXLOAD:                    /* a control panel module, by index */
         r = sh_cpxload(arg_w(6), arg_w(8));
         break;
+    case GD_CPXFILE:                    /* ...and the panel's Options */
+        r = sh_cpxfile(arg_w(6), arg_w(8), (uint32_t)arg_l(10),
+                       (uint32_t)arg_l(14));
+        break;
     case GD_MPOOL:
         r = gd_mpool(arg_w(6));
         break;

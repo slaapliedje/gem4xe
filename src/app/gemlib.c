@@ -1693,6 +1693,15 @@ LONG Cpxload(WORD i, WORD on)
     return dos(0x1F3);
 }
 
+LONG Cpxfile(WORD op, WORD i, const void FAR *a, void FAR *b)
+{
+    dw(6, op);
+    dw(8, i);
+    dl(10, (LONG)(uint32_t)a);
+    dl(14, (LONG)(uint32_t)b);
+    return dos(0x1F6);
+}
+
 LONG Mpool(WORD sub)
 {
     dw(6, sub);

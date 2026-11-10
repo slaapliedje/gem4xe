@@ -1313,6 +1313,28 @@ LONG Mclaim(LONG addr, LONG len);
  * its vtable reads 0 until this loads it.  EINVFN on 0.13 and earlier. */
 LONG Cpxload(WORD i, WORD on);
 
+/* gem4xe's own (0x1F6), for a control panel's Options: what Cpxfile does
+ * to the modules' folder and the AES's table, each file name bare and
+ * named as the boot found the modules -- not by GEMDOS's path, which the
+ * desktop moves.
+ *   CF_RELOAD  the folder read again: how many are listed, or EACCDN
+ *              while a module that is not resident is loaded
+ *   CF_UNLOAD  slot i out of the table until the next reload; EACCDN for
+ *              one that is loaded (resident, or open)
+ *   CF_READ    up to i bytes (at most 64) of file `a` into `b`: how many
+ *   CF_WRITE   i bytes from `b` into file `a`, made or replaced
+ *   CF_RENAME  file `a` renamed `b`
+ *   CF_FIND    the i-th name matching the pattern `a`, into `b` (14
+ *              bytes): 0, or ENMFIL when there are no more
+ * EINVFN on 0.13 and earlier. */
+#define CF_RELOAD   0
+#define CF_UNLOAD   1
+#define CF_READ     2
+#define CF_WRITE    3
+#define CF_RENAME   4
+#define CF_FIND     5
+LONG Cpxfile(WORD op, WORD i, const void FAR *a, void FAR *b);
+
 /* gem4xe's own (0x1F4, 0x1F5): SUB-POOLS, GS/OS's aux user IDs.  After
  * Mpool(n), 1 to 15, what the program takes -- Malloc and Mxalloc, a
  * resource, anything gem4xe takes on its behalf -- is in its sub-pool n,

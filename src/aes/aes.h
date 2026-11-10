@@ -971,6 +971,7 @@ void     rs_cache_flush(void);
 extern uint16_t rc_hits, rc_fills;
 extern uint16_t sh_revived;             /* the desktop run from its kept image */
 int32_t  sh_cpxload(WORD i, WORD on);   /* Cpxload: GEMDOS 0x1F3 */
+int32_t  sh_cpxfile(WORD op, WORD i, uint32_t a, uint32_t b);  /* 0x1F6 */
 
 /* The shell loop: the desktop (DESKTOP.PRG on the default drive), the
  * programs it asks for, until a shutdown.  Returns how many programs it

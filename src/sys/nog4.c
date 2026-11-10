@@ -56,6 +56,14 @@ uint8_t sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len,
     return 0x92;
 }
 
+/* No engine, no folder to name: the AES leaves the name bare (phase 141). */
+uint8_t sdc_folder(const char *bare, char *cio)
+{
+    (void)bare;
+    (void)cio;
+    return 0;
+}
+
 uint8_t sdc_xio(uint8_t cmd, const char *name)
 {
     (void)cmd;

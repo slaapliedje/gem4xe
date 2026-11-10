@@ -267,6 +267,11 @@ extern uint16_t gd_termres;
  * IDs.  In src/app/gem.h. */
 #define GD_MPOOL     0x1F4
 #define GD_MFREEPOOL 0x1F5
+/* ...and the control panel's Options (phase 141): Cpxfile(op, i, a, b) --
+ * the module table reloaded or a slot unloaded, a small file of the
+ * modules' folder read, written or renamed, a name found -- named as the
+ * boot found the modules (src/aes/shel.c sh_cpxfile).  In src/app/gem.h. */
+#define GD_CPXFILE   0x1F6
 
 /* A loaded program run as Pexec runs a child, kept when `keep` and it
  * ends with Ptermres (*kept says so), freed by its owner otherwise.  The

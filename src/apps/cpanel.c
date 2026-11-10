@@ -286,8 +286,8 @@ static void cp_gatexy(void)
 static char cp_time[7], cp_date[9];
 
 /* THE CLOCK'S WAY (phase 140): 0 for 24-hour, 1 for 12 -- XControl's
- * Setup choice, kept in CONTROL.INF where the modules' settings are kept
- * (cp_readinf) and read by a gate here. */
+ * Setup choice, kept in CONTROL.INF beside the modules (cp_readinf) and
+ * read by a gate here. */
 WORD cp_hour12;
 
 static void cp_two(char *p, UWORD v)
@@ -473,7 +473,6 @@ static SAVEDS void cp_cpx_save(uint32_t xcpb)
     CPXSLOT FAR *sl;
     char name[20];
     uint8_t buf[64];
-    LONG h;
     WORD i, j;
 
     pb->ok = 0;
@@ -487,11 +486,10 @@ static SAVEDS void cp_cpx_save(uint32_t xcpb)
     name[i] = 0;
     for (j = 0; j < 64; j++)
         buf[j] = (uint8_t)sl->hdr.buffer[j];
-    h = Fcreate(name, 0);
-    if (h < 0)
-        return;
-    pb->ok = (WORD)(Fwrite((WORD)h, 64L, buf) == 64L);
-    Fclose((WORD)h);
+    /* THROUGH THE AES, named as it reads them at boot (phase 141): a bare
+     * name through GEMDOS went by GEMDOS's path -- the root on G4DOS, the
+     * last program's folder after the desktop ran one */
+    pb->ok = (WORD)(Cpxfile(CF_WRITE, 64, name, buf) == 64L);
 }
 
 /* XGen_Alert: one of the canned alerts, drawn in the panel's voice.
@@ -1311,11 +1309,24 @@ void cp_bootinit(void)
         CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, i);
         CPXINFO FAR *info;
 
-        if (!sl->info || !(sl->hdr.flags & (CPX_BOOTINIT | CPX_SETONLY)))
+        WORD loaded = 0;
+
+        if (!(sl->hdr.flags & (CPX_BOOTINIT | CPX_SETONLY)))
             continue;
+        /* NOT LOADED: after a reload (phase 141) -- at boot the AES has
+         * loaded every one that asks.  Loaded here, called, freed. */
+        if (!sl->info) {
+            *(uint32_t FAR *)sl->hdr.reserved = (uint32_t)(XCPB FAR *)&cp_xcpb;
+            if (Cpxload(i, 1) != 0)
+                continue;
+            loaded = 1;
+        }
         info = (CPXINFO FAR *)sl->info;
-        if (!info->cpx_call)
+        if (!info || !info->cpx_call) {
+            if (loaded)
+                Cpxload(i, 0);
             continue;
+        }
         cp_xcpb.which = i;
         cp_xcpb.buffer = (uint32_t)(char FAR *)sl->hdr.buffer;
         cp_pb.xcpb = (uint32_t)(XCPB FAR *)&cp_xcpb;
@@ -1325,6 +1336,8 @@ void cp_bootinit(void)
         cp_pb.ret = 0;
         info->cpx_call((uint32_t)(CPXPB FAR *)&cp_pb);
         cp_boots++;
+        if (loaded)
+            Cpxload(i, 0);              /* kept only if CPX_RESIDENT */
     }
     cp_xcpb.booting = 0;
 }
@@ -1559,16 +1572,17 @@ static void cp_openrow(WORD row)
 static char *cp_title;                  /* CPANEL.RSC's: WF_NAME keeps it */
 
 /* ---- the options' state (phase 140; the options themselves are below) */
-#define CP_NWORDS   (CPNO - CPOPABOUT + 1)
+#define CP_NWORDS   (CPALRES - CPOPABOUT + 1)   /* the last word */
 #define CP_WORD(i)  cp_words[(i) - CPOPABOUT]
 #define CP_CLOSER   (-1)                /* a form ended by the closer: OK */
 #define CP_GONE     (-2)                /* ...by AC_CLOSE: Cancel */
-#define CP_INF      "CONTROL.INF"       /* a bare name, as NAME.CFG: where
-                                         * the modules' settings go */
+#define CP_INF      "CONTROL.INF"       /* beside the modules, through the
+                                         * AES as NAME.CFG is (Cpxfile) */
 
 static OBJECT *cp_infot, *cp_setupt;
 static char *cp_words[CP_NWORDS];
 WORD cp_optpick = -1;                   /* the last option picked: a gate's */
+WORD cp_optn;                           /* ...and how many were offered */
 static char cp_ifile[14], cp_iver[6], cp_iid[5];
 
 /* CONTROL.INF: a line, "CLOCK 12" or "CLOCK 24".  Missing or not
@@ -1576,13 +1590,9 @@ static char cp_ifile[14], cp_iver[6], cp_iid[5];
 static void cp_readinf(void)
 {
     char buf[32];
-    LONG h = Fopen(CP_INF, 0), n;
+    LONG n = Cpxfile(CF_READ, (WORD)sizeof buf - 1, CP_INF, buf);
     WORD i;
 
-    if (h < 0)
-        return;
-    n = Fread((WORD)h, (LONG)sizeof buf - 1, buf);
-    Fclose((WORD)h);
     for (i = 0; i + 8 <= (WORD)n; i++)
         if (buf[i] == 'C' && buf[i + 1] == 'L' && buf[i + 2] == 'O'
             && buf[i + 3] == 'C' && buf[i + 4] == 'K' && buf[i + 5] == ' ') {
@@ -1596,17 +1606,10 @@ static WORD cp_writeinf(WORD h12)
 {
     static const char l12[] = "CLOCK 12\x9b", l24[] = "CLOCK 24\x9b";
     const char *s = l24;
-    LONG h;
-    WORD ok;
 
     if (h12)
         s = l12;
-    h = Fcreate(CP_INF, 0);
-    if (h < 0)
-        return 0;
-    ok = (WORD)(Fwrite((WORD)h, 9L, s) == 9L);
-    Fclose((WORD)h);
-    return ok;
+    return (WORD)(Cpxfile(CF_WRITE, 9, CP_INF, (void *)s) == 9L);
 }
 
 /* The resource, once.  Separate from the window because the two happen
@@ -1847,6 +1850,117 @@ static void cp_info(void)
     cp_formdone();
 }
 
+/* ---- managing them (phase 141): step 4's second half --------------------
+ *
+ * Reload, Unload, Deactivate and Activate, each through Cpxfile, so the
+ * AES names the modules' files as it found them at boot.  Deactivated is
+ * XCONTROL.CPZ for XCONTROL.CPX, COPS's convention: the AES lists *.CPX
+ * and nothing else, so a renamed module is still on the disk and gone
+ * from the list, and Activate renames it back. */
+#define CP_NCPZ  8                      /* the most Activate lists */
+static char cp_cpz[CP_NCPZ][14];
+WORD cp_reloads;                        /* reloads done: a gate's */
+
+static void cp_alert(WORD xal)
+{
+    cp_xcpb.alert = xal;
+    cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
+}
+
+/* The list again, from the AES's table, nothing picked */
+static void cp_relist(void)
+{
+    cp_sel = -1;
+    cp_top = 0;
+    cp_findcpx();
+}
+
+static void cp_reload(void)
+{
+    if (Cpxfile(CF_RELOAD, 0, (void *)0, (void *)0) < 0) {
+        cp_alert(XAL_MEM_ERR);
+        return;
+    }
+    cp_reloads++;
+    cp_relist();
+    cp_bootinit();                      /* a module that has just come */
+}
+
+/* NAME.CPX <-> NAME.CPZ, the file of the picked row or the named one */
+static WORD cp_rename(const char *from, char ext)
+{
+    char to[14];
+    WORD i;
+
+    for (i = 0; i < 12 && from[i] && from[i] != '.'; i++)
+        to[i] = from[i];
+    to[i++] = '.';
+    to[i++] = 'C';
+    to[i++] = 'P';
+    to[i++] = ext;
+    to[i] = 0;
+    return (WORD)(Cpxfile(CF_RENAME, 0, from, to) == 0);
+}
+
+static void cp_unload(void)
+{
+    if (cp_sel < 0)
+        return;
+    if (Cpxfile(CF_UNLOAD, cpx_row[cp_sel], (void *)0, (void *)0) < 0) {
+        (void)form_alert(1, CP_WORD(CPALRES));
+        return;
+    }
+    cp_relist();
+}
+
+static void cp_deactivate(void)
+{
+    CPXSLOT FAR *sl;
+    char name[14];
+    WORD i;
+
+    if (cp_sel < 0)
+        return;
+    sl = cpx_slot(cpx_table, cpx_stride, cpx_row[cp_sel]);
+    if (sl->hdr.flags & CPX_RESIDENT) {
+        (void)form_alert(1, CP_WORD(CPALRES));
+        return;
+    }
+    for (i = 0; i < 13 && sl->file[i]; i++)
+        name[i] = sl->file[i];
+    name[i] = 0;
+    if (!cp_rename(name, 'Z')) {
+        cp_alert(XAL_FILE_ERR);         /* SDX 4.49e cannot rename */
+        return;
+    }
+    cp_reload();
+}
+
+/* ACTIVATE: the deactivated modules in a pop-up, the one picked renamed
+ * back and the folder read again */
+static void cp_activate(void)
+{
+    char *items[CP_NCPZ];
+    WORD n = 0, k;
+
+    while (n < CP_NCPZ
+           && Cpxfile(CF_FIND, n, "*.CPZ", cp_cpz[n]) == 0) {
+        items[n] = cp_cpz[n];
+        n++;
+    }
+    if (!n)
+        return;
+    k = cp_pick(items, n, -1, tree, CPOPTS);
+    tree[CPOPTS].ob_state = NORMAL;
+    if (k < 0)
+        return;
+    if (!cp_rename(cp_cpz[k], 'X')) {
+        cp_alert(XAL_FILE_ERR);
+        return;
+    }
+    cp_reload();
+}
+
 /* SETUP: the clock's way, a pop-up; Save writes it to CONTROL.INF; OK
  * (or the closer) uses it, Cancel (or AC_CLOSE) does not. */
 static void cp_setup(void)
@@ -1873,12 +1987,16 @@ static void cp_setup(void)
             continue;
         }
         if (r == CSSAVE) {
-            if (!cp_writeinf(h12)) {
-                cp_xcpb.alert = XAL_FILE_ERR;
-                cp_gen_alert((uint32_t)(XCPB FAR *)&cp_xcpb);
-            }
+            if (!cp_writeinf(h12))
+                cp_alert(XAL_FILE_ERR);
             cp_setupt[CSSAVE].ob_state = NORMAL;
             cp_redrawob(cp_setupt, CSSAVE);
+            continue;
+        }
+        if (r == CSRELOAD) {
+            cp_reload();
+            cp_setupt[CSRELOAD].ob_state = NORMAL;
+            cp_redrawob(cp_setupt, CSRELOAD);
             continue;
         }
         if (r == CSOK || r == CP_CLOSER)
@@ -1887,34 +2005,71 @@ static void cp_setup(void)
     }
     cp_setupt[CSOK].ob_state = NORMAL;
     cp_setupt[CSCANCEL].ob_state = NORMAL;
+    cp_setupt[CSRELOAD].ob_state = NORMAL;
     cp_clock();
     cp_formdone();
 }
 
-/* THE OPTIONS BUTTON: its pop-up, and what was picked */
+/* THE OPTIONS BUTTON: its pop-up, and what was picked.  About and Setup
+ * always; Activate when a deactivated module is there to be brought back;
+ * Open CPX, CPX Info, Unload CPX and Deactivate with a module picked.
+ * cp_optpick is the WORD's index in CPANEL.RSC, for a gate. */
 static void cp_options(void)
 {
-    char *items[4];
-    WORD n = 2, k;
+    char *items[7], probe[14];
+    WORD what[7], n = 0, k;
 
-    items[0] = CP_WORD(CPOPABOUT);
-    items[1] = CP_WORD(CPOPSETUP);
-    if (cp_sel >= 0) {
-        items[2] = CP_WORD(CPOPOPEN);
-        items[3] = CP_WORD(CPOPINFO);
-        n = 4;
+    what[n] = CPOPABOUT;
+    items[n++] = CP_WORD(CPOPABOUT);
+    what[n] = CPOPSETUP;
+    items[n++] = CP_WORD(CPOPSETUP);
+    if (Cpxfile(CF_FIND, 0, "*.CPZ", probe) == 0) {
+        what[n] = CPOPACT;
+        items[n++] = CP_WORD(CPOPACT);
     }
+    if (cp_sel >= 0) {
+        what[n] = CPOPOPEN;
+        items[n++] = CP_WORD(CPOPOPEN);
+        what[n] = CPOPINFO;
+        items[n++] = CP_WORD(CPOPINFO);
+        what[n] = CPOPUNLOAD;
+        items[n++] = CP_WORD(CPOPUNLOAD);
+        what[n] = CPOPDEACT;
+        items[n++] = CP_WORD(CPOPDEACT);
+    }
+    cp_optn = n;
     k = cp_pick(items, n, -1, tree, CPOPTS);
-    cp_optpick = k;
     tree[CPOPTS].ob_state = NORMAL;
-    if (k == 0)
+    cp_optpick = -1;
+    if (k < 0)
+        return;
+    cp_optpick = what[k];
+    switch (what[k]) {
+    case CPOPABOUT:
         (void)form_alert(1, CP_WORD(CPABOUT));
-    else if (k == 1)
+        break;
+    case CPOPSETUP:
         cp_setup();
-    else if (k == 2)
+        break;
+    case CPOPACT:
+        cp_activate();
+        cp_formdone();
+        break;
+    case CPOPOPEN:
         cp_openrow(cp_sel);
-    else if (k == 3)
+        break;
+    case CPOPINFO:
         cp_info();
+        break;
+    case CPOPUNLOAD:
+        cp_unload();
+        cp_formdone();
+        break;
+    case CPOPDEACT:
+        cp_deactivate();
+        cp_formdone();
+        break;
+    }
 }
 
 /* A press in the work area: a slot picked (twice, opened), or the scroll

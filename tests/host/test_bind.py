@@ -250,6 +250,7 @@ EXPECT = [
     ("Dprobe",   DOS, 0x1F1, 0, 0, 0, 0),
     ("Mclaim",   DOS, 0x1F2, 0, 0, 0, 0),
     ("Cpxload",  DOS, 0x1F3, 0, 0, 0, 0),
+    ("Cpxfile",  DOS, 0x1F6, 0, 0, 0, 0),
     ("Mpool",    DOS, 0x1F4, 0, 0, 0, 0),
     ("Mfreepool", DOS, 0x1F5, 0, 0, 0, 0),
     ("Tsettime", DOS, 0x2D, 0, 0, 0, 0),

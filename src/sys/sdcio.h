@@ -50,6 +50,12 @@ uint8_t  sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len,
                  uint16_t *got);
 uint8_t  sdc_xio(uint8_t cmd, const char *name);
 
+/* Where G4DOS's search finds a bare name (phase 141): its folder as a CIO
+ * prefix, "D1:>GEM>", into `cio` (CIO_NAME_MAX + 1), so that a file meant
+ * to sit beside it can be made there -- a bare name made goes to the
+ * root.  0 when it is not found, is in the root, or is not bare. */
+uint8_t  sdc_folder(const char *bare, char *cio);
+
 /* GEMDOS's Psystem where the DOS is G4DOS (src/sys/dos.c dos_command):
  * the line at the far address `line` run by the DOS's commands
  * (src/sys/doscmd.c) and what they print -- lines ended by ATASCII's

@@ -318,6 +318,36 @@ static int16_t sdc_find(uint8_t u)
     return e;
 }
 
+uint8_t sdc_folder(const char *bare, char *cio)
+{
+    char FAR *path;
+    const char *p;
+    uint8_t u;
+    uint16_t n, i, k = 0;
+
+    if (!sc)
+        return 0;
+    path = sc->path;
+    p = sdc_dev(bare, &u);
+    if (!p || !sdc_path(p, path))
+        return 0;                       /* not D:'s, or names a folder */
+    sd_recheck(FS, u);
+    if (sdc_find(u) < 0)
+        return 0;
+    n = sdc_len(path);                  /* "\GEM\NAME.EXT" */
+    while (n > 0 && path[n - 1] != '\\')
+        n--;
+    if (n <= 1 || n + 4 > CIO_NAME_MAX)
+        return 0;                       /* in the root: a bare name will do */
+    cio[k++] = 'D';
+    cio[k++] = (char)('0' + u);
+    cio[k++] = ':';
+    for (i = 0; i < n; i++)
+        cio[k++] = path[i] == '\\' ? (char)dos.dirsep : path[i];
+    cio[k] = 0;
+    return 1;
+}
+
 /* The engine's errors as the status a SpartaDOS answers with -- which
  * src/sys/gemdos.c's gd_err turns back into GEMDOS's. */
 static uint8_t sdc_st(int16_t e)

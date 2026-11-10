@@ -1803,14 +1803,16 @@ build/gem-sys.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs
 
 # Control panel step 4's gate disk (test-m59): the system floppy -- G4DOS
 # and no SpartaDOS, the DOS new gates use -- with the control panel,
-# General (boot-initialised) and the gate's own module as TEST.CPX.
+# General (boot-initialised) and the gate's own module as TEST.CPX -- and
+# as EXTRA.CPZ, a module deactivated, for Activate (phase 141).
 CPX4_ADDS = --add build/cpanelacc.g4a 'GEM>CONTROL.ACC' --add build/cpanel.rsc 'GEM>CPANEL.RSC' \
             --add build/general.cpx 'GEM>GENERAL.CPX' --add build/general.rsc 'GEM>GENERAL.RSC' \
-            --add build/m35_cpx.cpx 'GEM>TEST.CPX'
+            --add build/m35_cpx.cpx 'GEM>TEST.CPX' --add build/m35_form.cpx 'GEM>EXTRA.CPZ'
 build/cpx4.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc \
                 build/lang.rsc build/gem4xe.cfg build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py \
                 build/fdos.elf build/fdboot.elf build/shell.sys \
-                build/cpanelacc.g4a build/cpanel.rsc build/general.cpx build/general.rsc build/m35_cpx.cpx
+                build/cpanelacc.g4a build/cpanel.rsc build/general.cpx build/general.rsc build/m35_cpx.cpx \
+                build/m35_form.cpx
 	@rm -f $@
 	python3 tools/mkfloppy.py $@ $(CPX4_ADDS)
 
