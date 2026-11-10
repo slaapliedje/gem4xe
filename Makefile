@@ -1625,12 +1625,17 @@ build/gem4xe.cfg: dist/gem4xe.cfg
 
 # ...and the safe-mode one the ANTIC gate boots with, which is the same
 # file with the one line uncommented.
+# What a user writes at the DOS prompt when the VBXE's output is not
+# something their monitor will show: the one line docs/guide.md gives.
+# Until phase 144 it was the whole template with that line uncommented,
+# eighteen sectors, and the shipped floppy has seventeen to spare -- a
+# user could not have copied it there either.  The template must still
+# name the key.
 build/safe.cfg: dist/gem4xe.cfg
 	@mkdir -p build
 	python3 -c "import sys; \
-	    open(sys.argv[2],'wb').write(open(sys.argv[1],'rb').read() \
-	        .replace(b'# VIDEO=AUTO', b'VIDEO=ANTIC') \
-	        .replace(b'\r\n', b'\n').replace(b'\n', b'\x9b'))" $< $@
+	    assert b'# VIDEO=AUTO' in open(sys.argv[1],'rb').read(); \
+	    open(sys.argv[2],'wb').write(b'VIDEO=ANTIC\x9b')" $< $@
 
 # ...and the one test-cf-dosclock boots with: CLOCK=DOS, so that the
 # SpartaDOS X kernel is the clock even on a machine that has the chip.
@@ -1670,8 +1675,8 @@ build/gem-boot.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc build
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
 	    $(DOS2_FILES)
 
-# The same shipped disk with the safe-mode line uncommented: what a user
-# writes from the DOS prompt when the VBXE's output is not something
+# The same shipped disk with a GEM4XE.CFG of the safe-mode line: what a
+# user writes from the DOS prompt when the VBXE's output is not something
 # their monitor will show (tests/emu/m26_fallback.py).
 build/gem-antic.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc build/m11_app.g4a build/lang.rsc build/816.com build/safe.cfg
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }

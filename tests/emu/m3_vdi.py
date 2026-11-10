@@ -1185,6 +1185,55 @@ SCREEN_OP = 3017
 # Sys op 23: v_opnvwk with intin[0] as its sub-function; the handle in
 # intout[6], closed again (phase 142).
 BYSUB_OP = 3023
+# Sys op 24: a contour fill made as a fresh owner, that owner freed; 1 in
+# intout[6] if the bitmap is still a block, its length in [7..8] (phase 144).
+CFOWN_OP = 3024
+# Sys op 25: a printer workstation opened as a fresh owner, that owner
+# freed, a fill low on the page, the workstation closed (phase 144).
+PAGE_OP = 3025
+PR_W, PR_H = 640, 800                   # the page (src/vdi/print.h)
+
+
+def report(results, name, err):
+    results.append((-1, name, err))
+    print(f"  [--] {name:<46s} {'ok' if not err else 'FAIL'}")
+
+
+def check_cf_map(b, script_addr, results, gw, gh):
+    """The contour fill's bitmap outlives the program that made it, and
+    covers the screen that is up: VDI buffers are the system's (phase 144)."""
+    rec = run_sys(b, script_addr, CFOWN_OP)
+    kept, n = (None, 0) if rec is None else (
+        rec[2 + 6], (rec[2 + 7] & 0xFFFF) << 16 | (rec[2 + 8] & 0xFFFF))
+    need = gw // 8 * gh
+    err = None
+    if not kept:
+        err = "the fill's bitmap went with the owner that first filled"
+    elif n < need:
+        err = f"the bitmap is {n} bytes, the {gw}-wide screen needs {need}"
+    report(results, "contour fill's bitmap outlives its first filler", err)
+
+
+def check_page(b, script_addr, results):
+    """The printer's page outlives the program that opened it, is freed
+    with the last workstation on it, and a fill on it gets a bitmap of
+    the page's size, not the screen's (phase 144)."""
+    rec = run_sys(b, script_addr, PAGE_OP)
+    if rec is None:
+        report(results, "printer page", "the runner hung")
+        return
+    # the record's words are signed: a length is two unsigned halves
+    h, kept, n, gone, freed = (rec[2 + 6], rec[2 + 7],
+                               (rec[2 + 8] & 0xFFFF) << 16
+                               | (rec[2 + 9] & 0xFFFF),
+                               rec[2 + 10], rec[2 + 11])
+    report(results, "printer page outlives its opener",
+           None if h and kept else f"handle {h}, page kept {kept}")
+    need = PR_W // 8 * PR_H
+    report(results, "a fill on the page has a page-sized bitmap",
+           None if n >= need else f"the bitmap is {n} bytes, the page needs {need}")
+    report(results, "printer page given back with its workstation",
+           None if gone and freed else f"pointer forgotten {gone}, block freed {freed}")
 
 
 def run_sys(b, script_addr, op, ints=()):
@@ -1279,6 +1328,9 @@ def main(argv):
                 break
             print(f"  -- {gw}x{gh}, stride {gstride} "
                   f"(shot column {vbxeref.shot_x0(gw)} on) --")
+            # before any case has filled: the first fill is this one's
+            if widths is None and only is None and wi == 0:
+                check_cf_map(b, script_addr, results, gw, gh)
             save = vdiref.VramForm.save_buffer(scratch_addr + 552, w=gw, h=gh)
             mem = vdiref.MemForm(scratch_addr + MEM_AT, MEM_W, MEM_H,
                                  MEM_W // 16, 4, scratch_addr + MEM_MFDB)
@@ -1307,6 +1359,11 @@ def main(argv):
             run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       script_addr, scratch_addr, results_addr, count_addr,
                       script_room)
+
+        # the printer's page, after the cases have left a screen-sized
+        # contour fill bitmap behind
+        if widths is None and only is None:
+            check_page(b, script_addr, results)
 
         # v_opnbm (v_opnvwk, sub-function 1) refused with handle 0 until
         # there are offscreen bitmaps -- it used to open a SCREEN

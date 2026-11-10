@@ -230,7 +230,19 @@ TASK void main(void)
         mem.fd_addr = (uint32_t)(uint16_t)near_buf;
         mem.fd_w = 160; mem.fd_h = 16; mem.fd_wdwidth = 10;
         mem.fd_nplanes = 1;
-        vdi_save_form(&far);
+        {
+            /* the save area is the system's (phase 144): taken here as a
+             * fresh owner, as a program's first drop-down would take it,
+             * and that owner's blocks freed, as its end would free them --
+             * the area must still be a block at STATUS[4] */
+            uint8_t ko = far_owner, own = far_new_owner();
+
+            far_owner = own;
+            vdi_save_form(&far);
+            far_owner = ko;
+            far_free_owner(own);
+            STATUS[4] = (unsigned char)(far_size(far.fd_addr) ? 'K' : 'L');
+        }
         STATUS[3] = far.fd_addr >= 0x10000UL ? 'F' : 'N';
         from[0] = &scr; to[0] = &mem;
         from[1] = &mem; to[1] = &far;

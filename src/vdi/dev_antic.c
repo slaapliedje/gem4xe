@@ -376,8 +376,13 @@ void dev_screen_form(RFORM *f)
 
 void dev_save_form(MFDB *m)
 {
-    if (!an_save)
+    if (!an_save) {
+        /* the system's (phase 144): the first menu dropped takes it, as
+         * whichever program dropped it, and that program's end took it
+         * back while the AES went on saving screens into it */
         an_save = far_alloc((uint32_t)AN_STRIDE * AN_H);
+        far_keep(an_save);
+    }
     m->fd_addr = an_save;
     m->fd_w = AN_W;
     m->fd_h = AN_H;

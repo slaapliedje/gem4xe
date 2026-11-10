@@ -143,6 +143,9 @@ WORD vdi_font_load(void)
             cio_close(fd);
             return 0;
         }
+        /* the system's (phase 144): a program's vst_load_fonts can be
+         * the first to load one, and the face outlives the program */
+        far_keep(font_ram);
     }
     dst = font_ram;
     while (left) {

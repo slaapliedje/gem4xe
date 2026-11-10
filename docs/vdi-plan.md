@@ -3,8 +3,11 @@
 Status: **step 1 built** -- [phase 142](phase142.md): `vro_cpyfm`'s
 sixteen modes on every device, `v_opnbm` refused and the face's name;
 [phase 143](phase143.md): `vrt_cpyfm` into forms, `vr_trnfm`,
-`v_bez_on`, and the page's erase colour.  Step 2 is next.  Planned
-2026-11-10.  The question (2026-11-09): "We know that
+`v_bez_on`, and the page's erase colour.  Then [phase 144](phase144.md),
+found while preparing step 2: the VDI's lazily taken far buffers were
+the first caller's and went with it, and a contour fill on the page
+never worked.  Step 2 is next.  Planned 2026-11-10.  The question
+(2026-11-09): "We know that
 NVDI sped up a lot of the VDI calls, but since we don't/won't have NVDI
 to load for or emuTOS port.  What optimizations and capabilities are we
 missing that we should implement?"  The answer was given then; this is

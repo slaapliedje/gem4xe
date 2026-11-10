@@ -837,7 +837,12 @@ def main(argv):
         elif g4dos:
             # G4DOS loads D1:GEM.COM by itself -- the runner, here -- and
             # loads it again after the switch to the 65C816, as it does
-            # the product (tests/emu/fdos_boot.py)
+            # the product (tests/emu/fdos_boot.py).  FROM A COLD RESET, as
+            # the product's gates boot: the emulator has run some frames of
+            # its own by the time the bridge answers, so "two frames in"
+            # was a different moment of the OS's start-up every run, and
+            # about one boot in two never reached the runner (phase 144)
+            b.ok("COLD_RESET")
             b.frames(2)
             b.poke(0xD1FF, 0x01)
             b.poke(0xD191, 0x00)

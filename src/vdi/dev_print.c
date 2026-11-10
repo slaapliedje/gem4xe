@@ -51,6 +51,9 @@ int16_t pr_page_open(void)
     pr_page = (uint8_t FAR *)far_alloc(PR_BYTES);
     if (!pr_page)
         return 0;
+    /* the system's, not the opener's (phase 144): two programs can print
+     * at once now, and the first to end would take the page with it */
+    far_keep((uint32_t)pr_page);
     for (i = 0; i < PR_BYTES; i++)
         pr_page[i] = 0;
     return 1;
@@ -58,9 +61,13 @@ int16_t pr_page_open(void)
 
 void pr_page_close(void)
 {
-    /* The far heap is a bump allocator wound back by app_free, so the
-     * page goes with the program that opened it.  Forgetting the pointer
-     * is what this has to do; giving the bytes back is not its call. */
+    /* The last printer workstation has closed (vdi.c print_closed): the
+     * page given back and forgotten.  Until phase 144 nothing called this
+     * and the pointer outlived the program the block went with -- the
+     * comment here still described the bump allocator that went in
+     * 0.9.2, which wound back with app_free. */
+    if (pr_page)
+        far_free((uint32_t)pr_page);
     pr_page = 0;
 }
 

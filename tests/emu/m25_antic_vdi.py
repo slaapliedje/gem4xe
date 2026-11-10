@@ -225,6 +225,9 @@ def main(argv):
         # gsx_start) rather than checking numbers someone wrote down: the
         # claim is that a GEM ADAPTS to a second screen, and a constant
         # would not be evidence of it.
+        check(b.peek(STATUS + 4) == ord("K"),
+              "the menu save area went with the owner that first took it "
+              "(STATUS[4] not 'K'): it is the system's (phase 144)")
         name = bytes(b.memdump(0x0630, 20)).split(b"\0")[0].decode("latin-1")
         want = f"gem4xe system {FONT_W}x{FONT_H}"
         check(name == want,

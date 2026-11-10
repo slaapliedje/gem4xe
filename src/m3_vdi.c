@@ -51,6 +51,36 @@
 #include "sys/gemdos.h"
 #include "vbxe/vbxe.h"
 #include "antic/antic.h"   /* the other chip's DMA, off under the overlay */
+#include "sys/zwin.h"
+#include "vdi/print.h"     /* pr_page, for sys op 25 */
+
+extern ZWIN uint32_t cf_map;    /* v_contourfill's bitmap (src/vdi/vdi.c) */
+
+/* vs_clip and v_contourfill on handle h: a fill inside a small box. */
+static void fill_in_box(WORD h, WORD x0, WORD y0)
+{
+    contrl[0] = 129;                /* vs_clip */
+    contrl[1] = 2;
+    contrl[3] = 1;
+    contrl[6] = h;
+    intin[0] = 1;
+    ptsin[0] = x0; ptsin[1] = y0;
+    ptsin[2] = (WORD)(x0 + 15); ptsin[3] = (WORD)(y0 + 7);
+    vdi();
+    contrl[0] = 103;                /* v_contourfill, the seed's colour */
+    contrl[1] = 1;
+    contrl[3] = 1;
+    contrl[6] = h;
+    intin[0] = -1;
+    ptsin[0] = (WORD)(x0 + 4); ptsin[1] = (WORD)(y0 + 4);
+    vdi();
+    contrl[0] = 129;
+    contrl[1] = 0;
+    contrl[3] = 1;
+    contrl[6] = h;
+    intin[0] = 0;
+    vdi();
+}
 
 #define STATUS ((volatile unsigned char *) 0x0600)
 
@@ -658,6 +688,71 @@ static void sys_op(WORD op)
         intout[12] = (WORD)(keep[4] >> 16);
         intout[13] = (WORD)keep[4];
         c4 = 14;
+        break;
+    }
+    /* 24: THE CONTOUR FILL'S BUFFERS ARE THE SYSTEM'S (phase 144).  A small
+     * fill made as a fresh owner, as a program's would be, and the owner's
+     * blocks freed, as its end would: [6] 1 if the bitmap is still a
+     * block, [7..8] its length, which must cover the screen up now. */
+    case 24: {
+        uint8_t ko = far_owner, kt = far_tag, own = far_new_owner();
+        uint32_t n;
+
+        far_owner = own;
+        far_tag = 0;
+        fill_in_box(VDI_PHYS_HANDLE, 0, 0);     /* a small box: quick */
+        far_owner = ko;
+        far_tag = kt;
+        far_free_owner(own);
+        n = cf_map ? far_size(cf_map) : 0;
+        intout[6] = (WORD)(n != 0);
+        intout[7] = (WORD)(n >> 16);
+        intout[8] = (WORD)n;
+        c4 = 9;
+        break;
+    }
+    /* 25: THE PRINTER'S PAGE (phase 144).  A printer workstation opened
+     * as a fresh owner and the owner's blocks freed: [6] the handle, [7] 1
+     * if the page outlived them.  A fill on the page, low down where a
+     * screen's bitmap does not reach: [8..9] the bitmap's length after.
+     * The workstation closed: [10] 1 if the page was forgotten, [11] 1 if
+     * its block was given back. */
+    case 25: {
+        uint8_t ko = far_owner, kt = far_tag, own = far_new_owner();
+        WORD k, h;
+        uint32_t pg, n = 0;
+
+        far_owner = own;
+        far_tag = 0;
+        for (k = 0; k < 11; k++)
+            intin[k] = (WORD)(k == 0 ? 21 : (k == 10 ? 2 : 1));
+        contrl[0] = 100;            /* v_opnvwk, device 21: the page */
+        contrl[1] = 0;
+        contrl[3] = 11;
+        contrl[5] = 0;
+        contrl[6] = VDI_PHYS_HANDLE;
+        vdi();
+        h = contrl[6];
+        pg = (uint32_t)pr_page;
+        far_owner = ko;
+        far_tag = kt;
+        far_free_owner(own);        /* its opener's end */
+        intout[6] = h;
+        intout[7] = (WORD)(pg != 0 && far_size(pg) != 0);
+        if (h) {
+            fill_in_box(h, 0, 780);
+            n = cf_map ? far_size(cf_map) : 0;
+            contrl[0] = 101;        /* v_clsvwk */
+            contrl[1] = 0;
+            contrl[3] = 0;
+            contrl[6] = h;
+            vdi();
+        }
+        intout[8] = (WORD)(n >> 16);
+        intout[9] = (WORD)n;
+        intout[10] = (WORD)(pr_page == 0);
+        intout[11] = (WORD)(pg != 0 && far_size(pg) == 0);
+        c4 = 12;
         break;
     }
     /* 23: A WORKSTATION BY SUB-FUNCTION (phase 142).  v_opnvwk with

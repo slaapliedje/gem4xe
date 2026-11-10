@@ -754,8 +754,10 @@ static void vdi_v_opnwk(void)
         vwk_hdl[i] = 0;
         vwk_own[i] = 0;
     }
-    if (!vwk_far)
+    if (!vwk_far) {
         vwk_far = far_alloc((uint32_t)NUM_VWK * sizeof(Vwk));
+        far_keep(vwk_far);              /* the system's, whoever opened it */
+    }
     vwk_cur = 0;
     init_wk(VDI_PHYS_HANDLE);
     vwk_hdl[0] = VDI_PHYS_HANDLE;
@@ -859,6 +861,30 @@ static void vwk_to_phys(void)
 /* v_clsvwk: the workstation the call names -- the dispatcher made it
  * current -- unless it is the physical one, which only v_clswk closes.
  * The physical workstation is current afterwards, as in the donor. */
+/* THE PAGE GOES WITH THE LAST WORKSTATION ON IT (phase 144).  It was never
+ * given back: pr_page_close was called by nothing, so when the program
+ * that printed ended, its block went and pr_page went on pointing at it,
+ * and the next program to print drew in memory that was someone else's.
+ * The page is the system's now (dev_print.c), shared by every printer
+ * workstation open, and freed when none is. */
+static void print_closed(void)
+{
+    WORD i;
+    const VDIDEV FAR *d;
+
+    if (!pr_page)
+        return;
+    for (i = 1; i < NUM_VWK; i++) {
+        if (!vwk_hdl[i])
+            continue;
+        far_get((uint8_t *)&d, vwk_at(i) + offsetof(Vwk, dev),
+                (uint16_t)sizeof d);
+        if (d == &vdev_print)
+            return;
+    }
+    pr_page_close();
+}
+
 static void vdi_v_clsvwk(void)
 {
     if (vwk_cur == 0)
@@ -866,6 +892,7 @@ static void vdi_v_clsvwk(void)
     vwk_hdl[vwk_cur] = 0;
     vwk_own[vwk_cur] = 0;
     vwk_to_phys();
+    print_closed();
 }
 
 /* What a program left open when it ended (src/sys/app.c app_free): the
@@ -895,6 +922,7 @@ void vdi_close_virtuals_but(uint16_t keep)
         }
     if (vwk_cur != 0 && vwk_hdl[vwk_cur] == 0)
         vwk_to_phys();
+    print_closed();
 }
 
 void vdi_close_virtuals(void)
@@ -1334,7 +1362,11 @@ static void vdi_v_pmarker(void)
  * bitmap fetched and put back in one go, is the same algorithm without
  * any of that. */
 #define CF_STRIDE (SCR_W / 8)           /* bytes a row of the bitmap */
-#define CF_BYTES  (CF_STRIDE * SCR_H)
+/* In 32 bits (phase 144): a page is 80 x 800 = 64,000 bytes, which as a
+ * WORD is -1,536 -- an allocation of four gigabytes that failed, and a
+ * clearing loop that, with a screen's map already taken, went on far past
+ * it.  A fill on a printer workstation never worked. */
+#define CF_BYTES  ((uint32_t)CF_STRIDE * (uint32_t)SCR_H)
 /* Seeds waiting to be examined, one per RUN rather than one per pixel.
  * 8192 of them is 32 KB of far memory and more than a 640 x 240 region
  * can need in any shape that has been drawn on this screen; a fill that
@@ -1342,7 +1374,14 @@ static void vdi_v_pmarker(void)
  * driver and the model could disagree. */
 #define CF_STACK  8192
 
-ZWIN static uint32_t cf_map;            /* the bitmap, far */
+/* THE SYSTEM'S, BOTH (phase 144).  They are taken at the first fill, and a
+ * VDI call runs as the program that made it (src/sys/ctx.c sets far_owner
+ * at every switch), so they were that program's: gone when it ended, and
+ * the pointers left at blocks someone else might be given.  far_keep makes
+ * them the system's.  And the map is a DEVICE's size -- a page is 80 x 800
+ * where a screen is 80 x 240 -- so one too small for the device the fill
+ * is on is given back and taken again.  Not static: test-m3 reads cf_map. */
+ZWIN uint32_t cf_map;                   /* the bitmap, far */
 ZWIN static uint32_t cf_stack;          /* CF_STACK seeds of two WORDs */
 ZWIN static WORD     cf_sp;
 ZWIN static WORD     cf_search;         /* the hardware pen the search knows */
@@ -1447,9 +1486,17 @@ static void vdi_v_contourfill(void)
     }
     if (x < cf_x0 || x > cf_x1 || y < cf_y0 || y > cf_y1)
         return;
+    if (cf_map && far_size(cf_map) < CF_BYTES) {
+        far_free(cf_map);
+        cf_map = 0;
+    }
     if (!cf_map) {
         cf_map = far_alloc(CF_BYTES);
+        far_keep(cf_map);
+    }
+    if (!cf_stack) {
         cf_stack = far_alloc((uint32_t)CF_STACK * 4);
+        far_keep(cf_stack);
     }
     if (!cf_map || !cf_stack)
         return;
