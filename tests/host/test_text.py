@@ -45,6 +45,12 @@ class TestTextRun(unittest.TestCase):
                             "-O2", "-I", os.path.join(ROOT, "src"),
                             "-o", obj, src], check=True)
             objs.append(obj)
+        # an_pack6 is in assembler since phase 146 (src/antic/anpack.s)
+        asm = os.path.join(out, "anpack.o")
+        subprocess.run([os.path.join(CALYPSI, "bin", "as65816"), "-o", asm,
+                        os.path.join(ROOT, "src", "antic", "anpack.s")],
+                       check=True)
+        objs.append(asm)
         elf = os.path.join(out, "text.elf")
         subprocess.run([ld, "-g", scm] + objs + ["-o", elf, "clib-lc-sd.a",
                         "--rtattr", "exit=simplified"], check=True)

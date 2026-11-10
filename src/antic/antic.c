@@ -595,31 +595,29 @@ void antic_glyph(uint32_t face, uint16_t ch, int16_t x, int16_t y,
  * shift by `w` would be a loop on this CPU.  No other width is drawn:
  * a generic packer, and antic_glyph behind it, were bytes the DOS 2
  * floppy did not have (docs/phase55.md). */
+/* IN ASSEMBLER since phase 146 (src/antic/anpack.s): in C it was half a
+ * text screen's time, a shift by the bits pending -- a loop on this CPU --
+ * for every byte put out.  The face's row is read through a 24-bit
+ * address, so its 256 bytes must be in one bank, as the 6x6 face's and a
+ * loaded one's are. */
+extern TINY uint32_t ap_sr;
+extern TINY uint16_t ap_chars, ap_buf, ap_n, ap_lead;
+void an_pack6_s(void);
+/* ...and the packed row onto the screen through the op, also there:
+ * AN_PUT's mix in C was ten microseconds a byte (phase 146). */
+extern TINY uint16_t pr_buf, pr_scr, pr_last;
+extern TINY uint8_t pr_lm, pr_rm, pr_x1, pr_y1, pr_x0, pr_y0;
+void an_put_row_s(void);
+
 static void an_pack6(uint8_t *buf, const uint8_t FAR *sr,
                      const int16_t *chars, uint16_t n, uint16_t lead)
 {
-    uint16_t i, k = 0, acc = 0, bits = lead;
-    uint8_t g;
-
-    for (i = 0; i < n; i++) {
-        g = sr[chars[i] & 0xFF];        /* & and not a (uint8_t) cast,
-                                         * which with a far table in a
-                                         * loop is an internal compiler
-                                         * error (tools/ccbug B22); into a
-                                         * local first (B18) */
-        acc = (uint16_t)((acc << 6) | (uint16_t)(g >> 2));
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            g = (uint8_t)(acc >> bits);
-            buf[k] = g;
-            k++;
-        }
-    }
-    if (bits) {
-        g = (uint8_t)(acc << (8 - bits));
-        buf[k] = g;
-    }
+    ap_sr = (uint32_t)sr;
+    ap_chars = (uint16_t)chars;
+    ap_buf = (uint16_t)buf;
+    ap_n = n;
+    ap_lead = lead;
+    an_pack6_s();
 }
 
 /* A string, a row at a time.  Per glyph, antic_glyph sets up a cell --
@@ -647,7 +645,6 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
     AN_OP o;
     uint16_t row, k, lead, last;
     int16_t x2;
-    uint8_t t;                          /* AN_PUT's scratch */
     uint8_t lm, rm, g;
 
     if (n == 0 || w < 1 || w > 8)
@@ -663,6 +660,14 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
     rm = an_right[x2 & 7];
     last = (uint16_t)(((uint16_t)x2 >> 3) - ((uint16_t)x >> 3));
     p = SCREEN + (uint16_t)y * AN_STRIDE + ((uint16_t)x >> 3);
+    pr_buf = (uint16_t)buf;             /* an_put_row_s's, for the string */
+    pr_last = last;
+    pr_lm = lm;
+    pr_rm = rm;
+    pr_x1 = o.x1;
+    pr_y1 = o.y1;
+    pr_x0 = o.x0;
+    pr_y0 = o.y0;
 
     for (row = 0; row < (uint16_t)h; row++) {
         if (thick) {
@@ -682,17 +687,8 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
         } else {
             an_pack6(buf, sr, chars, n, lead);
         }
-        if (last == 0) {
-            AN_PUT(p, o, buf[0], (uint8_t)(lm & rm), t);
-        } else {
-            AN_PUT(p, o, buf[0], lm, t);
-            for (k = 1; k < last; k++) {
-                g = buf[k];
-                AN_PUT(p + k, o, g, 0xFF, t);
-            }
-            g = buf[last];
-            AN_PUT(p + last, o, g, rm, t);
-        }
+        pr_scr = (uint16_t)p;
+        an_put_row_s();
         p += AN_STRIDE;
         sr += AN_FONT_STRIDE;
     }

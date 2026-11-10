@@ -944,6 +944,7 @@ static volatile UWORD   * TINY r1_w;   /* next strip word  */
 static TINY UWORD r1_n;                /* bytes to go      */
 static TINY UWORD r1_b;                /* the source byte  */
 static TINY UWORD r1_rsh;              /* 8 - shift        */
+static TINY UWORD r1_lsh;              /* the shift itself */
 static TINY UWORD r1_hi, r1_lo;        /* the two nibbles' */
                                                         /* table offsets    */
 /* A strip word from the table, by byte offset: one indexed load, the offset
@@ -1009,9 +1010,28 @@ static void expand_aligned(void)
 /* The same, with the source r1_rsh bits to the right of the strip's byte
  * boundaries: each output byte straddles two source bytes.  The last one
  * reads one byte past the row it needs, inside the form or just after it:
- * bank $00 RAM, and only the bits above the boundary are used. */
+ * bank $00 RAM, and only the bits above the boundary are used.
+ *
+ * A shift by a variable is a loop, a bit a turn, so the byte is taken by
+ * whichever way round is shorter (phase 146): right by r1_rsh, or left by
+ * r1_lsh and the high byte -- the same eight bits, since the sixteen-bit
+ * shift drops the ones above them.  At an odd x that is one turn, not
+ * seven; four at the most. */
 static void expand_shifted(void)
 {
+    if (r1_lsh <= 4) {
+        do {
+            r1_b = (UWORD)((UWORD)((((UWORD)r1_s[0] << 8) | r1_s[1])
+                                   << r1_lsh) >> 8);
+            r1_s++;
+            r1_hi = (UWORD)((r1_b >> 4) << 1);
+            r1_lo = (UWORD)((r1_b & 15) << 1);
+            r1_w[0] = T16(r1_v16, r1_hi);
+            r1_w[1] = T16(r1_v16, r1_lo);
+            r1_w += 2;
+        } while (--r1_n);
+        return;
+    }
     do {
         r1_b = (UWORD)((((UWORD)r1_s[0] << 8) | r1_s[1]) >> r1_rsh) & 0xFF;
         r1_s++;
@@ -1084,6 +1104,7 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
         px_last  = (WORD)(sx1 + (cx1 - dx1));
     }
     r1_rsh = (UWORD)(8 - sh);
+    r1_lsh = (UWORD)sh;
     r1_tables(mode, fg, bg, (WORD)(first_part | last_part));
 
     band = (WORD)(R1_ROW / (uint16_t)nb);       /* rows a band holds */
