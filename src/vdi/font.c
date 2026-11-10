@@ -178,10 +178,29 @@ WORD vdi_font_id(WORD face)
     return (WORD)(face == FONT_LOADED && font_have ? font_loaded_id : FONT_ID_SYS);
 }
 
-const char *vdi_font_name(WORD face)
+/* vqt_name's 32 words: a face's name, one character to a word and zeros
+ * after it.  The system face's carries its cell, which is the device's:
+ * 8x8 on the VBXE and the page, 6x6 on ANTIC -- until phase 142 it said
+ * 8x8 on both.  A digit each, because a cell is 6 or 8 (font.h), and put
+ * in the words rather than the string, which stays constant: LoRAM has no
+ * room for a writable copy. */
+void vdi_font_name(WORD face, WORD *out)
 {
     static const char sysname[] = "gem4xe system 8x8";
-    return face == FONT_LOADED && font_have ? font_named : sysname;
+    const char *nm = sysname;
+    WORD i, end = 0;
+
+    if (face == FONT_LOADED && font_have)
+        nm = font_named;
+    for (i = 0; i < 32; i++) {
+        if (!end && !nm[i])
+            end = 1;
+        out[i] = (WORD)(end ? 0 : (uint8_t)nm[i]);
+    }
+    if (nm == sysname) {
+        out[14] = (WORD)('0' + FONT_W);
+        out[16] = (WORD)('0' + FONT_H);
+    }
 }
 
 /* vst_font's answer: the face now drawn with.  An id this driver does not

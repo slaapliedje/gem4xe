@@ -270,6 +270,7 @@ UWORD style_anchor(UWORD mask, WORD from, WORD dir);
 #define VEX_MOTV     126
 #define VEX_CURV     127
 #define VQ_KEY_S     128
+#define VQT_NAME     130
 #define VSC_FORM     111
 #define V_SHOW_C     122
 #define V_HIDE_C     123

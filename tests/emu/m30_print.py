@@ -41,7 +41,7 @@ import atr                                  # noqa: E402
 import devref                               # noqa: E402
 import emitref as E                         # noqa: E402
 import vdiref                               # noqa: E402
-from vdiref import (V_OPNWK, V_GTEXT, V_PLINE, VR_RECFL, VSF_COLOR,  # noqa: E402
+from vdiref import (V_OPNWK, V_GTEXT, V_PLINE, VR_RECFL, VSF_COLOR, VRO_CPYFM,  # noqa: E402
                     VSF_INTERIOR, VSL_COLOR, VST_COLOR, VSWR_MODE, WORK_IN)
 from m14_sparta import type_line, wait_prompt, screen    # noqa: E402
 CONFIG_DIR = config_dir_for("m30")          # this run's own (see m19)
@@ -85,6 +85,10 @@ SCRIPT = [
     text(25, 216, "...AND THE SAME LINE AT AN ODD X."),
     (VSL_COLOR, (), (1,)),
     (V_PLINE, (300, 300, 420, 340), ()),
+    # vro_cpyfm's logic modes on the page (phase 142): S XOR D over the
+    # text, NOT S beside it, at odd x
+    (VRO_CPYFM, (37, 60, 122, 140, 41, 190, 126, 270), (6,)),
+    (VRO_CPYFM, (37, 60, 122, 140, 201, 190, 286, 270), (12,)),
 ]
 
 

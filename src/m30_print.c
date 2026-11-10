@@ -142,6 +142,25 @@ TASK void main(void)
     ptsin[2] = 420; ptsin[3] = 340;
     call(V_PLINE, 2, 0);
 
+    /* vro_cpyfm's logic modes on the page (phase 142): the block with its
+     * hole copied over the first line of text with S XOR D, and beside it
+     * with NOT S, at odd x; both MFDB pointers 0, the page itself */
+    {
+        static const WORD mode[2] = { 6, 12 };
+        static const WORD dx[2] = { 41, 201 };
+        WORD k;
+
+        for (k = 0; k < 2; k++) {
+            ptsin[0] = 37;  ptsin[1] = 60;  ptsin[2] = 122; ptsin[3] = 140;
+            ptsin[4] = dx[k]; ptsin[5] = 190;
+            ptsin[6] = (WORD)(dx[k] + 85); ptsin[7] = 270;
+            intin[0] = mode[k];
+            contrl[7] = 0; contrl[8] = 0;
+            contrl[9] = 0; contrl[10] = 0;
+            call(VRO_CPYFM, 4, 1);
+        }
+    }
+
     /* -- off the machine, twice ---------------------------------------
      * Through v_updwk both times, because the wiring from the VDI's
      * opcode 4 to pr_emit() is part of what this gate is for.

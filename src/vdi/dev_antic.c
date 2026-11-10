@@ -505,17 +505,18 @@ static WORD copy_rows(const RFORM *src, WORD sx1, WORD sy1,
 void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
                    const RFORM *dst, WORD dx1, WORD dy1, WORD w, WORD h)
 {
-    WORD y, i;
+    WORD y, i, m = src->mode;
     WORD back_y, back_x;
 
     /* screen to screen is the window manager's move, and the surface has
-     * a byte path for it */
-    if (src->screen && dst->screen) {
+     * a byte path for it -- for a plain copy; a logic mode (phase 142)
+     * goes a pixel at a time below, whichever forms */
+    if (m == ROP_S_ONLY && src->screen && dst->screen) {
         antic_copy((int16_t)sx1, (int16_t)sy1, (int16_t)dx1, (int16_t)dy1,
                    (int16_t)w, (int16_t)h);
         return;
     }
-    if (copy_rows(src, sx1, sy1, dst, dx1, dy1, w, h))
+    if (m == ROP_S_ONLY && copy_rows(src, sx1, sy1, dst, dx1, dy1, w, h))
         return;
     back_y = (WORD)(dy1 > sy1);
     back_x = (WORD)(dx1 > sx1);
@@ -526,7 +527,11 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
         for (i = 0; i < w; i++) {
             WORD sx = back_x ? (WORD)(sx1 + w - 1 - i) : (WORD)(sx1 + i);
             WORD dx = back_x ? (WORD)(dx1 + w - 1 - i) : (WORD)(dx1 + i);
-            form_put(dst, dx, dy, form_get(src, sx, sy));
+            WORD v = form_get(src, sx, sy);
+
+            if (m != ROP_S_ONLY)
+                v = rop4(m, v, form_get(dst, dx, dy)) & 1;
+            form_put(dst, dx, dy, v);
         }
     }
 }

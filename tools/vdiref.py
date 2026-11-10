@@ -51,7 +51,7 @@ TXT_DONE = TXT_THICKEN | TXT_UNDERLINE
 TA_LEFT, TA_CENTRE, TA_RIGHT = 0, 1, 2
 TA_BASE, TA_HALF, TA_ASCENT, TA_BOTTOM, TA_DESCENT, TA_TOP = range(6)
 FONT_ID_SYS, FONT_SYSTEM, FONT_LOADED = 1, 1, 2
-FONT_SYSNAME = "gem4xe system 8x8"    # what vqt_name(1) answers
+FONT_SYSNAME = "gem4xe system {}x{}"  # what vqt_name(1) answers: the cell
 V_PMARKER, V_FILLAREA, V_GDP, VST_ROTATION = 7, 9, 11, 13
 VSM_TYPE, VSM_HEIGHT, VSM_COLOR = 18, 19, 20
 VQL_ATTRIBUTES, VQM_ATTRIBUTES, VQF_ATTRIBUTES = 35, 36, 37
@@ -451,7 +451,7 @@ class VDI:
         x2 = min(x2, w - 1); y2 = min(y2, h - 1)
         return (x1, y1, x2, y2) if (x1 <= x2 and y1 <= y2) else None
 
-    def _cpyfm(self, pts, src=None, dst=None, orop=False):
+    def _cpyfm(self, pts, src=None, dst=None, mode=3):
         """Mirrors vdi_vro_cpyfm(), including the alignment fast/slow split.
 
         The VBXE blitter has no shifter, so 4bpp pixels can only be moved
@@ -494,10 +494,9 @@ class VDI:
         dy1 += cy1 - sy1
         sx1, sy1 = cx1, cy1
         w, h = cx2 - cx1 + 1, cy2 - cy1 + 1
-        if orop and src is not None:
-            self.dev.copy(sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=True)
-        else:
-            self.dev.copy(sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h)
+        if mode == 5:                   # D_ONLY: the destination as it was
+            return
+        self.dev.copy(sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, mode=mode)
 
     def _vrt_cpyfm(self, pts, ints, form):
         """Mirrors vdi_vrt_cpyfm(): a 1-plane source expanded into colours.
@@ -1210,13 +1209,12 @@ class VDI:
         elif op == VR_RECFL:
             self._recfl(pts)
         elif op == VRO_CPYFM:
-            # S_OR_D (7) ORs a memory source over the destination; every
-            # other mode replaces (vdi.c, rform's or_op)
-            orop = bool(ints) and ints[0] == 7
+            # the logic mode, all sixteen (phase 142); not a mode copies
+            mode = ints[0] if ints and 0 <= ints[0] <= 15 else 3
             if form:
-                self._cpyfm(pts, form[0], form[1], orop)
+                self._cpyfm(pts, form[0], form[1], mode)
             else:
-                self._cpyfm(pts, orop=orop)
+                self._cpyfm(pts, mode=mode)
         elif op == V_LOCATOR:
             if pts:
                 self.ptr_x = max(0, min(pts[0], self.dev.w - 1))
@@ -1372,7 +1370,8 @@ class VDI:
             self.font = FONT
         elif op == VQT_NAME:
             loaded = self.font_file and ints[0] == FONT_LOADED
-            name = self.font_name if loaded else FONT_SYSNAME
+            name = (self.font_name if loaded else
+                    FONT_SYSNAME.format(self.dev.font_w, self.dev.font_h))
             self.intout = [self.font_id if loaded else FONT_ID_SYS]
             self.intout += [ord(c) for c in name[:32]]
             self.intout += [0] * (33 - len(self.intout))

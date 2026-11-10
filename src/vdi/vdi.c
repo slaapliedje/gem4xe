@@ -809,6 +809,17 @@ static void vdi_v_opnvwk(void)
      * what a Vwk carrying its own device is for (src/vdi/vdi.h). */
     WORD devid = (WORD)(contrl[3] > 0 ? intin[0] : 1);
 
+    /* v_opnbm is this opcode with sub-function 1 (EdDI): an offscreen
+     * bitmap, which gem4xe has not got yet (docs/vdi-plan.md, step 3).
+     * Refused, handle 0, as a VDI without EdDI answers -- until phase 142
+     * it opened a SCREEN workstation, and a program drew on the screen
+     * believing it drew off it.  gem4xe's binding sets contrl[5] on every
+     * call (src/app/gemlib.c), so a v_bar's 1 is never left in it. */
+    if (contrl[5] == 1) {
+        contrl[6] = 0;
+        return;
+    }
+
     for (i = 1; i < NUM_VWK; i++)
         if (vwk_hdl[i] == 0)
             break;
@@ -2166,8 +2177,10 @@ static void vdi_vswr_mode(void)
 /* vro_cpyfm -- opaque raster copy.  The AES uses this for icons and for the
  * menu/alert screen save-restore (bb_save / bb_restore) in mode 3 (S_ONLY,
  * replace), and for a colour icon's image in mode 7 (S_OR_D, phase 86).
- * Those two are what is implemented; the other fourteen modes copy as a
- * replace.
+ * ALL SIXTEEN MODES since phase 142, on every device and between any two
+ * forms: until then the other fourteen copied as a replace, and OR only
+ * from memory on the VBXE -- a program asking for XOR got a copy and
+ * could not tell (docs/vdi-plan.md, step 1).
  *
  * FORMS.  Each MFDB names a raster form: fd_addr 0 is the screen (the VDI's
  * own convention), anything else is a VRAM address whose rows are
@@ -2216,7 +2229,7 @@ static void rform_of(WORD mfdb_lo, RFORM *f)
     f->w      = m->fd_w;
     f->h      = m->fd_h;
     f->screen = 0;
-    f->or_op  = 0;
+    f->mode   = ROP_S_ONLY;
 }
 
 /* Clip a rectangle to a form's bounds.  Returns 0 if nothing is left. */
@@ -2246,8 +2259,11 @@ static void vdi_vro_cpyfm(void)
         return;
     rform_of(contrl[7], &src);
     rform_of(contrl[9], &dst);
-    src.or_op = (WORD)(intin[0] == 7);  /* S_OR_D; the other twelve modes
-                                         * are a replace, as they were */
+    src.mode = intin[0];
+    if (src.mode < 0 || src.mode > 15)
+        src.mode = ROP_S_ONLY;          /* not a mode: a plain copy */
+    if (src.mode == ROP_D_ONLY)
+        return;                         /* D: nothing changes */
     {
         WORD cx1 = dx1, cy1 = dy1;
         WORD cx2 = (WORD)(dx1 + w - 1), cy2 = (WORD)(dy1 + h - 1);
@@ -2671,15 +2687,8 @@ static void vdi_vst_unload_fonts(void)
  * an index this driver does not have answers with the system's. */
 static void vdi_vqt_name(void)
 {
-    const char *nm = vdi_font_name(intin[0]);
-    WORD i, end = 0;
-
     intout[0] = vdi_font_id(intin[0]);
-    for (i = 0; i < 32; i++) {
-        if (!end && !nm[i])
-            end = 1;
-        intout[i + 1] = (WORD)(end ? 0 : (uint8_t)nm[i]);
-    }
+    vdi_font_name(intin[0], &intout[1]);
     contrl[4] = 33;
 }
 

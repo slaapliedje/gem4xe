@@ -136,11 +136,34 @@ typedef struct {
     uint16_t stride;
     WORD     w, h;
     WORD     screen;
-    WORD     or_op;     /* a source to OR over the destination rather than
-                         * replace it: vro_cpyfm's S_OR_D, which is how the
-                         * AES lays a colour icon over its mask.  Only a
-                         * 4-bit device honours it; the others replace. */
+    WORD     mode;      /* vro_cpyfm's logic mode, 0-15, on the SOURCE
+                         * form (phase 142): what each destination pixel
+                         * becomes from its own bits and the source's --
+                         * 3, S_ONLY, a plain copy; 7, S_OR_D, how the AES
+                         * lays a colour icon over its mask; all sixteen on
+                         * every device (rop4, below, and docs/vdi-plan.md) */
 } RFORM;
+
+/* A LOGIC MODE ON PIXELS (phase 142).  The mode is a truth table: bit
+ * 3 - (2s + d) of it is what a destination bit d becomes under a source
+ * bit s -- 1 is S AND D, 3 S, 6 S XOR D, 7 S OR D, 12 NOT S, 15 all set.
+ * Every bit of s and d at once; the caller keeps the pixel's bits. */
+#define ROP_S_ONLY  3
+#define ROP_D_ONLY  5
+static __inline WORD rop4(WORD m, WORD s, WORD d)
+{
+    WORD r = 0;
+
+    if (m & 1)
+        r |= s & d;
+    if (m & 2)
+        r |= s & ~d;
+    if (m & 4)
+        r |= ~s & d;
+    if (m & 8)
+        r |= ~s & ~d;
+    return r;
+}
 
 /* ---- the table --------------------------------------------------------
  * One of these per device, built at the end of the device's own file and

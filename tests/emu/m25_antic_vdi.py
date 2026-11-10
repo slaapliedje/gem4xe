@@ -42,7 +42,7 @@ from anticref import AN_W, AN_H              # noqa: E402
 from m4_aes import Layout, GSX_START, OBJC_DRAW, FULL   # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
-                    VS_CLIP)
+                    VS_CLIP, VRO_CPYFM)
 
 # Where the harness pretends the application pool starts: the model puts
 # the tree's strings there and nothing on the target reads them back, so
@@ -70,6 +70,11 @@ SCRIPT = [
     (VS_CLIP, (213, 140, 244, 160), (1,)),
     (V_GTEXT, (210, 150), tuple(ord(c) for c in "CLIPPED")),
     (VS_CLIP, (), (0,)),
+    # vro_cpyfm's logic modes on a one-bit screen (phase 142): the XORed
+    # box copied onto the text with S XOR D, and with S AND D below it,
+    # at odd x so the pixel path's every edge is in it
+    (VRO_CPYFM, (21, 21, 120, 58, 203, 75, 302, 112), (6,)),
+    (VRO_CPYFM, (21, 21, 120, 58, 203, 115, 302, 152), (1,)),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]
@@ -176,6 +181,11 @@ def main(argv):
         # gsx_start) rather than checking numbers someone wrote down: the
         # claim is that a GEM ADAPTS to a second screen, and a constant
         # would not be evidence of it.
+        name = bytes(b.memdump(0x0630, 20)).split(b"\0")[0].decode("latin-1")
+        want = f"gem4xe system {FONT_W}x{FONT_H}"
+        check(name == want,
+              f"vqt_name says the system face is {name!r}, not {want!r} -- "
+              f"the name carries this screen's cell")
         g = [b.peek16(0x0610 + i * 2) for i in range(10)]
         (width, height, planes, wchar, hchar, wbox, hbox,
          menu_w, menu_h, full_h) = g

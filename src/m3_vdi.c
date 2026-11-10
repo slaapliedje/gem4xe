@@ -660,6 +660,36 @@ static void sys_op(WORD op)
         c4 = 14;
         break;
     }
+    /* 23: A WORKSTATION BY SUB-FUNCTION (phase 142).  v_opnvwk with
+     * contrl[5] = intin[0] -- 0 a virtual workstation, 1 v_opnbm, which
+     * is refused until there are offscreen bitmaps -- the handle back in
+     * [6], and closed again if there was one. */
+    case 23: {
+        WORD k, sub = intin[0], h;
+
+        for (k = 0; k < 11; k++)
+            intin[k] = (WORD)(k == 10 ? 2 : 1);     /* the AES's work_in */
+        contrl[0] = 100;            /* v_opnvwk */
+        contrl[1] = 0;
+        contrl[3] = 11;
+        contrl[5] = sub;
+        contrl[6] = VDI_PHYS_HANDLE;
+        contrl[7] = 0; contrl[8] = 0;
+        vdi();
+        h = contrl[6];
+        if (h) {
+            contrl[0] = 101;        /* v_clsvwk */
+            contrl[1] = 0;
+            contrl[3] = 0;
+            contrl[5] = 0;
+            contrl[6] = h;
+            vdi();
+        }
+        contrl[5] = 0;
+        intout[6] = h;
+        c4 = 7;
+        break;
+    }
     default:
         break;
     }

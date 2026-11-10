@@ -36,7 +36,7 @@ WORD        vdi_font_load(void);                  /* 1 if a font was taken */
 void        vdi_font_default(void);               /* back to the linked one */
 WORD        vdi_font_faces(void);                 /* 1, or 2 with one loaded */
 WORD        vdi_font_id(WORD face);               /* its font_id */
-const char *vdi_font_name(WORD face);             /* its name, NUL-terminated */
+void vdi_font_name(WORD face, WORD *out);         /* its name, 32 words */
 WORD        vdi_font_select(WORD id);             /* the face now drawn with */
 
 #endif /* GEM4XE_VDI_FONT_H */

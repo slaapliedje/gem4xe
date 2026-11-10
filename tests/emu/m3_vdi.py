@@ -1025,6 +1025,44 @@ CASES = [
         (VSF_COLOR, (), (2,)), (VR_RECFL, (610, 220, 639, 239), ()),
         (VRO_CPYFM, (-10, -10, 29, 19, 100, 100, 139, 129), (3,)),
         (VRO_CPYFM, (620, 230, 659, 269, 200, 100, 239, 139), (3,))]),
+] + [
+    # --- vro_cpyfm's SIXTEEN LOGIC MODES (phase 142).  Until then mode 7
+    # ORed only from memory and every other mode copied as a replace.  The
+    # source is two pens side by side and the destination two pens one
+    # over the other, each pair a pen and its complement -- S 5 / 10 and
+    # D 3 / 12 -- so that at every one of the four bits each of S and D is
+    # both 0 and 1 against the other.  The copy lands at an ODD x, an odd
+    # width, so the nibbles at both edges and the step between parities
+    # are all in it.
+    # The model is tools/devref.py's ROPS, from the TOS definitions.
+    (f"cpyfm logic mode {m}", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (0, 0, 22, 15), ()),
+        (VSF_COLOR, (), (10,)), (VR_RECFL, (23, 0, 46, 15), ()),
+        (VSF_COLOR, (), (3,)), (VR_RECFL, (101, 200, 147, 207), ()),
+        (VSF_COLOR, (), (12,)), (VR_RECFL, (101, 208, 147, 215), ()),
+        (VRO_CPYFM, (0, 0, 46, 15, 101, 200, 147, 215), (m,))])
+    for m in range(16)
+] + [
+    # ...and a mode between a form and the screen both ways: XOR from a
+    # memory form onto the screen, AND from the screen into the form
+    ("cpyfm logic modes between a memory form and the screen", [
+        (VSF_COLOR, (), (6,)), (VR_RECFL, (20, 20, 147, 39), ()),
+        (VSF_COLOR, (), (9,)), (VR_RECFL, (60, 20, 99, 39), ()),
+        (VRO_CPYFM, (20, 20, 147, 39, 0, 0, 127, 19), (3,), "to_mem"),
+        (VSF_COLOR, (), (13,)), (VR_RECFL, (201, 100, 330, 119), ()),
+        (VRO_CPYFM, (0, 0, 127, 19, 201, 100, 328, 119), (6,), "from_mem"),
+        (VRO_CPYFM, (201, 100, 328, 119, 1, 0, 128, 19), (1,), "to_mem"),
+        (VRO_CPYFM, (0, 0, 127, 19, 300, 150, 427, 169), (3,), "from_mem")]),
+
+    # ...and over itself: XOR onto its own rectangle moved right and down
+    # by odd amounts, and S OR NOT D back up and left, each wider than the
+    # row path's 46-pixel chunk -- every destination pixel must come from
+    # the source as it was, so rows and chunks go the safe way round
+    ("cpyfm logic modes over their own rectangle", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (40, 40, 139, 99), ()),
+        (VSF_COLOR, (), (10,)), (VR_RECFL, (70, 50, 109, 89), ()),
+        (VRO_CPYFM, (40, 40, 139, 99, 47, 43, 146, 102), (6,)),
+        (VRO_CPYFM, (47, 43, 146, 102, 42, 41, 141, 100), (11,))]),
 ]
 
 
@@ -1051,6 +1089,9 @@ def wait_done(b, timeout_frames=4000):
 # Sys op 17: the screen again, at another width (src/m3_vdi.c).  intin[0]
 # is the width index; it answers 0 and the w/h/stride it came up with.
 SCREEN_OP = 3017
+# Sys op 23: v_opnvwk with intin[0] as its sub-function; the handle in
+# intout[6], closed again (phase 142).
+BYSUB_OP = 3023
 
 
 def run_sys(b, script_addr, op, ints=()):
@@ -1154,6 +1195,19 @@ def main(argv):
             run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       script_addr, scratch_addr, results_addr, count_addr,
                       script_room)
+
+        # v_opnbm (v_opnvwk, sub-function 1) refused with handle 0 until
+        # there are offscreen bitmaps -- it used to open a SCREEN
+        # workstation -- while sub-function 0 still opens one (phase 142)
+        if only is None:
+            for sub, want in ((0, "a handle"), (1, "0")):
+                rec = run_sys(b, script_addr, BYSUB_OP, (sub,))
+                h = None if rec is None else rec[2 + 6]
+                ok = h is not None and ((h != 0) if sub == 0 else (h == 0))
+                results.append((-1, f"v_opnvwk sub-function {sub}",
+                                None if ok else f"handle {h}, wanted {want}"))
+                print(f"  [--] v_opnvwk sub-function {sub:<22d} "
+                      f"{'ok' if ok else 'FAIL'}")
     finally:
         emu.stop()
 

@@ -101,6 +101,37 @@ TASK void main(void)
         call(VS_CLIP, 0, 1);
     }
 
+    /* -- vro_cpyfm's logic modes on a one-bit screen (phase 142) ------
+     * The XORed box copied onto the text with S XOR D, and below it with
+     * S AND D, at odd x so the pixel path's every edge is in it.  Both
+     * MFDB pointers 0: the screen, as the conformance runner's are. */
+    {
+        static const WORD mode[2] = { 6, 1 };
+        static const WORD dy[2] = { 75, 115 };
+        WORD k;
+
+        for (k = 0; k < 2; k++) {
+            ptsin[0] = 21;  ptsin[1] = 21;  ptsin[2] = 120; ptsin[3] = 58;
+            ptsin[4] = 203; ptsin[5] = dy[k];
+            ptsin[6] = 302; ptsin[7] = (WORD)(dy[k] + 37);
+            intin[0] = mode[k];
+            contrl[7] = 0; contrl[8] = 0;
+            contrl[9] = 0; contrl[10] = 0;
+            call(VRO_CPYFM, 4, 1);
+        }
+    }
+
+    /* -- the system face's name, which names this screen's cell -------
+     * (phase 142: it said 8x8 here too); a byte a character at $0630 */
+    {
+        volatile unsigned char *nm = (volatile unsigned char *)0x0630;
+        WORD k;
+
+        set1(VQT_NAME, 1);
+        for (k = 0; k < 20; k++)
+            nm[k] = (unsigned char)intout[k + 1];
+    }
+
     /* -- and the AES on top of it ------------------------------------
      * gsx_start is where the AES learns what device it is on: it asks
      * the VDI for the extent, the depth and the system font's cell, and

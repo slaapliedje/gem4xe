@@ -61,6 +61,31 @@ import fontref
 import vbxeref
 
 
+# vro_cpyfm's sixteen logic modes as the TOS VDI defines them -- D' from
+# the source's bits S and the destination's D -- one by one from the
+# definitions, not from the driver's truth-table arithmetic (src/vdi/
+# vdidev.h rop4), so that the two cannot agree by being wrong together
+# (phase 142, docs/vdi-plan.md).  The caller keeps the pixel's bits.
+ROPS = (
+    lambda s, d: 0,                 # 0  ALL_WHITE
+    lambda s, d: s & d,             # 1  S_AND_D
+    lambda s, d: s & ~d,            # 2  S_AND_NOTD
+    lambda s, d: s,                 # 3  S_ONLY
+    lambda s, d: ~s & d,            # 4  NOTS_AND_D
+    lambda s, d: d,                 # 5  D_ONLY
+    lambda s, d: s ^ d,             # 6  S_XOR_D
+    lambda s, d: s | d,             # 7  S_OR_D
+    lambda s, d: ~(s | d),          # 8  NOT_SORD
+    lambda s, d: ~(s ^ d),          # 9  NOT_SXORD
+    lambda s, d: ~d,                # 10 D_INVERT
+    lambda s, d: s | ~d,            # 11 S_OR_NOTD
+    lambda s, d: ~s,                # 12 NOT_S
+    lambda s, d: ~s | d,            # 13 NOTS_OR_D
+    lambda s, d: ~(s & d),          # 14 NOT_SANDD
+    lambda s, d: ~0,                # 15 ALL_BLACK
+)
+
+
 class Vbxe:
     """640x240, 4bpp, two pixels to a byte with the LEFT one in the high
     nibble -- so every rectangle has up to two partial ends, which is
@@ -260,8 +285,9 @@ class Vbxe:
         m, o = self._space(a)
         m[o:o + len(data)] = data
 
-    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
-        """A rectangle moved between forms, in PIXELS, already clipped.
+    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, mode=3):
+        """A rectangle moved between forms, in PIXELS, already clipped,
+        each destination pixel ROPS[mode] of the source's and its own.
 
         What each pixel ends up as, not how the driver gets it there: the
         driver blits what it can between VRAM forms and goes by rows
@@ -271,7 +297,7 @@ class Vbxe:
         """
         sm, sa = self._space(sb)
         dm, da = self._space(db)
-        if (not orop and sm is dm is self.s.mem and ((sx1 ^ dx1) & 1) == 0
+        if (mode == 3 and sm is dm is self.s.mem and ((sx1 ^ dx1) & 1) == 0
                 and (sx1 & 1) == 0 and (w & 1) == 0):
             self.s.move(sa + sy1 * ss + (sx1 >> 1), ss,
                         da + dy1 * ds + (dx1 >> 1), ds, w >> 1, h)
@@ -293,9 +319,10 @@ class Vbxe:
                 sx = (sx1 + w - 1 - i) if dx1 > sx1 else (sx1 + i)
                 dx = (dx1 + w - 1 - i) if dx1 > sx1 else (dx1 + i)
                 v = get(sx, sy)
-                if orop:                # S_OR_D: the destination's own bits too
+                if mode != 3:           # the destination's own bits too
                     a = da + dy * ds + (dx >> 1)
-                    v |= (dm[a] & 0x0F) if (dx & 1) else (dm[a] >> 4)
+                    d = (dm[a] & 0x0F) if (dx & 1) else (dm[a] >> 4)
+                    v = ROPS[mode](v, d) & 0x0F
                 put(dx, dy, v)
 
     # -- the cursor ------------------------------------------------------
@@ -473,12 +500,12 @@ class Antic:
         bit = 0x80 >> (x & 7)
         buf[a] = (buf[a] | bit) if value else (buf[a] & ~bit & 0xFF)
 
-    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
+    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, mode=3):
         """Mirrors dev_copy_form(): screen to screen is the window
         manager's move and the surface has a byte path for it; anything
-        involving a form goes pixel by pixel, in the direction that stops
-        an overlapping move eating its own source."""
-        if sb < FAR_BASE and db < FAR_BASE:
+        involving a form, or a logic mode, goes pixel by pixel, in the
+        direction that stops an overlapping move eating its own source."""
+        if mode == 3 and sb < FAR_BASE and db < FAR_BASE:
             self.a.copy(sx1, sy1, dx1, dy1, w, h)
             return
         back_y, back_x = dy1 > sy1, dx1 > sx1
@@ -488,8 +515,10 @@ class Antic:
             for i in range(w):
                 sx = (sx1 + w - 1 - i) if back_x else (sx1 + i)
                 dx = (dx1 + w - 1 - i) if back_x else (dx1 + i)
-                self.write_pixel(db, ds, dx, dy,
-                                 self.read_pixel(sb, ss, sx, sy))
+                v = self.read_pixel(sb, ss, sx, sy)
+                if mode != 3:
+                    v = ROPS[mode](v, self.read_pixel(db, ds, dx, dy)) & 1
+                self.write_pixel(db, ds, dx, dy, v)
 
     # -- the cursor ------------------------------------------------------
     # Five bytes at odd x, not four -- the same arithmetic as the VBXE's
@@ -650,8 +679,8 @@ class Printer:
         bit = 0x80 >> (x & 7)
         buf[a] = (buf[a] | bit) if value else (buf[a] & ~bit & 0xFF)
 
-    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, orop=False):
-        if sb < FAR_BASE and db < FAR_BASE:
+    def copy(self, sb, ss, sx1, sy1, db, ds, dx1, dy1, w, h, mode=3):
+        if mode == 3 and sb < FAR_BASE and db < FAR_BASE:
             self.a.copy(sx1, sy1, dx1, dy1, w, h)
             return
         back_y, back_x = dy1 > sy1, dx1 > sx1
@@ -661,8 +690,10 @@ class Printer:
             for i in range(w):
                 sx = (sx1 + w - 1 - i) if back_x else (sx1 + i)
                 dx = (dx1 + w - 1 - i) if back_x else (dx1 + i)
-                self.write_pixel(db, ds, dx, dy,
-                                 self.read_pixel(sb, ss, sx, sy))
+                v = self.read_pixel(sb, ss, sx, sy)
+                if mode != 3:
+                    v = ROPS[mode](v, self.read_pixel(db, ds, dx, dy)) & 1
+                self.write_pixel(db, ds, dx, dy, v)
 
     # -- the cursor a printer has not got --------------------------------
     def cursor_save(self, cx, cy):
