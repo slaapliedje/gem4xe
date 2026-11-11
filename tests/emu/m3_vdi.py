@@ -1126,6 +1126,41 @@ CASES = [
         (VRO_CPYFM, (40, 40, 167, 59, 0, 0, 127, 19), (9,), "to_mem"),
         (VRO_CPYFM, (1, 1, 100, 18, 401, 181, 500, 198), (14,), "from_mem")]),
 ] + [
+    # TWO TEXT SIZES (phase 149): the face at twice its size, chosen by
+    # vst_height -- in every writing mode, at an odd x, cut by the clip --
+    # and what the size queries answer at it
+    ("text at twice its size, every mode", [
+        (VST_HEIGHT, (0, 12), ()),
+        (VSWR_MODE, (), (1,)), (VST_COLOR, (), (1,)),
+        (V_GTEXT, (16, 30), tuple(b"Replace")),
+        (VSF_COLOR, (), (3,)), (VR_RECFL, (10, 40, 300, 120), ()),
+        (VSWR_MODE, (), (2,)), (V_GTEXT, (17, 60), tuple(b"Transparent")),
+        (VSWR_MODE, (), (3,)), (V_GTEXT, (16, 85), tuple(b"XOR")),
+        (VSWR_MODE, (), (4,)), (V_GTEXT, (121, 110), tuple(b"Erase")),
+        (VSWR_MODE, (), (1,)),
+        (VS_CLIP, (400, 20, 470, 40), (1,)),
+        (V_GTEXT, (390, 36), tuple(b"Clipped")),
+        (VS_CLIP, (0, 0, 0, 0), (0,)),
+        (VQT_ATTRIBUTES, (), ()), (VQT_EXTENT, (), tuple(b"abc")),
+        (VQT_WIDTH, (), (65,)),
+        (VST_HEIGHT, (0, 0), ())]),
+
+    # ...thickened and underlined at twice the size, transparent and
+    # replace; the size chosen by vst_point either side of the doubled
+    # one's points and by heights too big and too small; and replace mode
+    # thickened at the face's own size, whose second pass paints no cell
+    # background -- the model's first rule painted it
+    ("text at twice its size thickened, and the sizes chosen", [
+        (VST_HEIGHT, (0, 100), ()),
+        (VSWR_MODE, (), (2,)), (VST_COLOR, (), (1,)), (VST_EFFECTS, (), (9,)),
+        (V_GTEXT, (16, 40), tuple(b"Bold under")),
+        (VSWR_MODE, (), (1,)), (V_GTEXT, (16, 80), tuple(b"Replace bold")),
+        (VST_POINT, (), (18,)), (VST_POINT, (), (17,)),
+        (V_GTEXT, (16, 120), tuple(b"back to one")),
+        (VST_EFFECTS, (), (1,)),
+        (V_GTEXT, (16, 140), tuple(b"Replace thickened, one")),
+        (VST_HEIGHT, (0, 5), ()), (VST_EFFECTS, (), (0,))]),
+
     # OFFSCREEN BITMAPS (phase 148): v_opnbm's workstation drawn on --
     # a fill, text, a diagonal corner to corner and a fill partly past
     # its edge, which must clip to the bitmap -- and the bitmap copied to

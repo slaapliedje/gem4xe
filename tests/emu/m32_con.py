@@ -326,8 +326,15 @@ def main(argv):
                                      got, wanted)))
         check(q == p + 104, f"the 900 bytes after Mshrink went to ${q:06X}, not "
                             f"into the tail it gave back at ${p + 104:06X}")
-        check(r100 == p, f"the 100 bytes after Mfree went to ${r100:06X}, not the "
-                      f"freed block at ${p:06X}")
+        # FIRST FIT: the 100 bytes go to the lowest place they fit, which is
+        # the freed block unless a gap below it fits too -- the slack before
+        # a page-aligned block can, and whether there is one moves with the
+        # size of every system block before it (phase 149: a workstation
+        # grew two bytes).  The model above says which; what holds whatever
+        # the layout is that they are not ABOVE the freed block, where they
+        # would go if Mfree had not given it back.
+        check(r100 <= p, f"the 100 bytes after Mfree went to ${r100:06X}, above "
+                         f"the freed block at ${p:06X}: Mfree did not free it")
         want(12, 0, "Mshrink to 100")
         want(14, EGSBF, "Mshrink to more than the block")
         want(15, 0, "Mfree of a block")

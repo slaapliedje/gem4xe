@@ -75,7 +75,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 
 | | ST / EmuTOS | gem4xe | Where |
 |---|---|---|---|
-| Fonts | the system faces, GDOS faces | **one face**, the 8 x 8 system font (Atari's condensed 6 x 6 on ANTIC).  No GDOS: no face can be loaded, and a TEDINFO cannot name another.  A port's GDOS check should come out "none" -- the kit has no `vq_vgdos` | `src/vdi/vdi.c`, `src/vdi/dev_antic.c` |
+| Fonts | the system faces, GDOS faces | **one face at two sizes**: the 8 x 8 system font (Atari's condensed 6 x 6 on ANTIC) and the same doubled, which `vst_height` and `vst_point` choose; a `SYSTEM.FNT` of the same cell may replace the face (`vst_load_fonts`).  No GDOS faces, and a TEDINFO cannot name another.  A port's GDOS check should come out "none" -- the kit has no `vq_vgdos` | `src/vdi/vdi.c`, `src/vdi/font.c` |
 | Raster copy | sixteen modes | the same sixteen, on every device and between any two forms; on the VBXE only a plain copy (3) uses the blitter, the others go a row at a time | `src/vdi/vdi.c`, `src/vdi/vdidev.h` |
 | Offscreen bitmaps | EdDI's `v_opnbm` (NVDI, EmuTOS) | on the VBXE: two, in VRAM, each up to the screen's size and at its depth, allocated by the VDI -- a bitmap of the program's own memory is refused -- with an MFDB whose address is VRAM's, for `vro_cpyfm` only.  None on ANTIC (handle 0) | `src/vdi/vdi.c` |
 | Raster forms | any depth TOS supports | the device's depth -- four planes on the VBXE, one on ANTIC and the page -- and one plane: `vr_trnfm` converts those and leaves any other alone, and `vrt_cpyfm` refuses a destination of another depth | `src/vdi/vdi.c` |

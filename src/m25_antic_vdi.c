@@ -55,6 +55,9 @@ TASK void main(void)
     vdev = &vdev_antic;      /* this milestone is about the other
                               * device; nothing else in the file
                               * names it again */
+    farmem_probe();          /* before the workstation, as src/gem.c has it:
+                              * v_opnwk takes the buffer text at twice its
+                              * size is drawn in (phase 149) */
     vdi_font_default();
     vdi_init();                         /* opens the workstation: the
                                          * device's palette call is what
@@ -119,6 +122,22 @@ TASK void main(void)
             contrl[9] = 0; contrl[10] = 0;
             call(VRO_CPYFM, 4, 1);
         }
+    }
+
+    /* -- the face at twice its size (phase 149): ANTIC's 6x6 is 12x12 when
+     * vst_height asks for 8, the doubled top; and back to the face */
+    {
+        static const char big[] = "BIG";
+        WORD k;
+
+        ptsin[0] = 0; ptsin[1] = 8;
+        call(VST_HEIGHT, 1, 0);
+        for (k = 0; big[k]; k++)
+            intin[k] = (WORD)(unsigned char)big[k];
+        ptsin[0] = 230; ptsin[1] = 180;
+        call(V_GTEXT, 1, k);
+        ptsin[0] = 0; ptsin[1] = 0;
+        call(VST_HEIGHT, 1, 0);
     }
 
     /* -- the system face's name, which names this screen's cell -------
@@ -214,8 +233,8 @@ TASK void main(void)
      * the far save form the AES keeps menus in, and back onto the screen
      * somewhere empty -- at a different bit position every step, so the
      * row copy's shifts and edge masks both ways are all in the picture
-     * (phase 66: this path took five seconds a drop-down in 0.8.1). */
-    farmem_probe();
+     * (phase 66: this path took five seconds a drop-down in 0.8.1).
+     * The far heap was probed at the start. */
     {
         static uint8_t near_buf[20 * 16];      /* 160 x 16, one plane */
         static MFDB scr, mem, far;

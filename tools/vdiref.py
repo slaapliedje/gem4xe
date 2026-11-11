@@ -240,7 +240,9 @@ class VDI:
                  "line_beg", "line_end",
                  # ...and the device it draws on: the screen, or an
                  # offscreen bitmap's copy of it (phase 148)
-                 "dev")
+                 "dev",
+                 # ...and its text size: 1, or 2 for the face doubled (149)
+                 "t_scale")
 
     # The face in use, and the one a .FNT would load: a gate that puts a
     # font on the disk calls load_font() with the same file's bytes, so
@@ -324,6 +326,7 @@ class VDI:
         (hollow/solid/pattern/hatch/user), fill_index is vsf_style's index
         minus one -- the minus one the ROM's init forgets, which gem4xe
         does not reproduce."""
+        self.t_scale = 1                # the face as it is (phase 149)
         self.clip = 0
         self.h_align, self.v_align, self.text_effects = TA_LEFT, TA_BASE, 0
         self.xmn, self.ymn = 0, 0
@@ -616,34 +619,51 @@ class VDI:
             return x - w
         return x
 
-    def _align_y(self, y):
-        d = self.dev
-        return {TA_HALF: y - d.font_half, TA_ASCENT: y - d.font_ascent,
-                TA_BOTTOM: y - d.font_h + 1,
-                TA_DESCENT: y - d.font_top - d.font_descent,
-                TA_TOP: y}.get(self.v_align, y - d.font_top)
+    def _ts(self, v):
+        """A metric of the face at the workstation's text size: as it
+        is, or twice it (phase 149)."""
+        return v * self.t_scale
 
-    def _glyph(self, code, cx, cy):
+    def _align_y(self, y):
+        d, t = self.dev, self._ts
+        return {TA_HALF: y - t(d.font_half), TA_ASCENT: y - t(d.font_ascent),
+                TA_BOTTOM: y - t(d.font_h) + 1,
+                TA_DESCENT: y - t(d.font_top) - t(d.font_descent),
+                TA_TOP: y}.get(self.v_align, y - t(d.font_top))
+
+    def _glyph(self, code, cx, cy, overlay=False):
+        keep = self.wrt_mode
+        if overlay and self.wrt_mode + 1 == MD_REPLACE:
+            self.wrt_mode = MD_TRANS - 1
+        s = self.t_scale
         for row in range(self.dev.font_h):
             b = self.font[row * FONT_STRIDE + (code & 0xFF)]
             for col in range(self.dev.font_w):
-                self._paint_pixel(cx + col, cy + row, self.text_color,
-                                  b & (0x80 >> col))
+                on = b & (0x80 >> col)
+                for dy in range(s):
+                    for dx in range(s):
+                        self._paint_pixel(cx + col * s + dx, cy + row * s + dy,
+                                          self.text_color, on)
+        self.wrt_mode = keep
 
     def _draw_char(self, code, cx, cy):
         """One glyph at a cell's top-left corner, thickened if
         vst_effects asked for it (src/vdi/vdi.c, draw_char).  Each pixel
-        goes through the writing-mode rules of _paint_pixel."""
+        goes through the writing-mode rules of _paint_pixel.  The
+        thickening pass, one pixel right, paints no cell background: in
+        replace mode it is drawn as transparent, as dev_glyph draws its
+        overlay -- a second replace pass would erase the first one's ink.
+        At twice the size each pixel of the face is a 2 x 2 block."""
         self._glyph(code, cx, cy)
         if (self.text_effects & TXT_THICKEN
-                and cx + 1 + self.dev.font_w <= self.dev.w):
-            self._glyph(code, cx + 1, cy)
+                and cx + 1 + self._ts(self.dev.font_w) <= self.dev.w):
+            self._glyph(code, cx + 1, cy, overlay=True)
 
     def _underline(self, x1, x2, cy):
         """The row under a string: SOLID and clipped, in the text colour,
         because an underline is text and takes no fill pattern."""
-        b = cy + self.dev.font_h - 1
-        r = self._clip_rect(x1, b, x2, b)
+        b = cy + self._ts(self.dev.font_h) - self._ts(1)   # a row a size
+        r = self._clip_rect(x1, b, x2, cy + self._ts(self.dev.font_h) - 1)
         if r:
             self._paint_rect(*r, self.text_color)
 
@@ -652,7 +672,7 @@ class VDI:
         vst_alignment -- left and the BASELINE by default, the cell top
         then being y - the font's top."""
         n = len(ints)
-        fw = self.dev.font_w
+        fw = self._ts(self.dev.font_w)
         x = self._align_x(pts[0], n * fw)
         cy = self._align_y(pts[1])
         for i, code in enumerate(ints):
@@ -1031,7 +1051,7 @@ class VDI:
         interword, interchar, str_ = ints[0], ints[1], ints[2:]
         max_x = pts[2]
         spaces = sum(1 for c in str_ if c == ord(" ")) if interword else 0
-        fw = self.dev.font_w
+        fw = self._ts(self.dev.font_w)
         width = cnt * fw
         wordx = rmword = rmwordx = 0
         charx = rmchar = rmcharx = 0
@@ -1110,7 +1130,8 @@ class VDI:
         as the ST ROM and EmuTOS both return it), cell width, cell
         height."""
         d = self.dev
-        return [d.font_w, d.font_top, d.font_w, d.font_h]
+        t = self._ts
+        return [t(d.font_w), t(d.font_top), t(d.font_w), t(d.font_h)]
 
     def _workout(self):
         """v_opnwk's work_out, in full: the per-call record carries only the
@@ -1121,7 +1142,7 @@ class VDI:
         self.ptsout = [0] * 12
         self.intout[0:15] = [self.dev.w - 1, self.dev.h - 1, 0,
                              372, 372,          # pixel width/height, microns
-                             1, 7, 1, 6, 8, 1,  # char heights, line types,
+                             2, 7, 1, 6, 8, 1,  # char heights, line types,
                                                 # widths, marker types/sizes,
                                                 # faces
                              24, 12,            # patterns, hatches
@@ -1131,8 +1152,10 @@ class VDI:
         self.intout[15:25] = list(range(1, 11))
         self.intout[25:35] = [3, 0, 3, 3, 3, 0, 3, 0, 3, 2]
         self.intout[35:43] = [1, 0, 1, 0, 16, 1, 1, 1]
-        self.ptsout[0:4] = [self.dev.font_w, self.dev.font_h,
-                            self.dev.font_w, self.dev.font_h]
+        # the smallest and largest character of the two sizes, the height
+        # its top, as EmuTOS works them out over its faces (phase 149)
+        d = self.dev
+        self.ptsout[0:4] = [d.font_w, d.font_top, 2 * d.font_w, 2 * d.font_top]
         self.ptsout[4:8] = [1, 0, 1, 0]         # line width range
         self.ptsout[8:12] = [DEF_MKWD, DEF_MKHT, MAX_MKWD, MAX_MKHT]
         self.contrl2, self.contrl4 = 6, 45
@@ -1366,6 +1389,8 @@ class VDI:
             # char w, char h, cell w, cell h -- and "char height" is the
             # font's TOP (baseline to top of cell), as the ST ROM and EmuTOS
             # both return it; the AES adds it to a cell top for v_gtext.
+            # The largest size no taller than asked, else the smallest.
+            self.t_scale = 2 if pts[1] >= 2 * self.dev.font_top else 1
             self.ptsout = self._cell()
             self.contrl2 = 2
         elif op == VQT_ATTRIBUTES:
@@ -1464,19 +1489,21 @@ class VDI:
             self.intout[0] = self.text_effects
             self.contrl4 = 1
         elif op == VST_POINT:
-            self.intout[0] = self.dev.font_point
+            self.t_scale = 2 if ints[0] >= 2 * self.dev.font_point else 1
+            self.intout[0] = self._ts(self.dev.font_point)
             self.ptsout = self._cell()
             self.contrl2, self.contrl4 = 2, 1
         elif op == VQT_EXTENT:
-            w = (len(ints) * self.dev.font_w
+            w = (len(ints) * self._ts(self.dev.font_w)
                  + (1 if self.text_effects & TXT_THICKEN else 0))
-            self.ptsout = [0, 0, w, 0, w, self.dev.font_h, 0, self.dev.font_h]
+            fh = self._ts(self.dev.font_h)
+            self.ptsout = [0, 0, w, 0, w, fh, 0, fh]
             self.contrl2 = 4
         elif op == VQT_WIDTH:
             # three points, and the deltas are a point apart: [0] the
             # cell, [2] the left delta, [4] the right one
             self.intout[0] = ints[0]
-            self.ptsout = [self.dev.font_w, 0, 0, 0, 0, 0]
+            self.ptsout = [self._ts(self.dev.font_w), 0, 0, 0, 0, 0]
             self.contrl2, self.contrl4 = 3, 1
         elif op == VST_FONT:
             # the face now drawn with: the system's, or the loaded one when

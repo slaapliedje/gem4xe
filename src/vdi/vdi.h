@@ -96,6 +96,9 @@ typedef struct {
     /* vst_effects: the effects actually APPLIED, which is what the call
      * answers with and not necessarily what it was asked for. */
     WORD text_effects;
+    /* The text size (phase 149): 1, or 2 for the face at twice its size,
+     * which vst_height and vst_point choose. */
+    WORD t_scale;
     /* What the two above resolve to: WHERE the current fill pattern's
      * rows are, as a source and a first row rather than as a pointer.
      * The standard tables are far (`cfar`) and the user's is near --

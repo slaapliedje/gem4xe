@@ -42,7 +42,7 @@ from anticref import AN_W, AN_H              # noqa: E402
 from m4_aes import Layout, GSX_START, OBJC_DRAW, FULL   # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
-                    VS_CLIP, VRO_CPYFM)
+                    VS_CLIP, VRO_CPYFM, VST_HEIGHT)
 
 # Where the harness pretends the application pool starts: the model puts
 # the tree's strings there and nothing on the target reads them back, so
@@ -75,6 +75,10 @@ SCRIPT = [
     # at odd x so the pixel path's every edge is in it
     (VRO_CPYFM, (21, 21, 120, 58, 203, 75, 302, 112), (6,)),
     (VRO_CPYFM, (21, 21, 120, 58, 203, 115, 302, 152), (1,)),
+    # the face at twice its size (phase 149): 6x6 doubled, by vst_height 8
+    (VST_HEIGHT, (0, 8), ()),
+    (V_GTEXT, (230, 180), tuple(b"BIG")),
+    (VST_HEIGHT, (0, 0), ()),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]

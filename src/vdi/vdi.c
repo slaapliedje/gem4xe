@@ -252,7 +252,8 @@ static void fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
 static WORD  cur_xhot, cur_yhot, cur_bg, cur_fg;
 static UWORD cur_mask[16], cur_data[16];
 static WORD  cur_hide = 1;          /* visible only at 0; starts hidden */
-static WORD  cur_drawn;             /* is the saved block valid?        */
+static TINY WORD cur_drawn;         /* is the saved block valid? (direct
+                                     * page: LoRAM, phase 149) */
 
 /* THE POINTER IS THE SCREEN'S, whichever workstation the last call made
  * current: an offscreen bitmap's or a printer's device would draw it
@@ -386,15 +387,19 @@ static WORD align_x(WORD x, WORD w)
     }
 }
 
+/* A metric of the face at the current workstation's text size (phase
+ * 149): as it is, or doubled. */
+#define TS(v) ((WORD)((v) << (vwk.t_scale - 1)))
+
 static WORD align_y(WORD y)
 {
     switch (vwk.v_align) {
-    case TA_HALF:    return (WORD)(y - FONT_HALF);
-    case TA_ASCENT:  return (WORD)(y - FONT_ASCENT);
-    case TA_BOTTOM:  return (WORD)(y - FONT_H + 1);
-    case TA_DESCENT: return (WORD)(y - FONT_TOP - FONT_DESCENT);
+    case TA_HALF:    return (WORD)(y - TS(FONT_HALF));
+    case TA_ASCENT:  return (WORD)(y - TS(FONT_ASCENT));
+    case TA_BOTTOM:  return (WORD)(y - TS(FONT_H) + 1);
+    case TA_DESCENT: return (WORD)(y - TS(FONT_TOP) - TS(FONT_DESCENT));
     case TA_TOP:     return y;
-    default:         return (WORD)(y - FONT_TOP);   /* the baseline */
+    default:         return (WORD)(y - TS(FONT_TOP));   /* the baseline */
     }
 }
 
@@ -403,14 +408,132 @@ static WORD align_y(WORD y)
  * inside the screen AND the clip for the blitter to serve it; anything
  * else goes pixel by pixel through the window.  Shared by v_gtext and by
  * v_justified, which places its cells one at a time. */
+/* THE FACE AT TWICE ITS SIZE (phase 149): a glyph's rows each doubled in
+ * width -- a nibble's four pixels to a byte -- and in height, into a
+ * one-plane raster of at most 16 x 16 on the stack, and put on the screen
+ * by the device's raster_1bpp in the writing mode, which clips it.  The
+ * same rules as a glyph of the face as it is: set bits the ink and, in
+ * replace, clear bits pen 0; erase paints the clear ones in the ink.  The
+ * second pass of a thickened one (overlay) is drawn as dev_glyph draws
+ * it, without the cell's background. */
+static const uint8_t FAR dbl4[16] = {
+    0x00, 0x03, 0x0C, 0x0F, 0x30, 0x33, 0x3C, 0x3F,
+    0xC0, 0xC3, 0xCC, 0xCF, 0xF0, 0xF3, 0xFC, 0xFF,
+};
+
+static void glyph2(WORD ch, WORD cx, WORD cy, WORD overlay)
+{
+    uint8_t g[4 * 8];                   /* two rows of two bytes a row */
+    WORD mode = (WORD)(vwk.wrt_mode + 1), r, fh = FONT_H;
+
+    for (r = 0; r < fh; r++) {
+        UWORD b = *(const uint8_t FAR *)
+                   (vdi_font + (uint32_t)r * FONT_STRIDE + (uint32_t)(ch & 0xFF));
+        uint8_t hi = dbl4[(b >> 4) & 15], lo = dbl4[b & 15];
+
+        g[r * 4] = hi;
+        g[r * 4 + 1] = lo;
+        g[r * 4 + 2] = hi;
+        g[r * 4 + 3] = lo;
+    }
+    if (overlay && mode == MD_REPLACE)
+        mode = MD_TRANS;
+    dev_raster_1bpp((const uint8_t FAR *)g, 2, 0, 0, TS(FONT_W), TS(FONT_H),
+                    cx, cy, mode, vwk.text_color,
+                    (WORD)(mode == MD_ERASE ? vwk.text_color : 0));
+}
+
+/* A STRING AT TWICE THE SIZE AS ONE RASTER (phase 149), as the face's own
+ * size has text_run: the visible cells' doubled rows side by side in a far
+ * buffer -- two bytes a cell of the 8-wide face, three for two cells of the
+ * 6-wide -- and one raster_1bpp for them all, which clips.  A glyph at a
+ * time through raster_1bpp was over two milliseconds each on the VBXE.  In
+ * replace, transparent, XOR and erase alike, since the cells are
+ * contiguous; thickened only in transparent mode, where the two passes are
+ * an OR, and then each row ORed with itself one pixel right.  The buffer
+ * is the system's, taken at v_opnwk, its address in the direct page. */
+#define T2_CELLS 44                     /* the widest screen's 42, and two */
+#define T2_BYTES ((uint32_t)T2_CELLS * 2 * 16)
+static TINY uint32_t t2_buf;
+
+static void t2_take(void)
+{
+    if (!t2_buf) {
+        t2_buf = far_alloc(T2_BYTES);
+        far_keep(t2_buf);
+    }
+}
+
+/* Cells lo..hi of the string as one doubled raster at x, cy. */
+/* Each row is built in a buffer on the stack and put in the far one twice
+ * by far_put, a block move, rather than written a byte at a time through
+ * a far pointer. */
+static void run2(const WORD *chars, WORD lo, WORD hi, WORD x, WORD cy,
+                 WORD thick)
+{
+    uint8_t q[2 * T2_CELLS + 1];        /* a row, on the stack */
+    WORD fw = FONT_W, fh = FONT_H, n = (WORD)(hi - lo + 1), r, i;
+    WORD cw = (WORD)(2 * fw), w = (WORD)(n * cw + thick);
+    /* unsigned: a signed >> 3 here was compiled as a 3-bit field's sign
+     * extension, and the stride came out -2 (B12: tools/ccbug) */
+    WORD stride = (WORD)((UWORD)(w + 7) >> 3), mode = (WORD)(vwk.wrt_mode + 1);
+
+    for (r = 0; r < fh; r++) {
+        uint32_t f = vdi_font + (uint32_t)r * FONT_STRIDE;
+        uint32_t at = t2_buf + (uint32_t)(2 * r) * (uint32_t)stride;
+        WORD k = 0;
+        UWORD pend = 0, c;
+
+        for (i = lo; i <= hi; i++) {
+            UWORD b = *(const uint8_t FAR *)(f + (uint32_t)(chars[i] & 0xFF));
+            UWORD d = (UWORD)(((UWORD)dbl4[(b >> 4) & 15] << 8) | dbl4[b & 15]);
+
+            if (fw == 8) {
+                q[k++] = (uint8_t)(d >> 8);
+                q[k++] = (uint8_t)d;
+            } else if (!((i - lo) & 1)) {   /* 12 bits: the first of a pair */
+                q[k++] = (uint8_t)(d >> 8);
+                pend = (UWORD)(d & 0xF0);
+            } else {                        /* ...and the second */
+                q[k++] = (uint8_t)(pend | (d >> 12));
+                q[k++] = (uint8_t)(d >> 4);
+                pend = 0;
+            }
+        }
+        if (fw != 8 && (n & 1))
+            q[k++] = (uint8_t)pend;
+        while (k < stride)
+            q[k++] = 0;
+        if (thick) {                        /* one pixel right, ORed */
+            for (c = 0, k = 0; k < stride; k++) {
+                UWORD g = q[k];
+
+                q[k] = (uint8_t)(g | (g >> 1) | c);
+                c = (UWORD)((g & 1) << 7);
+            }
+        }
+        far_put(at, q, (uint16_t)stride);   /* and the row twice */
+        far_put(at + (uint32_t)stride, q, (uint16_t)stride);
+    }
+    dev_raster_1bpp((const uint8_t FAR *)t2_buf, (uint16_t)stride, 0, 0, w,
+                    (WORD)(2 * fh), x, cy, mode, vwk.text_color,
+                    (WORD)(mode == MD_ERASE ? vwk.text_color : 0));
+}
+
 static void draw_char(WORD ch, WORD cx, WORD cy)
 {
+    if (vwk.t_scale > 1) {
+        glyph2(ch, cx, cy, 0);
+        if ((vwk.text_effects & TXT_THICKEN) && cx + 1 + TS(FONT_W) <= SCR_W)
+            glyph2(ch, (WORD)(cx + 1), cy, 1);
+        return;
+    }
     /* Thickened: the same glyph again, one pixel right, drawn over the
      * first so the two overlap into a heavier letter.  Whether that
      * second pass costs a blit, a pixel loop or nothing extra at all is
      * the device's business (GLYPH_THICK, vdidev.h); that there IS one
      * is the VDI's. */
-    if ((vwk.text_effects & TXT_THICKEN) && cx + 1 + FONT_W <= SCR_W)
+    if ((vwk.text_effects & TXT_THICKEN) && cx + 1 + TS(FONT_W) <= SCR_W)
         dev_glyph(ch, cx, cy, GLYPH_THICK);
     else
         dev_glyph(ch, cx, cy, 0);
@@ -420,7 +543,9 @@ static void draw_char(WORD ch, WORD cx, WORD cy)
  * an underline is text and does not take the fill pattern. */
 static void underline(WORD x1, WORD x2, WORD cy)
 {
-    WORD a = x1, b = (WORD)(cy + FONT_H - 1), c = x2, d = b;
+    /* a row at the face's size, two at twice it (phase 149) */
+    WORD a = x1, b = (WORD)(cy + TS(FONT_H) - TS(1)), c = x2;
+    WORD d = (WORD)(cy + TS(FONT_H) - 1);
 
     if (clip_rect(&a, &b, &c, &d))
         paint_rect(a, b, c, d, vwk.text_color);
@@ -429,7 +554,7 @@ static void underline(WORD x1, WORD x2, WORD cy)
 static void vdi_v_gtext(void)
 {
     WORD n = contrl[3], i;
-    WORD x = align_x(ptsin[0], (WORD)(n * FONT_W));
+    WORD x = align_x(ptsin[0], (WORD)(n * TS(FONT_W)));
     WORD cy = align_y(ptsin[1]);
     WORD pre = 0, run = 0, lo = 0, hi = -1;
     WORD thick = (WORD)((vwk.text_effects & TXT_THICKEN) != 0);
@@ -437,6 +562,32 @@ static void vdi_v_gtext(void)
 
     if (n > INTIN_SIZE)
         n = INTIN_SIZE;
+    /* At twice the size: the cells that can be seen as one raster (run2),
+     * when the buffer is there and the mode allows it. */
+    if (vwk.t_scale > 1 && t2_buf && n > 0
+        && (!thick || vwk.wrt_mode + 1 == MD_TRANS)) {
+        WORD cw = TS(FONT_W), left = 0, right = (WORD)(SCR_W - 1);
+
+        if (vwk.clip) {
+            if (vwk.xmn_clip > left)  left = vwk.xmn_clip;
+            if (vwk.xmx_clip < right) right = vwk.xmx_clip;
+        }
+        for (lo = 0; lo < n && x + (lo + 1) * cw - 1 + thick < left; lo++)
+            ;
+        for (hi = (WORD)(n - 1); hi >= lo && x + hi * cw > right; hi--)
+            ;
+        while (hi >= lo) {                  /* the buffer's width at a time */
+            WORD top = (WORD)(lo + T2_CELLS - 1 < hi ? lo + T2_CELLS - 1 : hi);
+
+            run2(intin, lo, top, (WORD)(x + lo * cw), cy, thick);
+            lo = (WORD)(top + 1);
+        }
+        if ((vwk.text_effects & TXT_UNDERLINE) && n > 0) {
+            WORD w = (WORD)(n * TS(FONT_W) + (thick ? 1 : 0));
+            underline(x, (WORD)(x + w - 1), cy);
+        }
+        return;
+    }
     /* THE RUN OF WHOLLY VISIBLE CELLS.  A device draws a cell only when
      * all of it is inside the screen and the clip, and those cells are one
      * contiguous run -- both are boxes -- lo to hi.  Two devices want it:
@@ -454,35 +605,35 @@ static void vdi_v_gtext(void)
      * order of the passes cannot matter -- when the column the last
      * cell's second pass spills into is visible too (phase 105). */
     if ((TEXT_RUN || (TEXT_PREFILL && vwk.wrt_mode + 1 == MD_REPLACE))
-        && n > 0 && (!thick || thick_run)
-        && cy >= 0 && cy + FONT_H <= SCR_H
-        && (!vwk.clip || (cy >= vwk.ymn_clip && cy + FONT_H - 1 <= vwk.ymx_clip))) {
+        && n > 0 && (!thick || thick_run) && vwk.t_scale == 1
+        && cy >= 0 && cy + TS(FONT_H) <= SCR_H
+        && (!vwk.clip || (cy >= vwk.ymn_clip && cy + TS(FONT_H) - 1 <= vwk.ymx_clip))) {
         WORD left = 0, right = (WORD)(SCR_W - 1);
 
         if (vwk.clip) {
             if (vwk.xmn_clip > left)  left = vwk.xmn_clip;
             if (vwk.xmx_clip < right) right = vwk.xmx_clip;
         }
-        for (lo = 0; lo < n && x + lo * FONT_W < left; lo++)
+        for (lo = 0; lo < n && x + lo * TS(FONT_W) < left; lo++)
             ;
         for (hi = (WORD)(n - 1);
-             hi >= lo && x + hi * FONT_W + FONT_W - 1 + thick > right; hi--)
+             hi >= lo && x + hi * TS(FONT_W) + TS(FONT_W) - 1 + thick > right; hi--)
             ;
         if (hi >= lo) {
             if (TEXT_RUN) {
                 dev_text_run(&intin[lo], (WORD)(hi - lo + 1),
-                             (WORD)(x + lo * FONT_W), cy);
+                             (WORD)(x + lo * TS(FONT_W)), cy);
                 run = 1;
             } else {
-                dev_fill_rect((WORD)(x + lo * FONT_W), cy,
-                              (WORD)(x + hi * FONT_W + FONT_W - 1),
-                              (WORD)(cy + FONT_H - 1), 0);
+                dev_fill_rect((WORD)(x + lo * TS(FONT_W)), cy,
+                              (WORD)(x + hi * TS(FONT_W) + TS(FONT_W) - 1),
+                              (WORD)(cy + TS(FONT_H) - 1), 0);
                 pre = 1;
             }
         }
     }
     {
-        WORD fw = FONT_W, cx = x;           /* a far read, once; and no
+        WORD fw = TS(FONT_W), cx = x;           /* a far read, once; and no
                                              * multiply per cell */
 
         for (i = 0; i < n; i++, cx = (WORD)(cx + fw)) {
@@ -498,7 +649,7 @@ static void vdi_v_gtext(void)
         }
     }
     if ((vwk.text_effects & TXT_UNDERLINE) && n > 0) {
-        WORD w = (WORD)(n * FONT_W + ((vwk.text_effects & TXT_THICKEN) ? 1 : 0));
+        WORD w = (WORD)(n * TS(FONT_W) + ((vwk.text_effects & TXT_THICKEN) ? 1 : 0));
         underline(x, (WORD)(x + w - 1), cy);
     }
 }
@@ -528,7 +679,7 @@ static void fill_workout(void)
     intout[2]  = 0;                 /* device is precisely scalable */
     intout[3]  = 372;               /* pixel width  in microns (approx) */
     intout[4]  = 372;               /* pixel height in microns */
-    intout[5]  = 1;                 /* one character height */
+    intout[5]  = 2;                 /* character heights: two (phase 149) */
     intout[6]  = 7;                 /* line types */
     intout[7]  = 1;                 /* line widths (1 = continuous) */
     intout[8]  = 6;                 /* marker types */
@@ -555,8 +706,12 @@ static void fill_workout(void)
     intout[42] = 1;                 /* choice devices */
     intout[43] = 1;                 /* string devices */
     intout[44] = 2;                 /* workstation type: input/output */
-    ptsout[0] = 8;  ptsout[1] = 8;  /* min char width / height */
-    ptsout[2] = 8;  ptsout[3] = 8;  /* max char width / height */
+    /* the smallest and the largest character, width and height -- the
+     * height being the top, as vst_height reports it -- of the two sizes
+     * (phase 149; it said 8 x 8 on ANTIC's 6 x 6 face too), as EmuTOS
+     * works them out over its faces */
+    ptsout[0] = FONT_W;          ptsout[1] = FONT_TOP;
+    ptsout[2] = (WORD)(2 * FONT_W);  ptsout[3] = (WORD)(2 * FONT_TOP);
     ptsout[4] = 1;  ptsout[5] = 0;  /* min line width */
     ptsout[6] = 1;  ptsout[7] = 0;  /* max line width */
     ptsout[8]  = DEF_MKWD;  ptsout[9]  = DEF_MKHT;   /* min marker */
@@ -665,7 +820,8 @@ static void vdi_vq_color(void)
 #define NUM_VWK 8
 ZWIN static uint32_t vwk_far;       /* NUM_VWK Vwks, 0 until v_opnwk */
 ZWIN static WORD vwk_hdl[NUM_VWK];  /* each slot's handle, 0 if closed */
-static WORD     vwk_cur;            /* the slot vwk holds */
+static TINY WORD vwk_cur;           /* the slot vwk holds (direct page:
+                                     * LoRAM is at its floor, phase 149) */
 
 static uint32_t vwk_at(WORD i)
 {
@@ -738,6 +894,7 @@ static void init_wk(WORD handle)
     for (l = 0; l < (WORD)sizeof vwk; l++)
         z[l] = 0;                   /* the user pattern too */
     vwk.handle     = handle;
+    vwk.t_scale    = 1;             /* the face as it is (phase 149) */
     /* The surface it will draw on, before anything asks the geometry:
      * whichever device is current, which for every workstation any
      * program opens today is the screen (src/vdi/vdi.h). */
@@ -779,6 +936,7 @@ static void vdi_v_opnwk(void)
         vwk_far = far_alloc((uint32_t)NUM_VWK * sizeof(Vwk));
         far_keep(vwk_far);              /* the system's, whoever opened it */
     }
+    t2_take();                          /* twice the size's buffer, likewise */
     vwk_cur = 0;
     init_wk(VDI_PHYS_HANDLE);
     vwk_hdl[0] = VDI_PHYS_HANDLE;
@@ -2100,7 +2258,7 @@ static void gdp_justified(void)
             if (str[i] == ' ')
                 spaces++;
 
-    width = (WORD)(cnt * FONT_W);
+    width = (WORD)(cnt * TS(FONT_W));
 
     if (interword && spaces) {
         WORD delword = (WORD)((max_x - width) / spaces);
@@ -2112,7 +2270,7 @@ static void gdp_justified(void)
             rmwordx = 1;
         if (interchar) {                    /* both: a word may only give
                                              * half a cell to the gaps */
-            WORD expand = FONT_W / 2;
+            WORD expand = TS(FONT_W) / 2;
             if (delword > expand) { delword = expand; rmword = 0; }
             if (delword < -expand) { delword = (WORD)-expand; rmword = 0; }
             width = (WORD)(width + delword * spaces + rmword * rmwordx);
@@ -2137,7 +2295,7 @@ static void gdp_justified(void)
     for (i = 0; i < cnt; i++) {
         draw_char(str[i], x, cy);
         last = x;
-        x = (WORD)(x + FONT_W + charx);
+        x = (WORD)(x + TS(FONT_W) + charx);
         if (rmchar) {
             x = (WORD)(x + rmcharx);
             rmchar--;
@@ -2151,7 +2309,7 @@ static void gdp_justified(void)
         }
     }
     if ((vwk.text_effects & TXT_UNDERLINE) && cnt > 0)
-        underline(x0, (WORD)(last + FONT_W - 1
+        underline(x0, (WORD)(last + TS(FONT_W) - 1
                              + ((vwk.text_effects & TXT_THICKEN) ? 1 : 0)), cy);
 }
 
@@ -2974,16 +3132,25 @@ static void vdi_v_escape(void) { }
  * ignored and the actual cell is reported -- which is exactly what the VDI
  * contract asks for: the caller must use what comes back, not what it asked
  * for.  Reported values match ptsout[] in fill_workout(). */
+/* TWO SIZES (phase 149): the face, and the face at twice its size.  The
+ * one chosen is the largest whose height -- its top, as below -- is no
+ * more than the one asked for, and the smallest when none is: what the
+ * ST's ROM and EmuTOS do with a font's sizes.  The AES asks for height 0
+ * and keeps the face as it is. */
 static void vdi_vst_height(void)
 {
+    if (ptsin[1] >= 2 * FONT_TOP)
+        vwk.t_scale = 2;
+    else
+        vwk.t_scale = 1;
     /* "Character height" is the font's TOP -- baseline to top of cell --
      * not the cell height: both the ST ROM's dqt_attributes and EmuTOS
      * return fnt->top here, and the AES adds it to a cell's top edge to get
      * the baseline v_gtext wants (gsx_tblt).  Report the cell in [3]. */
-    ptsout[0] = FONT_W;             /* character width  */
-    ptsout[1] = FONT_TOP;           /* character height (= top) */
-    ptsout[2] = FONT_W;             /* cell width       */
-    ptsout[3] = FONT_H;             /* cell height      */
+    ptsout[0] = TS(FONT_W);             /* character width  */
+    ptsout[1] = TS(FONT_TOP);           /* character height (= top) */
+    ptsout[2] = TS(FONT_W);             /* cell width       */
+    ptsout[3] = TS(FONT_H);             /* cell height      */
     contrl[2] = 2;                  /* two POINTS */
 }
 
@@ -3051,14 +3218,14 @@ static void vdi_vqt_fontinfo(void)
     intout[0] = 32;                 /* first character in the face */
     intout[1] = 255;                /* ...and the last */
 
-    ptsout[0] = FONT_W;             /* widest cell, effects excluded */
-    ptsout[1] = FONT_BOTTOM;        /* dist[0] */
+    ptsout[0] = TS(FONT_W);             /* widest cell, effects excluded */
+    ptsout[1] = TS(FONT_BOTTOM);        /* dist[0] */
     ptsout[2] = 0;                  /* effects[0]: left slant */
-    ptsout[3] = FONT_DESCENT;       /* dist[1] */
+    ptsout[3] = TS(FONT_DESCENT);       /* dist[1] */
     ptsout[4] = 0;                  /* effects[1]: right slant */
-    ptsout[5] = FONT_HALF;          /* dist[2] */
+    ptsout[5] = TS(FONT_HALF);          /* dist[2] */
     ptsout[6] = 0;                  /* effects[2] = [0] + [1] */
-    ptsout[7] = FONT_ASCENT;        /* dist[3] */
+    ptsout[7] = TS(FONT_ASCENT);        /* dist[3] */
 
     contrl[2] = 4;                  /* four ptsout PAIRS */
     contrl[4] = 2;
@@ -3092,11 +3259,15 @@ static void vdi_vst_effects(void)
  * vst_height, what comes back is what the caller must use. */
 static void vdi_vst_point(void)
 {
-    intout[0] = FONT_POINT;
-    ptsout[0] = FONT_W;
-    ptsout[1] = FONT_TOP;
-    ptsout[2] = FONT_W;
-    ptsout[3] = FONT_H;
+    if (intin[0] >= 2 * FONT_POINT)     /* the same rule, in points */
+        vwk.t_scale = 2;
+    else
+        vwk.t_scale = 1;
+    intout[0] = TS(FONT_POINT);
+    ptsout[0] = TS(FONT_W);
+    ptsout[1] = TS(FONT_TOP);
+    ptsout[2] = TS(FONT_W);
+    ptsout[3] = TS(FONT_H);
     contrl[2] = 2;
     contrl[4] = 1;
 }
@@ -3107,13 +3278,13 @@ static void vdi_vst_point(void)
  * break a line without this. */
 static void vdi_vqt_extent(void)
 {
-    WORD w = (WORD)(contrl[3] * FONT_W
+    WORD w = (WORD)(contrl[3] * TS(FONT_W)
                     + ((vwk.text_effects & TXT_THICKEN) ? 1 : 0));
 
     ptsout[0] = 0;      ptsout[1] = 0;
     ptsout[2] = w;      ptsout[3] = 0;
-    ptsout[4] = w;      ptsout[5] = FONT_H;
-    ptsout[6] = 0;      ptsout[7] = FONT_H;
+    ptsout[4] = w;      ptsout[5] = TS(FONT_H);
+    ptsout[6] = 0;      ptsout[7] = TS(FONT_H);
     contrl[2] = 4;
 }
 
@@ -3129,7 +3300,7 @@ static void vdi_vqt_width(void)
      * right one (EmuTOS vdi_text.c writes exactly those three).  All
      * six are set, because a caller reads what contrl[2] declares and
      * the three odd words would otherwise be the last call's. */
-    ptsout[0] = FONT_W;
+    ptsout[0] = TS(FONT_W);
     ptsout[1] = 0;
     ptsout[2] = 0;                  /* left delta: a fixed cell has none */
     ptsout[3] = 0;
@@ -3149,10 +3320,10 @@ static void vdi_vqt_attributes(void)
     intout[3] = vwk.h_align;        /* what vst_alignment set */
     intout[4] = vwk.v_align;
     intout[5] = (WORD)(vwk.wrt_mode + 1);
-    ptsout[0] = FONT_W;
-    ptsout[1] = FONT_TOP;           /* as vst_height: the font's top */
-    ptsout[2] = FONT_W;
-    ptsout[3] = FONT_H;
+    ptsout[0] = TS(FONT_W);
+    ptsout[1] = TS(FONT_TOP);           /* as vst_height: the font's top */
+    ptsout[2] = TS(FONT_W);
+    ptsout[3] = TS(FONT_H);
     contrl[2] = 2;
     contrl[4] = 6;
 }
