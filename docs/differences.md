@@ -36,25 +36,25 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 
 | | ST / EmuTOS | gem4xe | Where |
 |---|---|---|---|
-| Multitasking | single-tasking TOS; MultiTOS and MagiC multitask | single-tasking, as TOS: the desktop, one program, and the desk accessories | `src/aes/shel.c` |
+| Multitasking | single-tasking TOS; MultiTOS and MagiC multitask | **one program runs at a time, but up to six can be loaded** besides the desktop.  The one in front runs and the rest are put aside where they stopped; CONTROL-TAB, or the Desk menu's list of programs, switches between them, as MultiTOS's Control-Alternate-Tab and Desk menu do.  Nothing runs in the background.  A program chosen from the list with SHIFT is asked to end (`AP_TERM`), and Quit asks every program aside in turn | `src/aes/shel.c` |
 | `Pexec` | load and go, load, go, create a basepage | mode 0, load and go, only; the environment is not passed | `src/sys/gemdos.c` |
 | Desk accessories | `*.ACC` in the boot drive's root | `*.ACC` in the system's folder (`\GEM\`), loaded once at boot, as many as the pool has room for, up to the Desk menu's six; one more than that, or one with no room, is left out **and an alert says so** before the desktop starts, where TOS says nothing | `src/aes/shel.c` |
 | The AUTO folder | `\AUTO\` | `\GEM\AUTO\`.  `Ptermres` keeps all of a program or none of it, and a `.TTP` is not run from there | `src/aes/shel.c`, `tools/sdk/README.md` |
-| Control panel modules | Atari's XCONTROL `.CPX`, listed from the header in the file, loaded when opened | gem4xe's own control panel and module interface, in the same shape; a module is built with the kit.  Its header is inside the module, so every module is run once at boot to fill it in, then freed unless it is `CPX_RESIDENT`; `Cpxload`, GEMDOS `0x1F3`, gem4xe's own, loads one when the panel opens it | `src/apps/cpanel.c`, `src/aes/shel.c`, `tools/sdk/cpx.c` |
-| A DOS prompt | -- | `Psystem`, GEMDOS `0x1F0`, gem4xe's own: a command line run by SpartaDOS X, its output captured | `src/sys/gemdos.c` |
-| Which drives there are | `Drvmap()`, kept by the BIOS | `Dsetdrv`'s map is DOS 2's own list, or a guess of D1: and D2: where the DOS keeps none (SpartaDOS); `Dprobe`, GEMDOS `0x1F1`, gem4xe's own, asks every drive and is the map from then on -- the desktop's *Install devices* | `src/sys/gemdos.c` |
+| Control panel modules | Atari's XCONTROL `.CPX`, listed from the header in the file, loaded when opened | gem4xe's own control panel, one window as XCONTROL's, and a module interface in the same shape; a module is built with the kit.  A `.CPX` is its 512-byte header and then the module, as on the ST, so the panel lists a module from its header, and only a `CPX_BOOTINIT`, `CPX_RESIDENT` or `CPX_SETONLY` module runs at boot.  `Cpxload`, GEMDOS `0x1F3`, gem4xe's own, loads one when the panel opens it | `src/apps/cpanel.c`, `src/aes/shel.c`, `tools/sdk/cpx.c`, `tools/mkcpx.py` |
+| A DOS prompt | -- | `Psystem`, GEMDOS `0x1F0`, gem4xe's own: a command line run by the DOS -- SpartaDOS X's command processor, or on G4DOS gem4xe's own commands -- its output captured | `src/sys/gemdos.c`, `src/sys/doscmd.c` |
+| Which drives there are | `Drvmap()`, kept by the BIOS | `Dsetdrv`'s map is DOS 2's own list, or a guess of D1: and D2: where the DOS keeps none (SpartaDOS, and G4DOS under GEM); `Dprobe`, GEMDOS `0x1F1`, gem4xe's own, asks every drive and is the map from then on -- the desktop's *Install devices* | `src/sys/gemdos.c` |
 
 ## Files and drives
 
 | | ST / EmuTOS | gem4xe | Where |
 |---|---|---|---|
 | Drive names | `A:` to `P:` | `A:` to `H:` to a program, which are **`D1:` to `D8:`** to a person: the desktop and the file selector show `D1:`, and `DESKINF=` takes either spelling | `src/sys/dos.c`, `src/desk/desktop.c` |
-| The file system | FAT | the DOS's: SpartaDOS X and SpartaDOS 3.2 have folders; **DOS 2 has none**, and a path on it is its last component.  MyDOS has folders, but gem4xe treats it as a DOS 2 and does not use them | `src/sys/dos.c` |
+| The file system | FAT | the DOS's: SpartaDOS X and SpartaDOS 3.2 have folders, and so does G4DOS, gem4xe's own DOS, on SpartaDOS's file system.  **DOS 2 has none**, and a path on it is its last component.  MyDOS has folders, but gem4xe treats it as a DOS 2 and does not use them | `src/sys/dos.c`, `src/sys/sdcio.c` |
 | Names | 8.3 | 8.3, upper case, by the DOS's own rules for which characters it takes | `src/sys/dos.c` |
-| A folder's name | can be changed | **cannot**: the DOSes refuse to rename a directory, so Show info greys it | `src/desk/deskfun.c` |
+| A folder's name | can be changed | **not from the desktop**: SpartaDOS X and 3.2 refuse to rename a directory, so Show info greys a folder's name -- on every DOS, though G4DOS's file system renames and moves folders (`tests/host/test_sdfs.py`) | `src/desk/deskfun.c` |
 | `Fattrib` | reads and sets | **sets** read-only (the DOS's lock) and **refuses a read**: a search answers what a read would | `src/sys/gemdos.c` |
-| `Dfree` | the cluster count | what the DOS's directory listing says, at most 999 sectors; the disk's total is unknown | `src/sys/gemdos.c` |
-| A name with no path | the current directory | the same -- and until a program has set one, the **DOS's own** current directory, where `GEM.COM` was started (phase 90) | `src/sys/gemdos.c` |
+| `Dfree` | the cluster count | the file system's own count, free and total, read off the drive: DOS 2's VTOC or SpartaDOS's superblock.  On a drive that does not answer SIO -- SpartaDOS X's own -- what the directory listing says, at most 999 sectors, and the total unknown | `src/sys/gemdos.c` |
+| A name with no path | the current directory | the same -- and until a program has set one, the **DOS's own** current directory, where `GEM.COM` was started (phase 90).  G4DOS has none: a bare name is found in the root and then one folder down, and a file made under one goes in the root (phase 141) | `src/sys/gemdos.c` |
 | `DESKTOP.INF` | the boot drive's root | beside `GEM4XE.CFG` (`\GEM\` on the product media), or where `DESKINF=` in `GEM4XE.CFG` says.  Its lines are the donor's with gem4xe's own (`#Q` is a pair per screen, `#M` a drive icon); `NEWDESK.INF` is not read | `src/desk/deskwin.c` |
 
 ## The AES
@@ -76,11 +76,12 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 | | ST / EmuTOS | gem4xe | Where |
 |---|---|---|---|
 | Fonts | the system faces, GDOS faces | **one face at two sizes**: the 8 x 8 system font (Atari's condensed 6 x 6 on ANTIC) and the same doubled, which `vst_height` and `vst_point` choose; a `SYSTEM.FNT` of the same cell may replace the face (`vst_load_fonts`).  No GDOS faces, and a TEDINFO cannot name another.  A port's GDOS check should come out "none" -- the kit has no `vq_vgdos` | `src/vdi/vdi.c`, `src/vdi/font.c` |
-| Raster copy | sixteen modes | the same sixteen, on every device and between any two forms; on the VBXE only a plain copy (3) uses the blitter, the others go a row at a time | `src/vdi/vdi.c`, `src/vdi/vdidev.h` |
+| Raster copy | sixteen modes | the same sixteen, on every device and between any two forms.  On the VBXE the blitter does them between two forms in VRAM -- the screen, a bitmap -- whose x is of the same parity, in one pass or two; the rest go a row at a time on the CPU | `src/vdi/vdi.c`, `src/vdi/dev_vbxe.c` |
 | Offscreen bitmaps | EdDI's `v_opnbm` (NVDI, EmuTOS) | on the VBXE: two, in VRAM, each up to the screen's size and at its depth, allocated by the VDI -- a bitmap of the program's own memory is refused -- with an MFDB whose address is VRAM's, for `vro_cpyfm` only.  None on ANTIC (handle 0) | `src/vdi/vdi.c` |
+| Text effects | `vst_effects`' six | thickened and underlined.  Light, italic, outline and shadow are dropped, and `vst_effects` answers with the two it kept | `src/vdi/vdi.c` |
 | Raster forms | any depth TOS supports | the device's depth -- four planes on the VBXE, one on ANTIC and the page -- and one plane: `vr_trnfm` converts those and leaves any other alone, and `vrt_cpyfm` refuses a destination of another depth | `src/vdi/vdi.c` |
 | Bezier curves | a GDOS's | none: `v_bez_on` answers 0, and `v_bez` draws its points as a polyline, as TOS does without a GDOS | `src/vdi/vdi.c` |
-| Opcodes | -- | 71 served; five dispatch to nothing on purpose, as DRI's own driver did | [`api.md`](api.md) |
+| Opcodes | -- | 66 of DRI's 71 served; the other five dispatch to nothing on purpose, as DRI's own driver did.  Of the 66, `v_escape` (5) does nothing for any escape | [`api.md`](api.md) |
 | The printer | GDOS's driver | a 640 x 800 graphics device writing PCL 5 or PostScript where `PRINTTO=` says (`PRINTER=` in `GEM4XE.CFG`); the desktop's Print sends a text file to `PRN:` as it is | `src/vdi/dev_print.c` |
 
 ## From EmuTOS in particular

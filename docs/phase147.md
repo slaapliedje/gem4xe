@@ -11,6 +11,11 @@ was far too slow to use.
 | `vro_cpyfm` 320x100 screen to screen, aligned, XOR | 1,136 ms | **1.4 ms** |
 | the same, a plain copy (unchanged) | 3.1 ms | 3.1 ms |
 
+(Note, 11 November: the 1.4 ms was measured on a blank source.  The
+blitter skips a byte whose source is 0 in its combining modes, so that
+XOR wrote nothing.  On a solid source, where every byte is combined, it
+is 4.4 ms (docs/bench.md, the fourth run).)
+
 A program that drew a selection rectangle with XOR, or put a sprite
 down with a mask and OR, would have taken a second for each.
 

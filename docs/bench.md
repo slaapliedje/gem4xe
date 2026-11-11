@@ -1,10 +1,12 @@
 # The benchmark — GEMBench's tests, on this machine
 
 Status: **running**, not a gate. `make bench` prints the table below in
-about four minutes; `python3 tests/emu/bench_gem.py --profile dialog text`
+about a minute; `python3 tests/emu/bench_gem.py --profile dialog text`
 adds Altirra's instruction profiler per row. The first two runs found the
 two hottest functions in the AES and cut every drawing row by a third to
-two fifths, and pinned a seventh compiler defect on the way.
+two fifths, and pinned a seventh compiler defect on the way. The fourth,
+on 11 November, found four rows timing what the rows before them had left
+behind, and fixed the bench rather than the numbers (below).
 
 Everything here is measured in Altirra — a Rapidus at 11×, VBXE FX 1.26,
 PAL — and not on hardware. The emulator's bus model is the emulator's;
@@ -18,10 +20,12 @@ small), VDI graphics, a GEM window, integer division, float maths, RAM
 and ROM access and blitting, and prints each as a percentage of a stock
 ST. Its source is not public and no ST is measured here, so the numbers
 cannot be relative: `tests/emu/bench_gem.py` keeps GEMBench's headings
-and reports **milliseconds per unit of work and units per second**. Two
-of the headings do not apply — `vst_effects` is a no-op in this driver,
-as in DRI's own, and there is one font — and are printed as such rather
-than dropped.
+and reports **milliseconds per unit of work and units per second**. Its
+text effects are the two this driver draws, thickened and underlined
+(`vst_effects` drops light, italic, outline and shadow). Its small text
+cannot be smaller than the face, which is the smallest size there is, so
+that heading says so and times the face at twice its size, the other
+size (phase 149).
 
 The VDI and AES rows are the harness's own scripts (`tests/emu/m3..m8`)
 run for time instead of for pixels: the same `objc_draw` of the same
@@ -59,6 +63,14 @@ whole story (below): 32,520 was not a text screen's number.
 
 Each row is repeated until its measured total reaches 300 ms or 40
 runs, so the tick's resolution does not show in the ms column.
+
+Each row starts from the same place (since 11 November). Before it, and
+untimed, a script puts back what a row does not set itself: replace
+mode, colour 1 for fills, lines and text, no clip, plain text at the
+face's own size. A row that needs something on the screen has it laid
+down the same way: the screen-to-screen copies copy a solid rectangle in
+colour 1. So a row's number does not depend on which rows ran before it,
+or on whether it ran alone.
 
 ## The first run
 
@@ -304,41 +316,123 @@ them by where they show:
   `bcb_common` at 1.3 counted cycles an instruction against 0.4 for the
   fast-bus code around it, and 1,680 write-through stores a 40-character
   line is a good part of what separates 19.0 ms from 15.4. The fix is a
-  placement, not a rewrite, and it is the first item below.
+  placement, not a rewrite, and it is in the list below.
 - **The device seam** (Phases 33–35): `v_gtext` executes 12% more
   instructions a line than it did (77,860 a unit against ~69,200), and
   the VDI now reaches its device through `vdev->` for every raster
   operation. Not separated from the other two by measurement yet; the
   profile after the blit list moves will say.
 
+## The fourth run, 11 November: two months, and rows that timed their neighbours
+
+The VDI plan's last step (`docs/vdi-plan.md`) was to measure again.  The
+clock line is the third run's, 32,760 cycles a frame: the display list
+stays off under the overlay, as `antic_suspend()` leaves it.
+
+**Four rows had been timing their neighbours.** A row set only what it
+changed, and inherited the rest from whatever ran before it — and the
+AES's rows share the physical workstation with the script:
+
+- The dialog leaves **transparent mode with fill colour 0**.  The
+  patterned fill after it was a pen-0 transparent pattern, which the
+  VBXE draws as two passes, a nibble at a time through AND
+  (`src/vdi/dev_vbxe.c`, `patt_span`): 2.05 ms, where the replace-mode
+  fill it means to time is 1.11 ms — what phase 58 left it at.  It
+  looked like a regression of 84% and was a different case.
+- The window leaves a **clip**, which cut the screen-to-screen copies
+  and the icons short: the aligned copy timed 1.55 ms for what is 3.14 ms
+  at its full 320×100.
+- The XOR copy depends on **what is in the source**.  The blitter skips
+  a byte whose source is 0 in its combining modes, and white is 0, so on
+  a blank source the XOR writes nothing: 1.40 ms, the figure phase 147
+  gave.  On a solid source every byte is combined: 4.40 ms.  After the
+  rows before it, it was whatever they had drawn there, 1.2 to 3.8 ms.
+
+The bench now resets those attributes and lays down the copies' source
+before each row, untimed (Timing, above).  Today's numbers both ways:
+
+| Row | inheriting | from the reset |
+|---|---:|---:|
+| vr_recfl 100×50, pattern 4 | 2.046 ms | **1.107** |
+| vro_cpyfm 320×100 aligned | 1.554 | **3.135** |
+| vro_cpyfm 320×100 odd x | 100.5 | **210.6** |
+| vro_cpyfm 320×100 aligned, XOR | 1.180 | **4.395** |
+| vrt_cpyfm 32×24 icon, transparent / replace | 1.611 / 1.612 | **2.172 / 2.173** |
+
+Those rows' earlier figures, in every table above, were taken the same
+way and are not comparable.  For the text rows the dialog's mode costs
+0 to 3% today (odd x 8.94 ms inheriting, 8.67 from the reset).  The
+other rows draw nothing the leftovers change, and compare like for like
+with 10 September:
+
+| Row | 10 Sep | 11 Nov | | what moved it |
+|---|---:|---:|---:|---|
+| form_dial START, objc_draw, FINISH | 60.0 ms | **31.2** | −48% | phases 53, 58, 104, 145 |
+| objc_draw of the dialog alone | 49.2 | **23.4** | −52% | the same |
+| v_gtext, 40 characters, even x | 19.0 | **6.42** | −66% | phase 53; phase 145, a string as one raster |
+| v_gtext, 40 characters, odd x | 19.3 | **8.67** | −55% | the same |
+| vr_recfl 100×50, solid | 0.79 | **0.497** | −37% | phase 58: the CPU no longer waits on the blitter |
+| box 100×50 as a 5-point v_pline | 1.88 | **1.43** | −24% | phase 58 |
+| diagonal 100×100 v_pline | 2.42 | 2.46 | +2% | nothing: the line stepper |
+| wind_create, open, close, delete | 94.0 | **74.4** | −21% | phases 58 and 104 |
+| read, bank $00 | 0.392 | 0.389 | −1% | |
+| write, bank $00 | 0.488 | 0.484 | −1% | |
+| read, VRAM through the window | 0.576 | 0.572 | −1% | |
+| write, VRAM through the window | 0.716 | 0.711 | −1% | |
+| vram_write, the driver's upload | 0.72 | 0.713 | −1% | |
+
+The memory rows did not move, as they should not have, which says the
+harness measures what it did in September.  Phase 53 found the blitter
+was never the slow part; phase 58 stopped the CPU spinning on its busy
+bit after every call; phase 104 drew a dialog and a window in fewer
+blits, each a control block written over the slow bus; phase 145 put a
+string on the screen as one raster where each character was a blit or
+two.
+
+Three rows are new, for the two headings that had none:
+
+| Row | ms | |
+|---|---:|---|
+| v_gtext, 40 characters, thickened | 21.9 | 3.4× a plain line: a cell at a time |
+| v_gtext, 40 characters, underlined | 6.67 | a plain line and one more rectangle |
+| v_gtext, 40 characters at twice the size | 25.6 | 4.0× a plain line, for 4× the area |
+
+Thickened text in replace mode goes a cell at a time on purpose: its
+second pass, one pixel right, spills into the next cell, and it is the
+next cell's own background that must erase the spill (`src/vdi/vdi.c`,
+`v_gtext`).  The run that makes a plain line one raster takes thickened
+text only in transparent mode, where the two passes are an OR.
+
 ## What is left, in order
 
-- **The blit list out of the write-through window.** 252 bytes that
-  want a home in window 0, which runs at full speed both ways. In
-  GEM.COM's map `LoRAM` has 47 bytes free and `Near` 324, so either the
-  boundary between them moves and leaves the near code with seventy, or
-  the stage shrinks — and a shorter list is not free, because a full
-  list drops the blit (`bcb_new` returns 0) and the callers' longest
-  chains would need counting first.
-- **`_Mul16`, eight a glyph.** The row base (`y × stride`) is computed
-  per glyph in `v_gtext` and again in `blit_mask`; hoisting it to once a
-  string and stepping by the stride would take ~300 instructions off each
-  character, a fifth of the row.
-- **The upload loop in assembly.** 15 instructions a word is the
-  compiler's; `lda [s],y / sta [d],y` with a DP count is 5, and every
-  block passes through it. Bounded, ~30 lines, and the second fifth.
-- **`vro_cpyfm` at odd x.** 3.4 *seconds* for 320×100 — 98 µs a pixel
-  through the window. The AES never takes this path (window x snaps to
-  even, Phase 8) but an application can, and it should be a nibble-mode
-  blit with a pre-shifted copy, like the odd-x glyph strips, not a pixel
-  loop.
+As of 11 November.  Of September's list, `_Mul16` eight times a glyph
+is gone: a 40-character line spends 199 of its 28,378 instructions in it,
+a few calls a string (phase 104, then phase 145's run).  And the upload
+loop needs no assembler: `vram_write` moves 256 bytes in 0.713 ms, and a plain write
+through the window takes 0.711, so the loop is as fast as the bus behind
+it.
+
+- **`vro_cpyfm` at odd x**: 210 ms for 320×100, 67 times the aligned
+  copy.  It was 3.4 seconds a pixel at a time; since phase 75 it goes by
+  rows, a nibble at a time, on the CPU, because the blitter has no
+  shifter.  The AES never takes it (a window's x snaps to even) but a
+  program can.
+- **Thickened text in replace mode**, 3.4× a plain line.  The run's
+  buffer could take both passes, ORed, and the background go down once
+  under it, as the prefill does.
+- **The diagonal line**, unchanged since September: 96 instructions a
+  pixel in `vbd_line_diag`.
+- **The blit list out of the write-through window.** The 252-byte stage
+  is still in `zwin` (`src/vbxe/vbxe.c`), where each of a block's 21
+  stores goes out over the slow bus.  LoRAM has 260 bytes free, but 256
+  of them are its floor, so the list does not fit there yet.
 - The dialog and window rows are dominated by what they draw, not by the
-  AES: `objc_draw` alone is 41 of the 51 ms. After the two items above
-  the next profile decides, not this list.
+  AES: `objc_draw` alone is 23 of the 31 ms.  The next profile decides,
+  not this list.
 
 ## Running it
 
-    make bench                                     # every row, ~4 min
+    make bench                                     # every row, ~1 min
     python3 tests/emu/bench_gem.py text blit       # groups by substring
     python3 tests/emu/bench_gem.py --profile --top 12 dialog
     python3 tests/emu/bench_gem.py --json out.json # for diffing runs

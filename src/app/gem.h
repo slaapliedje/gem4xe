@@ -1292,8 +1292,8 @@ LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz);
 #define S_GETCOOKIE  8
 LONG Ssystem(WORD mode, LONG arg1, LONG arg2);
 
-/* gem4xe's own (0x1F0): the DOS's command processor -- SpartaDOS X's --
- * given `line`, run to completion with GEM's screen left as it is, and
+/* gem4xe's own (0x1F0): the DOS's command processor -- SpartaDOS X's, or
+ * on G4DOS gem4xe's own commands (src/sys/doscmd.c) -- given `line`, run to completion with GEM's screen left as it is, and
  * every byte it printed caught in `out`, `max` bytes of it (a Malloc'd
  * buffer; the DOS's EOL, $9B, ends its lines).  The bytes caught, or
  * EINVFN on a DOS with no such entry; Psystem(0, 0, 0) asks only that.

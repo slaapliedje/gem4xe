@@ -7,8 +7,11 @@ access and blitting, and reports each as a percentage of an ST.  Its
 source is not public and no ST is measured here, so the numbers are
 absolute: milliseconds per unit of work and units per second, on the
 emulated machine (Altirra: a Rapidus at 11x with VBXE FX 1.26 -- not
-hardware).  Two of its rows do not apply -- vst_effects is a no-op in this
-driver and it has one font -- and are reported as such, not dropped.
+hardware).  Its text effects are the two this driver has, thickened and
+underlined (vst_effects drops light, italic, outline and shadow), and its
+small text is the face at its own size, there being no smaller one: the
+row under that heading is the face at twice its size, which is the other
+size there is (phase 149).
 Rows are grouped under GEMBench's headings, one machine number each.
 
 Timing is exact to a VCOUNT tick (two scanlines, 0.13 ms), not to a
@@ -93,11 +96,13 @@ def split(addr):
 class Row:
     """One measured line: `script` is run whole and costs `units` units
     of work; `aes` says which encoder the script needs; `bytes_per_unit`
-    turns a memory row's rate into KB/s."""
+    turns a memory row's rate into KB/s; `setup`, run once and untimed
+    before it, lays down what the row needs to find on the screen."""
 
-    def __init__(self, label, script, units, aes=False, bytes_per_unit=0):
+    def __init__(self, label, script, units, aes=False, bytes_per_unit=0, setup=None):
         self.label, self.script, self.units = label, script, units
         self.aes, self.bytes_per_unit = aes, bytes_per_unit
+        self.setup = setup
 
 
 class NotApplicable:
@@ -131,6 +136,12 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
     def text(x):
         return [(V.V_GTEXT, (x, 16 + 8 * i), TEXT) for i in range(N)]
 
+    def effect(e):
+        return [(V.VST_EFFECTS, (), (e,))] + text(16)
+
+    def twice():                    # 40 cells of 16 fill a 640 screen from x 0
+        return [(V.VST_HEIGHT, (0, 16), ())] + text(0)
+
     def recfl(x0):
         return [(V.VR_RECFL, (x0 + 8 * (i & 7), 20 + 4 * i,
                               x0 + 8 * (i & 7) + 99, 20 + 4 * i + 49), ())
@@ -158,6 +169,10 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
         return Row(label, [bench(op, n, slo, shi, sspace, dlo, dhi, dspace)], n,
                    bytes_per_unit=BENCH_BYTES)
 
+    # what the screen-to-screen copies copy: a solid rectangle in colour 1,
+    # every byte $11, not whatever the rows before them left there
+    source = [(V.VR_RECFL, (0, 20, 319, 119), ())]
+
     dialog_unit = [(FORM_DIAL, (), (FMD_START, 0, 0, 0, 0) + DIALOG_RECT),
                    draw(),
                    (FORM_DIAL, (), (FMD_FINISH, 0, 0, 0, 0) + DIALOG_RECT)]
@@ -175,9 +190,14 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
             Row("v_gtext, 40 characters, odd x", text(17), N),
         ]),
         ("VDI text effects", [
-            NotApplicable("vst_effects", "a no-op in this driver, as in DRI's own (opcode 106)")]),
+            Row("v_gtext, 40 characters, thickened", effect(1), N),
+            Row("v_gtext, 40 characters, underlined", effect(8), N),
+        ]),
         ("VDI small text", [
-            NotApplicable("vst_height / vst_point", "one font, 8x8, in this driver")]),
+            NotApplicable("a size below the face's own", "none: vst_height(4) gives the face as it is, "
+                          "timed under VDI text"),
+            Row("v_gtext, 40 characters at twice the size (vst_height 16)", twice(), N),
+        ]),
         ("VDI graphics", [
             Row("vr_recfl 100x50, solid", [(V.VSF_INTERIOR, (), (1,))] + recfl(20), N),
             Row("vr_recfl 100x50, pattern 4", [(V.VSF_INTERIOR, (), (2,)),
@@ -238,13 +258,18 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
         ]),
         ("Blitting", [
             Row("vro_cpyfm 320x100 screen to screen, aligned",
-                [(V.VRO_CPYFM, (0, 20, 319, 119, 320, 120, 639, 219), (3,))] * 10, 10),
-            Row("vro_cpyfm 320x100 screen to screen, odd x (the pixel path)",
-                [(V.VRO_CPYFM, (1, 20, 320, 119, 320, 120, 639, 219), (3,))] * 2, 2),
-            # a logic mode, which goes a row at a time on the CPU since
-            # phase 142 (docs/vdi-plan.md, step 2)
+                [(V.VRO_CPYFM, (0, 20, 319, 119, 320, 120, 639, 219), (3,))] * 10, 10,
+                setup=source),
+            Row("vro_cpyfm 320x100 screen to screen, odd x (by rows, nibbles)",
+                [(V.VRO_CPYFM, (1, 20, 320, 119, 320, 120, 639, 219), (3,))] * 2, 2,
+                setup=source),
+            # a logic mode, by the blitter since phase 147 -- which skips a
+            # byte whose source is 0, so on a blank source the row did
+            # nothing and took 1.4 ms; on the solid source every byte is
+            # combined
             Row("vro_cpyfm 320x100 screen to screen, aligned, XOR",
-                [(V.VRO_CPYFM, (0, 20, 319, 119, 320, 120, 639, 219), (6,))] * 2, 2),
+                [(V.VRO_CPYFM, (0, 20, 319, 119, 320, 120, 639, 219), (6,))] * 2, 2,
+                setup=source),
             Row("vrt_cpyfm 32x24 icon, transparent", icon(V.MD_TRANS), N),
             Row("vrt_cpyfm 32x24 icon, replace", icon(V.MD_REPLACE), N),
         ]),
@@ -297,7 +322,28 @@ def load_script(b, sa, room, words):
     b.memload(sa, data)
 
 
+# Run, untimed, before every row: the attributes a row does not set itself
+# put back to the workstation's own, replace mode in colour 1 with no clip.
+# A row inherited whatever ran before it (found 2026-11-11, docs/bench.md).
+# The AES's dialog leaves the workstation it shares with the script in
+# transparent mode with fill colour 0, which made the patterned fill after
+# it twice its cost -- a pen-0 transparent pattern is two passes
+# (src/vdi/dev_vbxe.c, patt_span); and the window left a clip that cut the
+# screen-to-screen copies short, so they timed less than 320x100.
+RESET = Row("reset", [(V.VSWR_MODE, (), (1,)), (V.VS_CLIP, (0, 0, 0, 0), (0,)),
+                      (V.VSF_COLOR, (), (1,)), (V.VSF_INTERIOR, (), (1,)),
+                      (V.VSL_COLOR, (), (1,)), (V.VSL_TYPE, (), (1,)),
+                      (V.VST_COLOR, (), (1,)), (V.VST_EFFECTS, (), (0,)),
+                      (V.VST_HEIGHT, (0, 0), ())], 1)
+
+
 def measure(b, clock, row, sa, room, tree_base, mfdb, screen_mfdb):
+    load_script(b, sa, room, encode(RESET, tree_base, mfdb, screen_mfdb))
+    clock.run(b)
+    if row.setup:
+        load_script(b, sa, room, encode(Row("setup", row.setup, 1),
+                                        tree_base, mfdb, screen_mfdb))
+        clock.run(b)
     load_script(b, sa, room, encode(row, tree_base, mfdb, screen_mfdb))
     total, runs = 0.0, 0
     while runs < MAX_RUNS and (runs < 2 or clock.ms(total) < MIN_MS):

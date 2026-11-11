@@ -1,6 +1,7 @@
 # The VDI after NVDI: what is wrong, slow or missing
 
-Status: **step 1 built** -- [phase 142](phase142.md): `vro_cpyfm`'s
+Status: **done**, 2026-11-11, but for the two items of step 3 left for
+later.  Step 1 built -- [phase 142](phase142.md): `vro_cpyfm`'s
 sixteen modes on every device, `v_opnbm` refused and the face's name;
 [phase 143](phase143.md): `vrt_cpyfm` into forms, `vr_trnfm`,
 `v_bez_on`, and the page's erase colour.  Then [phase 144](phase144.md),
@@ -9,10 +10,12 @@ the first caller's and went with it, and a contour fill on the page
 never worked.  Step 2 built: [phase 145](phase145.md), text on the VBXE a
 run at a time; [phase 146](phase146.md), ANTIC's text in assembler;
 [phase 147](phase147.md), the logic modes by the blitter.  Step 3
-under way: [phase 148](phase148.md), offscreen bitmaps on the VBXE;
+built: [phase 148](phase148.md), offscreen bitmaps on the VBXE;
 [phase 149](phase149.md), the face at twice its size; [phase
-150](phase150.md), the cookie jar.  Text effects and proportional faces
-are left for later (2026-11-11); step 4 is next.  Planned 2026-11-10.  The question (2026-11-09): "We know that
+150](phase150.md), the cookie jar; text effects and proportional faces
+are left for later (2026-11-11).  Step 4 built: [phase 151](phase151.md),
+differences.md and bench.md measured again, which found the bench timing
+what the rows before each row had left.  Planned 2026-11-10.  The question (2026-11-09): "We know that
 NVDI sped up a lot of the VDI calls, but since we don't/won't have NVDI
 to load for or emuTOS port.  What optimizations and capabilities are we
 missing that we should implement?"  The answer was given then; this is
