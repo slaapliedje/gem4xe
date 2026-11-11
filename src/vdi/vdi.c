@@ -254,19 +254,34 @@ static UWORD cur_mask[16], cur_data[16];
 static WORD  cur_hide = 1;          /* visible only at 0; starts hidden */
 static WORD  cur_drawn;             /* is the saved block valid?        */
 
+/* THE POINTER IS THE SCREEN'S, whichever workstation the last call made
+ * current: an offscreen bitmap's or a printer's device would draw it
+ * somewhere else, or -- the page's -- not at all (phase 148).  Each call
+ * to the device's pointer goes through the physical workstation's device,
+ * and the current one is put back after. */
+static void vdev_phys(void);
+
 static void cursor_show_now(void)
 {
+    const VDIDEV FAR *keep = vdev;
+
+    vdev_phys();
     /* The hot spot is the VDI's: where the form is DRAWN is this side of
      * the seam, what it is made of is the other. */
     dev_cursor_show((WORD)(ptr_seen.x - cur_xhot),
                     (WORD)(ptr_seen.y - cur_yhot));
+    vdev = keep;
     cur_drawn = 1;
 }
 
 static void cursor_hide_now(void)
 {
     if (cur_drawn) {
+        const VDIDEV FAR *keep = vdev;
+
+        vdev_phys();
         dev_cursor_hide();
+        vdev = keep;
         cur_drawn = 0;
     }
 }
@@ -299,7 +314,13 @@ static void vdi_vsc_form(void)
         cur_mask[i] = (UWORD)intin[5 + i];
         cur_data[i] = (UWORD)intin[21 + i];
     }
-    dev_cursor_form(cur_bg, cur_fg, cur_mask, cur_data);
+    {
+        const VDIDEV FAR *keep = vdev;
+
+        vdev_phys();
+        dev_cursor_form(cur_bg, cur_fg, cur_mask, cur_data);
+        vdev = keep;
+    }
 }
 
 /* GEM's nesting rule: v_hide_c increments a counter and the cursor is visible
@@ -795,6 +816,116 @@ static void vdev_phys(void)
                 (uint16_t)sizeof vdev);
 }
 
+/* Slot i's device, the live copy's when it is current. */
+static const VDIDEV FAR *dev_of(WORD i)
+{
+    const VDIDEV FAR *d;
+
+    if (i == vwk_cur)
+        return (const VDIDEV FAR *)vwk.dev;
+    far_get((uint8_t *)&d, vwk_at(i) + offsetof(Vwk, dev), (uint16_t)sizeof d);
+    return d;
+}
+
+/* Is slot i an offscreen bitmap's workstation?  Its device is not the
+ * physical one's, and it has a surface other than 0 -- the screen's VRAM
+ * address, and the page's device's, which has none. */
+static WORD is_bitmap(WORD i)
+{
+    const VDIDEV FAR *d = dev_of(i);
+
+    return (WORD)(d != dev_of(0) && d->surface != 0);
+}
+
+/* A word and a long into far memory BY VALUE: v_opnbm's size and surface
+ * are each a join -- a ?: or a loop's last value -- and a join stored in a
+ * variable whose address is taken is miscompiled at every -O (B9:
+ * tools/ccbug).  The first version passed &w to far_put, and w arrived as
+ * whatever the stack held. */
+static void far_put16(uint32_t a, UWORD v)
+{
+    far_write8(a, (uint8_t)v);
+    far_write8(a + 1, (uint8_t)(v >> 8));
+}
+
+static void far_put32(uint32_t a, uint32_t v)
+{
+    far_put16(a, (UWORD)v);
+    far_put16(a + 2, (UWORD)(v >> 16));
+}
+
+/* v_opnbm (EdDI), v_opnvwk with sub-function 1: a workstation that draws
+ * into a bitmap of its own (phase 148; refused, handle 0, since phase 142,
+ * and before that a SCREEN workstation that the program thought was off
+ * it).  The bitmap is in VRAM, one of the device's `bitmap` slots, so it
+ * is drawn by the same blitter as the screen and a vro_cpyfm to or from
+ * the screen is a blit.  The workstation's device is a far copy of the
+ * screen's table with the bitmap's width, height and surface (vdidev.h):
+ * every primitive then draws there and clips to it without knowing.
+ *
+ * What gem4xe offers of EdDI: a bitmap the VDI allocates (the MFDB's
+ * fd_addr 0), up to the screen's size, at the screen's depth and stride,
+ * two at once, and on the VBXE -- ANTIC's bank $00 has no room for one.
+ * The size is work_in[11] and [12], each one less, the screen's when they
+ * are not given.  A bitmap of the program's own memory is refused.  The
+ * MFDB is filled in: its address is VRAM's, for vro_cpyfm, not one a
+ * program can read through.  Cleared to pen 0 as v_clrwk would.  The
+ * table copy is the program's: v_clsbm gives it back, and so does the
+ * program's end. */
+static void vdi_v_opnbm(void)
+{
+    MFDB *m = (MFDB *)(uint16_t)contrl[7];   /* forms live in bank $00 */
+    const VDIDEV FAR *scr = vdev;
+    WORD i, k, w, h;
+    uint32_t at = 0, tab;
+    RFORM f;
+
+    contrl[6] = 0;
+    if (!m || m->fd_addr || !scr->bitmap[0] || !vwk_far)
+        return;                         /* (the screen's own surface is 0) */
+    w = (WORD)(contrl[3] > 12 ? intin[11] + 1 : scr->w);
+    h = (WORD)(contrl[3] > 12 ? intin[12] + 1 : scr->h);
+    if (w < 1 || h < 1 || w > scr->w || h > scr->h)
+        return;
+    for (k = 0; k < 2 && !at; k++) {
+        uint32_t a = scr->bitmap[k];
+
+        for (i = 1; a && i < NUM_VWK; i++)
+            if (vwk_hdl[i] && is_bitmap(i) && dev_of(i)->surface == a)
+                a = 0;                  /* that one is taken */
+        at = a;
+    }
+    for (i = 1; i < NUM_VWK; i++)
+        if (vwk_hdl[i] == 0)
+            break;
+    if (!at || i == NUM_VWK)
+        return;
+    tab = far_alloc((uint32_t)sizeof(VDIDEV));
+    if (!tab)
+        return;
+    far_copy(tab, (uint32_t)scr, (uint16_t)sizeof(VDIDEV));
+    far_put16(tab + offsetof(VDIDEV, w), (UWORD)w);
+    far_put16(tab + offsetof(VDIDEV, h), (UWORD)h);
+    far_put32(tab + offsetof(VDIDEV, surface), at);
+    vwk_save(vwk_cur);
+    vwk_cur = i;
+    vdev = (const VDIDEV FAR *)tab;
+    init_wk((WORD)(i + 1));
+    vwk_hdl[i] = vwk.handle;
+    vwk_save(i);
+    vwk_own[i] = ctx_cur;
+    dev_clear_screen();
+    dev_screen_form(&f);
+    m->fd_addr = f.base;
+    m->fd_w = w;
+    m->fd_h = h;
+    m->fd_wdwidth = (WORD)(f.stride / (2 * dev_planes()));
+    m->fd_stand = 0;
+    m->fd_nplanes = dev_planes();
+    fill_workout();
+    contrl[6] = vwk.handle;
+}
+
 static void vdi_v_opnvwk(void)
 {
     WORD i;
@@ -812,13 +943,10 @@ static void vdi_v_opnvwk(void)
     WORD devid = (WORD)(contrl[3] > 0 ? intin[0] : 1);
 
     /* v_opnbm is this opcode with sub-function 1 (EdDI): an offscreen
-     * bitmap, which gem4xe has not got yet (docs/vdi-plan.md, step 3).
-     * Refused, handle 0, as a VDI without EdDI answers -- until phase 142
-     * it opened a SCREEN workstation, and a program drew on the screen
-     * believing it drew off it.  gem4xe's binding sets contrl[5] on every
+     * bitmap (above; phase 148).  gem4xe's binding sets contrl[5] on every
      * call (src/app/gemlib.c), so a v_bar's 1 is never left in it. */
     if (contrl[5] == 1) {
-        contrl[6] = 0;
+        vdi_v_opnbm();
         return;
     }
 
@@ -854,6 +982,12 @@ static void vwk_to_phys(void)
 {
     vwk_cur = 0;
     vwk_load(0);
+    /* ...and its DEVICE (phase 148).  This was left on the closed
+     * workstation's: a printer's, and every call on the screen after it
+     * drew on the page; a bitmap's, whose table had just been given back.
+     * vwk_select answers "already current" for slot 0 and would never
+     * have put it right. */
+    vdev = (const VDIDEV FAR *)vwk.dev;
     if (vwk.patsrc == PAT_USER)
         dev_invalidate();
 }
@@ -887,12 +1021,21 @@ static void print_closed(void)
 
 static void vdi_v_clsvwk(void)
 {
+    uint32_t copy = 0;
+
     if (vwk_cur == 0)
         return;
+    /* v_clsbm is this with sub-function 1; either closes a bitmap's
+     * workstation, and gives back its table copy (v_opnbm) -- the VRAM
+     * is free once no open workstation draws there */
+    if (is_bitmap(vwk_cur))
+        copy = (uint32_t)vwk.dev;
     vwk_hdl[vwk_cur] = 0;
     vwk_own[vwk_cur] = 0;
     vwk_to_phys();
     print_closed();
+    if (copy)
+        far_free(copy);
 }
 
 /* What a program left open when it ended (src/sys/app.c app_free): the
@@ -998,6 +1141,11 @@ static void vdi_v_updwk(void)
 static void vdi_v_clrwk(void)
 {
     WORD was_drawn = cur_drawn;
+
+    if (vwk_cur != 0 && is_bitmap(vwk_cur)) {
+        dev_clear_screen();             /* the bitmap; the pointer is not on it */
+        return;
+    }
     dev_cursor_discard();               /* discard, do not restore */
     cur_drawn = 0;
     dev_clear_screen();

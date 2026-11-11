@@ -689,4 +689,6 @@ const VDIDEV FAR vdev_antic = {
     0,                  /* text_prefill: each byte is touched once anyway */
     dev_text_run,
     dev_raster_form,
+    0,                  /* no offscreen bitmaps: bank $00 has no room */
+    { 0, 0 },
 };

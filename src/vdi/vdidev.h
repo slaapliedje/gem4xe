@@ -396,6 +396,17 @@ typedef struct {
     void (*raster_form)(const RFORM *dst, const uint8_t FAR *bits,
                         uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
                         WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
+
+    /* WHERE IT DRAWS, and where else it could (phase 148).  `surface` is
+     * the VRAM address every primitive draws at: the screen's, or an
+     * offscreen bitmap's when the workstation is one -- a far copy of
+     * this table with the bitmap's w, h and surface (vdi.c v_opnbm).
+     * `bitmap` are the VRAM a bitmap may be given, 0 for none: ANTIC,
+     * whose bank $00 has no room for one, and the page have none.  (The
+     * VBXE screen's own surface is VRAM address 0, so 0 there means
+     * nothing.) */
+    uint32_t surface;
+    uint32_t bitmap[2];
 } VDIDEV;
 
 /* THE DEVICE IN USE.

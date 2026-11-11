@@ -190,7 +190,14 @@
  * cell's eight rows.  Built the first time bold text is drawn after a
  * face is chosen, not at start-up.  20 KB, to $59FFF.                  */
 #define VR_FONT_BOLD       (VR_STRIP + VR_STRIP_LEN)
-/* VR_FONT_BOLD + 20 KB onward is free: window backing stores, icons */
+/* OFFSCREEN BITMAPS (v_opnbm, phase 148): two, each up to a whole screen
+ * of the widest overlay, in VRAM nothing else uses -- VR_SCREEN1, which
+ * only test-m2 ever wrote, and the first page after the bold glyphs.
+ * Literals, so tools/vbxeref.py can read them; src/vdi/dev_vbxe.c checks
+ * at compile time that they clear what is beside them. */
+#define VR_BM0             0x14000UL            /* = VR_SCREEN1, to $27B7F  */
+#define VR_BM1             0x5A000UL            /* to $6DB7F                */
+/* $6DB80 onward is free: window backing stores, icons */
 /* A raster form in VRAM says so in its address: the screen's and the save
  * buffer's carry this bit (src/vdi/dev_vbxe.c, dev_copy_form).  Any other
  * form's address is the program's memory, bank $00 or far.            */

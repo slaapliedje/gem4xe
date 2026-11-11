@@ -77,7 +77,7 @@ ST"](../tools/sdk/README.md#porting-from-the-st).
 |---|---|---|---|
 | Fonts | the system faces, GDOS faces | **one face**, the 8 x 8 system font (Atari's condensed 6 x 6 on ANTIC).  No GDOS: no face can be loaded, and a TEDINFO cannot name another.  A port's GDOS check should come out "none" -- the kit has no `vq_vgdos` | `src/vdi/vdi.c`, `src/vdi/dev_antic.c` |
 | Raster copy | sixteen modes | the same sixteen, on every device and between any two forms; on the VBXE only a plain copy (3) uses the blitter, the others go a row at a time | `src/vdi/vdi.c`, `src/vdi/vdidev.h` |
-| Offscreen bitmaps | EdDI's `v_opnbm` (NVDI, EmuTOS) | none: `v_opnbm` answers handle 0 | `src/vdi/vdi.c` |
+| Offscreen bitmaps | EdDI's `v_opnbm` (NVDI, EmuTOS) | on the VBXE: two, in VRAM, each up to the screen's size and at its depth, allocated by the VDI -- a bitmap of the program's own memory is refused -- with an MFDB whose address is VRAM's, for `vro_cpyfm` only.  None on ANTIC (handle 0) | `src/vdi/vdi.c` |
 | Raster forms | any depth TOS supports | the device's depth -- four planes on the VBXE, one on ANTIC and the page -- and one plane: `vr_trnfm` converts those and leaves any other alone, and `vrt_cpyfm` refuses a destination of another depth | `src/vdi/vdi.c` |
 | Bezier curves | a GDOS's | none: `v_bez_on` answers 0, and `v_bez` draws its points as a polyline, as TOS does without a GDOS | `src/vdi/vdi.c` |
 | Opcodes | -- | 71 served; five dispatch to nothing on purpose, as DRI's own driver did | [`api.md`](api.md) |

@@ -74,6 +74,7 @@ MARKERS = (
 GDP_BAR, GDP_ARC, GDP_PIE, GDP_CIRCLE, GDP_ELLIPSE = 1, 2, 3, 4, 5
 GDP_ELLARC, GDP_ELLPIE, GDP_RBOX, GDP_RFBOX, GDP_JUSTIFIED = 6, 7, 8, 9, 10
 GDP_BEZ = 13                            # v_bez_on / v_bez_off: GDOS's
+BITMAP_OP = 3026                        # test-m3's offscreen bitmap op (phase 148)
 HALFPI, GDP_PI, TWOPI = 900, 1800, 3600
 VDI_SIN_ANGLE_MAX = 896
 MIN_ARC_CT, MAX_ARC_CT = 16, 48
@@ -217,6 +218,9 @@ class VDI:
         # line of this file -- none of that is named, which is what lets
         # the same rasteriser answer for a second screen.
         self.dev = devref.Vbxe() if dev is None else dev
+        # ...the SCREEN, which an offscreen bitmap's workstation does not
+        # change: the picture is always this one's (phase 148)
+        self.screen = self.dev
         self.font = self.dev.face
         # The input vectors and the button edge detector are the driver's,
         # not the workstation's: v_opnwk does not reset them (vdi.c).
@@ -233,7 +237,10 @@ class VDI:
                  "fill_style", "fill_index", "fill_color", "fill_per",
                  "ud_patrn", "ud_ls", "h_align", "v_align", "text_effects",
                  "mark_index", "mark_color", "mark_height", "mark_scale",
-                 "line_beg", "line_end")
+                 "line_beg", "line_end",
+                 # ...and the device it draws on: the screen, or an
+                 # offscreen bitmap's copy of it (phase 148)
+                 "dev")
 
     # The face in use, and the one a .FNT would load: a gate that puts a
     # font on the disk calls load_font() with the same file's bytes, so
@@ -250,8 +257,10 @@ class VDI:
 
     def reset(self):
         # v_opnwk: the physical workstation, handle 1, and every virtual
-        # one closed with it
+        # one closed with it -- an offscreen bitmap's too
         self.handle = VDI_PHYS_HANDLE
+        self.dev = self.screen
+        self.bm_handle = 0
         self.wk = {}                # the open workstations NOT current, by handle
         self._init_wk(WORK_IN)
         # mouse cursor
@@ -1216,6 +1225,53 @@ class VDI:
         self._init_wk(ints if len(ints) >= 11 else WORK_IN)
         self._workout()
 
+    def _bitmap(self, ints):
+        """test-m3's sys op 26 (src/m3_vdi.c): 0 opens an offscreen
+        bitmap ints[1]+1 by ints[2]+1 and draws there; 1 draws on the
+        physical workstation; 2 on the bitmap again; 3 closes it."""
+        how = ints[0]
+        if how == 0:
+            self._select(VDI_PHYS_HANDLE)
+            self._opnbm(ints[1] + 1, ints[2] + 1)
+        elif how == 1:
+            self._select(VDI_PHYS_HANDLE)
+        elif how == 2:
+            if self.bm_handle:
+                self._select(self.bm_handle)
+        elif self.bm_handle:
+            self._select(self.bm_handle)
+            self._clsvwk()
+            self.bm_handle = 0
+
+    def _opnbm(self, w, h):
+        """v_opnbm, from EdDI's definition and gem4xe's limits (vdi.c):
+        a bitmap no bigger than the screen, at its depth and stride, in
+        the first of the device's VRAM slots no open workstation draws
+        on, the first free handle, cleared to pen 0, and current.  Its
+        device is the screen's with another base and size, sharing VRAM,
+        so a vro_cpyfm between the two moves real bytes."""
+        scr = self.screen
+        slots = getattr(scr, "BITMAPS", ())
+        if not slots or not (1 <= w <= scr.w and 1 <= h <= scr.h):
+            return
+        devs = [a["dev"] for a in self.wk.values()] + [self.dev]
+        taken = {d.base for d in devs if d is not scr}
+        free = [a for a in slots if a not in taken]
+        handles = [hh for hh in range(VDI_PHYS_HANDLE + 1, NUM_VWK + 1)
+                   if hh != self.handle and hh not in self.wk]
+        if not free or not handles:
+            return
+        import copy
+        bm = copy.copy(scr)
+        bm.base, bm.w, bm.h = free[0], w, h
+        self.wk[self.handle] = self._attrs()
+        self.handle = handles[0]
+        self.dev = bm
+        self._init_wk(WORK_IN)
+        self.dev = bm                   # _init_wk resets attributes, not this
+        bm.clear()
+        self.bm_handle = self.handle
+
     def _clsvwk(self):
         """v_clsvwk: the current workstation (the one the call named)
         unless it is the physical one; the physical one is current after."""
@@ -1474,6 +1530,8 @@ class VDI:
         elif op == VR_TRNFM:
             if form:
                 self._trnfm(form[0], form[1])
+        elif op == BITMAP_OP:
+            self._bitmap(ints)
         elif op == V_GTEXT:
             self._gtext(pts, ints)
         elif op == V_PLINE:
@@ -1563,12 +1621,12 @@ class VDI:
             self.results.append(self.result())
 
     def to_rgb(self):
-        return self.dev.to_rgb()
+        return self.screen.to_rgb()
 
     def screen_key(self):
         """A fingerprint of the visible screen, for telling whether a turn
         of the AES drew anything (aesref's held-button rule)."""
-        return self.dev.key()
+        return self.screen.key()
 
 
 # vbxeref owns the VRAM map now: devref's Vbxe device reads it too, and

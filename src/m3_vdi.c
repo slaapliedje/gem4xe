@@ -56,6 +56,12 @@
 
 extern ZWIN uint32_t cf_map;    /* v_contourfill's bitmap (src/vdi/vdi.c) */
 
+/* The workstation a script's VDI calls draw on: the physical one, or an
+ * offscreen bitmap's that sys op 26 opened (phase 148). */
+static WORD script_handle = VDI_PHYS_HANDLE;
+static WORD bm_handle;
+MFDB vdi_bm_mfdb;               /* what v_opnbm fills in; the gate reads it */
+
 /* vs_clip and v_contourfill on handle h: a fill inside a small box. */
 static void fill_in_box(WORD h, WORD x0, WORD y0)
 {
@@ -711,6 +717,53 @@ static void sys_op(WORD op)
         c4 = 9;
         break;
     }
+    /* 26: AN OFFSCREEN BITMAP (phase 148).  intin[0] 0 opens one with
+     * v_opnbm -- intin[1] and [2] its width and height less one, into
+     * vdi_bm_mfdb with fd_addr 0 for the VDI to fill -- and the script
+     * draws on it from then on; 1 draws on the physical workstation again;
+     * 2 on the bitmap again; 3 closes it with v_clsbm.  Nothing comes back
+     * (c4 0): what the bitmap holds is seen by copying it to the screen,
+     * and the MFDB by reading it after. */
+    case 26: {
+        WORD k, how = intin[0], bw = intin[1], bh = intin[2];
+        WORD mf = (WORD)(uint16_t)&vdi_bm_mfdb;
+
+        if (how == 0) {
+            memset(&vdi_bm_mfdb, 0, sizeof vdi_bm_mfdb);
+            for (k = 0; k < 11; k++)
+                intin[k] = (WORD)(k == 10 ? 2 : 1);     /* the AES's work_in */
+            intin[11] = bw;
+            intin[12] = bh;
+            contrl[0] = 100;        /* v_opnvwk, sub-function 1: v_opnbm */
+            contrl[1] = 0;
+            contrl[3] = 13;
+            contrl[5] = 1;
+            contrl[6] = VDI_PHYS_HANDLE;
+            contrl[7] = mf; contrl[8] = 0;
+            vdi();
+            contrl[5] = 0;
+            bm_handle = contrl[6];
+            if (bm_handle)
+                script_handle = bm_handle;
+        } else if (how == 1) {
+            script_handle = VDI_PHYS_HANDLE;
+        } else if (how == 2) {
+            if (bm_handle)
+                script_handle = bm_handle;
+        } else if (bm_handle) {
+            contrl[0] = 101;        /* v_clsvwk, sub-function 1: v_clsbm */
+            contrl[1] = 0;
+            contrl[3] = 0;
+            contrl[5] = 1;
+            contrl[6] = bm_handle;
+            vdi();
+            contrl[5] = 0;
+            bm_handle = 0;
+            script_handle = VDI_PHYS_HANDLE;
+        }
+        c4 = 0;
+        break;
+    }
     /* 25: THE PRINTER'S PAGE (phase 144).  A printer workstation opened
      * as a fresh owner and the owner's blocks freed: [6] the handle, [7] 1
      * if the page outlived them.  A fill on the page, low down where a
@@ -802,6 +855,8 @@ static void run_script(void)
 {
     WORD i = 0;
     vdi_result_count = 0;
+    script_handle = VDI_PHYS_HANDLE;    /* every case starts on the screen */
+    bm_handle = 0;
     while (i < SCRIPT_WORDS) {
         WORD op    = vdi_script[i++];
         WORD npts, nint, k;
@@ -1374,7 +1429,7 @@ static void run_script(void)
         contrl[0] = op;
         contrl[1] = npts;
         contrl[3] = nint;
-        contrl[6] = VDI_PHYS_HANDLE;    /* the script draws where the AES does */
+        contrl[6] = script_handle;      /* where the AES draws, or a bitmap */
         vdi();
         }
         if (vdi_result_count < MAX_RESULTS) {

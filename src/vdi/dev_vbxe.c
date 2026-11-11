@@ -25,6 +25,19 @@
 /* The VDI's pen order into this device's hardware indices; the table is
  * below, with the reason it exists. */
 #define HW(pen) ((WORD)map_col[(pen) & 0x0F])
+
+/* WHERE A PRIMITIVE DRAWS (phase 148): the workstation's surface, the
+ * screen's VRAM or an offscreen bitmap's (vdidev.h).  The pointer's save
+ * and restore are not primitives and stay on the screen, VR_SCREEN0. */
+#define SURF (vdev->surface)
+
+/* The bitmaps clear what is beside them (vbxe.h): the first ends before
+ * the XDL, the second starts after the bold glyphs' 20 KB, and each holds
+ * the widest screen. */
+typedef char vr_bm0_fits[(VR_BM0 >= VR_SCREEN0 + VB_BYTES_MAX
+                          && VR_BM0 + VB_BYTES_MAX <= VR_XDL) ? 1 : -1];
+typedef char vr_bm1_fits[(VR_BM1 >= VR_FONT_BOLD + 0x5000UL
+                          && VR_BM1 + VB_BYTES_MAX <= 0x80000UL) ? 1 : -1];
 extern const uint8_t map_col[16];
 
 /* The VRAM offset of screen row y: y * SCR_STRIDE, without a multiply.
@@ -59,7 +72,7 @@ static uint32_t scr_row(WORD y)
 void dev_fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
 {
     WORD hwpen = HW(pen);
-    uint32_t base = VR_SCREEN0 + scr_row(y1);
+    uint32_t base = SURF + scr_row(y1);
     uint16_t rows = (uint16_t)(y2 - y1 + 1);
     uint8_t  c    = (uint8_t)(((hwpen & 0x0F) << 4) | (hwpen & 0x0F));
     WORD bl = (WORD)(x1 >> 1), br = (WORD)(x2 >> 1);
@@ -95,7 +108,7 @@ void dev_fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
  * fill, with the blitter's XOR mode doing the read-modify-write. */
 void dev_xor_rect(WORD x1, WORD y1, WORD x2, WORD y2)
 {
-    uint32_t base = VR_SCREEN0 + scr_row(y1);
+    uint32_t base = SURF + scr_row(y1);
     uint16_t rows = (uint16_t)(y2 - y1 + 1);
     WORD bl = (WORD)(x1 >> 1), br = (WORD)(x2 >> 1);
 
@@ -272,7 +285,7 @@ void dev_patt_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
         WORD     pr   = (WORD)(y & (VR_PATT_ROWS - 1));
         uint16_t rows = (uint16_t)(VR_PATT_ROWS - pr);
         uint32_t src  = VR_PATT + (uint32_t)pr * VR_PATT_STRIDE;
-        uint32_t dst  = VR_SCREEN0 + scr_row(y);
+        uint32_t dst  = SURF + scr_row(y);
         WORD l = bl, r = br;
 
         if (rows > (uint16_t)(y2 - y + 1))
@@ -336,7 +349,7 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
             patt_row(vram_win(VR_LINE_H), bits, set, clr);
             lh_bits = bits;  lh_set = set;  lh_clr = clr;  lh_valid = 1;
         }
-        dst = VR_SCREEN0 + scr_row(y1);
+        dst = SURF + scr_row(y1);
         l = (WORD)(a >> 1);  r = (WORD)(b >> 1);
         if (a & 1) {                                    /* partial left */
             patt_span(how, VR_LINE_H + (l & 7), 0, dst + l, 1, 1, 0x0F);
@@ -369,7 +382,7 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
             /* queued ahead of the span that reads it: order is enough */
             lv_bits = bits;  lv_set = set;  lv_clr = clr;  lv_valid = 1;
         }
-        dst = VR_SCREEN0 + scr_row(a) + (uint32_t)(x1 >> 1);
+        dst = SURF + scr_row(a) + (uint32_t)(x1 >> 1);
         patt_span(how, VR_LINE_V + (a & 15), 1, dst, 1, (uint16_t)(b - a + 1),
                   (x1 & 1) ? 0x0F : 0xF0);
     }
@@ -785,7 +798,7 @@ static void draw_glyph(WORD ch, WORD cx, WORD cy, WORD hwink, WORD cleared)
         sstride = FONT_VSTRIDE;
         bytes   = FONT_BYTES;
     }
-    dst = VR_SCREEN0 + scr_row(cy) + (uint32_t)(cx >> 1);
+    dst = SURF + scr_row(cy) + (uint32_t)(cx >> 1);
 
     if (!cleared)
         blit_mask(src, sstride, dst, SCR_STRIDE, bytes, FONT_H,
@@ -858,7 +871,7 @@ static void draw_glyph_bold(WORD ch, WORD cx, WORD cy, WORD hwink)
         bold_build();
     src = ((cx & 1) ? VR_BOLD_ODD : VR_FONT_BOLD)
           + (uint32_t)(ch & 0xFF) * BOLD_BYTES;
-    dst = VR_SCREEN0 + scr_row(cy) + (uint32_t)(cx >> 1);
+    dst = SURF + scr_row(cy) + (uint32_t)(cx >> 1);
     blit_mask(src, BOLD_STRIDE, dst, SCR_STRIDE, BOLD_BYTES, FONT_H,
               0xFF, 0xFF, BLT_MODE_AND);
     if (c)
@@ -1168,7 +1181,7 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
                 pv++;
             }
         }
-        dst = VR_SCREEN0 + scr_row(y) + (uint32_t)bx0;
+        dst = SURF + scr_row(y) + (uint32_t)bx0;
         if (r1_kind == R1_TWO) {
             blit_mask(VR_STRIP + R1_ROW, 0, dst, SCR_STRIDE,
                       (uint16_t)nb, (uint16_t)rows, 0xFF, 0x00,
@@ -1424,7 +1437,7 @@ void dev_line_diag(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
      * 16-bit arithmetic with a carry test.  y1 may be negative here: the
      * page is then negative too, and counts back up onto the screen. */
     {
-        int32_t row = (int32_t)VR_SCREEN0 + (int32_t)y1 * (int32_t)SCR_STRIDE;
+        int32_t row = (int32_t)SURF + (int32_t)y1 * (int32_t)SCR_STRIDE;
         ld_rpage = (UWORD)(row >> 12);
         ld_roff  = (WORD)(row & 0x0FFF);
     }
@@ -1501,7 +1514,7 @@ void dev_save_form(MFDB *m)
 /* The screen, as a form. */
 void dev_screen_form(RFORM *f)
 {
-    f->base = VR_SCREEN0 | VR_FORM_TAG;  f->stride = SCR_STRIDE;
+    f->base = SURF | VR_FORM_TAG;  f->stride = SCR_STRIDE;
     f->w = SCR_W;  f->h = vdev->h;  f->screen = 1;
 }
 
@@ -1990,7 +2003,7 @@ static WORD rev_col(WORD hw)
 
 void dev_read_row(WORD y, uint8_t *px)
 {
-    uint32_t base = VR_SCREEN0 + scr_row(y);
+    uint32_t base = SURF + scr_row(y);
     WORD i = 0;
 
     while (i < SCR_STRIDE) {
@@ -2020,7 +2033,7 @@ WORD dev_pen_value(WORD pen)
 
 void dev_get_pixel(WORD x, WORD y, WORD *value, WORD *pen)
 {
-    uint8_t b = vram_read8(VR_SCREEN0 + scr_row(y)
+    uint8_t b = vram_read8(SURF + scr_row(y)
                            + (uint32_t)((UWORD)x >> 1));
     WORD hw = (WORD)((x & 1) ? (b & 0x0F) : (b >> 4));
 
@@ -2030,7 +2043,7 @@ void dev_get_pixel(WORD x, WORD y, WORD *value, WORD *pen)
 
 void dev_clear_screen(void)
 {
-    blit_fill(VR_SCREEN0, SCR_STRIDE, SCR_STRIDE, vdev->h, 0x00);
+    blit_fill(SURF, SCR_STRIDE, SCR_STRIDE, vdev->h, 0x00);
     blit_run();
 }
 
@@ -2121,6 +2134,8 @@ extern const uint8_t FAR font8x8[];
     1,                  /* text_prefill: a string's background is one fill */ \
     dev_text_run,                                                         \
     dev_raster_form,                                                      \
+    VR_SCREEN0,         /* surface: where it draws */                     \
+    { VR_BM0, VR_BM1 }, /* ...and where a bitmap may */                   \
 }
 
 /* Every width the overlay has by every height a tube might want, which

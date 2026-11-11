@@ -113,6 +113,8 @@ class Vbxe:
     # that, so black is stored as 15 and white as 0; the palette is
     # loaded in hardware order (src/vdi/dev_vbxe.c, map_col).
     MAP_COL = (0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13)
+    # Where an offscreen bitmap may go (vbxe.h VR_BM0, VR_BM1; phase 148)
+    BITMAPS = (vbxeref.vram_symbol("VR_BM0"), vbxeref.vram_symbol("VR_BM1"))
 
     def __init__(self, face=None, pal=None, width=vbxeref.SCR_W,
                  height=vbxeref.SCR_H):

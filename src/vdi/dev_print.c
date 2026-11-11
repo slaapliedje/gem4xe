@@ -522,4 +522,6 @@ const VDIDEV FAR vdev_print = {
     0,                  /* text_prefill */
     0,                  /* text_run */
     dev_raster_form,
+    0,                  /* no offscreen bitmaps */
+    { 0, 0 },
 };

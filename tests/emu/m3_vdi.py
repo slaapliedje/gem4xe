@@ -32,7 +32,7 @@ from vdiref import (V_CLRWK, V_PLINE, VSL_TYPE, VSL_COLOR, VSF_INTERIOR,      # 
                     GDP_BAR, GDP_ARC, GDP_PIE, GDP_CIRCLE, GDP_ELLIPSE,
                     GDP_ELLARC, GDP_ELLPIE, GDP_RBOX, GDP_RFBOX,
                     GDP_JUSTIFIED, V_CONTOURFILL, VSL_ENDS)
-from vdiref import (VST_COLOR, VSWR_MODE, VRT_CPYFM, VR_TRNFM, pack_mfdb, # noqa: E402
+from vdiref import (VST_COLOR, VSWR_MODE, VRT_CPYFM, VR_TRNFM, pack_mfdb, BITMAP_OP, # noqa: E402
                      VSC_FORM, V_SHOW_C, V_HIDE_C, V_LOCATOR,
                      VSIN_MODE, VQIN_MODE, VEX_TIMV, VSL_UDSTY, VQ_MOUSE,
                      VST_HEIGHT, VQT_ATTRIBUTES, V_ESCAPE, VSF_STYLE, VSF_UDPAT)
@@ -98,6 +98,7 @@ MEM_MFDB = MEM_AT + MEM_BYTES
 # -- and four MFDBs: each buffer at four planes and at one.  The room is
 # what vdi_scratch has left; the runner's buffers fill $6800-$7F80.
 TRN_W, TRN_H = 16, 4
+BM_W, BM_H = 200, 100                   # the offscreen bitmap's size (phase 148)
 TRN_STD = MEM_MFDB + 20
 TRN_DEV = TRN_STD + 32
 TRN_MFDBS = TRN_DEV + 32                # std, dev, std1, dev1: 20 bytes each
@@ -1125,6 +1126,47 @@ CASES = [
         (VRO_CPYFM, (40, 40, 167, 59, 0, 0, 127, 19), (9,), "to_mem"),
         (VRO_CPYFM, (1, 1, 100, 18, 401, 181, 500, 198), (14,), "from_mem")]),
 ] + [
+    # OFFSCREEN BITMAPS (phase 148): v_opnbm's workstation drawn on --
+    # a fill, text, a diagonal corner to corner and a fill partly past
+    # its edge, which must clip to the bitmap -- and the bitmap copied to
+    # the screen at an odd x, the CPU's way, and an even one, the blitter's
+    ("an offscreen bitmap, drawn on and copied to the screen", [
+        (BITMAP_OP, (), (0, BM_W - 1, BM_H - 1)),
+        (VSF_COLOR, (), (2,)), (VR_RECFL, (10, 10, 89, 49), ()),
+        (VST_COLOR, (), (1,)), (V_GTEXT, (12, 70), tuple(b"OFFSCREEN")),
+        (VSL_COLOR, (), (4,)), (V_PLINE, (0, 0, BM_W - 1, BM_H - 1), ()),
+        (VSF_COLOR, (), (6,)), (VR_RECFL, (150, 80, 260, 140), ()),
+        (BITMAP_OP, (), (1, 0, 0)),
+        (VRO_CPYFM, (0, 0, BM_W - 1, BM_H - 1, 301, 41, 300 + BM_W, 40 + BM_H),
+         (3,), "from_bm"),
+        (VRO_CPYFM, (0, 0, BM_W - 1, BM_H - 1, 40, 120, 39 + BM_W, 119 + BM_H),
+         (3,), "from_bm"),
+        (BITMAP_OP, (), (3, 0, 0))]),
+
+    # ...the screen into a bitmap, drawn over there in XOR, and back; a
+    # bitmap bigger than the screen refused, so what follows lands on the
+    # screen; and a bitmap closed and opened again in the same place
+    ("offscreen bitmaps: from the screen and back, refused, reopened", [
+        (VSF_COLOR, (), (3,)), (VR_RECFL, (20, 20, 219, 119), ()),
+        (BITMAP_OP, (), (0, BM_W - 1, BM_H - 1)),
+        (BITMAP_OP, (), (1, 0, 0)),
+        (VRO_CPYFM, (20, 20, 20 + BM_W - 1, 20 + BM_H - 1,
+                     0, 0, BM_W - 1, BM_H - 1), (3,), "to_bm"),
+        (BITMAP_OP, (), (2, 0, 0)),
+        (VSWR_MODE, (), (3,)), (VSF_COLOR, (), (1,)),
+        (VR_RECFL, (30, 30, 149, 69), ()), (VSWR_MODE, (), (1,)),
+        (BITMAP_OP, (), (1, 0, 0)),
+        (VRO_CPYFM, (0, 0, BM_W - 1, BM_H - 1, 400, 100, 399 + BM_W, 99 + BM_H),
+         (3,), "from_bm"),
+        (BITMAP_OP, (), (3, 0, 0)),
+        (BITMAP_OP, (), (0, 2000, 10)),
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (250, 10, 289, 29), ()),
+        (BITMAP_OP, (), (0, BM_W - 1, BM_H - 1)),
+        (BITMAP_OP, (), (1, 0, 0)),
+        (VRO_CPYFM, (0, 0, BM_W - 1, BM_H - 1, 300, 130, 299 + BM_W, 129 + BM_H),
+         (3,), "from_bm"),
+        (BITMAP_OP, (), (3, 0, 0))]),
+] + [
     # ...and over itself: XOR onto its own rectangle moved right and down
     # by odd amounts, and S OR NOT D back up and left, each wider than the
     # row path's 46-pixel chunk -- every destination pixel must come from
@@ -1294,6 +1336,7 @@ def run_sys(b, script_addr, op, ints=()):
 # Filled by main(); run_sys is called from there and from run_cases and
 # would otherwise want four more arguments to say the same thing.
 _RESULTS_ADDR, _COUNT_ADDR = [0], [0]
+BM_MFDB = [0]                           # src/m3_vdi.c vdi_bm_mfdb
 
 
 def main(argv):
@@ -1315,6 +1358,7 @@ def main(argv):
     count_addr = syms["vdi_result_count"]
     scratch_room = min(a for a in syms.values() if a > scratch_addr) - scratch_addr
     _RESULTS_ADDR[0], _COUNT_ADDR[0] = results_addr, count_addr
+    BM_MFDB[0] = syms["vdi_bm_mfdb"]
     assert TRN_END <= scratch_room, "the forms must fit vdi_scratch"
 
     emu = launch(tag="m3", memsize="1088K", extra_args=["--disk", DISK])
@@ -1389,13 +1433,19 @@ def main(argv):
                                   init=std_bytes)
             dev1 = vdiref.MemForm(dev.addr, TRN_W, TRN_H, TRN_W // 16, 1,
                                   scratch_addr + TRN_MFDBS + 60, stand=1)
+            # the offscreen bitmap v_opnbm gives (phase 148): VRAM's first
+            # slot at the screen's stride, its MFDB filled in by the VDI
+            bm = vdiref.VramForm(devref.Vbxe.BITMAPS[0]
+                                 | vbxeref.vram_symbol("VR_FORM_TAG"),
+                                 BM_W, BM_H, gw // 16, 4, BM_MFDB[0])
             FORMS = {"icon": (ICON_BITS, ICON_WDW),
                      "to_save": (None, save), "from_save": (save, None),
                      "to_mem": (None, mem), "from_mem": (mem, None),
                      "icon_to_mem": ((ICON_BITS, ICON_WDW), mem),
                      "trn_std_dev": (std, dev), "from_dev": (dev, None),
                      "trn_mem": (mem, mem), "trn_one": (std1, dev1),
-                     "icon_to_one": ((ICON_BITS, ICON_WDW), dev1)}
+                     "icon_to_one": ((ICON_BITS, ICON_WDW), dev1),
+                     "from_bm": (bm, None), "to_bm": (None, bm)}
             run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                       script_addr, scratch_addr, results_addr, count_addr,
                       script_room)
@@ -1514,6 +1564,15 @@ def run_cases(b, px, gw, gh, save, FORMS, results, only, keep_shots,
                 if not err and st != f.stand:
                     err = (f"memory form at ${f.addr:04X}: fd_stand {st}, "
                            f"expected {f.stand}")
+
+            # what v_opnbm filled in, when the case opened a bitmap it
+            # kept: the address, size, stride and depth (phase 148)
+            if not err and any(r[0] == BITMAP_OP and r[2][0] == 0
+                               and r[2][1] < gw for r in script):
+                want = FORMS["from_bm"][0].pack()
+                got = bytes(b.memdump(BM_MFDB[0], len(want)))
+                if got != want:
+                    err = f"v_opnbm's MFDB is {got.hex()}, expected {want.hex()}"
 
             shot = os.path.join(SHOTDIR, f"m3-{px}-{idx:02d}.png")
             b.screenshot(shot)
