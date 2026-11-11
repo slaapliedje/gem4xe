@@ -241,6 +241,10 @@ def build_rows(st, mapfile, tree_base, desk_base, icon_mfdb):
                 [(V.VRO_CPYFM, (0, 20, 319, 119, 320, 120, 639, 219), (3,))] * 10, 10),
             Row("vro_cpyfm 320x100 screen to screen, odd x (the pixel path)",
                 [(V.VRO_CPYFM, (1, 20, 320, 119, 320, 120, 639, 219), (3,))] * 2, 2),
+            # a logic mode, which goes a row at a time on the CPU since
+            # phase 142 (docs/vdi-plan.md, step 2)
+            Row("vro_cpyfm 320x100 screen to screen, aligned, XOR",
+                [(V.VRO_CPYFM, (0, 20, 319, 119, 320, 120, 639, 219), (6,))] * 2, 2),
             Row("vrt_cpyfm 32x24 icon, transparent", icon(V.MD_TRANS), N),
             Row("vrt_cpyfm 32x24 icon, replace", icon(V.MD_REPLACE), N),
         ]),

@@ -1095,6 +1095,36 @@ CASES = [
         (VRO_CPYFM, (201, 100, 328, 119, 1, 0, 128, 19), (1,), "to_mem"),
         (VRO_CPYFM, (0, 0, 127, 19, 300, 150, 427, 169), (3,), "from_mem")]),
 
+    # ...and AT THE SAME PARITY, which goes by the blitter between VRAM
+    # forms since phase 147: the source an odd x to an odd x, so there is
+    # an odd column at both ends for copy_rows and an even middle for the
+    # blitter's one or two passes, every mode
+] + [
+    (f"cpyfm logic mode {m} by the blitter", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (1, 0, 23, 15), ()),
+        (VSF_COLOR, (), (10,)), (VR_RECFL, (24, 0, 46, 15), ()),
+        (VSF_COLOR, (), (3,)), (VR_RECFL, (101, 200, 146, 207), ()),
+        (VSF_COLOR, (), (12,)), (VR_RECFL, (101, 208, 146, 215), ()),
+        (VRO_CPYFM, (1, 0, 46, 15, 101, 200, 146, 215), (m,))])
+    for m in range(16)
+] + [
+    # the blitter backwards: XOR over its own rectangle moved right and
+    # down by even amounts; a mode that inverts the destination AFTER
+    # (8), which may go by the blitter over itself; one that inverts it
+    # BEFORE (11), which must not -- that pass would change the source --
+    # and goes by rows; and a mode between the screen and a memory form at
+    # the same parity, a byte at a time on the CPU
+    ("cpyfm logic modes at the same parity, over themselves and to memory", [
+        (VSF_COLOR, (), (5,)), (VR_RECFL, (40, 40, 139, 99), ()),
+        (VSF_COLOR, (), (10,)), (VR_RECFL, (70, 50, 109, 89), ()),
+        (VRO_CPYFM, (40, 40, 139, 99, 46, 44, 145, 103), (6,)),
+        (VRO_CPYFM, (46, 44, 145, 103, 42, 42, 141, 101), (8,)),
+        (VRO_CPYFM, (42, 42, 141, 101, 48, 46, 147, 105), (11,)),
+        (VSF_COLOR, (), (9,)), (VR_RECFL, (300, 150, 427, 169), ()),
+        (VRO_CPYFM, (300, 150, 427, 169, 0, 0, 127, 19), (3,), "to_mem"),
+        (VRO_CPYFM, (40, 40, 167, 59, 0, 0, 127, 19), (9,), "to_mem"),
+        (VRO_CPYFM, (1, 1, 100, 18, 401, 181, 500, 198), (14,), "from_mem")]),
+] + [
     # ...and over itself: XOR onto its own rectangle moved right and down
     # by odd amounts, and S OR NOT D back up and left, each wider than the
     # row path's 46-pixel chunk -- every destination pixel must come from

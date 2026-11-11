@@ -1588,6 +1588,30 @@ static void copy_rows(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
                 WORD m = (WORD)(cr_op - 1);
 
                 span_io(dr + (UWORD)((UWORD)dx >> 1), row_dst, dn, 0);
+                if (s == d) {
+                    /* THE SAME PARITY: byte b of the source over byte b of
+                     * the destination, both nibbles at once -- a mode is a
+                     * function of each bit -- and only a first pixel in a
+                     * low nibble or a last in a high one alone (phase
+                     * 147: a pixel at a time was 700 cycles each) */
+                    UWORD b = 0, left = (UWORD)n, o;
+
+                    if (d) {
+                        o = (UWORD)rop4(m, (WORD)(row_src[0] & 0x0F),
+                                        (WORD)(row_dst[0] & 0x0F)) & 0x0F;
+                        row_dst[0] = (uint8_t)((row_dst[0] & 0xF0) | o);
+                        b = 1;
+                        left--;
+                    }
+                    for (; left >= 2; b++, left -= 2)
+                        row_dst[b] = (uint8_t)rop4(m, (WORD)row_src[b],
+                                                   (WORD)row_dst[b]);
+                    if (left) {
+                        o = (UWORD)rop4(m, (WORD)((UWORD)row_src[b] >> 4),
+                                        (WORD)((UWORD)row_dst[b] >> 4)) & 0x0F;
+                        row_dst[b] = (uint8_t)((row_dst[b] & 0x0F) | (o << 4));
+                    }
+                } else
                 for (k = 0; k < (UWORD)n; k++, s++, d++) {
                     UWORD v = row_src[s >> 1], b = row_dst[d >> 1], o;
 
@@ -1765,14 +1789,93 @@ static WORD rows_direct(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
  * any form in a program's memory, go by rows.  For a move the edge on
  * the side it moves towards goes first and the other last: each then
  * reads only pixels nothing has written yet. */
+/* A LOGIC MODE BY THE BLITTER (phase 147): between two VRAM forms -- the
+ * screen and the save buffer -- at the same parity.  The blitter takes the
+ * source through an AND and an XOR mask and then copies it, or ANDs, ORs
+ * or XORs it into the destination, which is every mode in one pass but
+ * the four that also invert the destination, 2, 8, 11 and 14, a second
+ * pass.  8 and 14 invert it AFTER, when the source has been read; 2 and
+ * 11 BEFORE, and they go by the blitter only when the rectangles do not
+ * overlap, since that pass would change the source before it was read.
+ * Per mode: the source's AND mask ($FF or $00), its XOR mask, the
+ * blitter's mode, and 1 to invert before or 2 after. */
+#define ROPC(a, x, bm, inv) ((uint8_t)((a) | ((x) << 1) | ((bm) << 2) | ((inv) << 5)))
+static const uint8_t FAR rop_code[16] = {
+    ROPC(0, 0, BLT_MODE_COPY, 0),       /*  0 all white: 0           */
+    ROPC(1, 0, BLT_MODE_AND, 0),        /*  1 S and D                */
+    ROPC(1, 0, BLT_MODE_AND, 1),        /*  2 S and not D            */
+    ROPC(1, 0, BLT_MODE_COPY, 0),       /*  3 S (not this way)       */
+    ROPC(1, 1, BLT_MODE_AND, 0),        /*  4 not S and D            */
+    ROPC(0, 0, BLT_MODE_COPY, 0),       /*  5 D (not this way)       */
+    ROPC(1, 0, BLT_MODE_XOR, 0),        /*  6 S xor D                */
+    ROPC(1, 0, BLT_MODE_OR, 0),         /*  7 S or D                 */
+    ROPC(1, 0, BLT_MODE_OR, 2),         /*  8 not (S or D)           */
+    ROPC(1, 1, BLT_MODE_XOR, 0),        /*  9 not (S xor D)          */
+    ROPC(0, 1, BLT_MODE_XOR, 0),        /* 10 not D: $F xor D        */
+    ROPC(1, 0, BLT_MODE_OR, 1),         /* 11 S or not D             */
+    ROPC(1, 1, BLT_MODE_COPY, 0),       /* 12 not S                  */
+    ROPC(1, 1, BLT_MODE_OR, 0),         /* 13 not S or D             */
+    ROPC(1, 0, BLT_MODE_AND, 2),        /* 14 not (S and D)          */
+    ROPC(0, 1, BLT_MODE_COPY, 0),       /* 15 all black: $F          */
+};
+
+static WORD rop_blit(WORD m, uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
+                     uint32_t db, uint16_t ds, WORD dx1, WORD dy1,
+                     WORD w, WORD h)
+{
+    UWORD code = rop_code[m & 15];
+    uint8_t am = (uint8_t)((code & 1) ? 0xFF : 0x00);
+    uint8_t xm = (uint8_t)((code & 2) ? 0xFF : 0x00);
+    uint8_t bm = (uint8_t)((code >> 2) & 7);
+    UWORD inv = (UWORD)((code >> 5) & 3);
+    WORD l = (WORD)(sx1 & 1), r = (WORD)((sx1 + w) & 1);
+    WORD mw = (WORD)(w - l - r);
+
+    if (inv == 1 && sb == db
+        && !(sx1 + w <= dx1 || dx1 + w <= sx1 || sy1 + h <= dy1 || dy1 + h <= sy1))
+        return 0;                       /* the first pass would change the source */
+    cr_op = (uint8_t)(m + 1);           /* the odd columns, as the copy's */
+    if (r && dx1 > sx1)
+        copy_rows(sb, ss, (WORD)(sx1 + w - 1), sy1,
+                  db, ds, (WORD)(dx1 + w - 1), dy1, 1, h);
+    if (l && dx1 <= sx1)
+        copy_rows(sb, ss, sx1, sy1, db, ds, dx1, dy1, 1, h);
+    if (mw > 0) {
+        uint32_t ms = (sb & ~VR_FORM_TAG) + form_row(sy1, ss)
+                      + (uint32_t)((UWORD)(sx1 + l) >> 1);
+        uint32_t md = (db & ~VR_FORM_TAG) + form_row(dy1, ds)
+                      + (uint32_t)((UWORD)(dx1 + l) >> 1);
+        uint16_t bytes = (uint16_t)((UWORD)mw >> 1);
+
+        if (inv == 1)
+            blit_mask(md, ds, md, ds, bytes, (uint16_t)h, 0x00, 0xFF,
+                      BLT_MODE_XOR);
+        blit_move_op(ms, ss, md, ds, bytes, (uint16_t)h, am, xm, bm);
+        if (inv == 2)
+            blit_mask(md, ds, md, ds, bytes, (uint16_t)h, 0x00, 0xFF,
+                      BLT_MODE_XOR);
+    }
+    if (l && dx1 > sx1)
+        copy_rows(sb, ss, sx1, sy1, db, ds, dx1, dy1, 1, h);
+    if (r && dx1 <= sx1)
+        copy_rows(sb, ss, (WORD)(sx1 + w - 1), sy1,
+                  db, ds, (WORD)(dx1 + w - 1), dy1, 1, h);
+    cr_op = 0;
+    return 1;
+}
+
 void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
                    const RFORM *dst, WORD dx1, WORD dy1, WORD w, WORD h)
 {
     uint32_t sb = src->base, db = dst->base;
     WORD l, r, mw;
 
-    if (src->mode != ROP_S_ONLY) {      /* a logic mode: by rows, any form */
-        cr_op = (uint8_t)(src->mode + 1);
+    if (src->mode != ROP_S_ONLY) {      /* a logic mode */
+        if ((sb & db & VR_FORM_TAG) && !((sx1 ^ dx1) & 1)
+            && rop_blit(src->mode, sb, src->stride, sx1, sy1,
+                        db, dst->stride, dx1, dy1, w, h))
+            return;
+        cr_op = (uint8_t)(src->mode + 1);   /* by rows on the CPU, any form */
         copy_rows(sb, src->stride, sx1, sy1, db, dst->stride, dx1, dy1, w, h);
         cr_op = 0;
         return;

@@ -249,6 +249,12 @@ void     blit_copy(uint32_t src, uint16_t sstride, uint32_t dst,
  * bits -- which is what makes it one blit either way. */
 void     blit_move(uint32_t src, uint16_t sstride, uint32_t dst,
                    uint16_t dstride, uint16_t bytes, uint16_t rows);
+/* ...and the same through the source's AND and XOR masks in any mode: a
+ * logic mode of vro_cpyfm between two VRAM forms (phase 147).  blit_move
+ * is this with the masks $FF and $00 and the mode a copy. */
+void     blit_move_op(uint32_t src, uint16_t sstride, uint32_t dst,
+                      uint16_t dstride, uint16_t bytes, uint16_t rows,
+                      uint8_t and_mask, uint8_t xor_mask, uint8_t mode);
 /* Read-modify-write with a constant source.  Used for the odd-nibble edges of
  * a 4bpp rectangle: AND away the nibble to keep, then OR the colour in. */
 void     blit_and(uint32_t dst, uint16_t stride, uint16_t bytes,

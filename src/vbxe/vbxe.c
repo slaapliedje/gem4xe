@@ -539,11 +539,20 @@ void blit_copy(uint32_t src, uint16_t sstride, uint32_t dst,
 void blit_move(uint32_t src, uint16_t sstride, uint32_t dst,
                uint16_t dstride, uint16_t bytes, uint16_t rows)
 {
+    blit_move_op(src, sstride, dst, dstride, bytes, rows,
+                 0xFF, 0x00, BLT_MODE_COPY);
+}
+
+void blit_move_op(uint32_t src, uint16_t sstride, uint32_t dst,
+                  uint16_t dstride, uint16_t bytes, uint16_t rows,
+                  uint8_t and_mask, uint8_t xor_mask, uint8_t mode)
+{
     uint8_t *p;
     uint16_t sneg, dneg;
 
     if (dst <= src) {
-        blit_copy(src, sstride, dst, dstride, bytes, rows);
+        blit_mask(src, sstride, dst, dstride, bytes, rows,
+                  and_mask, xor_mask, mode);
         return;
     }
     /* The blitter reads and writes a byte at a time, left to right, top
@@ -565,9 +574,9 @@ void blit_move(uint32_t src, uint16_t sstride, uint32_t dst,
     p[9]  = (uint8_t)dneg;
     p[10] = (uint8_t)(dneg >> 8);
     p[11] = 0xFF;                                 /* dest X step: -1        */
-    p[15] = 0xFF;
-    p[16] = 0x00;
-    p[20] = BLT_MODE_COPY;
+    p[15] = and_mask;
+    p[16] = xor_mask;
+    p[20] = mode;
 }
 
 #ifdef BLIT_WATCHDOG
