@@ -226,8 +226,8 @@ typedef struct {
     GRECT rl_rect;
 
     /* getcookie (phase 137): ok 1 and ck_value set when the jar has
-     * ck_id.  This machine has no jar (src/app/mint/cookie.h), so the
-     * answer is 0, honestly, for every cookie. */
+     * ck_id -- the jar the system answers since phase 150 (_MCH, _VDO,
+     * _SND, _CPU, G4XE: src/app/mint/cookie.h) -- and 0 when not. */
     void (*getcookie)(uint32_t xcpb);
     LONG  ck_id, ck_value;
 

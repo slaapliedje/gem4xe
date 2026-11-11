@@ -332,6 +332,7 @@ int main(void)
     struct timeval tv;                  /* declared here: the test reads
                                          * a call by its four-space indent */
     Tgettimeofday(&tv, 0);
+    Ssystem(S_GETCOOKIE, 0x5F4D4348L, 0x2000L);
     Psystem(path, 0, 0L);
     Dprobe();
     Mclaim(0xE10000L, 0xA000L);

@@ -10,6 +10,7 @@
  */
 #include "portab.h"
 #include <string.h>
+#include "version.h"        /* GEM4XE_VERSION_NUM: the G4XE cookie */
 #include "gemdos.h"
 #include "cio.h"
 #include "sdcio.h"
@@ -1501,6 +1502,48 @@ static uint32_t gd_block(LONG a)
     return h;
 }
 
+/* THE COOKIE JAR (phase 150), as MiNT's Ssystem(S_GETCOOKIE) answers it,
+ * which is what mintlib's Getcookie asks first.  There is no jar in
+ * memory -- no system variable at $5A0 to hang one on, page 5 being the
+ * DOS's -- so the cookies are answered here, and none can be added.  What
+ * they say is what is true, in the values EmuTOS uses for a machine that
+ * is not an Atari:
+ *
+ *   _MCH  $FFFFFFFF   no ST-compatible machine (EmuTOS's MCH_NOHARD)
+ *   _VDO  $FFFFFFFF   no ST-compatible video (VDO_NOHARD): ask the VDI
+ *   _SND  0           no YM2149, no DMA sound -- an absent _SND means a
+ *                     YM, which would be untrue
+ *   _CPU  0           the 68000 class: no 68020 feature to rely on,
+ *                     which is what an absent _CPU means too
+ *   G4XE  the version, major << 8 | minor: this is gem4xe
+ *
+ * and never NVDI, MiNT or any other software gem4xe is not.  Ssystem(-1)
+ * says the call is there; every other mode is EINVFN. */
+#define S_INQUIRE    (-1)
+#define S_GETCOOKIE  8
+
+static LONG gd_ssystem(WORD mode, LONG arg1, LONG arg2)
+{
+    LONG v;
+
+    if (mode == S_INQUIRE)
+        return 0;
+    if (mode != S_GETCOOKIE)
+        return GD_EINVFN;
+    if (arg1 == 0x5F4D4348L || arg1 == 0x5F56444FL)     /* _MCH, _VDO */
+        v = (LONG)0xFFFFFFFFUL;
+    else if (arg1 == 0x5F534E44L || arg1 == 0x5F435055L) /* _SND, _CPU */
+        v = 0;
+    else if (arg1 == 0x47345845L)                        /* G4XE */
+        v = GEM4XE_VERSION_NUM;
+    else
+        return GD_ERROR;                /* not in the jar */
+    if (!arg2)
+        return v;                       /* MiNT: the value, when nowhere to put it */
+    wr32((uint32_t)arg2, v);
+    return 0;
+}
+
 static LONG gd_mfree(LONG a)
 {
     uint32_t h = gd_block(a);
@@ -2615,6 +2658,9 @@ void gemdos_call(uint32_t pb)
     }
     case GD_FDATIME:
         r = gd_datime(arg_l(6), arg_w(10), arg_w(12));
+        break;
+    case GD_SSYSTEM:
+        r = gd_ssystem(arg_w(6), arg_l(8), arg_l(12));
         break;
     case GD_PEXEC:                      /* it waits, holding gw: the child's
                                          * pool is above it and goes first */

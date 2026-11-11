@@ -1693,6 +1693,14 @@ LONG Cpxload(WORD i, WORD on)
     return dos(0x1F3);
 }
 
+LONG Ssystem(WORD mode, LONG arg1, LONG arg2)
+{
+    dw(6, mode);
+    dl(8, arg1);
+    dl(12, arg2);
+    return dos(0x154);
+}
+
 LONG Cpxfile(WORD op, WORD i, const void FAR *a, void FAR *b)
 {
     dw(6, op);

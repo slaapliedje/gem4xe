@@ -47,7 +47,7 @@ MANIFEST = [
     ("include/strings.h",   "src/app/strings.h"),
     ("include/support.h",   "src/app/support.h"),
     ("include/dirent.h",    "src/app/dirent.h"),
-    ("include/mint/cookie.h", "src/app/mint/cookie.h"),  # a jar that answers "none"
+    ("include/mint/cookie.h", "src/app/mint/cookie.h"),  # the jar, via Ssystem
     ("lib/gemlib.c",        "src/app/gemlib.c"),
     ("lib/gemstat.c",       "src/app/gemstat.c"),       # stat() over Fsfirst
     ("lib/gemtime.c",       "src/app/gemtime.c"),       # the clock, 32-bit throughout

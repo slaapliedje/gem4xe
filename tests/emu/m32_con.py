@@ -257,6 +257,30 @@ def main(argv):
         # microseconds must be a real fraction of a second, and time must
         # not run backwards.  clock() reports the same span in the units
         # its header names, which the program hands back beside it.
+        # THE COOKIE JAR (phase 150), through mintlib's Getcookie and MiNT's
+        # Ssystem: _MCH and _VDO no ST-compatible hardware ($FFFFFFFF,
+        # EmuTOS's NOHARD), _SND no YM and no DMA sound, _CPU nothing past
+        # a 68000, G4XE the version in VERSION; NVDI not there, its value
+        # untouched; Ssystem(-1) 0, a mode it has not got EINVFN, and a
+        # cookie with nowhere to put it its value
+        found = struct.unpack("<6h", b.memdump(at("m32_cfound"), 12))
+        value = struct.unpack("<6I", b.memdump(at("m32_cvalue"), 24))
+        ssys = struct.unpack("<3i", b.memdump(at("m32_ssys"), 12))
+        major, minor = (int(x) for x in
+                        open(os.path.join(ROOT, "VERSION")).read().split(".")[:2])
+        ver = major << 8 | minor
+        jar = (("_MCH", 0, 0xFFFFFFFF), ("_VDO", 0, 0xFFFFFFFF), ("_SND", 0, 0),
+               ("_CPU", 0, 0), ("G4XE", 0, ver), ("NVDI", -1, 0x5A5A5A5A))
+        for k, (name, f, v) in enumerate(jar):
+            check(found[k] == f and value[k] == v,
+                  f"Getcookie('{name}') answered {found[k]} with ${value[k]:08X}, "
+                  f"not {f} with ${v:08X}")
+        check(ssys == (0, -32, ver),
+              f"Ssystem: inquiry {ssys[0]}, mode 3 {ssys[1]}, G4XE with no "
+              f"address {ssys[2]:#x}; not 0, -32 (EINVFN), {ver:#x}")
+        print(f"  the cookie jar: _MCH and _VDO $FFFFFFFF, _SND and _CPU 0, "
+              f"G4XE ${value[4]:04X}, no NVDI")
+
         a_s, a_us, b_s, b_us, cspan, cps = struct.unpack("<6i", b.memdump(at("m32_time"), 24))
         check(res[59] == 0 and res[60] == 0,
               f"Tgettimeofday answered {res[59]} and {res[60]}, not 0")

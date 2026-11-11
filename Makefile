@@ -426,6 +426,7 @@ build/config.o: src/sys/config.c src/sys/config.h src/sys/cio.h src/vdi/pointer.
 build/version.h: VERSION
 	@mkdir -p build
 	printf '#define GEM4XE_VERSION "%s"\n' "$$(cat VERSION)" > $@
+	v="$$(cat VERSION)"; printf '#define GEM4XE_VERSION_NUM 0x%02X%02XL\n' "$${v%%.*}" "$$(echo $${v#*.} | cut -d. -f1)" >> $@
 build/bootinfo.o: src/sys/bootinfo.c src/sys/bootinfo.h src/sys/cio.h src/sys/irq.h \
              src/sys/rapidus.h src/sys/farmem.h src/sys/dos.h src/sys/config.h \
              src/sys/clock.h src/vbxe/vbxe.h src/vdi/pointer.h src/aes/aes.h \
@@ -435,9 +436,9 @@ build/bootinfo.o: src/sys/bootinfo.c src/sys/bootinfo.h src/sys/cio.h src/sys/ir
 
 # GEMDOS for the applications: the ST's trap #1 on CIO, through the seam.
 build/gemdos.o: src/sys/gemdos.c src/sys/clock.h src/sys/gemdos.h src/sys/dos.h src/sys/cio.h src/sys/farmem.h src/sys/app.h \
-             src/sys/abi.h src/sys/con.h src/sys/config.h src/aes/proc.h src/sys/ctx.h src/vdi/vdi.h
+             src/sys/abi.h src/sys/con.h src/sys/config.h src/aes/proc.h src/sys/ctx.h src/vdi/vdi.h build/version.h
 	@mkdir -p build
-	$(CC) $(CFLAGS) -I src -o $@ $<
+	$(CC) $(CFLAGS) -I src -I build -o $@ $<
 
 # The console GEMDOS's character calls reach: a VT-52 on GEM's screen,
 # drawn through the AES (src/sys/con.h).  The runner links it and the

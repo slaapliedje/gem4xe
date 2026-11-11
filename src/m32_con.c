@@ -17,6 +17,7 @@
  */
 #include "portab.h"
 #include "gem.h"
+#include "mint/cookie.h"        /* Getcookie (phase 150) */
 #include <time.h>               /* clock_t and CLOCKS_PER_SEC, for clock() */
 
 #define ESC "\033"
@@ -25,6 +26,12 @@ WORD m32_res[64];
 LONG m32_mem[8];
 LONG m32_time[6];               /* Tgettimeofday twice, clock()'s span, its rate */
 WORD m32_step;
+/* The cookie jar (phase 150): what Getcookie found for each of six names,
+ * and the values; then Ssystem's inquiry, a mode it has not got, and a
+ * cookie asked for with nowhere to put it, which answers the value. */
+WORD m32_cfound[6];
+LONG m32_cvalue[6];
+LONG m32_ssys[3];
 char m32_line[24];
 char m32_text[24];
 static char m32_file[40];
@@ -70,6 +77,22 @@ int main(void)
     LONG m, p;
 
     m32_step = 1;
+    {
+        static const long ids[6] = {
+            C__MCH, C__VDO, C__SND, C__CPU, C_G4XE, C_NVDI
+        };
+        WORD k;
+
+        for (k = 0; k < 6; k++) {
+            long v = 0x5A5A5A5AL;       /* untouched when not found */
+
+            m32_cfound[k] = (WORD)Getcookie(ids[k], &v);
+            m32_cvalue[k] = v;
+        }
+        m32_ssys[0] = Ssystem(S_INQUIRE, 0L, 0L);
+        m32_ssys[1] = Ssystem(3, 0L, 0L);
+        m32_ssys[2] = Ssystem(S_GETCOOKIE, C_G4XE, 0L);
+    }
     for (i = 0; i < (WORD)(sizeof page / sizeof page[0]); i++)
         Cconws(page[i]);
     Cconout('!');

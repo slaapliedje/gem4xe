@@ -190,8 +190,12 @@ time:
 - **`<sys/stat.h>` and `<mint/cookie.h>` are the kit's**, Calypsi's C
   library having neither: `stat()` is one `Fsfirst` (kind, size, one
   stamp for all three times, `ENOENT` for a path that names nothing),
-  and `Getcookie()` answers `C_NOTFOUND` for every cookie, there being
-  no jar -- the answer a well-written program defaults on.
+  and `Getcookie()` asks the system through MiNT's `Ssystem(S_GETCOOKIE)`.
+  The jar says no ST-compatible machine or video (`_MCH` and `_VDO`
+  `$FFFFFFFF`), no YM or DMA sound (`_SND` 0), nothing past a 68000
+  (`_CPU` 0), and gem4xe's version (`G4XE`); any other cookie -- `NVDI`,
+  `MiNT`, `_IDT` -- is not found, the answer a well-written program
+  defaults on.
 - **`printf` works, and a file descriptor is a GEMDOS handle.**  The C
   library reaches the platform through nine routines it expects the board
   to provide, and `lib/gemstub.c` is all nine, over GEMDOS.  Descriptors

@@ -1282,6 +1282,16 @@ struct timeval  { LONG tv_sec, tv_usec; };
 struct timezone { WORD tz_minuteswest, tz_dsttime; };
 LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz);
 
+/* MiNT's Ssystem (0x154), the one mode this machine answers: S_GETCOOKIE,
+ * a cookie by name (phase 150).  `arg2` the address a LONG goes to, then 0
+ * when found; with arg2 0 the value itself.  -1 when the jar has no such
+ * cookie, EINVFN for another mode, and Ssystem(S_INQUIRE, 0, 0) 0 to say
+ * the call is there.  What the jar holds: <mint/cookie.h>, or simply
+ * Getcookie() there. */
+#define S_INQUIRE    (-1)
+#define S_GETCOOKIE  8
+LONG Ssystem(WORD mode, LONG arg1, LONG arg2);
+
 /* gem4xe's own (0x1F0): the DOS's command processor -- SpartaDOS X's --
  * given `line`, run to completion with GEM's screen left as it is, and
  * every byte it printed caught in `out`, `max` bytes of it (a Malloc'd

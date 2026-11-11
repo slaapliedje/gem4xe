@@ -102,6 +102,7 @@
  * _hz_200, which this machine cannot offer (no supervisor mode, no system
  * variable an application may read). */
 #define GD_TGETTIMEOFDAY 0x155
+#define GD_SSYSTEM   0x154        /* MiNT's; S_GETCOOKIE only (phase 150) */
 /* gem4xe's own, numbered above anything MiNT or MagiC has: the DOS's
  * command processor given a line, and what it printed caught in a far
  * buffer (src/sys/dos.c dos_command).  Psystem in src/app/gem.h. */

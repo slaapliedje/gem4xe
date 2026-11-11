@@ -10,7 +10,9 @@ never worked.  Step 2 built: [phase 145](phase145.md), text on the VBXE a
 run at a time; [phase 146](phase146.md), ANTIC's text in assembler;
 [phase 147](phase147.md), the logic modes by the blitter.  Step 3
 under way: [phase 148](phase148.md), offscreen bitmaps on the VBXE;
-[phase 149](phase149.md), the face at twice its size.  Planned 2026-11-10.  The question (2026-11-09): "We know that
+[phase 149](phase149.md), the face at twice its size; [phase
+150](phase150.md), the cookie jar.  Text effects and proportional faces
+are left for later (2026-11-11); step 4 is next.  Planned 2026-11-10.  The question (2026-11-09): "We know that
 NVDI sped up a lot of the VDI calls, but since we don't/won't have NVDI
 to load for or emuTOS port.  What optimizations and capabilities are we
 missing that we should implement?"  The answer was given then; this is

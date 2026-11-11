@@ -786,7 +786,8 @@ static SAVEDS void cp_next_rect(uint32_t xcpb)
     cp_rlwalk((XCPB FAR *)xcpb, WF_NEXTXYWH);
 }
 
-/* No jar on this machine: every cookie is not found, and said so. */
+/* The jar as the system answers it (Ssystem, src/app/mint/cookie.h):
+ * found and its value, or not found and said so. */
 static SAVEDS void cp_getcookie(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
