@@ -436,6 +436,26 @@ def rsrc_cases(r, check, b, keep):
     check(rec[0] == 0 and rec[1] == 0, f"rsrc_load of a missing file returned {rec[0]}, rs_hdr ${rec[1] & 0xFFFF:04X}")
     check(sysop(ALLOC)[7] == before[7], "a failed rsrc_load kept pool memory")
 
+    # -- a squeezed resource, read straight from the disk (phase 152) ----------------
+    # Only the desktop's cache unpacks one (src/aes/rsrc.c, rc_unsqueeze);
+    # a program's read takes the file as it is, and G4Z taken as a
+    # resource ran off into a BRK.  rs_load refuses it by its first three
+    # bytes.  In OUT.TXT, overwritten as cio_cases overwrites it, so that
+    # no name appears that the file selector's model does not list.
+    import mkg4a
+    sq = mkg4a.squeeze(open(os.path.join(ROOT, "build", "test.rsc"), "rb").read())
+    rec = r.run([(OPEN, (), (r.stage(0, b"D:OUT.TXT\0"), A_WRITE, 0))])[0]
+    iocb = rec[ST_I]
+    check(1 <= iocb <= 7, f"open OUT.TXT for the squeezed resource: {iocb}")
+    if 1 <= iocb <= 7:
+        r.run([(WRITE, (), (iocb, r.stage(64, sq), len(sq))), (CLOSE, (), (iocb,))])
+        ret = r.run([(RSRC_LOAD, (), (), r.stage(0, b"OUT.TXT\0"))])[0][2]
+        fault = r.run([(FRAMES, (), (1,))])[0][FAULT_I]    # a sys op's record
+        check(ret == 0 and fault == 0,
+              f"rsrc_load of a squeezed file: returned {ret}, fault {fault}; "
+              f"not 0 and no fault")
+        check(sysop(ALLOC)[7] == before[7], "...and it kept no pool memory")
+
 
 def shel_cases(r, check, b):
     aes = lambda op, ints=(), addr=0: r.run([(op, (), ints, addr)])[0][2:]  # noqa: E731

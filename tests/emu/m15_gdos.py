@@ -54,10 +54,11 @@ FN = dict(Dsetdrv=0x0E, Dgetdrv=0x19, Fsetdta=0x1A, Tgetdate=0x2A, Fgetdta=0x2F,
           Tgettime=0x2C, Tsetdate=0x2B, Maddalt=0x14,
           Fcreate=0x3C, Fopen=0x3D, Fclose=0x3E, Fread=0x3F, Fwrite=0x40,
           Fdelete=0x41, Fseek=0x42, Fattrib=0x43, Dgetpath=0x47, Malloc=0x48,
-          Fdatime=0x57, Dprobe=0x1F1,
+          Fdatime=0x57, Dprobe=0x1F1, Dcaps=0x1F7,
           Mfree=0x49,
           Fsfirst=0x4E, Fsnext=0x4F, Frename=0x56)
 EINVFN, EFILNF, EPTHNF, EACCDN, EIHNDL, ENMFIL = -32, -33, -34, -36, -37, -49
+ENSAME = -48                          # Frename's two names on two drives
 ERANGE = -64                          # a seek past the end
 FA_RDONLY, FA_SUBDIR = 0x01, 0x10
 DATE0 = 0x0021
@@ -180,6 +181,84 @@ def compare_listing(check, what, got, want, dirs=True):
 
 
 # -- the cases -------------------------------------------------------------------
+def moves(g, r, check, kind, tree, fixture, far):
+    """Frename between folders, and Dcaps, which says beforehand what a
+    drive will do (phase 152).  On G4DOS a file and then a folder are
+    MOVED -- the file read back from where it went -- and a folder into
+    itself and a name already taken are refused.  A SpartaDOS moves
+    nothing: EACCDN, and the file still where it was, not renamed in its
+    own folder as Frename used to leave it.  A name on another drive is
+    ENSAME everywhere.  In a folder made and removed, as the scrap's is."""
+    caps, _ = g.call("Dcaps", W(0))
+    want = 7 if kind == DOS_G4DOS else 1 if tree else 0
+    check(caps == want, f"Dcaps on {KIND[kind]}: {caps}, not {want}")
+    if not tree:
+        h, _ = g.call("Fcreate", L(g.string("A:\\MV.TXT")), W(0))
+        g.call("Fclose", W(h))
+        cross, _ = g.call("Frename", W(0), L(g.string("A:\\MV.TXT")),
+                          L(g.string("B:\\MV.TXT", 1)))
+        check(cross == ENSAME, f"Frename to another drive {cross}, not ENSAME")
+        ret, _ = g.call("Fdelete", L(g.string("A:\\MV.TXT")))
+        check(ret == 0, f"Fdelete MV.TXT {ret}")
+        print(f"  moves: Dcaps {caps}; Frename to another drive {cross}")
+        return
+    for d in ("A:\\MV", "A:\\MV\\A", "A:\\MV\\B"):
+        ret, _ = g.call("Dcreate", L(g.string(d)))
+        check(ret == 0, f"Dcreate {d} {ret}")
+    h, _ = g.call("Fcreate", L(g.string("A:\\MV\\A\\F.TXT")), W(0))
+    ret, _ = g.call("Fwrite", W(h), L(len(fixture)), L(far))
+    check(ret == len(fixture), f"Fwrite MV\\A\\F.TXT {ret}")
+    g.call("Fclose", W(h))
+    ret, _ = g.call("Frename", W(0), L(g.string("A:\\MV\\A\\F.TXT")),
+                    L(g.string("A:\\MV\\B\\F.TXT", 1)))
+    in_a, _ = g.listing("A:\\MV\\A\\*.*", 0)
+    in_b, _ = g.listing("A:\\MV\\B\\*.*", 0)
+    if kind == DOS_G4DOS:
+        check(ret == 0 and not in_a and set(in_b) == {"F.TXT"},
+              f"a file moved: {ret}; MV\\A has {sorted(in_a)}, MV\\B {sorted(in_b)}")
+        h, _ = g.call("Fopen", L(g.string("A:\\MV\\B\\F.TXT")), W(0))
+        r.stage(BUF, b"\xEE" * BUF_ROOM)
+        ret, _ = g.call("Fread", W(h), L(BUF_ROOM), L(r.sc + BUF))
+        g.call("Fclose", W(h))
+        check(ret == len(fixture) and r.read(BUF, len(fixture)) == fixture,
+              f"the moved file read back: {ret} bytes")
+        # a folder moved, with what it holds
+        ret, _ = g.call("Frename", W(0), L(g.string("A:\\MV\\B")),
+                        L(g.string("A:\\MV\\A\\B", 1)))
+        got, _ = g.listing("A:\\MV\\A\\B\\*.*", 0)
+        top, _ = g.listing("A:\\MV\\*.*", FA_SUBDIR)
+        check(ret == 0 and set(got) == {"F.TXT"} and "B" not in top,
+              f"a folder moved: {ret}; MV\\A\\B has {sorted(got)}, MV {sorted(top)}")
+        ret, _ = g.call("Frename", W(0), L(g.string("A:\\MV\\A")),
+                        L(g.string("A:\\MV\\A\\B\\A", 1)))
+        check(ret == EACCDN, f"a folder moved into itself {ret}, not EACCDN")
+        h, _ = g.call("Fcreate", L(g.string("A:\\MV\\G.TXT")), W(0))
+        g.call("Fclose", W(h))
+        ret, _ = g.call("Frename", W(0), L(g.string("A:\\MV\\G.TXT")),
+                        L(g.string("A:\\MV\\A\\B\\F.TXT", 1)))
+        check(ret == EACCDN, f"a move onto a name taken {ret}, not EACCDN")
+        g.call("Fdelete", L(g.string("A:\\MV\\G.TXT")))
+        files = ("A:\\MV\\A\\B\\F.TXT",)
+        dirs = ("A:\\MV\\A\\B", "A:\\MV\\A", "A:\\MV")
+    else:
+        check(ret == EACCDN and set(in_a) == {"F.TXT"} and not in_b,
+              f"a move on {KIND[kind]}: {ret}, not EACCDN; MV\\A has "
+              f"{sorted(in_a)}, MV\\B {sorted(in_b)}")
+        files = ("A:\\MV\\A\\F.TXT",)
+        dirs = ("A:\\MV\\A", "A:\\MV\\B", "A:\\MV")
+    ret, _ = g.call("Frename", W(0), L(g.string(files[0])),
+                    L(g.string("B:\\F.TXT", 1)))
+    check(ret == ENSAME, f"Frename to another drive {ret}, not ENSAME")
+    for f in files:
+        ret, _ = g.call("Fdelete", L(g.string(f)))
+        check(ret == 0, f"Fdelete {f} {ret}")
+    for d in dirs:
+        ret, _ = g.call("Ddelete", L(g.string(d)))
+        check(ret == 0, f"Ddelete {d} {ret}")
+    print(f"  moves: Dcaps {caps}; a file between folders "
+          f"{'moved, then a folder' if kind == DOS_G4DOS else 'refused, EACCDN'}")
+
+
 def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
     fixture = open(FIXTURE, "rb").read()
     tree = kind != DOS_2
@@ -605,11 +684,19 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
         g.call("Dsetpath", L(g.string("\\")))
         # A FOLDER renamed, which is what the desktop's Show info asks
         # for when the item selected is one (src/desk/deskfun.c).
+        # G4DOS's file system does it; SpartaDOS 3.2 and X answer "file
+        # not found" for a directory (XIO 32), and Dcaps says so (moves).
         ret, _ = g.call("Frename", W(0), L(g.string("A:\\NEWDIR")),
                         L(g.string("A:\\NEWDIR2", 1)))
         got, _ = g.listing("A:\\*.*", FA_SUBDIR)
         print(f"  Frename of a folder: {ret}; the root now has "
               f"{'NEWDIR2' if 'NEWDIR2' in got else 'NEWDIR'}")
+        if kind == DOS_G4DOS:
+            check(ret == 0 and "NEWDIR2" in got and "NEWDIR" not in got,
+                  f"Frename of a folder on G4DOS: {ret}, {sorted(got)}")
+        else:
+            check(ret == EFILNF and "NEWDIR" in got,
+                  f"Frename of a folder on {KIND[kind]}: {ret}, {sorted(got)}")
         gone = "A:\\NEWDIR2" if "NEWDIR2" in got else "A:\\NEWDIR"
         ret, _ = g.call("Ddelete", L(g.string(gone)))
         check(ret == 0, f"Ddelete {ret}")
@@ -617,6 +704,8 @@ def cases(g, r, check, fs, kind, b, clock=False, dos_clock=False):
         check(ret == ENMFIL, f"NEWDIR after Ddelete: {ret}")
     else:
         check(ret == EACCDN, f"Dcreate on a flat DOS {ret}, not EACCDN")
+
+    moves(g, r, check, kind, tree, fixture, far)
 
     # -- Dfree against the bitmap ------------------------------------------------------
     ret, rec = g.call("Dfree", L(r.sc + BUF), W(0))

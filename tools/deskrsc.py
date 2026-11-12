@@ -248,6 +248,13 @@ DOCU_ALERT = [
      "[Show|Print|Cancel]"),
     (STPRNERR, "STPRNERR", "[1][The printer did not|take the file.][ OK ]"),
 ]
+# A folder dragged into itself, or into a folder inside it (phase 152):
+# the copy would copy what it had just made, folder in folder, until the
+# path was too deep.  The donor's source_is_parent refuses it the same way.
+STINSELF = 28
+MOVE_ALERT = [
+    (STINSELF, "STINSELF", "[1][A folder cannot go|inside itself.][ OK ]"),
+]
 
 # PREFS.RSC's second tree: the DOS command dialog, beside the chooser
 # for the same reason the chooser is there -- loaded only while it is
@@ -322,7 +329,7 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
-    ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR),
+    ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR), ("STINSELF", STINSELF),
     ("ADICNBOX", ADICNBOX), ("ICDRIVE", ICDRIVE), ("ICLABEL", ICLABEL),
     ("ICINST", ICINST), ("ICREMV", ICREMV), ("ICCNCL", ICCNCL),
     ("ADCNFBOX", ADCNFBOX), ("NCOLD", NCOLD), ("NCNEW", NCNEW),
@@ -877,6 +884,8 @@ def build():
     for i, name, text in CMD_ALERT:
         assert r.free_string(text) == i, (name, i)
     for i, name, text in DOCU_ALERT:
+        assert r.free_string(text) == i, (name, i)
+    for i, name, text in MOVE_ALERT:
         assert r.free_string(text) == i, (name, i)
     for ib, ig in IB_TABLE:
         (mask, data, char, xchar, ychar, xicon, yicon, wicon, hicon,

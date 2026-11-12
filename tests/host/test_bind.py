@@ -249,6 +249,7 @@ EXPECT = [
     ("Ssystem",  DOS, 0x154, 0, 0, 0, 0),
     ("Psystem",  DOS, 0x1F0, 0, 0, 0, 0),
     ("Dprobe",   DOS, 0x1F1, 0, 0, 0, 0),
+    ("Dcaps",    DOS, 0x1F7, 0, 0, 0, 0),
     ("Mclaim",   DOS, 0x1F2, 0, 0, 0, 0),
     ("Cpxload",  DOS, 0x1F3, 0, 0, 0, 0),
     ("Cpxfile",  DOS, 0x1F6, 0, 0, 0, 0),

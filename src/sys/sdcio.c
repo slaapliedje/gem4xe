@@ -705,6 +705,33 @@ uint8_t sdc_xio(uint8_t cmd, const char *name)
     return e < 0 ? sdc_st(e) : CIO_OK;
 }
 
+/* A move, which CIO has no XIO for: XIO 32's new name is a name in the
+ * old one's folder (above).  The engine's rename takes two paths and
+ * moves between folders (src/sys/sdfs.c, sd_rename), refusing a folder
+ * moved into itself or a name already taken -- EACCDN either way. */
+uint8_t sdc_move(const char *from, const char *to)
+{
+    char FAR *path = sc->path;
+    char FAR *dst = sc->to;
+    const char *p, *q;
+    uint8_t u, v, bare;
+    int16_t e = 0;
+
+    p = sdc_dev(from, &u);
+    q = sdc_dev(to, &v);
+    if (!p || !q || u != v)
+        return 0xA5;                /* a name the DOS cannot read */
+    bare = sdc_path(p, path);
+    sd_recheck(FS, u);
+    if (bare)
+        e = sdc_find(u);
+    if (e < 0)
+        return sdc_st(e);
+    sdc_path(q, dst);
+    e = sd_rename(FS, u, path, dst);
+    return e < 0 ? sdc_st(e) : CIO_OK;
+}
+
 /* ---- the DOS's commands ---------------------------------------------------
  * File -> DOS command and Psystem, as SpartaDOS X's XCOMLI serves them
  * elsewhere (src/sys/dos.c): the same commands G4DOS's own shell runs at

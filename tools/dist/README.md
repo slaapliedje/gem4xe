@@ -149,10 +149,13 @@ and, with the mouse: a drag across a window's background draws a
 **rubber band** that selects what it covers, and **SHIFT**-click adds an
 item to the selection.  An item dragged into another
 window or onto a folder is **copied** there, the same drag with
-**SHIFT** held **moves** it, and a drag onto the trash deletes it.  A
-document dropped on a program runs the program with it.  Show info is
-also the rename — what you leave in its name field is what a file is
-called afterwards.  Under all of it: windows that open, scroll, size,
+**SHIFT** held **moves** it, and a drag onto the trash deletes it.  On
+a G4DOS disk a move within the drive is a rename into place, a folder
+and all it holds in one step however big; elsewhere it is a copy and
+then a delete.  A folder cannot go inside itself.  A document dropped
+on a program runs the program with it.  Show info is also the rename —
+what you leave in its name field is what a file, or on a G4DOS disk a
+folder, is called afterwards.  Under all of it: windows that open, scroll, size,
 full and close, menus, dialogs, alerts, the file selector, and a program
 run from its icon that comes back to the desk where it left it.
 
@@ -255,10 +258,11 @@ greyed rather than pretending:
 
 Besides those:
 
-- **a folder cannot be renamed.**  `XIO 32` renames a file, and both
-  SpartaDOS 3.2 and SpartaDOS X answer "file not found" for a
-  directory, so Show info shows a folder's name greyed rather than
-  offering something the DOS will refuse.
+- **a folder cannot be renamed under SpartaDOS.**  `XIO 32` renames a
+  file, and both SpartaDOS 3.2 and SpartaDOS X answer "file not found"
+  for a directory, so there Show info shows a folder's name greyed
+  rather than offering something the DOS will refuse.  On a G4DOS disk
+  it can be renamed.
 - **a document prints, but the printer DRIVER has nothing clicking it.**
   Double-click a file that is not a program and the desktop offers
   *Show*, *Print* or *Cancel*, as the ST's does; Print sends the file to

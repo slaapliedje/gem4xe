@@ -71,7 +71,7 @@ from aesref import (Obj, Text, Iconblk, CiconNear, Rect, chunky,  # noqa: E402
                     FSNEXT, DCREATE, DDELETE, FDELETE, FA_SUBDIR,
                     GRAF_MKSTATE, GRAF_DRAGBOX, GRAF_RUBBOX,
                     FOPEN, FCREATE, FCLOSE, FREAD, FWRITE, GD_EACCDN,
-                    PSYSTEM)
+                    PSYSTEM, DCAPS, DC_RENDIR, DC_MOVE)
 from rsc import R_TREE, R_ICONBLK, R_STRING, ICONBLK_SIZE  # noqa: E402
 from deskrsc import (ADMENU, ADDINFO, ADMKDBOX, ADDELDIA, ADFINFO,  # noqa: E402
                      DESKMENU, FILEMENU, ABOUITEM,
@@ -83,7 +83,7 @@ from deskrsc import (ADMENU, ADDINFO, ADMKDBOX, ADDELDIA, ADFINFO,  # noqa: E402
                      FIRDWR, FIRONLY, FIOK,
                      STDISK, STTRASH, STNOMEM, STNOWIND, STDEFDIR,
                      STDELFIL, STDELDIR, STFOFAIL, STFO8DEE, STDEEPPA,
-                     STCPYFIL, STDISKFU, STNOTHIN, STSAMEPL,
+                     STCPYFIL, STDISKFU, STNOTHIN, STSAMEPL, STINSELF,
                      STDELTTL, STCPYTTL, STMOVTTL,
                      STFIINFO, STFOINFO, STRENAME, STSVINF, STRDINF,
                      STFLINE, STFMARK, VIEWMENU, ICONITEM, TEXTITEM,
@@ -2110,11 +2110,16 @@ class Desktop:
         self.inf_sset(tree, FINAME, places)
         was = self.unfmt_name(places)           # what the field started as
         self.inf_sset(tree, FIDATE, self.inf_dttm_places(pf.date, pf.time))
-        # A folder's name is not the DOS's to change (deskfun.c: XIO 32
+        # A folder's name is not every DOS's to change (deskfun.c: XIO 32
         # renames a file, and answers EFILNF for a directory on both
-        # SpartaDOS 3.2 and SpartaDOS X), so the field is shown and not
-        # editable rather than editable and always refused.
+        # SpartaDOS 3.2 and SpartaDOS X), so there the field is shown and
+        # not editable rather than editable and always refused.  GEMDOS's
+        # Dcaps says which, asked for a folder only (phase 152).
+        named = True
         if folder:
+            caps = self.gemdos(DCAPS, (ord(pn.spec.s[0]) - ord("A") + 1,))
+            named = caps >= 0 and bool(caps & DC_RENDIR)
+        if not named:
             objs[FINAME].ob_flags &= ~EDITABLE
         else:
             objs[FINAME].ob_flags |= EDITABLE
@@ -2171,7 +2176,7 @@ class Desktop:
                     pf.attr = attr
                     changed = True
             name = self.unfmt_name(self.inf_sget(tree, FINAME))
-            if folder or not name or name == was:   # the name it started with
+            if not named or not name or name == was:   # the name it started with
                 self.busy(False)
                 break
             self.dst_path = self.p_add_fname(pn.spec.s, name)
@@ -2315,6 +2320,18 @@ class Desktop:
         if dest == pn.spec.s:
             self.fun_alert(1, STSAMEPL)
             return
+        for pf in pn.fnodes[:pn.count]:         # ...or inside itself
+            if pf.flags & F_SELECTED and pf.attr & FA_SUBDIR:
+                inner = pn.spec.s[:pn.spec.s.rfind("\\") + 1] + pf.name + "\\"
+                if dest.startswith(inner):
+                    self.fun_alert(1, STINSELF)
+                    return
+        # a move on one drive that moves goes by name (deskfun.c
+        # move_name), which this model does not do: the gates' DOSes copy
+        byname = (op == OP_MOVE and dest[0] == pn.spec.s[0]
+                  and self.gemdos(DCAPS, (ord(dest[0]) - ord("A") + 1,)) & DC_MOVE)
+        if byname:
+            raise ValueError("deskref: a move by name is not modelled")
 
         self.busy(True)                         # what it will do
         self.nfiles = self.ndirs = 0

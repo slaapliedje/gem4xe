@@ -715,6 +715,10 @@ class AES:
         # SpartaDOS X of 4.4 or later, which the gate says; a DOS 2 and
         # a SpartaDOS 3 have not
         self.psystem = False
+        # what Dcaps answers (phase 152): folders, and neither a folder
+        # renamed nor a move by Frename -- the SpartaDOSes the desktop
+        # gates boot; G4DOS would add DC_RENDIR | DC_MOVE
+        self.dos_caps = DC_FOLDERS
         self.dos_dta_data = None
         self.dos_dirs = {}
         self.dos_searches = {}
@@ -5753,6 +5757,8 @@ class AES:
             return GD_ENMFIL & 0xFFFFFFFF
         if fn == GD_PSYSTEM:            # the probe: a null line asks
             return 0 if self.psystem else GD_EINVFN & 0xFFFFFFFF
+        if fn == GD_DCAPS:
+            return self.dos_caps
         raise ValueError(f"unknown GEMDOS function {fn:#x}")
 
 
@@ -5794,11 +5800,14 @@ FATTRIB, FRENAME = GEMDOS_OP + 0x43, GEMDOS_OP + 0x56
 FCREATE, FOPEN, FCLOSE = GEMDOS_OP + 0x3C, GEMDOS_OP + 0x3D, GEMDOS_OP + 0x3E
 FREAD, FWRITE = GEMDOS_OP + 0x3F, GEMDOS_OP + 0x40
 PSYSTEM = GEMDOS_OP + 0x1F0         # gem4xe's own (src/sys/gemdos.h)
+DCAPS = GEMDOS_OP + 0x1F7           # ...and what a drive does with folders
 # src/sys/gemdos.h: the attributes and the error the searches answer
 FA_RDONLY, FA_HIDDEN, FA_SYSTEM, FA_VOLUME, FA_SUBDIR, FA_ARCHIVE = (
     0x01, 0x02, 0x04, 0x08, 0x10, 0x20)
 GD_EINVFN = -32
 GD_PSYSTEM = 0x1F0                  # gem4xe's own (src/sys/gemdos.h)
+GD_DCAPS = 0x1F7                    # gem4xe's own, phase 152
+DC_FOLDERS, DC_RENDIR, DC_MOVE = 0x01, 0x02, 0x04
 GD_EPTHNF, GD_EACCDN, GD_EFILNF, GD_ENMFIL = -34, -36, -33, -49
 GD_ENHNDL, GD_EIHNDL = -35, -37
 

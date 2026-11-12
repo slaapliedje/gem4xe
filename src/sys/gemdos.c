@@ -1060,11 +1060,33 @@ static LONG gd_xio(uint8_t cmd, LONG path, WORD dir)
 /* Frename: XIO 32 on "OLD,NEW", the new name a bare NAME.EXT -- the
  * DOS renames within the directory, so a new path is taken for its
  * last component only. */
+/* Where a CIO name's folder ends: just past its last separator, or past
+ * the device's ':' when it has none.  0 for a name with neither -- a bare
+ * name in the DOS's own directory (gd_name), whose folder is not known. */
+static WORD gd_cio_dir(const char *cio)
+{
+    WORD k, end = 0;
+
+    for (k = 0; cio[k]; k++)
+        if (cio[k] == ':' || (dos.dirsep && cio[k] == dos.dirsep))
+            end = (WORD)(k + 1);
+    return end;
+}
+
+/* Frename (phase 152).  The new name in the old one's folder is a rename,
+ * which every DOS does: CIO's XIO 32, "OLD,NEW", NEW a name and no path.
+ * In another folder of the same drive it is a MOVE, as TOS's Frename is:
+ * G4DOS's file system does it in place (src/sys/sdcio.c, sdc_move), a
+ * folder and all; SpartaDOS cannot, and says EACCDN -- where this used to
+ * take the new name's last part and rename the file where it stood, which
+ * is not what was asked.  A name on another drive is ENSAME, TOS's answer.
+ * A bare old name, in the DOS's directory that GEMDOS was never told,
+ * keeps the old rule: the new name's last part, in the same folder. */
 static LONG gd_rename(LONG oldp, LONG newp)
 {
     char *nn = gw->in, *full = gw->full, *cio = gw->cio;
     LONG d = gd_name(oldp);
-    WORD k, n;
+    WORD k, n, od, nd;
     WORD st;                            /* not a byte: B8 */
 
     if (d < 0)
@@ -1073,6 +1095,22 @@ static LONG gd_rename(LONG oldp, LONG newp)
     d = gd_full(nn, full);
     if (d < 0)
         return d;
+    d = gd_cio(full, nn);               /* the new name as CIO has it; the
+                                         * application's string is done with */
+    if (d < 0)
+        return d;
+    od = gd_cio_dir(cio);
+    nd = gd_cio_dir(nn);
+    if (od >= 3 && cio[2] == ':' && nn[2] == ':' && cio[1] != nn[1])
+        return GD_ENSAME;
+    if (od && (od != nd || memcmp(cio, nn, (size_t)od) != 0)) {
+        if (!sdc_claims(cio))
+            return GD_EACCDN;           /* this DOS renames in place only */
+        st = sdc_move(cio, nn);
+        if (st != CIO_OK && st != CIO_OK_EOF)
+            return gd_err((uint8_t)st, 0);
+        return 0;
+    }
     k = gd_split(full);
     n = (WORD)strlen(cio);
     if (n + 1 + strlen(full + k) > CIO_NAME_MAX)
@@ -1389,6 +1427,33 @@ static LONG gd_drvmap(void)
     if (dos.caps & DOS_CAP_DRVBYT)
         return DRVBYT ? DRVBYT : 1;
     return 0x03;
+}
+
+/* Dcaps (phase 152), gem4xe's own: what drive `drv` (0 the current, 1 A:)
+ * can do with folders, so that a desktop offers what the DOS will do
+ * rather than offering it and failing.  GD_DC_FOLDERS when paths carry
+ * folders (the SpartaDOSes, and G4DOS under GEM); GD_DC_RENDIR and
+ * GD_DC_MOVE when the drive is G4DOS's file system, through the engine,
+ * which renames a folder and moves a file or a folder to another folder
+ * of the drive (gd_rename).  SpartaDOS X and 3.2 rename neither: asked
+ * for a directory, XIO 32 says "file not found" (tests/emu/m15_gdos.py). */
+static LONG gd_dcaps(WORD drv)
+{
+    WORD d = drv ? (WORD)(drv - 1) : gd_drive;
+    char name[4];
+    LONG c = 0;
+
+    if (d < 0 || d >= GD_DRIVES)
+        return GD_EDRIVE;
+    if (dos.caps & DOS_CAP_DIRS)
+        c |= GD_DC_FOLDERS;
+    name[0] = 'D';
+    name[1] = (char)('1' + d);
+    name[2] = ':';
+    name[3] = 0;
+    if (sdc_claims(name))
+        c |= GD_DC_RENDIR | GD_DC_MOVE;
+    return c;
 }
 
 /* Dprobe: every drive asked, once, and the answer kept for every Dsetdrv
@@ -2129,6 +2194,9 @@ static LONG gd_nopath(WORD fn)
         break;
     case GD_DPROBE:
         r = gd_dprobe();
+        break;
+    case GD_DCAPS:
+        r = gd_dcaps(arg_w(6));
         break;
     case GD_CPXLOAD:                    /* a control panel module, by index */
         r = sh_cpxload(arg_w(6), arg_w(8));

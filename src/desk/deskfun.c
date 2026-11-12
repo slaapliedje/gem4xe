@@ -444,9 +444,10 @@ static WORD copy_file(void)
 }
 
 /* The file at op_path, copied to dst_path and -- for a move -- taken
- * away afterwards.  A move is a copy and a delete on this machine:
- * neither DOS renames a file into another directory, and the two
- * drives of a floppy machine are not the same drive anyway. */
+ * away afterwards.  A move that comes here is a copy and a delete:
+ * SpartaDOS renames nothing into another directory, and two drives are
+ * not one.  On one G4DOS drive move_name renames it instead (phase 152),
+ * and comes here only when the name is taken there. */
 static WORD copy_one(WORD op)
 {
     switch (copy_conflict()) {                  /* the name taken? */
@@ -552,6 +553,115 @@ static WORD walk(WORD level, WORD op)
     return TRUE;
 }
 
+/* -- moving by name (phase 152) ---------------------------------------- */
+
+/* What the drive `spec` is on can do with folders: GEMDOS's Dcaps, which
+ * a gem4xe before phase 152 does not have -- nothing, then. */
+static WORD drive_caps(const char *spec)
+{
+    LONG c = Dcaps((WORD)(spec[0] - 'A' + 1));
+
+    return (WORD)(c < 0 ? 0 : c);
+}
+
+/* A FOLDER RENAMED OR MOVED: every window open on it or inside it follows,
+ * `from` and `to` the folder's paths with no "*.*" -- "A:\OLD" and
+ * "A:\NEW\OLD".  The prefix is put right in place.  A window whose path
+ * would no longer fit is left, and reads as gone. */
+static void win_follow(const char *from, const char *to)
+{
+    WORD i, k, n, m, len;
+
+    for (n = 0; from[n]; n++)
+        ;
+    for (m = 0; to[m]; m++)
+        ;
+    for (i = 0; i < NUM_WNODES; i++) {
+        WNODE *pw = &G.g_wlist[i];
+        char *s = pw->w_path.p_spec;
+
+        if (pw->w_id <= 0)
+            continue;
+        for (k = 0; k < n && s[k] == from[k]; k++)
+            ;
+        if (k < n || s[n] != '\\')
+            continue;                           /* not in that folder */
+        for (len = n; s[len]; len++)
+            ;
+        if (len - n + m >= LEN_ZPATH)
+            continue;
+        if (m > n)                              /* the rest moves right, */
+            for (k = len; k >= n; k--)          /* its NUL first */
+                s[k + m - n] = s[k];
+        else if (m < n)                         /* ...or left */
+            for (k = n; k <= len; k++)
+                s[k + m - n] = s[k];
+        for (k = 0; k < m; k++)
+            s[k] = to[k];
+        win_rebld(pw);
+    }
+}
+
+/* Is `dest` (a path ending in "*.*") the folder `name` of `spec`'s
+ * directory, or inside it?  The donor's source_is_parent.  op_path is the
+ * scratch, as everywhere here. */
+static WORD in_itself(const char *spec, const char FAR *name, const char *dest)
+{
+    WORD k, n;
+
+    put_str(op_path, spec);
+    if (!add_path(op_path, name))
+        return FALSE;                           /* too deep to be a prefix */
+    n = (WORD)(path_tail(op_path) - op_path);   /* "A:\SUB\NAME\" */
+    for (k = 0; k < n && dest[k] == op_path[k]; k++)
+        ;
+    return (WORD)(k == n);
+}
+
+/* A MOVE BY NAME: op_path's directory and dst_path's are on one drive that
+ * moves (Dcaps), so the item goes in one Frename -- a folder and all it
+ * holds, where the walk would copy every file and delete it after.  TRUE
+ * when it went; FALSE to copy instead: the name is taken there, which the
+ * copy's own questions deal with, or the DOS would not.  The counters go
+ * down by what went, a folder's contents counted again where they are
+ * now. */
+static WORD move_name(const FNODE FAR *pf)
+{
+    LONG files, dirs;
+    WORD n;
+
+    add_fname(op_path, pf->f_name);
+    add_fname(dst_path, pf->f_name);
+    Fsetdta(&G.g_opdta[0]);
+    if (Fsfirst(dst_path, FA_SUBDIR) == E_OK)
+        return FALSE;                           /* taken: the copy asks */
+    if (Frename(op_path, dst_path) != E_OK)
+        return FALSE;
+    if (!(pf->f_attr & FA_SUBDIR)) {
+        G.g_nfiles--;
+        op_count(CDFILES, G.g_nfiles);
+        return TRUE;
+    }
+    win_follow(op_path, dst_path);
+    files = G.g_nfiles;
+    dirs = G.g_ndirs;
+    G.g_nfiles = 0;
+    G.g_ndirs = 0;
+    put_str(op_path, dst_path);                 /* "A:\DEST\NAME\*.*" */
+    for (n = 0; op_path[n]; n++)
+        ;
+    if (n + 5 <= LEN_ZPATH) {
+        op_path[n] = '\\';
+        set_all_files(op_path + n + 1);
+        walk(0, OP_COUNT);
+    }
+    G.g_nfiles = files - G.g_nfiles;
+    G.g_ndirs = dirs - G.g_ndirs - 1;
+    op_count(CDFILES, G.g_nfiles);
+    op_count(CDFOLDS, G.g_ndirs);
+    return TRUE;
+}
+
 /* -- the two operations ------------------------------------------------- */
 
 /* A dialog's title, from a free string of the resource, and centred on
@@ -632,7 +742,7 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
     OBJECT *tree = G.a_delete;
     FNODE FAR *pf;
     char dest[LEN_ZPATH];
-    WORD i, ok, op, chose = FALSE;
+    WORD i, ok, op, chose = FALSE, byname;
 
     op = (kstate & (MODE_LSHIFT | MODE_RSHIFT)) ? OP_MOVE : OP_COPY;
     if (dst_wh == DESKWH && !icon_letter(dst_obj)) {
@@ -654,6 +764,17 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
         fun_alert(1, STSAMEPL);
         return;
     }
+    pf = pw->w_path.p_flist;                    /* ...or inside itself */
+    for (i = 0; i < pw->w_path.p_count; i++, pf++)
+        if ((pf->f_flags & F_SELECTED) && (pf->f_attr & FA_SUBDIR)
+            && in_itself(pw->w_path.p_spec, pf->f_name, dest)) {
+            fun_alert(1, STINSELF);
+            return;
+        }
+    /* A move on one drive that moves goes by name (move_name), item by
+     * item, and an item that will not falls back on the copy. */
+    byname = (WORD)(op == OP_MOVE && dest[0] == pw->w_path.p_spec[0]
+                    && (drive_caps(dest) & DC_MOVE));
 
     desk_busy(TRUE);                            /* what it will do */
     G.g_nfiles = 0;
@@ -706,6 +827,12 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
             continue;
         put_str(op_path, pw->w_path.p_spec);
         put_str(dst_path, dest);
+        if (byname) {
+            if (move_name(pf))
+                continue;
+            put_str(op_path, pw->w_path.p_spec);    /* the copy, then */
+            put_str(dst_path, dest);
+        }
         if (pf->f_attr & FA_SUBDIR) {
             add_path(op_path, pf->f_name);      /* both fitted at the count */
             if (!add_path(dst_path, pf->f_name) || !make_dir())
@@ -1009,7 +1136,7 @@ void fun_info(WNODE *pw)
     OBJECT *tree = G.a_finfo;
     FNODE FAR *pf;
     char places[LEN_ZFNAME], name[LEN_ZFNAME], was[LEN_ZFNAME];
-    WORD i, folder, attr, ok, changed = FALSE;
+    WORD i, folder, attr, ok, changed = FALSE, named;
 
     pf = pw->w_path.p_flist;                    /* what is selected */
     for (i = 0; i < pw->w_path.p_count; i++, pf++)
@@ -1031,12 +1158,14 @@ void fun_info(WNODE *pw)
                                                  * name a file system can */
     inf_dttm(tree, FIDATE, pf->f_date, pf->f_time);
 
-    /* A FOLDER's name is not the DOS's to change: XIO 32 renames a
+    /* A FOLDER's name is not every DOS's to change: XIO 32 renames a
      * file, and asked for a directory both SpartaDOS 3.2 and SpartaDOS X
      * answer "file not found" -- measured, tests/emu/m15_gdos.py.  So
-     * the field is shown and not editable, rather than editable and
-     * always refused.  A DOS that can do it takes the flag back. */
-    if (folder)
+     * there the field is shown and not editable, rather than editable and
+     * always refused.  G4DOS's file system renames one, and GEMDOS's Dcaps
+     * says so (phase 152). */
+    named = (WORD)(!folder || (drive_caps(pw->w_path.p_spec) & DC_RENDIR));
+    if (!named)
         tree[FINAME].ob_flags = (UWORD)(tree[FINAME].ob_flags & ~EDITABLE);
     else
         tree[FINAME].ob_flags = (UWORD)(tree[FINAME].ob_flags | EDITABLE);
@@ -1106,7 +1235,7 @@ void fun_info(WNODE *pw)
         }
         inf_sget(tree, FINAME, places);
         unfmt_name(places, name);
-        if (folder || !name[0] || same_path(name, was)) {
+        if (!named || !name[0] || same_path(name, was)) {
             desk_busy(FALSE);                   /* the name it already had */
             break;
         }
@@ -1115,6 +1244,8 @@ void fun_info(WNODE *pw)
         ok = (WORD)(Frename(op_path, dst_path) == E_OK);
         desk_busy(FALSE);
         if (ok) {
+            if (folder)                         /* windows inside it follow */
+                win_follow(op_path, dst_path);
             changed = TRUE;
             break;
         }

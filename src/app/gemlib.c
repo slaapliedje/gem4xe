@@ -1679,6 +1679,12 @@ LONG Dprobe(void)
     return dos(0x1F1);
 }
 
+LONG Dcaps(WORD drive)
+{
+    dw(6, drive);
+    return dos(0x1F7);
+}
+
 LONG Mclaim(LONG addr, LONG len)
 {
     dl(6, addr);

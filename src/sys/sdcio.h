@@ -49,6 +49,11 @@ uint8_t  sdc_close(int16_t iocb);
 uint8_t  sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len,
                  uint16_t *got);
 uint8_t  sdc_xio(uint8_t cmd, const char *name);
+/* Frename to another folder of the same unit (src/sys/gemdos.c,
+ * gd_rename): both CIO names, the old one found as a bare name would be,
+ * the new one from the root.  A file or a folder, never into itself.  A
+ * CIO status. */
+uint8_t  sdc_move(const char *from, const char *to);
 
 /* Where G4DOS's search finds a bare name (phase 141): its folder as a CIO
  * prefix, "D1:>GEM>", into `cio` (CIO_NAME_MAX + 1), so that a file meant

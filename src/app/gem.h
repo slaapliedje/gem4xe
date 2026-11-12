@@ -1208,6 +1208,7 @@ WORD objc_draw_grect(OBJECT *tree, WORD start, WORD depth, const GRECT *r);
 #define ENSMEM  -39L
 #define EIMBA   -40L
 #define EDRIVE  -46L
+#define ENSAME  -48L
 #define ENMFIL  -49L
 #define EGSBF   -67L
 #define EPLFMT  -66L
@@ -1307,6 +1308,20 @@ LONG Psystem(const char FAR *line, void FAR *out, LONG max);
  * says D1: and D2:.  An absent drive costs about a second; this is for a
  * person who asked (the desktop's Install devices).  EINVFN before 0.13. */
 LONG Dprobe(void);
+
+/* gem4xe's own (0x1F7): what `drive` (0 the current, 1 A:) can do with
+ * folders, as bits -- DC_FOLDERS paths carry them; DC_RENDIR Frename
+ * renames one; DC_MOVE Frename moves a file or a folder to another folder
+ * of the drive.  So a program offers what the DOS will do rather than
+ * offering it and failing: SpartaDOS X has folders and does neither,
+ * G4DOS does all three, DOS 2 none.  EINVFN before phase 152.
+ *
+ * Frename itself: the new name in another folder is a move where
+ * DC_MOVE says so and EACCDN where not; on another drive, ENSAME. */
+#define DC_FOLDERS  0x01
+#define DC_RENDIR   0x02
+#define DC_MOVE     0x04
+LONG Dcaps(WORD drive);
 
 /* gem4xe's own (0x1F2): the `len` bytes at `addr` exactly, from the far
  * heap, the program's until it ends -- `addr` back (rounded down to 4), or

@@ -156,6 +156,16 @@ is split that way, and the desktop draws one icon per drive in GEMDOS's
 map, D1: to D8: (`src/desk/desktop.c`, `MAX_DRIVES` 8), so a machine
 with four drives already shows four.
 
+**Phase 152 squeezed a resource rather than moving a floor.**  The
+desktop learnt to rename folders and move by name, 769 bytes of
+`DESKTOP.PRG` and 185 of `GEM.COM`, and the floppy went from exactly 6
+free to 1.  `DESKTOP.RSC` goes on it squeezed now, as a squeezed program
+is, 28 sectors to 11 (`tools/squeeze.py`).  The AES unpacks it as it
+fills the desktop's resource cache (`src/aes/rsrc.c`, `rc_unsqueeze`).
+The floppy has 17 free.  `LANG.RSC` would squeeze from 10 sectors to 5
+but is read by another path, and stays plain.  Every other disk keeps a
+plain `DESKTOP.RSC`, which an RCS can open.
+
 That is the honest shape of the thing rather than a regression to be
 fixed: a 640x240 GUI with a resident AES belongs on a volume measured in
 megabytes, and the machine this project targets (Rapidus, VBXE, U1MB) is

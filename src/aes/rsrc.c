@@ -590,13 +590,47 @@ static uint32_t rc_get(const char *cio)
     return 0;
 }
 
+extern int16_t g4z_unpack(uint32_t src, uint32_t dst, uint32_t count);
+
+/* A SQUEEZED FILE (phase 152): "G4A" 6, its length, one G4Z stream, as a
+ * squeezed program is (src/sys/app.c, format 6; tools/squeeze.py).  The
+ * floppy that boots a DOS 2 carries DESKTOP.RSC so, 11 sectors where it
+ * was 28.  A resource cannot begin so -- its first word is a version, 0
+ * to 3, high byte first -- so the test cannot take a real one.  Unpacked
+ * here, at the top as the copy is, the copy is the file as it was before
+ * it was squeezed, and nothing after this knows.  Only the desktop's
+ * resources come through here.  A squeezed one read straight from the
+ * disk -- a program's, or the desktop's when there is no room for a copy
+ * -- is refused by rs_load on its first three bytes: taken as a resource
+ * it ran off into a BRK.  0 when there is no room. */
+static uint32_t rc_unsqueeze(uint32_t low, uint32_t len)
+{
+    uint32_t n, wide;
+
+    if (len <= 8 || far_read8(low) != 'G' || far_read8(low + 1) != '4'
+        || far_read8(low + 2) != 'A' || far_read8(low + 3) != 6)
+        return low;
+    n = (uint32_t)far_read8(low + 4) | ((uint32_t)far_read8(low + 5) << 8)
+        | ((uint32_t)far_read8(low + 6) << 16)
+        | ((uint32_t)far_read8(low + 7) << 24);
+    wide = far_alloc_top(n);
+    if (wide && g4z_unpack(low + 8, wide, n) != 0) {
+        far_free(wide);
+        wide = 0;
+    }
+    far_free(low);
+    return wide;
+}
+
 /* The file read whole into a copy of its own, the system's -- it outlives
  * the program that asked -- at the top of the heap; or 0 when there is no
  * room or no file. */
 static uint32_t rc_fill(const char *cio)
 {
     uint8_t keep = far_owner, keept = far_tag;
-    uint32_t low = 0, len = 0, top;
+    uint32_t low = 0, len = 0, top, copy;   /* copy: not `low`, whose address
+                                             * is taken, for rc_unsqueeze's
+                                             * two returns (B9, tools/ccbug) */
     uint16_t i;
 
     far_owner = 0;
@@ -609,9 +643,10 @@ static uint32_t rc_fill(const char *cio)
         far_free(low);
         low = top;
     }
+    copy = low ? rc_unsqueeze(low, len) : 0;
     far_owner = keep;
     far_tag = keept;
-    if (!low)
+    if (!copy)
         return 0;
     for (i = 0; i < RC_MAX && rc_addr[i]; i++)
         ;
@@ -620,10 +655,10 @@ static uint32_t rc_fill(const char *cio)
         rc_next = (uint16_t)((rc_next + 1) % RC_MAX);
         far_free(rc_addr[i]);
     }
-    rc_addr[i] = low;
+    rc_addr[i] = copy;
     rc_hash[i] = rc_name(cio);
     rc_fills++;
-    return low;
+    return copy;
 }
 
 /* far_purge_hook's, through the shell's (src/aes/shel.c): a copy that was
@@ -863,6 +898,11 @@ WORD rs_load(const char *name, WORD wants_far)
         return 0;
     if (rs_rd(&raw, sizeof raw, &got) != CIO_OK || got != sizeof raw) {
         rs_close();
+        return 0;
+    }
+    if (((const uint8_t *)&raw)[0] == 'G' && ((const uint8_t *)&raw)[1] == '4'
+        && ((const uint8_t *)&raw)[2] == 'A') {
+        rs_close();                 /* squeezed: only the cache unpacks one */
         return 0;
     }
     hdr = raw;                      /* the file's header, read for its size */

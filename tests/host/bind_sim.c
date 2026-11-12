@@ -335,6 +335,7 @@ int main(void)
     Ssystem(S_GETCOOKIE, 0x5F4D4348L, 0x2000L);
     Psystem(path, 0, 0L);
     Dprobe();
+    Dcaps(1);
     Mclaim(0xE10000L, 0xA000L);
     Cpxload(1, 1);
     Cpxfile(CF_READ, 9, "CONTROL.INF", (void *)0x2000);

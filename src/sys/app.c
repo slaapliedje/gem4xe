@@ -285,7 +285,19 @@ extern int16_t g4z_unpack(uint32_t src, uint32_t dst, uint32_t count);
  * desktop, and on a machine with three banks the top of the heap was the
  * one place the code could go (docs/phase139.md).  The header is
  * unpacked first, into a scratch block, to know where the code is:
- * g4z_unpack writes exactly the count it is given and stops. */
+ * g4z_unpack writes exactly the count it is given and stops.
+ *
+ * ONLY A BIG PROGRAM'S CODE (phase 152).  In place, an image that runs
+ * into the next bank puts its code at that bank's FOOT -- and the foot of
+ * a bank is the one place a big program's code can go.  On a machine
+ * with three banks the calculator's 3.5 KB took bank 7's, and the desktop,
+ * 1.4 KB bigger that phase, could not start under it.  So a program whose
+ * code is under V6_INPLACE -- an accessory, a control panel module -- goes
+ * the way every program went before phase 139: its image at the top of
+ * the heap, its code copied to the lowest page that holds it, which is a
+ * hole low down.  The copy costs a small program a few KB for a moment;
+ * for the desktop it was the difference between fitting and not. */
+#define V6_INPLACE 0x4000UL
 
 static uint32_t app_v6_inner(uint32_t b, uint32_t n, uint32_t *code,
                              uint32_t *size)
@@ -305,7 +317,7 @@ static uint32_t app_v6_inner(uint32_t b, uint32_t n, uint32_t *code,
         near_size = rd16(h + 6);
         *size = rd32(h + 10);
         off = (uint32_t)HDR_V5 + near_size;
-        if (*size <= 0xD500UL && off + *size <= n) {
+        if (*size <= 0xD500UL && *size >= V6_INPLACE && off + *size <= n) {
             wide = far_alloc_inner(n, off, *size, 0xD500UL);
             if (wide)
                 *code = wide + off;

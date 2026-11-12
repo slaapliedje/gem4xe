@@ -99,10 +99,11 @@ CFG_TEXT = ("# gem4xe boot options, for test-m19\r\n"
 NEWDIR = "NEWDIR"                           # the folder the gate makes
 KILLDIR = "SUB"                             # ...and the tree it deletes
 # What Show info renames, and to what.  A FILE: renaming a folder is
-# not the DOS's to do -- XIO 32 answers "file not found" for a
+# not this DOS's to do -- XIO 32 answers "file not found" for a
 # directory on both SpartaDOS 3.2 and SpartaDOS X (tests/emu/
-# m15_gdos.py measures it), so the desktop shows a folder's name and
-# does not let it be edited.
+# m15_gdos.py measures it), so the desktop, asking GEMDOS's Dcaps, shows
+# a folder's name and does not let it be edited.  On a G4DOS disk it
+# does (test-m60).
 RENAME_FROM, RENAME_TO = "OUT.TXT", "OUT.DAT"
 # ...and the second thing the rubber band catches, deleted with the
 # folder to prove the selection really is more than one item

@@ -158,6 +158,7 @@
 #define GD_ENSMEM   -39L        /* no memory */
 #define GD_EIMBA    -40L        /* not a block Malloc gave out */
 #define GD_EDRIVE   -46L        /* no such drive */
+#define GD_ENSAME   -48L        /* not the same drive: Frename's two names */
 #define GD_ENMFIL   -49L        /* no more files */
 #define GD_ERANGE   -64L        /* a seek past the end of the file */
 #define GD_EPLFMT   -66L        /* not a program Pexec can load */
@@ -273,6 +274,13 @@ extern uint16_t gd_termres;
  * modules' folder read, written or renamed, a name found -- named as the
  * boot found the modules (src/aes/shel.c sh_cpxfile).  In src/app/gem.h. */
 #define GD_CPXFILE   0x1F6
+/* ...and what a drive can do with folders (gemdos.c gd_dcaps): have them,
+ * rename one, move a file or a folder to another with Frename.  Dcaps in
+ * src/app/gem.h. */
+#define GD_DCAPS     0x1F7
+#define GD_DC_FOLDERS 0x01
+#define GD_DC_RENDIR  0x02
+#define GD_DC_MOVE    0x04
 
 /* A loaded program run as Pexec runs a child, kept when `keep` and it
  * ends with Ptermres (*kept says so), freed by its owner otherwise.  The

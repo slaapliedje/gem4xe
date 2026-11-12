@@ -71,6 +71,14 @@ uint8_t sdc_xio(uint8_t cmd, const char *name)
     return 0x92;
 }
 
+/* Never called: gd_rename asks sdc_claims first. */
+uint8_t sdc_move(const char *from, const char *to)
+{
+    (void)from;
+    (void)to;
+    return 0x92;
+}
+
 int32_t sdc_command(uint32_t line, uint32_t out, uint32_t max)
 {
     (void)line;
