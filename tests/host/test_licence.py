@@ -149,7 +149,8 @@ class KitLicence(unittest.TestCase):
     def test_the_examples_are_0bsd(self):
         examples = [src for dst, src in self.manifest()
                     if dst.startswith("example/")]
-        self.assertEqual(len(examples), 3, "the kit's examples were not found")
+        # three sources and example/cpx.cpxh, the module's header (phase 153)
+        self.assertEqual(len(examples), 4, "the kit's examples were not found")
         for src in examples:
             with open(os.path.join(ROOT, src), encoding="latin-1") as f:
                 self.assertIn("SPDX-License-Identifier: 0BSD", f.readline(),

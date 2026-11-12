@@ -298,6 +298,22 @@ class TestBuildsFromACopy(unittest.TestCase):
         out = os.path.join(self.kit, "cpx.g4a")
         self.assertTrue(os.path.isfile(out), "example/cpx.c made no .g4a")
         self.assertEqual(g4a_header(out)["near_base"], 0x1000)
+        # ...AND THE MODULE, which since phase 133 is its header and then
+        # the .g4a: the AES refuses a file with no header in front, and
+        # the kit went on making a bare .g4a and saying "install as .CPX"
+        # until 0.15 was being packed.  The header is example/cpx.cpxh's.
+        cpx = os.path.join(self.kit, "cpx.cpx")
+        self.assertTrue(os.path.isfile(cpx), "make KIND=cpx made no .cpx")
+        with open(cpx, "rb") as f:
+            whole = f.read()
+        with open(out, "rb") as f:
+            body = f.read()
+        self.assertEqual(struct.unpack_from("<H", whole, 0)[0], 0x6811,
+                         "the .cpx does not begin with CPX_MAGIC")
+        self.assertEqual(whole[512:], body, "the .g4a does not follow the header")
+        self.assertEqual(struct.unpack_from("<H", whole, 2)[0], 0x0002,
+                         "the flags are not cpx.cpxh's bootinit")
+        self.assertEqual(whole[122:122 + 8], b"Example\0", "the title is not cpx.cpxh's")
 
     def test_the_library_the_readme_promises_actually_links(self):
         """gemtime.c and gemcompat.c SHIPPED IN THE KIT AND WERE NEVER

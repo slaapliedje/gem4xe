@@ -682,6 +682,13 @@ typedef struct {
  * that a module is never written to while it is loaded -- see CPX_Save. */
 #define CPX_ENTRY  SAVEDS
 
+/* ...declared, so that a module defining it another way does not compile.
+ * The kit's own example kept the shape it had before phase 133 -- a second
+ * argument, the header, written through -- and with no prototype here it
+ * compiled, linked against lib/cpxmain.c's one-argument call, and wrote
+ * through whatever lay where the second argument would have been. */
+CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb);
+
 /* ---- what the PANEL uses ----------------------------------------------
  * A control panel asks the AES what is loaded and reads the table.  It
  * is a flat array of slots, each a 32-bit CPXINFO address followed by

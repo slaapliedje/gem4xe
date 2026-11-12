@@ -13,7 +13,8 @@
 #     make KIND=cpx APP=example/cpx.c     a panel module   install as .CPX
 #
 # All three come out as a .g4a -- that is the CONTAINER, and it is the
-# same format for all of them.  The EXTENSION you install it under is the
+# same format for all of them -- and a module as a .cpx besides: its
+# header from example/cpx.cpxh in front of the .g4a.  The EXTENSION you install it under is the
 # ROLE, and it is what the system reads: the desktop launches a .PRG, the
 # AES loads a .ACC and a .CPX from its own directory at start-up.  See
 # README.md, "What kind of thing are you building".
@@ -116,7 +117,19 @@ OBJS = $(B)/crt_gemapp.o $(B)/gemabi.o $(B)/gemlib.o $(B)/gemstat.o \
 LDOPT = lib/gemapp.scm $(OBJS) $(LDLIB) --rtattr exit=simplified --override _Mul32 \
         --cstartup gemapp --stack-size $(STACK)
 
+# A MODULE IS ITS HEADER AND THEN ITS .g4a (include/cpx.h): the panel
+# lists it from the 512 bytes in front without running it.  The header is
+# the text file beside the source -- example/cpx.cpxh for example/cpx.c --
+# and tools/mkcpx.py writes it in front.  CPXH= names another.
+ifeq ($(KIND),cpx)
+CPXH ?= $(basename $(APP)).cpxh
+all: $(NAME).cpx
+else
 all: $(NAME).g4a
+endif
+
+$(NAME).cpx: $(NAME).g4a $(CPXH) tools/mkcpx.py
+	python3 tools/mkcpx.py $(CPXH) $(NAME).g4a $@
 
 $(B):
 	@mkdir -p $(B)
@@ -232,6 +245,6 @@ $(NAME).g4a: $(B)/$(NAME).elf $(B)/$(NAME)-near.elf $(B)/$(NAME)-far.elf \
 	    $(if $(filter 0,$(SQUEEZE)),--no-squeeze) $(G4A_STACK)
 
 clean:
-	rm -rf build $(NAME).g4a
+	rm -rf build $(NAME).g4a $(NAME).cpx
 
 .PHONY: all clean

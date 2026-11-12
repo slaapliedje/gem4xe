@@ -71,6 +71,7 @@ MANIFEST = [
     # SpartaDOS fixture nobody outside this tree has; install.py works on
     # the .atr the release already ships.
     ("tools/install.py",    "tools/sdk/install.py"),
+    ("tools/mkcpx.py",      "tools/mkcpx.py"),   # a module's header, in front
     ("tools/atr.py",        "tools/atr.py"),     # install.py's file systems
     # The compiler's own defects, which are ordinary C shapes and will
     # bite a third party exactly as they bit this tree.  Four of them
@@ -92,6 +93,7 @@ MANIFEST = [
     ("example/hello.c",     "tools/sdk/hello.c"),
     ("example/acc.c",       "tools/sdk/acc.c"),       # a desk accessory
     ("example/cpx.c",       "tools/sdk/cpx.c"),       # a panel module
+    ("example/cpx.cpxh",    "tools/sdk/cpx.cpxh"),    # ...and its header
 ]
 
 

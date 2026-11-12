@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: 0BSD -- an example: copy it, under any terms.
+# example/cpx.c's header: tools/mkcpx.py puts it in front of the module,
+# and the control panel lists the module from it without running it.
+# Copy this beside your own module's source and edit it; `make KIND=cpx
+# APP=yours.c` reads yours.cpxh.
+#
+#   id       four characters, yours to choose
+#   version  shown as XControl shows it
+#   flags    any of setonly, bootinit, resident; or none
+#   title    what the panel lists, 17 characters at most
+#   text     under the icon, 13 at most
+#   icon     24 rows of 32: '#' set, '.' clear
+id       MINE
+version  1.00
+flags    bootinit           # opened once at boot, to apply its settings
+title    Example
+text     Example
+icon
+................................
+..############################..
+..#..........................#..
+..#..######..##....##........#..
+..#..##.......##..##.........#..
+..#..##........####..........#..
+..#..#####......##...........#..
+..#..##........####..........#..
+..#..##.......##..##.........#..
+..#..######..##....##........#..
+..#..........................#..
+..#..........................#..
+..#....................####..#..
+..#...................#....#.#..
+..#...................#.##.#.#..
+..#...................#....#.#..
+..#....................####..#..
+..#..........................#..
+..#..........................#..
+..############################..
+................................
+................................
+................................
+................................

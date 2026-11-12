@@ -17,12 +17,18 @@
  */
 /* cpx.c -- a control panel extension, whole and commented.
  *
- *     make KIND=cpx APP=example/cpx.c        ->  cpx.g4a
+ *     make KIND=cpx APP=example/cpx.c        ->  cpx.cpx
  *
- * ...which you install as MINE.CPX beside GEM.COM, and the control panel
- * grows a page.  This is XCONTROL's shape: the HOST owns the window and
- * the event loop, the MODULE owns the dialog, and they meet at a vtable
- * the module publishes when it loads (include/cpx.h).
+ * ...which you install as MINE.CPX in \GEM\, and the control panel lists
+ * one more module.  This is XCONTROL's shape: the HOST owns the window
+ * and the event loop, the MODULE owns the dialog, and they meet at a
+ * vtable the module publishes when it loads (include/cpx.h).
+ *
+ * THE HEADER IS NOT IN HERE.  Your title, the text under your icon, the
+ * icon, your id, version and flags are in example/cpx.cpxh, a text file
+ * beside this one; tools/mkcpx.py puts them in front of the module, as
+ * the 512 bytes the panel lists you from without running you.  Copy
+ * cpx.cpxh beside your own source and edit it.
  *
  * A CPX IS A PROGRAM TOO, but you do not write its main() -- lib/cpxmain.c
  * does.  It is linked in for you: it reads the slot address the AES put
@@ -50,8 +56,8 @@
  * YOUR SIXTY-FOUR BYTES.  The AES keeps a buffer per module and hands
  * you its address in xcpb->buffer.  Write what you like into it and call
  * CPX_Save, and the AES writes it to <YOURNAME>.CFG beside the module;
- * next boot it is laid back over whatever you wrote at cpx_init time.
- * Set CPX_BOOTINIT in your flags and the panel will open you once at
+ * next boot it is laid over the buffer cpx.cpxh started you with.  Put
+ * `bootinit` in cpx.cpxh's flags and the panel will open you once at
  * start-up, with xcpb->booting true, so you can apply it before anybody
  * sees the desk -- and you should draw nothing on that pass.
  */
@@ -61,7 +67,8 @@
 
 static WORD my_opens;          /* how many times this module was opened */
 static OBJECT my_tree[3];
-static const char my_msg[] = " An extension, opened by the panel ";
+static const char my_msg[] = " Opened by the panel ";   /* the work
+                                                         * area is 32 cells */
 static const char my_ok[] = "  OK  ";
 
 /* ---- the dialog ------------------------------------------------------
@@ -116,24 +123,47 @@ static SAVEDS void my_cpx_call(uint32_t pbaddr)
 {
     CPXPB FAR *pb = (CPXPB FAR *)pbaddr;
     XCPB FAR *x = (XCPB FAR *)pb->xcpb;
-    uint8_t FAR *buf = (uint8_t FAR *)x->buffer;
+    uint8_t FAR *buf;
+    WORD msg[8], ret;
 
+    pb->ret = 0;                /* a FORM CPX: finished when this returns */
+    /* THE PANEL'S BLOCK ARRIVES HERE, not at cpx_init: at boot the AES
+     * loads a module before there is a panel, and cpx_init's is 0 then.
+     * Whatever was saved last time is in the buffer IF the AES found the
+     * file -- check your own mark before believing it. */
+    if (!x || !x->buffer)
+        return;
+    buf = (uint8_t FAR *)x->buffer;
+    if (buf[0] == MY_MARK && !my_opens)
+        my_opens = buf[1];
     my_opens++;
 
-    /* THE BOOT PASS.  The panel opens a CPX_BOOTINIT module once at
+    /* THE BOOT PASS.  The panel opens a `bootinit` module once at
      * start-up so it can put its settings back.  Nobody is looking at
      * the screen yet, so apply and return -- do not draw. */
-    if (x->booting) {
-        pb->ret = 0;
+    if (x->booting)
         return;
-    }
 
-    /* pb->rect is the panel's work area, in screen coordinates: draw
-     * inside it and nowhere else. */
+    /* IN THE PANEL'S WINDOW, through its Xform_do, as XControl's: place
+     * the tree at the work area the panel cleared, draw it, and let the
+     * panel run it -- it answers redraws and moves the tree's root with
+     * the window meanwhile.  A panel without one has nowhere to put it. */
+    if (!x->Xform_do)
+        return;
     my_build(&pb->rect);
     objc_draw(my_tree, ROOT, MAX_DEPTH,
               pb->rect.g_x, pb->rect.g_y, pb->rect.g_w, pb->rect.g_h);
-    form_do(my_tree, 0);
+    for (;;) {
+        ret = cpx_xform_do(x, my_tree, 0, msg);
+        /* -1 is a message: WM_CLOSED (the closer, which keeps what was
+         * set, as OK does) or AC_CLOSE (the window is gone).  Anything
+         * else -1 brings -- CT_KEY, a key with no character -- is not
+         * this form's, and it goes on. */
+        if (ret == -1 && (msg[0] == WM_CLOSED || msg[0] == AC_CLOSE))
+            break;
+        if (ret != -1)
+            break;              /* the one exit object, OK */
+    }
 
     /* Keep the count across a reboot.  The buffer is the AES's; CPX_Save
      * writes it to a file named after this module, so two modules can
@@ -145,8 +175,6 @@ static SAVEDS void my_cpx_call(uint32_t pbaddr)
         /* x->ok is 1 if it went.  A module that cares says so with
          * XGen_Alert(XAL_FILE_ERR) rather than a sentence of its own. */
     }
-
-    pb->ret = 0;                /* a FORM CPX: I am finished */
 }
 
 static CPXINFO my_info = {
@@ -159,38 +187,20 @@ static CPXINFO my_info = {
 
 /* ---- what the AES calls when the module loads ------------------------
  *
- * Fill in the header -- your title, your id, your flags -- and return
- * the vtable.  Return 0 to decline, and the AES will count you as
- * refused rather than load you.
+ * Return the vtable, or 0 to decline, and the AES will count you as
+ * refused rather than load you.  Your header is not your business here:
+ * it is cpx.cpxh's, in front of the module.
+ *
+ * `pb` IS THE PANEL'S BLOCK when the panel loads you to open you, and 0
+ * when the AES loads you at boot -- so a module that reads it here checks
+ * it first.  This one takes the block at cpx_call instead.
  *
  * THIS RUNS THROUGH YOUR OWN crt, so your initialised data really is
  * installed by the time you get here.  (That is worth knowing because
  * the failure is silent: a module entered around its crt has garbage
  * globals and nothing says so.) */
-CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb, CPXHEAD FAR *hdr)
+CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
 {
-    static const char title[] = "Example";
-    const uint8_t FAR *buf = (const uint8_t FAR *)pb->buffer;
-    WORD i;
-
-    hdr->magic = CPX_MAGIC;
-    hdr->flags = CPX_BOOTINIT;      /* open me once at boot */
-    hdr->cpx_id = 0x4D494E45L;      /* 'MINE' -- yours to choose */
-    hdr->cpx_version = 1;
-
-    /* The title the panel lists, and the shorter one under an icon. */
-    for (i = 0; title[i] && i < 17; i++)
-        hdr->title_txt[i] = title[i];
-    hdr->title_txt[i] = 0;
-    for (i = 0; title[i] && i < 13; i++)
-        hdr->i_text[i] = title[i];
-    hdr->i_text[i] = 0;
-
-    /* Whatever was saved last time is already in the buffer IF the AES
-     * found the file -- check your own mark before believing it, because
-     * an absent file leaves the bytes as you wrote them here. */
-    if (buf[0] == MY_MARK)
-        my_opens = buf[1];
-
+    (void)pb;
     return &my_info;
 }

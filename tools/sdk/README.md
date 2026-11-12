@@ -42,7 +42,10 @@ All three come out as a `.g4a`.  **That is the container and it is the
 same for all of them; the extension you install it under is the role**,
 and the role is what the system reads.  The desktop launches a `.PRG`
 (and `.APP`, `.TOS`, `.TTP`, `.G4A`); the AES loads `*.ACC` and `*.CPX`
-out of its own directory at start-up and never out of `\APPS\`.
+out of its own directory at start-up and never out of `\APPS\`.  A panel
+extension comes out as a `.cpx` as well, and that is the one to install:
+its header, from the `.cpxh` beside the source, in front of the `.g4a`
+(below).
 
 There is a fourth thing you can build with `KIND=prg`: a program that
 ends with `Ptermres` and stays -- see "Starting at boot" below.
@@ -87,12 +90,14 @@ ends with `Ptermres` and stays -- see "Starting at boot" below.
     include/sys/stat.h  no <sys/> in Calypsi's own libc
     tools/mkg4a.py      ELF x3 -> .g4a, deriving the loader's fixups
     tools/install.py    put what you built on a gem4xe disk image
+    tools/mkcpx.py      a panel extension's header, in front of its .g4a
     tools/atr.py        the disk file systems install.py uses
     doc/ccbug.md        the compiler's defects, and the rules the
                         sources follow to avoid them.  READ THIS
     example/hello.c     a whole program, commented
     example/acc.c       a whole desk accessory, commented
     example/cpx.c       a whole control panel extension, commented
+    example/cpx.cpxh    ...and its header: title, icon, id, flags
 
 The library is source, not an object, so that it is built by *your*
 compiler with *your* flags -- and so that you can read what a call
@@ -282,10 +287,26 @@ This is XCONTROL's shape: the **host** owns the window and the event
 loop, the **module** owns the dialog, and they meet at a vtable the
 module publishes when it loads.
 
+**Your header is a text file, not code.**  The panel lists a module from
+the 512 bytes in front of it without running it, as XControl does: your
+title, the text under your icon, the icon itself, your id, version and
+flags.  They are written in `example/cpx.cpxh` -- copy it beside your
+source as `yours.cpxh` -- and `tools/mkcpx.py` puts them in front of the
+module, which `make KIND=cpx` does for you: `yours.cpx` is what goes in
+`\GEM\`.  A module from 0.13 or before filled its header in at
+`cpx_init` and has to be built again with one.
+
 **You do not write `main()`.**  `lib/cpxmain.c` is linked in for you: it
 reads the slot address the AES left in the command tail, calls your
-`cpx_init()`, publishes what you return, and ends with `Ptermres` so the
-module stays.  You write `cpx_init()` and the entries it hands back.
+`cpx_init(XCPB FAR *pb)`, publishes what you return, and ends with
+`Ptermres` so the module stays.  You write `cpx_init()` and the entries
+it hands back.  `pb` is 0 when the AES loads a module at boot, before
+there is a panel; the panel's block reaches `cpx_call` either way.
+
+**A form runs in the panel's window**, through the panel's `Xform_do`
+(`cpx_xform_do` in `cpx.h`): place your tree at the rectangle `cpx_call`
+is given, draw it, and let the panel run it -- it answers redraws and
+moves the tree with the window.  `example/cpx.c` does exactly that.
 
 **Every entry takes one `uint32_t`, and the compiler decided that.**  A
 cross-module entry must be `SAVEDS` so it establishes its own direct page
@@ -304,8 +325,8 @@ you set `pb->quit`).
 **Your sixty-four bytes.**  The AES keeps a buffer per module at
 `xcpb->buffer`.  Write it and call `CPX_Save`, and it goes to
 `<YOURNAME>.CFG` beside the module -- you never learn your own name,
-which is what stops two modules arguing over one file.  Set
-`CPX_BOOTINIT` in your flags and the panel opens you once at start-up
+which is what stops two modules arguing over one file.  Put `bootinit`
+in your `.cpxh`'s flags and the panel opens you once at start-up
 with `xcpb->booting` true, so you can put settings back before anybody
 sees the desk; draw nothing on that pass.
 
