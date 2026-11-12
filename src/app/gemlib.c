@@ -1685,6 +1685,33 @@ LONG Dcaps(WORD drive)
     return dos(0x1F7);
 }
 
+LONG Dgeom(WORD drive, void FAR *buf)
+{
+    dw(6, drive);
+    dl(8, (LONG)(uint32_t)buf);
+    return dos(0x1F8);
+}
+
+LONG Dformat(WORD drive, WORD density, void FAR *bad)
+{
+    dw(6, drive);
+    dw(8, density);
+    dl(10, (LONG)(uint32_t)bad);
+    return dos(0x1F9);
+}
+
+LONG Drwsec(WORD drive, WORD rw, UWORD sector, UWORD count, UWORD secsize,
+            void FAR *buf)
+{
+    dw(6, drive);
+    dw(8, rw);
+    dw(10, (WORD)sector);
+    dw(12, (WORD)count);
+    dw(14, (WORD)secsize);
+    dl(16, (LONG)(uint32_t)buf);
+    return dos(0x1FA);
+}
+
 LONG Mclaim(LONG addr, LONG len)
 {
     dl(6, addr);

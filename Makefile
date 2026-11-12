@@ -2047,7 +2047,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2433,6 +2433,12 @@ build/kitcpx/cpx.cpx: build/gem4xe-sdk.tar.gz
 test-m61: build/gem-sys.atr build/gem.sym build/kitcpx/cpx.cpx build/cpanelacc.g4a \
           build/cpanel.rsc build/cpanelacc.sym
 	python3 tests/emu/m61_kitcpx.py
+
+# The drive itself (phase 155, docs/disk-plan.md step 1): Dgeom, Dformat
+# and Drwsec through the runner on G4DOS, with the emulator's drive made an
+# 810, a 1050 and a generic one in turn; a file left open across a format.
+test-m62: build/m15g-boot.atr
+	python3 tests/emu/m62_drive.py
 
 test-m58: build/gem-shots.atr build/cpanelacc.sym
 	python3 tests/emu/m58_cpxkit.py
@@ -2832,4 +2838,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

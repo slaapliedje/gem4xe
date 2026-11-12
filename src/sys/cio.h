@@ -140,6 +140,26 @@ uint8_t dsk_percom(uint8_t unit, void *buf);   /* SIO_PERCOM_LEN bytes */
 /* The drive asked for its status, the answer thrown away: SIO_OK or the
  * error, 138 when nobody answered.  One round of the OS's retries. */
 uint8_t dsk_status(uint8_t unit);
+/* ...and with its four bytes kept (phase 155): byte 0 the drive's own
+ * status -- $08 write-protected, $20 double density, $80 a 1050's enhanced
+ * density -- 1 its controller's, inverted, 2 how many seconds a format
+ * may take (the DTIMLO DOS 2 gives one), 3 unused.  `buf` in bank $00. */
+uint8_t dsk_status4(uint8_t unit, void *buf);
+/* The geometry the next format makes, told to a drive that takes one
+ * ('O', the PERCOM block written): SIO_PERCOM_LEN bytes in bank $00.  An
+ * 810 or a 1050 answers 139, refusing it. */
+uint8_t dsk_setpercom(uint8_t unit, void *buf);
+/* The disk formatted: SIO_FORMAT at the drive's geometry, SIO_FORMAT_ED a
+ * 1050's enhanced density (1040 sectors of 128 bytes; an 810 refuses it).
+ * What comes back, `len` bytes into `buf` in bank $00, is the sectors the
+ * drive found bad, two bytes each, low first, ending at $FFFF: len is the
+ * sector size the format makes, 128 for SIO_FORMAT_ED.  `secs` is how long
+ * it may take, from the drive's status (dsk_status4, byte 2).  144 when it
+ * failed -- a write-protected disk, or one it could not format. */
+#define SIO_FORMAT    0x21      /* '!' */
+#define SIO_FORMAT_ED 0x22      /* '"' */
+uint8_t dsk_format(uint8_t unit, uint8_t cmd, void *buf, uint16_t len,
+                   uint8_t secs);
 /* The time from an APETime clock on the bus, which is what a FujiNet has:
  * day, month, year in two digits, hour, minute, second, in binary.  `buf`
  * in bank $00, SIO_GETTIME_LEN bytes.  SIO_OK, or 138 when nobody answered,

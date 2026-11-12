@@ -336,6 +336,9 @@ int main(void)
     Psystem(path, 0, 0L);
     Dprobe();
     Dcaps(1);
+    Dgeom(2, (void FAR *)0x2000);
+    Dformat(2, DF_DD, (void FAR *)0x2000);
+    Drwsec(2, 0, 1, 3, 256, (void FAR *)0x2000);
     Mclaim(0xE10000L, 0xA000L);
     Cpxload(1, 1);
     Cpxfile(CF_READ, 9, "CONTROL.INF", (void *)0x2000);

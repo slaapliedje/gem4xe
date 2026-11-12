@@ -1199,6 +1199,16 @@ WORD objc_draw_grect(OBJECT *tree, WORD start, WORD depth, const GRECT *r);
  * each one can mean on this machine is written at its function in
  * src/sys/gemdos.c. */
 #define E_OK      0L
+/* The BIOS's, which Dformat and Drwsec answer with as TOS's floppy calls
+ * do (phase 155). */
+#define EDRVNR  -2L
+#define EUNCMD  -3L
+#define EBADRQ  -5L
+#define ESECNF  -8L
+#define EWRITF  -10L
+#define EREADF  -11L
+#define EWRPRO  -13L
+#define EUNDEV  -15L
 #define EINVFN  -32L
 #define EFILNF  -33L
 #define EPTHNF  -34L
@@ -1322,6 +1332,56 @@ LONG Dprobe(void);
 #define DC_RENDIR   0x02
 #define DC_MOVE     0x04
 LONG Dcaps(WORD drive);
+
+/* gem4xe's own (0x1F8 to 0x1FA, phase 155): the drive itself, for a
+ * program that formats or copies whole disks, as DISKUTIL does.  They go
+ * to the drive through SIO, past whatever DOS runs, and `drive` is 1 for
+ * D1: to 8 -- never 0 for the current one: these erase disks.
+ *
+ * Dgeom: what the drive is, DG_LEN bytes at `buf`, words low byte first:
+ *    0  the sector size of the disk in it now: 128, 256 or 512
+ *    2  how many sectors it has
+ *    4  DG_FLOPPY  a disk drive, which Dformat will format (a hard disk's
+ *                  partition, a FujiNet's big image, is not)
+ *       DG_PERCOM  it takes a geometry, so every density
+ *       DG_WPROT   the disk in it is write-protected
+ *    6  the densities Dformat may be asked for, bit 1 << DF_SD and so on
+ *    8  the drive's PERCOM block as it sent it, 12 bytes; 0s from an 810
+ *       or a 1050, which have none
+ * 0, or EDRIVE for no such drive, EDRVNR when nothing answered.
+ *
+ * Dformat: the disk in `drive` formatted at DF_ASIS (the density it has
+ * now), DF_SD (720 sectors of 128 bytes), DF_ED (1040 of 128, a 1050's
+ * enhanced), DF_DD (720 of 256) or DF_DSDD (1440 of 256, two sides).  The
+ * sectors the drive found bad go to `bad` (DF_BADLEN bytes, or 0): words,
+ * low byte first, ending at $FFFF.  How many there were, or EUNDEV (not a
+ * disk drive), EWRPRO, EUNCMD (a density the drive cannot do: an 810
+ * asked for enhanced, double density on a drive that takes no geometry),
+ * EDRVNR or EWRITF.  It lays no file system; that is the program's.
+ *
+ * Drwsec: `count` sectors from `sector` (the first is 1) read into `buf`
+ * (rw 0) or written from it (rw 1).  `secsize` is Dgeom's, and each sector
+ * takes that much of the buffer: on a 256-byte disk sectors 1 to 3 are 128
+ * bytes, and fill the first half of their place.  0, or the error at the
+ * first sector that failed: ESECNF (past the end of the disk), EREADF,
+ * EWRITF, EWRPRO, EDRVNR.
+ *
+ * After a Dformat or a write, G4DOS's folders forget what they knew of the
+ * disk.  EINVFN on 0.15 and earlier. */
+#define DG_LEN      20
+#define DG_FLOPPY   0x0001
+#define DG_PERCOM   0x0002
+#define DG_WPROT    0x0004
+#define DF_ASIS     0
+#define DF_SD       1
+#define DF_ED       2
+#define DF_DD       3
+#define DF_DSDD     4
+#define DF_BADLEN   256
+LONG Dgeom(WORD drive, void FAR *buf);
+LONG Dformat(WORD drive, WORD density, void FAR *bad);
+LONG Drwsec(WORD drive, WORD rw, UWORD sector, UWORD count, UWORD secsize,
+            void FAR *buf);
 
 /* gem4xe's own (0x1F2): the `len` bytes at `addr` exactly, from the far
  * heap, the program's until it ends -- `addr` back (rounded down to 4), or

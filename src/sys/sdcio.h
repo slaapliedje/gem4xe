@@ -69,4 +69,9 @@ uint8_t  sdc_folder(const char *bare, char *cio);
  * off. */
 int32_t  sdc_command(uint32_t line, uint32_t out, uint32_t max);
 
+/* The disk in `unit` is not the one the engine knew (src/sys/gemdos.c,
+ * Dformat and Drwsec, phase 155): its sectors forgotten, written or not,
+ * and its sector size asked again -- a format may have changed it. */
+void     sdc_forget(uint8_t unit);
+
 #endif

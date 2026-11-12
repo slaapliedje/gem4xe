@@ -148,7 +148,16 @@
 
 /* Errors: the ST's. */
 #define GD_ERROR    -1L         /* the generic one: Tsetdate's refusal */
+/* The BIOS's, which Dformat and Drwsec answer with as TOS's floppy calls
+ * do (phase 155). */
+#define GD_EDRVNR   -2L         /* the drive did not answer */
+#define GD_EUNCMD   -3L         /* it refused the command: an 810 and ED */
+#define GD_EBADRQ   -5L         /* a request no drive could do */
+#define GD_ESECNF   -8L         /* no such sector: past the disk's end */
+#define GD_EWRITF   -10L        /* a write failed */
 #define GD_EREADF   -11L        /* a read failed partway: Pexec's load */
+#define GD_EWRPRO   -13L        /* the disk is write-protected */
+#define GD_EUNDEV   -15L        /* not a disk drive: a partition, a RAM disk */
 #define GD_EINVFN   -32L        /* no such function here */
 #define GD_EFILNF   -33L        /* file not found */
 #define GD_EPTHNF   -34L        /* path not found */
@@ -281,6 +290,24 @@ extern uint16_t gd_termres;
 #define GD_DC_FOLDERS 0x01
 #define GD_DC_RENDIR  0x02
 #define GD_DC_MOVE    0x04
+/* ...and the drive itself, for a program that formats or copies whole
+ * disks (phase 155, docs/disk-plan.md): what it is (Dgeom), the disk
+ * formatted (Dformat), whole sectors read and written (Drwsec).  Through
+ * SIO, past whatever DOS runs.  Dgeom, Dformat and Drwsec in
+ * src/app/gem.h, which says what each byte is. */
+#define GD_DGEOM     0x1F8
+#define GD_DFORMAT   0x1F9
+#define GD_DRWSEC    0x1FA
+#define GD_DG_LEN    20             /* what Dgeom writes */
+#define GD_DG_FLOPPY 0x0001         /* a disk drive Dformat will format */
+#define GD_DG_PERCOM 0x0002         /* it takes a geometry: every density */
+#define GD_DG_WPROT  0x0004         /* the disk in it is write-protected */
+#define GD_DF_ASIS   0              /* Dformat's densities: as it is now */
+#define GD_DF_SD     1              /*  720 sectors of 128 bytes */
+#define GD_DF_ED     2              /* 1040 of 128, a 1050's enhanced */
+#define GD_DF_DD     3              /*  720 of 256 */
+#define GD_DF_DSDD   4              /* 1440 of 256, both sides */
+#define GD_DF_BADLEN 256            /* the room Dformat's bad list needs */
 
 /* A loaded program run as Pexec runs a child, kept when `keep` and it
  * ends with Ptermres (*kept says so), freed by its owner otherwise.  The

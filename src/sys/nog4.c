@@ -56,6 +56,11 @@ uint8_t sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len,
     return 0x92;
 }
 
+void sdc_forget(uint8_t unit)
+{
+    (void)unit;
+}
+
 /* No engine, no folder to name: the AES leaves the name bare (phase 141). */
 uint8_t sdc_folder(const char *bare, char *cio)
 {

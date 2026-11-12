@@ -101,6 +101,14 @@ static uint16_t g4_call(uint8_t mode)
     return p;
 }
 
+void sdc_forget(uint8_t unit)
+{
+    if (!sc || unit < 1 || unit > SD_UNITS)
+        return;
+    sd_forget(FS, unit);
+    sc->devsec[unit - 1] = 0;
+}
+
 /* A failed SIO's status as the engine's error.  A drive that did not
  * answer is asked its geometry again next time: it may be another drive. */
 static int16_t sdc_sio_err(uint8_t unit, uint8_t st, uint8_t write)

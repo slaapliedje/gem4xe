@@ -1456,6 +1456,242 @@ static LONG gd_dcaps(WORD drv)
     return c;
 }
 
+/* ---- the drive itself (phase 155) ---------------------------------------
+ * Dgeom, Dformat and Drwsec: what a program that formats or copies whole
+ * disks needs (docs/disk-plan.md), and nothing a DOS does -- they go to
+ * the drive through SIO, past whatever DOS is running.  A drive is D1: to
+ * D8:, never 0 for the current one, as everywhere else: these erase disks.
+ *
+ * A density's geometry, as the first eight bytes of the PERCOM block a
+ * drive is told before it formats: tracks, step rate, sectors a track
+ * (high, low), sides less one, $04 for MFM, bytes a sector (high, low).
+ * GD_DF_SD to GD_DF_DSDD, eight bytes each. */
+static const uint8_t FAR df_geom[32] = {
+    40, 1, 0, 18, 0, 0x00, 0, 128,      /*  720 x 128 */
+    40, 1, 0, 26, 0, 0x04, 0, 128,      /* 1040 x 128 */
+    40, 1, 0, 18, 0, 0x04, 1, 0,        /*  720 x 256 */
+    40, 1, 0, 18, 1, 0x04, 1, 0,        /* 1440 x 256 */
+};
+
+/* What the drive in `drv` is, as Dgeom's GD_DG_LEN bytes into `g`, with
+ * its status into `st` (dsk_status4): the GD_DG_ flags, or the error.
+ *
+ * A FLOPPY is a drive with a floppy's shape.  One that tells its geometry
+ * is a floppy when that is 35 to 80 tracks of at most 26 sectors of at
+ * most 256 bytes, on one side or two; a hard disk's partition reached
+ * through a PBI device, or a FujiNet's big image, says one track of
+ * thousands.  One that tells none is an 810 or a 1050, and its status
+ * says which density the disk in it is. */
+static LONG dg_probe(WORD drv, uint8_t *st, uint8_t *g)
+{
+    uint8_t pc[SIO_PERCOM_LEN];
+    uint16_t secsize, flags = 0, formats = 0;
+    uint32_t sectors;
+    WORD r, tracks, spt, sides, hi, lo;
+
+    if (drv < 1 || drv > GD_DRIVES)
+        return GD_EDRIVE;
+    r = dsk_status4((uint8_t)drv, st);
+    if (r != SIO_OK)
+        return GD_EDRVNR;
+    memset(g, 0, GD_DG_LEN);
+    if (st[0] & 0x08)
+        flags |= GD_DG_WPROT;
+    r = dsk_percom((uint8_t)drv, pc);
+    if (r == SIO_OK) {
+        tracks = pc[0];
+        hi = pc[2];
+        lo = pc[3];
+        spt = (WORD)((hi << 8) | lo);
+        sides = pc[4];
+        sides++;
+        hi = pc[6];
+        lo = pc[7];
+        secsize = (uint16_t)((hi << 8) | lo);
+        sectors = (uint32_t)(uint16_t)tracks * (uint16_t)spt;
+        sectors *= (uint16_t)sides;
+        flags |= GD_DG_PERCOM;
+        if (tracks >= 35 && tracks <= 80 && spt >= 1 && spt <= 26
+            && secsize <= 256 && sides <= 2) {
+            flags |= GD_DG_FLOPPY;
+            formats = (1 << GD_DF_SD) | (1 << GD_DF_ED) | (1 << GD_DF_DD)
+                      | (1 << GD_DF_DSDD);
+        }
+        memcpy(g + 8, pc, SIO_PERCOM_LEN);
+    } else {
+        secsize = 128;
+        if (st[0] & 0x20)
+            secsize = 256;
+        sectors = 720;
+        if (st[0] & 0x80)
+            sectors = 1040;
+        flags |= GD_DG_FLOPPY;
+        formats = (1 << GD_DF_SD) | (1 << GD_DF_ED);
+    }
+    if (sectors > 0xFFFF)
+        sectors = 0xFFFF;
+    g[0] = (uint8_t)secsize;
+    g[1] = (uint8_t)(secsize >> 8);
+    g[2] = (uint8_t)sectors;
+    g[3] = (uint8_t)((uint16_t)sectors >> 8);
+    g[4] = (uint8_t)flags;
+    g[5] = (uint8_t)(flags >> 8);
+    g[6] = (uint8_t)formats;
+    g[7] = (uint8_t)(formats >> 8);
+    return (LONG)flags;
+}
+
+static LONG gd_dgeom(WORD drv, uint32_t out)
+{
+    uint8_t st[4], g[GD_DG_LEN];
+    LONG r = dg_probe(drv, st, g);
+
+    if (r < 0)
+        return r;
+    if (out)
+        far_put(out, g, GD_DG_LEN);
+    return 0;
+}
+
+/* A failed transfer's SIO status as the BIOS's error: nobody answered, the
+ * drive refused the command, the disk is write-protected, or it failed. */
+static LONG dg_err(WORD drv, WORD r, LONG fail)
+{
+    uint8_t st[4];
+
+    if (r == 0x8A)
+        return GD_EDRVNR;
+    if (r == 0x8B)
+        return GD_EUNCMD;
+    if (dsk_status4((uint8_t)drv, st) == SIO_OK && (st[0] & 0x08))
+        return GD_EWRPRO;
+    return fail;
+}
+
+/* Dformat: the disk in `drv` formatted at density `dens` (GD_DF_), the
+ * sectors the drive found bad -- a list of words ending at $FFFF, as the
+ * drive sent it -- copied to `bad` (GD_DF_BADLEN bytes) unless it is 0.
+ * How many there were, or the error.  Whatever came of it, the engine
+ * forgets what it knew of the disk: it is not that disk now.
+ *
+ * Enhanced density is the 1050's own command on every drive; the others
+ * are the geometry told, then '!'.  A drive that takes no geometry -- an
+ * 810, a 1050 -- formats single density with '!', and refuses double. */
+static LONG gd_dformat(WORD drv, WORD dens, uint32_t bad)
+{
+    uint8_t st[4], g[GD_DG_LEN], pc[SIO_PERCOM_LEN], *buf;
+    uint16_t mark, len, flags;
+    uint8_t cmd = SIO_FORMAT;
+    WORD r, i, n, hi, lo, secs;
+    LONG e = dg_probe(drv, st, g);
+
+    if (e < 0)
+        return e;
+    flags = (uint16_t)e;
+    if (!(flags & GD_DG_FLOPPY))
+        return GD_EUNDEV;
+    if (flags & GD_DG_WPROT)
+        return GD_EWRPRO;
+    lo = g[0];
+    hi = g[1];
+    len = (uint16_t)((hi << 8) | lo);   /* GD_DF_ASIS: the size it has */
+    if (dens == GD_DF_ED
+        || (dens == GD_DF_ASIS && !(flags & GD_DG_PERCOM) && (st[0] & 0x80))) {
+        cmd = SIO_FORMAT_ED;
+        len = 128;
+    } else if (dens >= GD_DF_SD && dens <= GD_DF_DSDD) {
+        if (flags & GD_DG_PERCOM) {
+            memcpy_far((uint8_t FAR *)pc, df_geom + (dens - 1) * 8, 8);
+            pc[8] = 0xFF;                   /* the drive is there */
+            pc[9] = pc[10] = pc[11] = 0;
+            r = dsk_setpercom((uint8_t)drv, pc);
+            if (r != SIO_OK)
+                return dg_err(drv, r, GD_EUNCMD);
+        } else if (dens != GD_DF_SD) {
+            return GD_EUNCMD;               /* double density, no geometry */
+        }
+        len = dens >= GD_DF_DD ? 256 : 128;
+    } else if (dens != GD_DF_ASIS) {
+        return GD_EBADRQ;
+    }
+    secs = st[2];
+    if (!secs)
+        secs = 0xE0;                        /* an 810's, if it says none */
+    mark = pool_mark();
+    buf = (uint8_t *)pool_alloc(len, 2);
+    if (!buf)
+        return GD_ENSMEM;
+    r = dsk_format((uint8_t)drv, cmd, buf, len, (uint8_t)secs);
+    sdc_forget((uint8_t)drv);
+    if (r != SIO_OK) {
+        pool_release(mark);
+        return dg_err(drv, r, GD_EWRITF);
+    }
+    n = 0;
+    for (i = 0; i + 1 < (WORD)len; i += 2) {
+        lo = buf[i];
+        hi = buf[i + 1];
+        if (lo == 0xFF && hi == 0xFF)
+            break;
+        n++;
+    }
+    if (bad)
+        far_put(bad, buf, len);
+    pool_release(mark);
+    return n;
+}
+
+/* Drwsec: `count` sectors from `sector` on, read from `drv` into the far
+ * buffer at `buf` (rw 0) or written to it from there (rw 1).  `secsize` is
+ * the disk's, from Dgeom, and every sector takes that much of the buffer --
+ * on a 256-byte disk sectors 1 to 3 are 128 bytes, as every DOS has them,
+ * and only the first half of each one's place is read or written.  0, or
+ * the error at the first sector that failed -- ESECNF for one past the
+ * disk's end, which a drive NAKs.  A write makes the engine
+ * forget the disk, as Dformat does. */
+static LONG gd_drwsec(WORD drv, WORD rw, uint16_t sector, uint16_t count,
+                      uint16_t secsize, uint32_t buf)
+{
+    uint8_t *b;
+    uint16_t mark, n, len, sec;
+    WORD r;
+    LONG e = 0;
+
+    if (drv < 1 || drv > GD_DRIVES)
+        return GD_EDRIVE;
+    if (!sector || (secsize != 128 && secsize != 256 && secsize != 512)
+        || (uint32_t)sector + count > 0x10000L)
+        return GD_EBADRQ;
+    mark = pool_mark();
+    b = (uint8_t *)pool_alloc(secsize, 2);
+    if (!b)
+        return GD_ENSMEM;
+    for (n = 0; n < count; n++) {
+        sec = (uint16_t)(sector + n);
+        len = secsize;
+        if (secsize == 256 && sec <= 3)
+            len = 128;
+        if (rw) {
+            far_get(b, buf, len);
+            r = dsk_write((uint8_t)drv, sec, b, len);
+        } else {
+            r = dsk_read((uint8_t)drv, sec, b, len);
+            if (r == SIO_OK)
+                far_put(buf, b, len);
+        }
+        if (r != SIO_OK) {
+            e = r == 0x8B ? GD_ESECNF       /* a drive NAKs a sector past */
+                : dg_err(drv, r, rw ? GD_EWRITF : GD_EREADF);   /* the end */
+            break;
+        }
+        buf += secsize;
+    }
+    pool_release(mark);
+    if (rw)
+        sdc_forget((uint8_t)drv);
+    return e;
+}
+
 /* Dprobe: every drive asked, once, and the answer kept for every Dsetdrv
  * after.  A drive is there unless the answer says nobody is: a timeout
  * (138), and through the DOS also no such device (130) or a drive it
@@ -2197,6 +2433,17 @@ static LONG gd_nopath(WORD fn)
         break;
     case GD_DCAPS:
         r = gd_dcaps(arg_w(6));
+        break;
+    case GD_DGEOM:
+        r = gd_dgeom(arg_w(6), (uint32_t)arg_l(8));
+        break;
+    case GD_DFORMAT:
+        r = gd_dformat(arg_w(6), arg_w(8), (uint32_t)arg_l(10));
+        break;
+    case GD_DRWSEC:
+        r = gd_drwsec(arg_w(6), arg_w(8), (uint16_t)arg_w(10),
+                      (uint16_t)arg_w(12), (uint16_t)arg_w(14),
+                      (uint32_t)arg_l(16));
         break;
     case GD_CPXLOAD:                    /* a control panel module, by index */
         r = sh_cpxload(arg_w(6), arg_w(8));
