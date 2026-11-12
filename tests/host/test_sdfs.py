@@ -381,6 +381,56 @@ def at_random(secsize, seed, rounds=6, ops=120):
     print(f"  {len(files)} files and {len(dirs) - 1} folders at the end")
 
 
+def refused(secsize):
+    """A DRIVE THAT REFUSES A WRITE PART WAY THROUGH A CALL (phase 154).
+    The MiSTer core's emulated drive did, after a folder was moved, and the
+    disk was left with a new folder's sectors marked free -- the next file
+    would have been written over them.  Each operation, from one prepared
+    disk, is run with the drive refusing at every write it makes, in turn:
+    from that write on (a drive that stops), and that write alone (one that
+    comes back).  What reaches the disk may leak sectors -- marked used,
+    nothing using them, the free count behind -- but never mark a sector
+    something points at free, never break a chain; and two entries may share
+    one chain only where a move between folders was cut between its two
+    directory writes, which leaves the file in both rather than in neither."""
+    base = Disk(secsize)
+    small, big = base.file(pattern(700, 1)), base.file(pattern(9000, 2))
+    got = base.run(["mkdir \\BBB", f"put \\BBB\\G.TXT {small}", f"put \\F.TXT {big}",
+                    "mkdir \\DDD"])
+    if not check(all(code(a) == 0 for a in got), f"{secsize}: the disk to start from: {got}"):
+        return
+    ops = [("mkdir", ["mkdir \\AAA"], False),
+           ("a file made", [f"put \\N.TXT {big}"], False),
+           ("a file emptied and written", [f"put \\BBB\\G.TXT {big}"], False),
+           ("a file deleted", ["del \\F.TXT"], False),
+           ("a folder removed", ["rmdir \\DDD"], False),
+           ("a folder renamed", ["ren \\DDD \\EEE"], False),
+           ("a folder moved", ["ren \\DDD \\BBB\\DDD"], True),
+           ("a file moved", ["ren \\BBB\\G.TXT \\H.TXT"], True)]
+    worst = ("is marked free", "off the disk", "links back")
+    points = 0
+    for name, lines, moves in ops:
+        for mode in ("SDFS_REFUSE", "SDFS_REFUSE_ONE"):
+            n = 1
+            while n < 2000:
+                d = Disk(secsize, src=base.path)
+                r = subprocess.run([HOST, d.path], input="\n".join(lines) + "\n",
+                                   capture_output=True, text=True,
+                                   env=dict(os.environ, **{mode: str(n)}))
+                if r.returncode:
+                    check(False, f"{secsize} {name}, {mode}={n}: sdfs_host stopped: {r.stderr.strip()}")
+                    break
+                if not any(ln.startswith("err") for ln in r.stdout.splitlines()):
+                    break                   # every write it makes went through
+                bad = d.fs().check()
+                worse = [b for b in bad if any(w in b for w in worst)
+                         or ("'s too" in b and not moves)]
+                check(not worse, f"{secsize} {name}, {mode}={n}: {worse[:3]}")
+                points += 1
+                n += 1
+    print(f"  {secsize}-byte sectors: {points} refusals, none left a used sector free")
+
+
 def main():
     if not os.path.exists(HOST):
         print(f"no {HOST}: make build/sdfs_host")
@@ -388,6 +438,8 @@ def main():
     reading()
     for sz in (256, 128, 512):
         by_hand(sz)
+    for sz in (256, 128, 512):
+        refused(sz)
     for sz in (256, 128, 512):
         for seed in (1, 2, 3):
             at_random(sz, seed)

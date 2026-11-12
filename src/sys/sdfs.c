@@ -120,8 +120,34 @@ static int16_t c_write(SDFS FAR *s, int16_t i)
     return 0;
 }
 
-/* Every changed sector of unit u whose kind is `upto` or lower, lowest
- * kind first. */
+/* THE ORDER CHANGES REACH THE DISK IN (phase 154).  A drive may refuse a
+ * write half way through a call -- the MiSTer core's emulated drive did,
+ * after a folder was moved -- and what is on the disk then must never have
+ * a sector something points at marked free, where the next file would be
+ * written over it.  So a sector is marked used before anything points at
+ * it, and freed only after nothing does: a refusal can leak sectors, never
+ * hand one out twice.
+ *
+ * Which is why a chain given back is not freed at once (ch_free): it is
+ * queued, and freed at the next sync, after the directories that stopped
+ * pointing at it are on the disk.  Until then the bitmap holds only
+ * allocations, so it can always go first:
+ *
+ *   the bitmap, then data, maps and directories     (rank)
+ *   then the queued chains freed, and the bitmap again   (sd_sync)
+ *   then the superblock's free count, which behind the bitmap is wrong by
+ *   the sectors leaked and nothing more
+ *
+ * A kind's place in that order, 0 first. */
+static uint8_t rank(uint8_t kind)
+{
+    if (kind == SK_BMAP)
+        return 0;
+    return (uint8_t)(kind == SK_SUPER ? SK_SUPER : kind + 1);
+}
+
+/* Every changed sector of unit u whose place in the order is `upto` or
+ * before, first place first. */
 static int16_t c_flush(SDFS FAR *s, uint8_t u, uint8_t upto)
 {
     uint8_t k;
@@ -129,8 +155,8 @@ static int16_t c_flush(SDFS FAR *s, uint8_t u, uint8_t upto)
 
     for (k = 0; k <= upto; k++)
         for (i = 0; i < SD_CACHE; i++)
-            if (s->slots[i].unit == u && s->slots[i].kind == k
-                && s->slots[i].dirty) {
+            if (s->slots[i].unit == u && s->slots[i].dirty
+                && rank(s->slots[i].kind) == k) {
                 e = c_write(s, i);
                 if (e < 0)
                     return e;
@@ -141,7 +167,8 @@ static int16_t c_flush(SDFS FAR *s, uint8_t u, uint8_t upto)
 /* The slot holding sector `sec` of unit u, read from the disk -- or, with
  * `fresh`, a sector of zeros the caller is about to fill.  A slot wanted
  * for it that holds a changed sector is written first, after everything
- * of a lower kind on its unit.  A slot index, or a negative error. */
+ * before it in its unit's order (rank).  A slot index, or a negative
+ * error. */
 static int16_t c_get(SDFS FAR *s, uint8_t u, uint16_t sec, uint8_t kind,
                      uint8_t fresh)
 {
@@ -178,9 +205,10 @@ static int16_t c_get(SDFS FAR *s, uint8_t u, uint16_t sec, uint8_t kind,
          * was this unit's: another drive's changes, refused, are gone
          * with that drive (c_write), and the slot is free for this one */
         uint8_t was = sl->unit;
+        uint8_t rk = rank(sl->kind);
         int16_t r = 0;
-        if (sl->kind > 0)
-            r = c_flush(s, was, (uint8_t)(sl->kind - 1));
+        if (rk > 0)
+            r = c_flush(s, was, (uint8_t)(rk - 1));
         if (r >= 0)
             r = c_write(s, v);
         if (r < 0 && was == u)
@@ -227,6 +255,7 @@ void sd_forget(SDFS FAR *s, uint8_t u)
             s->dirs[i].used = 0;
     unit_of(s, u)->mounted = 0;
     unit_of(s, u)->fdelta = 0;
+    unit_of(s, u)->npend = 0;       /* never freed: leaked, never reused */
 }
 
 void sd_recheck(SDFS FAR *s, uint8_t u)
@@ -305,6 +334,7 @@ static int16_t mount(SDFS FAR *s, uint8_t u)
         un->bm_start = bms;
         un->hint = 1;
         un->fdelta = 0;
+        un->npend = 0;
         un->mounted = 1;
     }
     un->fresh = 1;
@@ -412,6 +442,12 @@ static int32_t ch_sec(SDFS FAR *s, uint8_t u, uint16_t first, uint16_t k,
                 return i;
             put16(s->buf[i] + 2, p);
             c_dirty(s, i);
+            /* ...on the disk, back link and all, before the page that will
+             * link to it is (phase 154): nothing points at it yet, so this
+             * cannot wait for the bitmap (rank) */
+            i = c_write(s, i);
+            if (i < 0)
+                return i;
             i = c_get(s, u, p, SK_MAP, 0);             /* linked from this */
             if (i < 0)
                 return i;
@@ -486,8 +522,8 @@ static int32_t ch_io(SDFS FAR *s, uint8_t u, uint16_t first, uint32_t off,
     return (int32_t)done;
 }
 
-/* Every sector of a chain, given back. */
-static int16_t ch_free(SDFS FAR *s, uint8_t u, uint16_t first)
+/* Every sector of a chain, freed in the bitmap: at a sync (rank). */
+static int16_t ch_give(SDFS FAR *s, uint8_t u, uint16_t first)
 {
     uint16_t p = first, pm = perm(s, u), j, d, nx;
     int16_t i, e;
@@ -514,6 +550,44 @@ static int16_t ch_free(SDFS FAR *s, uint8_t u, uint16_t first)
         p = nx;
     }
     return 0;
+}
+
+/* A chain given back: queued, and freed at the next sync, after whatever
+ * pointed at it is on the disk (rank).  A full queue syncs first: the
+ * calls whose chains are in it have changed their directories already. */
+static int16_t ch_free(SDFS FAR *s, uint8_t u, uint16_t first)
+{
+    SD_UNIT FAR *un = unit_of(s, u);
+    uint16_t n;
+    int16_t e;
+
+    if (!first)
+        return 0;
+    if (un->npend >= SD_PEND) {
+        e = sd_sync(s, u);
+        if (e < 0)
+            return e;
+    }
+    n = un->npend;
+    un->pend[n] = first;
+    un->npend = (uint8_t)(n + 1);
+    return 0;
+}
+
+/* ...and taken back off the queue: the call that queued it failed before
+ * it changed what points at it, so it is still in use. */
+static void ch_keep(SDFS FAR *s, uint8_t u, uint16_t first)
+{
+    SD_UNIT FAR *un = unit_of(s, u);
+    uint16_t i, n = un->npend;
+
+    for (i = 0; i < n; i++)
+        if (un->pend[i] == first) {
+            for (; i + 1 < n; i++)
+                un->pend[i] = un->pend[i + 1];
+            un->npend = (uint8_t)(n - 1);
+            return;
+        }
 }
 
 /* A new chain: one map page, empty.  Its sector, or a negative error. */
@@ -717,9 +791,19 @@ int16_t sd_sync(SDFS FAR *s, uint8_t u)
     if (u < 1 || u > SD_UNITS || !unit_of(s, u)->mounted)
         return 0;
     un = unit_of(s, u);
-    e = c_flush(s, u, SK_BMAP);
+    e = c_flush(s, u, SK_DIR + 1);  /* every place before the superblock */
     if (e < 0)
         return e;
+    while (un->npend) {             /* nothing points at these now */
+        uint16_t n = (uint16_t)(un->npend - 1);
+        e = ch_give(s, u, un->pend[n]);
+        if (e < 0)
+            return e;
+        un->npend = (uint8_t)n;
+        e = c_flush(s, u, SK_DIR + 1);
+        if (e < 0)
+            return e;
+    }
     if (un->fdelta) {
         i = c_get(s, u, 1, SK_SUPER, 0);
         if (i < 0)
@@ -779,6 +863,7 @@ int16_t sd_open(SDFS FAR *s, uint8_t u, const char FAR *path, uint8_t mode)
     SD_FIND FAR *f = &s->f;
     SD_FILE FAR *fl;
     uint8_t root, k;
+    uint16_t old = 0;               /* an emptied file's chain, queued */
     int16_t e, h;
     int32_t a;
 
@@ -811,7 +896,8 @@ int16_t sd_open(SDFS FAR *s, uint8_t u, const char FAR *path, uint8_t mode)
                 return SD_EACCDN;
             if (is_open(s, u, f->dmap, f->off))
                 return SD_EACCDN;
-            e = ch_free(s, u, get16(f->ent + E_MAP));
+            old = get16(f->ent + E_MAP);
+            e = ch_free(s, u, old);
             if (e < 0)
                 return e;
         } else {
@@ -820,16 +906,20 @@ int16_t sd_open(SDFS FAR *s, uint8_t u, const char FAR *path, uint8_t mode)
                 f->ent[E_NAME + k] = f->want[k];
         }
         a = ch_new(s, u);
-        if (a < 0)
+        if (a < 0) {
+            ch_keep(s, u, old);     /* the entry still points at it */
             return (int16_t)a;
+        }
         f->ent[E_STATUS] = SD_INUSE;
         put16(f->ent + E_MAP, (uint16_t)a);
         f->ent[E_SIZE] = f->ent[E_SIZE + 1] = f->ent[E_SIZE + 2] = 0;
         sd_now(f->ent + E_STAMP);
         if (e == 0) {               /* where it was */
             int32_t r = d_io(s, u, f->dmap, f->off, f->ent, SD_ENT, 1);
-            if (r < 0)
+            if (r < 0) {
+                ch_keep(s, u, old);
                 return (int16_t)r;
+            }
         } else {
             e = d_add(s, u, f, f->ent);
             if (e < 0)
@@ -1098,8 +1188,10 @@ int16_t sd_delete(SDFS FAR *s, uint8_t u, const char FAR *path)
     if (e < 0)
         return e;
     e = d_unlink(s, u, f);
-    if (e < 0)
+    if (e < 0) {
+        ch_keep(s, u, get16(f->ent + E_MAP));
         return e;
+    }
     return sd_sync(s, u);
 }
 
@@ -1194,8 +1286,10 @@ int16_t sd_rmdir(SDFS FAR *s, uint8_t u, const char FAR *path)
     if (e < 0)
         return e;
     e = d_unlink(s, u, f);
-    if (e < 0)
+    if (e < 0) {
+        ch_keep(s, u, dmap);
         return e;
+    }
     return sd_sync(s, u);
 }
 

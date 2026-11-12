@@ -79,6 +79,10 @@ typedef struct {
 #define SD_RW       2
 #define SD_CREATE   3           /* Fcreate: emptied, or made */
 
+/* Chains a unit gives back at its next sync, once nothing points at them
+ * (src/sys/sdfs.c, ch_free). */
+#define SD_PEND     4
+
 /* ---- the state ---------------------------------------------------------
  * Fields are the engine's; the sizes are what a caller allocates.  No
  * sizeof() of anything with an array in it is used in a constant
@@ -88,6 +92,8 @@ typedef struct {
     uint8_t  shift;             /* 7 for 128-byte sectors, 8 for 256 */
     uint8_t  bm_count;
     uint8_t  fresh;             /* sector 1 read since sd_recheck */
+    uint8_t  npend;             /* chains to give back at the next sync, */
+    uint16_t pend[SD_PEND];     /* ...by their first map page (sdfs.c) */
     uint16_t root;              /* the root directory's first map page */
     uint16_t total;             /* sectors on the disk */
     uint16_t bm_start;          /* the bitmap's first sector */

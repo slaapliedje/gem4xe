@@ -44,12 +44,26 @@ static long offset_of(uint16_t sec)
     return 16 + 3 * 128 + (long)(sec - 4) * 256;
 }
 
+/* A DRIVE THAT REFUSES (phase 154): SDFS_REFUSE=N refuses the Nth write
+ * and every one after, as a drive that stops answering does;
+ * SDFS_REFUSE_ONE=N refuses the Nth alone, as one that comes back does.
+ * What reaches the image must never have a sector something points at
+ * marked free (tests/host/test_sdfs.py, RefusedWrites). */
+static long refuse_from, refuse_one, writes;
+
 int16_t sd_dev(SDFS *s, uint8_t unit, uint16_t sec, uint8_t *buf,
                uint16_t len, uint8_t write)
 {
     long at;
 
     (void)s;
+    if (write) {
+        writes++;
+        if (getenv("SDFS_TRACE"))
+            fprintf(stderr, "write %ld: sector %u\n", writes, sec);
+        if ((refuse_from && writes >= refuse_from) || writes == refuse_one)
+            return SD_EERROR;
+    }
     if (unit != 1)
         return SD_EDRIVE;
     if (sec < 1 || sec > nsec)
@@ -113,6 +127,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "%s: not an ATR image\n", argv[1]);
         return 2;
     }
+    if (getenv("SDFS_REFUSE"))
+        refuse_from = atol(getenv("SDFS_REFUSE"));
+    if (getenv("SDFS_REFUSE_ONE"))
+        refuse_one = atol(getenv("SDFS_REFUSE_ONE"));
     secsz = img[4] | (img[5] << 8);
     nsec = secsz == 128 ? (imglen - 16) / 128
          : secsz == 512 ? (imglen - 16) / 512
