@@ -1057,6 +1057,38 @@ static LONG gd_xio(uint8_t cmd, LONG path, WORD dir)
     return 0;
 }
 
+/* Ddelete.  A SpartaDOS has a call of its own (XIO 43).  MyDOS removes a
+ * folder as it deletes a file (XIO 33, DOS_CAP_RMDEL) -- and would delete
+ * a FILE of that name as readily, which Ddelete must never do.  So there
+ * the name is first opened as a folder's listing, and refused when it
+ * will not open as one (phase 161). */
+static LONG gd_ddelete(LONG path)
+{
+    char *in = gw->in;
+    LONG d;
+    WORD n;
+    int16_t iocb;
+
+    if (!dos.dirsep)
+        return GD_EPTHNF;
+    if (!(dos.caps & DOS_CAP_RMDEL))
+        return gd_xio(CIO_X_RMDIR, path, 1);
+    d = gd_name(path);
+    if (d < 0)
+        return d;
+    n = (WORD)strlen(gw->cio);
+    if (n + 5 > CIO_NAME_MAX)
+        return GD_EPTHNF;
+    strcpy(in, gw->cio);
+    in[n] = dos.dirsep;
+    strcpy(in + n + 1, "*.*");
+    iocb = cio_open(in, CIO_A_DIR, 0);
+    if (iocb < 0)
+        return GD_EPTHNF;               /* not a folder: a file, or nothing */
+    cio_close(iocb);
+    return gd_xio(CIO_X_DELETE, path, 1);
+}
+
 /* Frename: XIO 32 on "OLD,NEW", the new name a bare NAME.EXT -- the
  * DOS renames within the directory, so a new path is taken for its
  * last component only. */
@@ -1146,7 +1178,10 @@ static LONG gd_setpath(LONG path)
         strcpy(in, full);
         strcat(in, "\\*.*");
         dos_cioname(in, cio);
-        iocb = cio_open(cio, CIO_A_RAWDIR, 0);
+        /* opened as its own entries where the DOS can (both SpartaDOSes),
+         * else as a listing: MyDOS has folders and no raw directory */
+        iocb = cio_open(cio, (dos.caps & DOS_CAP_RAWDIR) ? CIO_A_RAWDIR
+                                                       : CIO_A_DIR, 0);
         if (iocb < 0)
             return gd_err((uint8_t)-iocb, 1);
         cio_close(iocb);
@@ -1459,6 +1494,8 @@ static LONG gd_dcaps(WORD drv)
     name[3] = 0;
     if (sdc_claims(name))
         c |= GD_DC_RENDIR | GD_DC_MOVE;
+    else if (dos.caps & DOS_CAP_RENDIR)
+        c |= GD_DC_RENDIR;              /* MyDOS: in place, never a move */
     return c;
 }
 
@@ -2875,7 +2912,7 @@ void gemdos_call(uint32_t pb)
         r = dos.dirsep ? gd_xio(CIO_X_MKDIR, arg_l(6), 1) : GD_EACCDN;
         break;
     case GD_DDELETE:
-        r = dos.dirsep ? gd_xio(CIO_X_RMDIR, arg_l(6), 1) : GD_EPTHNF;
+        r = gd_ddelete(arg_l(6));
         break;
     case GD_DSETPATH:
         r = gd_setpath(arg_l(6));

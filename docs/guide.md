@@ -32,6 +32,14 @@ drive 1, and every other drive, is the DOS's as usual.
 
 Everything below this line is the same gem4xe on media you can write to.
 
+**Which DOS.** G4DOS -- the system floppy boots it, so you need no DOS
+of your own -- SpartaDOS X and MyDOS 4.x all give you folders: open them,
+make them, rename them.  **DOS 2.0 and 2.5 have none.**  GEM runs on
+them, flat, and the boot screen says so, but they cannot read the
+applications floppy (it is a SpartaDOS-format disk) and have no command
+line for *File → DOS command*.  On one of those, boot the system floppy
+instead.
+
 ## The machine
 
 | | |

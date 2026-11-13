@@ -33,10 +33,23 @@ void dos_ident(void)
 
     dos.kind = DOS_2;
     /* A DOS 2's boot flag is zero and MyDOS's is 'M' -- the same byte a
-     * SpartaDOS signs with 'S', below.  MyDOS is a DOS 2 in everything
-     * gem4xe asks of it except $070A, which is not its drive map. */
-    dos.caps = (uint8_t)(DOSBASE[0] == 'M' ? 0 : DOS_CAP_DRVBYT);
-    dos.dirsep = 0;
+     * SpartaDOS signs with 'S', below.  MyDOS is a DOS 2 in what gem4xe
+     * asks of it -- DOS 2's VTOC, DOSVEC to leave -- except $070A, which
+     * is not its drive map, and FOLDERS (phase 161), which MyDOS 4.x has
+     * and DOS 2 has not.  Measured on MyDOS 4.50T: a path is D1:A>B>FILE
+     * with or without a > after the colon, as SpartaDOS writes one; XIO
+     * 42 makes a folder (MyDOS's own number is 34, and 42 is the same call
+     * "for compatibility with programs written for SpartaDOS"); a listing
+     * marks a folder with ':' in column 1, where SpartaDOS X marks one; a
+     * folder is renamed with XIO 32 and removed with XIO 33 -- delete --
+     * once it is empty, and SpartaDOS's XIO 43 is refused (168). */
+    if (DOSBASE[0] == 'M') {
+        dos.caps = DOS_CAP_DIRS | DOS_CAP_RMDEL | DOS_CAP_RENDIR;
+        dos.dirsep = '>';
+    } else {
+        dos.caps = DOS_CAP_DRVBYT;
+        dos.dirsep = 0;
+    }
     dos.memlo = MEMLO;
     dos.memtop = MEMTOP;
 

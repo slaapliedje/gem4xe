@@ -74,6 +74,11 @@
                                    boot flag at $0700 is 'M' and its $070A
                                    is $08 on a one-drive machine, which as a
                                    bitmap is drive D (docs/phase50.md) */
+#define DOS_CAP_RMDEL 0x10      /* a folder is removed as a file is deleted
+                                   (XIO 33) and SpartaDOS's own call (XIO 43)
+                                   is refused: MyDOS 4.x (phase 161) */
+#define DOS_CAP_RENDIR 0x20     /* a folder is renamed as a file is (XIO 32):
+                                   MyDOS 4.x */
 
 typedef struct {
     uint8_t  kind;              /* DOS_2 .. DOS_SDX */

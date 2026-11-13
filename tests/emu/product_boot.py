@@ -114,6 +114,7 @@ BOOT_LINE = b"CD >GEM\x9bGEM\x9b"
 COLDST = 0x0244                 # the OS: non-zero at RESET means come up cold
 DRVBYT = 0x070A                 # DOS 2's drive map (src/sys/gemdos.c)
 DOS_2 = 0                       # src/sys/dos.h
+DOS_CAP_DIRS = 0x01             # ...its folders, which MyDOS has
 DOS_NAME = {0: "DOS 2", 1: "SpartaDOS 3", 2: "SpartaDOS X"}   # src/sys/bootinfo.c
 FARMEM_FIRST, FARMEM_LAST, FARMEM_BANKS = 1, 2, 3   # FARMEM's bytes (src/sys/farmem.h)
 BOOT_HOLD = 150                 # frames the screen is held on PAL (HOLD_SECONDS)
@@ -293,9 +294,14 @@ def check_boot(name, report, gtia, b, syms, check, glyphs=None):
           f"{name}: the boot screen says {L('IRQ')} '{report.get(L('IRQ'))}', "
           f"not '{want}'")
     kind = b.peek(syms["dos"])
-    check(report.get(L("DOS")) == DOS_NAME[kind],
+    # a DOS 2 says whether it has folders (phase 161): MyDOS by name, a
+    # DOS 2.0 or 2.5 that it has none -- the next byte is DOS_INFO's caps
+    want = DOS_NAME[kind]
+    if kind == DOS_2:
+        want = "MyDOS" if b.peek(syms["dos"] + 1) & DOS_CAP_DIRS else L("DOS2")
+    check(report.get(L("DOS")) == want,
           f"{name}: the boot screen says DOS '{report.get(L('DOS'))}' on a "
-          f"kind-{kind} DOS")
+          f"kind-{kind} DOS, not '{want}'")
     fm = syms["farmem"]
     first, last, banks = (b.peek(fm + FARMEM_FIRST), b.peek(fm + FARMEM_LAST),
                           b.peek(fm + FARMEM_BANKS))

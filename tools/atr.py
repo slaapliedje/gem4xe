@@ -147,6 +147,14 @@ class DirEntry:
         return self.name + ("." + self.ext if self.ext else "")
 
     @property
+    def is_dir(self):
+        """A MyDOS folder: flagged $10, not deleted ($80).  Its `start` is
+        the first of the eight sectors holding its own 64 entries, as the
+        root's 361-368 hold the root's; its count is those eight.  Measured
+        on MyDOS 4.50T (docs/phase161.md)."""
+        return bool(self.flag & 0x10) and not (self.flag & 0x80)
+
+    @property
     def nameable(self):
         """Whether the DOS could be handed this name: letters, digits, _
         and @, a letter first -- the rule src/sys/dos.c lists by.  A disk
@@ -210,13 +218,30 @@ class Dos2:
                            f"than one sector, which Dos2 does not handle")
 
     # -- directory ---------------------------------------------------------
-    def entries(self):
+    def entries(self, path=""):
+        """The 64 entries of the root, or of the MyDOS folder `path`
+        ("A>B", with > : / or \\ between folders)."""
+        return self._entries_at(self._dir_start(path))
+
+    def _entries_at(self, start):
         out = []
         for i in range(64):
-            sec = self.DIR0 + i // 8
+            sec = start + i // 8
             raw = self.img.read_sector(sec)[(i % 8) * 16:(i % 8) * 16 + 16]
             out.append(DirEntry(i, raw))
         return out
+
+    def _dir_start(self, path):
+        start = self.DIR0
+        for part in path.replace(":", ">").replace("/", ">").replace("\\", ">").split(">"):
+            if not part:
+                continue
+            e = next((e for e in self._entries_at(start)
+                      if e.is_dir and e.filename.upper() == part.upper()), None)
+            if e is None:
+                raise ATRError(f"{path}: no folder {part}")
+            start = e.start
+        return start
 
     def _write_entry(self, e):
         sec = self.DIR0 + e.index // 8
@@ -244,9 +269,12 @@ class Dos2:
         return n
 
     def find(self, filename):
-        filename = filename.upper()
-        for e in self.entries():
-            if e.in_use and e.filename.upper() == filename:
+        """A file, in the root or under a MyDOS folder: "A>B>NAME.EXT"."""
+        path = filename.replace(":", ">").replace("/", ">").replace("\\", ">")
+        folder, _, name = path.rpartition(">")
+        name = name.upper()
+        for e in self.entries(folder):
+            if e.in_use and e.filename.upper() == name:
                 return e
         return None
 
