@@ -119,12 +119,43 @@ DUP's H: a formatted SDFS disk made bootable with G4DOS.SYS and
 SHELL.SYS, which makes it a system disk -- the boot sectors
 `tools/atr.py` already writes for `gem-sys.atr`.
 
-## Part two, for later: DUP.SYS in a window
+## Part two: our own DUP menu
 
-- A text window that hosts an 8-bit program, as TOSWIN does on the ST:
-  E: and K: through the window, the program run in bank $00.
-- The program: DUP.SYS from the OSS DOS 2.5 sources (on AtariWiki,
-  licence unknown), or MyDOS 4.5's (source published; free to
-  distribute provided the source goes with any binary).  DUP needs its
-  own DOS.SYS underneath, which G4DOS is not.  Settling which one, and
-  its licence, is the first step of that plan.
+Chosen (2026-11-13): not the real DUP.SYS but **DUP's lettered menu in a
+GEM window, done by gem4xe itself**.  No licence question, and it works
+on every DOS, G4DOS included.  (The real thing was weighed: MyDOS 4.5's
+source is published and shippable with its source, but it only works on
+MyDOS; DOS 2.5's OSS-built source has no stated licence.)
+
+DUP.PRG, in `\APPS\`: a 40-column text window, the menu printed in it,
+a letter typed, DUP's question asked, the answer typed, the result
+printed, "SELECT ITEM OR RETURN FOR MENU".  Every word it prints is in
+its resource.
+
+| item | does |
+|---|---|
+| A. Disk directory | a search spec (D1:*.* by default), the files with their sectors, `*` for a locked one, the free sectors |
+| C. Copy file | from, to -- through GEMDOS, so any DOS |
+| D. Delete file(s) | a spec, asking for each unless /N |
+| E. Rename file | old, new |
+| F. Lock file, G. Unlock file | the read-only bit |
+| H. Write DOS files | G4DOS onto an SDFS disk (step 5's Bootable); under DOS 2 or MyDOS, says those DOS files are that DOS's own |
+| I. Format disk | the way of the DOS it runs on: SDFS under G4DOS or SpartaDOS X, DOS 2 under DOS 2 or MyDOS, at the density the drive has |
+| J. Duplicate disk | source, destination; swapping disks on one drive |
+| O. Duplicate file | a file copied onto another disk in the same drive |
+| P. Format single | as I, at single density |
+| B, K, L, M, N | the cartridge, binary save and load, run at an address, MEM.SAV: the 8-bit machine's own chores, which GEM holds the memory for; each says so in a line |
+
+Steps:
+
+Steps 1-4 done, phase 160.
+
+1. **The disk operations shared** -- format with a file system, copy a
+   disk, make one bootable -- taken out of DISKUTIL into
+   `src/apps/diskops.c`, which both programs link.  DISKUTIL's gates
+   stay green.
+2. **DUP.PRG**: the text window (drawn, scrolled, redrawn from a buffer
+   of lines), the line input, the menu, and A, C, D, E, F, G, O.
+3. H, I, J, P through diskops; B, K, L, M, N answered.
+4. **Gate**: DUP driven by its keys, what it prints read off the screen,
+   the disks it changed read afterwards with `tools/atr.py`.

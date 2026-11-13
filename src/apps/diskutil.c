@@ -8,9 +8,9 @@
  * banks with about 4 KB to spare.  The desktop runs it with a tail: "F 2"
  * formats D2:, "C 1 2" copies D1: to D2:.  Run bare, it opens on Format.
  *
- * Underneath: Dgeom, Dformat and Drwsec (phase 155) to reach the drive,
- * and src/apps/mkfs.c (phase 156) to lay a file system on what Dformat
- * leaves.  The dialog is DISKUTIL.RSC (tools/diskrsc.py), and every word
+ * Underneath: src/apps/diskops.c, which DUP shares -- phase 155's Dgeom,
+ * Dformat and Drwsec to reach the drive, and src/apps/mkfs.c (phase 156)
+ * to lay a file system on what Dformat leaves.  The dialog is DISKUTIL.RSC (tools/diskrsc.py), and every word
  * a person reads is there.
  *
  * Large-data, so the copy's buffer, the resource and these statics are
@@ -21,6 +21,7 @@
 #include "gem.h"
 #include "diskrsc.h"
 #include "mkfs.h"
+#include "diskops.h"
 
 static OBJECT *tree;
 static WORD dx, dy, dw, dh;
@@ -28,14 +29,7 @@ static WORD op;                     /* 0 Format, 1 Copy */
 static WORD src = 1, dst = 1;       /* D1: .. D8: */
 static UWORD map;                   /* the drives the DOS has, bit 0 D1: */
 static uint8_t geo[DG_LEN];
-static uint8_t secbuf[512];
-static uint8_t bad[DF_BADLEN];
 static char msg[160];
-static UWORD cur_ss;                /* the sector size mkfs writes in */
-static uint8_t donor[768];          /* a system disk's sectors 1-3 */
-
-static WORD find_system(WORD not);
-static LONG make_bootable(WORD src, WORD d);
 
 /* ---- strings ------------------------------------------------------------ */
 
@@ -158,20 +152,6 @@ static UWORD geo16(WORD at)
     return (UWORD)(lo | (hi << 8));
 }
 
-/* The density a disk of this shape is, DF_SD to DF_DSDD; 0 for none. */
-static WORD density_of(UWORD ss, UWORD n)
-{
-    if (ss == 128 && n == 720)
-        return DF_SD;
-    if (ss == 128 && n == 1040)
-        return DF_ED;
-    if (ss == 256 && n == 720)
-        return DF_DD;
-    if (ss == 256 && n == 1440)
-        return DF_DSDD;
-    return 0;
-}
-
 /* The destination asked what it is: its densities offered, the one its
  * disk has chosen, and what it is on the status line. */
 static void probe(void)
@@ -189,7 +169,7 @@ static void probe(void)
         formats = geo16(6);
         if (!(flags & DG_FLOPPY))
             formats = 0;
-        cur = density_of(geo16(0), geo16(2));
+        cur = dk_density(geo16(0), geo16(2));
     }
     for (i = 0; i < 4; i++) {
         WORD d = (WORD)(i + 1);
@@ -266,38 +246,39 @@ static void fail(LONG r, WORD d)
     alert(1, a, d);
 }
 
-/* ---- Format --------------------------------------------------------------- */
+/* ---- Format and Copy, through diskops.c ------------------------------------
+ * The work is src/apps/diskops.c's, which DUP shares; what is here is
+ * what the dialog says while it happens. */
 
-static int32_t put_sec(void *ctx, uint16_t sec, const uint8_t *buf, uint16_t len)
+static void on_stage(WORD what, WORD d)
 {
-    (void)ctx;
-    (void)len;
-    return Drwsec(dst, 1, sec, 1, cur_ss, (void FAR *)buf);
+    static const WORD said[5] = { S_FORMATTING, S_WRITING, S_SYSTEM, S_READING,
+                                  S_COPYING };
+
+    graf_mouse(BUSYBEE, 0);
+    status(said[what], d);
 }
 
-/* The serial number and random ID SpartaDOS X tells disks apart by, from
- * the clock and the name, as Altirra makes them. */
-static uint16_t stamp(const char *l)
+static WORD on_swap(WORD which, WORD d)
 {
-    uint16_t h = (uint16_t)Tgettime();
-    uint16_t d = (uint16_t)Tgetdate();
+    WORD a = A_SOURCE, r;
 
-    h = (uint16_t)(h ^ (uint16_t)(d << 5));
-    while (*l)
-        h = (uint16_t)(h * 31 + (uint8_t)*l++);
-    return h;
+    if (which == DK_DEST)
+        a = A_DEST;
+    graf_mouse(ARROW, 0);
+    r = alert(1, a, d);
+    graf_mouse(BUSYBEE, 0);
+    return r == 1;
 }
+
+static const DK_HOOKS hooks = { on_stage, progress, on_swap };
 
 static void do_format(void)
 {
     TEDINFO *lt = (TEDINFO *)(uint32_t)tree[DKLABEL].ob_spec.index;
     char *label = (char *)(uint32_t)lt->te_ptext;
-    WORD dens = 0, i, at, boot, src;
-    UWORD each;
+    WORD dens = 0, i, at, boot = 0;
     uint32_t free;
-    DISKINFO di;
-    MKFS m;
-    int32_t n;
     LONG r;
     char *t;
 
@@ -306,366 +287,65 @@ static void do_format(void)
             dens = (WORD)(i + 1);
     if (!dens)
         return;                         /* nothing it can make */
-    boot = is_sel(DKBOOT) && !is_sel(DKDOS2);
-    src = 0;
-    if (boot) {
+    if (is_sel(DKBOOT) && !is_sel(DKDOS2)) {
         graf_mouse(BUSYBEE, 0);
-        src = find_system(dst);
+        boot = dk_system(map, dst);
         graf_mouse(ARROW, 0);
-        if (!src) {
+        if (!boot) {
             alert(1, A_NOSYSTEM, dst);
             return;
         }
     }
     if (alert(2, A_ERASE, dst) != 1)
         return;
-    graf_mouse(BUSYBEE, 0);
-    progress(0, 1);
-    status(S_FORMATTING, dst);
-    r = Dformat(dst, dens, bad);
-    if (r != 0) {
-        fail(r, dst);
-        return;
-    }
-    r = Dgeom(dst, geo);
-    if (r != 0) {
-        fail(r, dst);
-        return;
-    }
-    status(S_WRITING, dst);
-    cur_ss = geo16(0);
-    memset(&m, 0, sizeof m);
-    m.secsize = cur_ss;
-    m.sectors = geo16(2);
-    m.bad = bad;
-    m.label = label;
-    m.stamp = stamp(label);
-    m.buf = secbuf;
-    m.put = put_sec;
-    n = is_sel(DKDOS2) ? mkfs_dos2(&m) : mkfs_sdfs(&m);
-    if (n < 0) {
-        fail(n, dst);
-        return;
-    }
-    free = (uint32_t)n;
-    if (boot) {
-        status(S_SYSTEM, dst);
-        r = make_bootable(src, dst);
-        if (r != 0) {
-            fail(r, dst);
-            return;
-        }
-        if (Dfree(&di, dst) == 0)
-            free = (uint32_t)di.b_free;
-    }
-    progress(1, 1);
+    r = dk_format(&hooks, dst, dens, is_sel(DKDOS2), label, boot, &free);
     graf_mouse(ARROW, 0);
-    each = cur_ss;                      /* a DOS 2 sector's link is 3 bytes */
-    if (is_sel(DKDOS2))
-        each = (UWORD)(each - 3);
+    if (r != 0) {
+        fail(r, dst);
+        return;
+    }
     t = status_text();
     at = put_str(t, 0, with_drive(S_FORMATTED, dst));
-    at = put_num(t, at, free * each);
+    at = put_num(t, at, free);
     at = put_str(t, at, str(S_FREE));
     status_end(at);
 }
 
-/* ---- Bootable: DUP's Write DOS files (phase 159) --------------------------
- * G4DOS on the new SDFS disk, which then boots to G4DOS's prompt: its
- * two files, G4DOS.SYS and SHELL.SYS, copied from a G4DOS disk in another
- * drive, and that disk's boot -- the header in sector 1's bytes 0-8, its
- * code from byte 48, and sectors 2 and 3 (tools/atr.py boot_gem4xe) --
- * laid on the new disk's sector 1 around ITS OWN file-system fields, with
- * bytes 40-41 naming the new G4DOS.SYS's map, which the boot loads by. */
-
-static void path_of(char *p, WORD d, const char *name)
-{
-    WORD k = 0;
-
-    p[0] = (char)('A' + d - 1);
-    p[1] = ':';
-    p[2] = '\\';
-    while (name[k] && k < 12) {
-        p[3 + k] = name[k];
-        k++;
-    }
-    p[3 + k] = 0;
-}
-
-static WORD has_file(WORD d, const char *name)
-{
-    char p[16];
-    LONG h;
-
-    path_of(p, d, name);
-    h = Fopen(p, 0);
-    if (h < 0)
-        return FALSE;
-    Fclose((WORD)h);
-    return TRUE;
-}
-
-/* A drive the DOS has, not `not`, with G4DOS.SYS and SHELL.SYS in its
- * root: 0 when there is none. */
-static WORD find_system(WORD not)
-{
-    WORD d;
-
-    for (d = 1; d <= 8; d++)
-        if (d != not && (map & (1U << (d - 1)))
-            && has_file(d, "G4DOS.SYS") && has_file(d, "SHELL.SYS"))
-            return d;
-    return 0;
-}
-
-/* `name` from drive a's root to drive b's, through the far buffer at
- * `buf` of `room` bytes: 0, or the error. */
-static LONG copy_file(WORD a, WORD b, const char *name, uint32_t buf, LONG room)
-{
-    char p[16];
-    LONG in, out, n, w, r = 0;
-
-    path_of(p, a, name);
-    in = Fopen(p, 0);
-    if (in < 0)
-        return in;
-    path_of(p, b, name);
-    out = Fcreate(p, 0);
-    if (out < 0) {
-        Fclose((WORD)in);
-        return out;
-    }
-    for (;;) {
-        n = Fread((WORD)in, room, (void FAR *)buf);
-        if (n <= 0) {
-            r = n;
-            break;
-        }
-        w = Fwrite((WORD)out, n, (const void FAR *)buf);
-        if (w != n) {
-            r = w < 0 ? w : EWRITF;
-            break;
-        }
-    }
-    Fclose((WORD)in);
-    if (Fclose((WORD)out) < 0 && r == 0)
-        r = EWRITF;
-    return r;
-}
-
-/* The map sector of G4DOS.SYS in the root of the disk in `d`, whose
- * sectors are cur_ss bytes: 0 when it is not there. */
-static UWORD sys_map(WORD d)
-{
-    UWORD lo, hi, s, i;
-    uint8_t *e;
-
-    if (Drwsec(d, 0, 1, 1, cur_ss, secbuf) != 0)
-        return 0;
-    lo = secbuf[9];
-    hi = secbuf[10];
-    s = (UWORD)(lo | (hi << 8));            /* the root's map */
-    if (!s || Drwsec(d, 0, s, 1, cur_ss, secbuf) != 0)
-        return 0;
-    lo = secbuf[4];
-    hi = secbuf[5];
-    s = (UWORD)(lo | (hi << 8));            /* its first data sector */
-    if (!s || Drwsec(d, 0, s, 1, cur_ss, secbuf) != 0)
-        return 0;
-    for (i = 23; i + 23 <= cur_ss; i = (UWORD)(i + 23)) {
-        e = secbuf + i;
-        if (!e[0])
-            break;                          /* the end of the directory */
-        if ((e[0] & 0x08) && !memcmp(e + 6, "G4DOS   SYS", 11)) {
-            lo = e[1];
-            hi = e[2];
-            return (UWORD)(lo | (hi << 8));
-        }
-    }
-    return 0;
-}
-
-static LONG make_bootable(WORD src, WORD d)
-{
-    UWORD ss, m, i;
-    uint8_t ours[128];
-    LONG r, base, room;
-
-    r = Dgeom(src, geo);
-    if (r != 0)
-        return r;
-    ss = geo16(0);
-    if (ss > 256)
-        return EUNDEV;                      /* a floppy's boot, not a partition's */
-    r = Drwsec(src, 0, 1, 3, ss, donor);
-    if (r != 0)
-        return r;
-    room = Malloc(-1L) - 8192L;
-    if (room > 32768L)
-        room = 32768L;
-    if (room < 1024L)
-        return ENSMEM;
-    base = Malloc(room);
-    if (base <= 0)
-        return ENSMEM;
-    r = copy_file(src, d, "G4DOS.SYS", (uint32_t)base, room);
-    if (r == 0)
-        r = copy_file(src, d, "SHELL.SYS", (uint32_t)base, room);
-    Mfree((void FAR *)(uint32_t)base);
-    if (r != 0)
-        return r;
-    m = sys_map(d);
-    if (!m)
-        return EWRITF;
-    r = Drwsec(d, 0, 1, 1, cur_ss, secbuf);
-    if (r != 0)
-        return r;
-    for (i = 0; i < 128; i++)
-        ours[i] = secbuf[i];
-    for (i = 0; i <= 8; i++)                /* the boot's header */
-        ours[i] = donor[i];
-    for (i = 48; i < 128; i++)              /* ...and its code */
-        ours[i] = donor[i];
-    ours[40] = (uint8_t)m;                  /* the file it loads */
-    ours[41] = (uint8_t)(m >> 8);
-    for (i = 0; i < 128; i++)
-        secbuf[i] = ours[i];
-    r = Drwsec(d, 1, 1, 1, cur_ss, secbuf);
-    if (r == 0)
-        r = Drwsec(d, 1, 2, 1, cur_ss, (void FAR *)((uint32_t)donor + ss));
-    if (r == 0)
-        r = Drwsec(d, 1, 3, 1, cur_ss, (void FAR *)((uint32_t)donor + 2 * (uint32_t)ss));
-    return r;
-}
-
-/* ---- Copy ------------------------------------------------------------------ */
-
-#define CHUNK 16                    /* sectors a Drwsec, between the bar's steps */
-
-/* `count` sectors from `first` between the drive and the buffer at the far
- * address `base`, CHUNK at a time, the bar stepping: 0, or the error. */
-static LONG transfer(WORD d, WORD rw, UWORD first, UWORD count, UWORD ss,
-                     uint32_t base, UWORD *done, UWORD total)
-{
-    UWORD k, c;
-    LONG r;
-
-    for (k = 0; k < count; k += c) {
-        c = (UWORD)(count - k);
-        if (c > CHUNK)
-            c = CHUNK;
-        r = Drwsec(d, rw, (UWORD)(first + k), c, ss,
-                   (void FAR *)(base + (uint32_t)k * ss));
-        if (r != 0)
-            return r;
-        *done = (UWORD)(*done + c);
-        progress(*done, total);
-    }
-    return 0;
-}
-
 static void do_copy(void)
 {
-    UWORD ss, n, per, first, cnt, done = 0, total, ss2, n2, flags2;
-    WORD dens, single = src == dst, at;
-    LONG r, room;
-    uint32_t base;
+    UWORD ss, n;
+    WORD at;
+    LONG r;
     char *t;
 
     graf_mouse(BUSYBEE, 0);
-    r = Dgeom(src, geo);
+    r = dk_shape(src, &ss, &n);
     graf_mouse(ARROW, 0);
+    if (r == DK_ESHAPE) {
+        alert(1, A_CANTCOPY, src);
+        return;
+    }
     if (r != 0) {
         fail(r, src);
         return;
     }
-    ss = geo16(0);
-    n = geo16(2);
-    dens = density_of(ss, n);
-    if (!(geo16(4) & DG_FLOPPY) || !dens) {
-        alert(1, A_CANTCOPY, src);
-        return;
-    }
     if (alert(2, A_REPLACE, dst) != 1)
         return;
-    /* as much of the disk as memory holds, less a little for others; a
-     * one-drive copy asks for a swap of disks each time it fills */
-    room = Malloc(-1L) - 8192L;
-    if (room > (LONG)ss * n)
-        room = (LONG)ss * n;
-    per = 0;
-    if (room > 0)
-        per = (UWORD)(room / ss);
-    if (per < CHUNK) {
-        alert(1, A_NOMEM, src);
-        return;
-    }
-    r = Malloc((LONG)per * ss);
-    if (r <= 0) {
-        alert(1, A_NOMEM, src);
-        return;
-    }
-    base = (uint32_t)r;
-    total = (UWORD)(n * 2);
-    progress(0, total);
-    for (first = 1; first <= n; first = (UWORD)(first + per)) {
-        cnt = (UWORD)(n - first + 1);
-        if (cnt > per)
-            cnt = per;
-        if (single && first > 1 && alert(1, A_SOURCE, src) != 1)
-            break;
-        graf_mouse(BUSYBEE, 0);
-        status(S_READING, src);
-        r = transfer(src, 0, first, cnt, ss, base, &done, total);
-        if (r != 0) {
-            fail(r, src);
-            break;
-        }
-        graf_mouse(ARROW, 0);
-        if (single && alert(1, A_DEST, dst) != 1)
-            break;
-        graf_mouse(BUSYBEE, 0);
-        if (first == 1) {
-            /* the destination's disk: another shape is formatted to this
-             * one first, and one the drive cannot make is refused */
-            r = Dgeom(dst, geo);
-            if (r != 0) {
-                fail(r, dst);
-                break;
-            }
-            ss2 = geo16(0);
-            n2 = geo16(2);
-            flags2 = geo16(4);
-            if (!(flags2 & DG_FLOPPY)) {
-                fail(EUNDEV, dst);
-                break;
-            }
-            if (ss2 != ss || n2 != n) {
-                status(S_FORMATTING, dst);
-                r = Dformat(dst, dens, bad);
-                if (r != 0) {
-                    fail(r, dst);
-                    break;
-                }
-            }
-        }
-        status(S_COPYING, dst);
-        r = transfer(dst, 1, first, cnt, ss, base, &done, total);
-        if (r != 0) {
-            fail(r, dst);
-            break;
-        }
-    }
-    Mfree((void FAR *)(uint32_t)base);
+    graf_mouse(BUSYBEE, 0);
+    r = dk_copy(&hooks, src, dst);
     graf_mouse(ARROW, 0);
-    if (done == total) {
-        t = status_text();
-        at = put_str(t, 0, str(S_COPIED));
-        at = put_num(t, at, n);
-        at = put_str(t, at, str(S_SECTORS));
-        at = put_num(t, at, ss);
-        status_end(at);
+    if (r == DK_ESTOP)
+        return;
+    if (r != 0) {
+        fail(r, r == EUNDEV ? dst : src);
+        return;
     }
+    t = status_text();
+    at = put_str(t, 0, str(S_COPIED));
+    at = put_num(t, at, n);
+    at = put_str(t, at, str(S_SECTORS));
+    at = put_num(t, at, ss);
+    status_end(at);
 }
 
 /* ---- main ------------------------------------------------------------------ */

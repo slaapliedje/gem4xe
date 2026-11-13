@@ -169,6 +169,8 @@ SYSTEM = [
     ("edit.rsc", "EDIT.RSC"),
     ("diskutil.g4a", "DISKUTIL.PRG"),
     ("diskutil.rsc", "DISKUTIL.RSC"),
+    ("dup.g4a", "DUP.PRG"),
+    ("dup.rsc", "DUP.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
@@ -241,6 +243,11 @@ WHAT_IT_IS = {
                     "a new disk, from the system disk in another drive.  A "
                     "hard disk's partition is never formatted",
     "DISKUTIL.RSC": "its dialog, alerts and words",
+    "DUP.PRG": "DOS 2's disk menu in a window: the letters A to P ask "
+               "what DUP.SYS's asked -- a directory, copy, delete, rename, "
+               "lock, format, duplicate a disk or a file, write DOS -- "
+               "and answer in DUP's words and error numbers, on any DOS",
+    "DUP.RSC": "its menu, and every line it prints",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "
                  "menu: the AES loads it once at start-up and it stays "

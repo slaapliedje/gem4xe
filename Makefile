@@ -828,7 +828,8 @@ build/cpanel.rsc build/cpanelrsc.h: tools/cpanelrsc.py tools/rsc.py tools/aesref
 # rather than round numbers, because an accessory is charged to the pool
 # for as long as the machine is on.
 build/appsld/%.o: src/apps/%.c src/app/gem.h build/calcrsc.h build/clockrsc.h \
-                  build/cpanelrsc.h build/gemarcrsc.h build/editrsc.h build/diskrsc.h
+                  build/cpanelrsc.h build/gemarcrsc.h build/editrsc.h build/diskrsc.h \
+                  build/duprsc.h
 	@mkdir -p build/appsld
 	$(CC) --code-model=large --data-model=large -O2 -I src -I src/app -I build -o $@ $<
 
@@ -898,9 +899,21 @@ build/diskutil.rsc build/diskrsc.h: tools/diskrsc.py tools/rsc.py tools/aesref.p
 	@mkdir -p build
 	python3 tools/diskrsc.py build/diskutil.rsc build/diskrsc.h
 
-build/appsld/diskutil.o build/appsld/mkfs.o: src/apps/mkfs.h
-DISKUTIL_OBJS = $(G4A_LIB_LD) build/appsld/diskutil.o build/appsld/mkfs.o
+build/appsld/diskutil.o build/appsld/mkfs.o build/appsld/diskops.o: src/apps/mkfs.h src/apps/diskops.h
+DISKUTIL_OBJS = $(G4A_LIB_LD) build/appsld/diskutil.o build/appsld/diskops.o build/appsld/mkfs.o
 $(eval $(call g4a,diskutil,$(DISKUTIL_OBJS),2560,256,2048,,,$(LIB_LD)))
+
+# DUP (src/apps/dup.c, docs/disk-plan.md part two): DOS 2's disk menu in
+# a GEM window, done by gem4xe -- the letters A to P, their questions and
+# answers in a 40-column text window, the whole-disk ones through
+# diskops.c as DISKUTIL's are.
+build/dup.rsc build/duprsc.h: tools/duprsc.py tools/rsc.py tools/aesref.py VERSION
+	@mkdir -p build
+	python3 tools/duprsc.py build/dup.rsc build/duprsc.h
+
+build/appsld/dup.o: src/apps/diskops.h src/apps/mkfs.h
+DUP_OBJS = $(G4A_LIB_LD) build/appsld/dup.o build/appsld/diskops.o build/appsld/mkfs.o
+$(eval $(call g4a,dup,$(DUP_OBJS),2560,256,2048,,,$(LIB_LD)))
 
 # The calculator AS AN ACCESSORY: the same calc.o, the other main().
 # The ST shipped one, and it is what the Desk menu is FOR -- a thing you
@@ -1298,7 +1311,7 @@ APP_FILES = --mkdir APPS \
             --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
 APP_DEPS  = build/calc.g4a build/calc.rsc build/clock.g4a build/clock.rsc \
             build/gemarc.g4a build/gemarc.rsc build/edit.g4a build/edit.rsc \
-            build/diskutil.g4a build/diskutil.rsc
+            build/diskutil.g4a build/diskutil.rsc build/dup.g4a build/dup.rsc
 # The gate accessory (src/m28_acc.c), in the system's own directory with
 # the extension the AES looks for there: an accessory is not in \APPS\
 # with the programs, because it is not one -- it is loaded once at
@@ -2060,7 +2073,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2467,6 +2480,18 @@ test-m63: build/diskutil-test.atr build/gem.sym
 # with the applications floppy in D2:; and the alert with none on a disk.
 test-m64: build/gem-sys.atr build/gem-apps.atr build/gem.sym
 	python3 tests/emu/m64_deskdisk.py
+
+# DUP driven by its keys (phase 160, docs/disk-plan.md part two): an
+# appliance floppy starting it, SHELL.SYS on it for H to write.
+build/dup-test.atr: build/gem.xex build/dup.g4a build/dup.rsc build/lang.rsc build/gem4xe.cfg \
+                    build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py build/fdos.elf build/fdboot.elf \
+                    build/shell.sys
+	@rm -f $@
+	python3 tools/mkfloppy.py $@ --app build/dup.g4a --add build/dup.rsc 'GEM>DUP.RSC' \
+	    --add build/shell.sys SHELL.SYS
+
+test-m65: build/dup-test.atr build/gem.sym
+	python3 tests/emu/m65_dup.py
 
 # The drive itself (phase 155, docs/disk-plan.md step 1): Dgeom, Dformat
 # and Drwsec through the runner on G4DOS, with the emulator's drive made an
@@ -2882,4 +2907,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
