@@ -13,6 +13,12 @@ in the desktop's place (tools/mkfloppy.py --app) -- and four more disks:
   D4  a blank double-sided disk.  Formatted at single density as DOS 2.
   D5  an enhanced-density disk.  D3 copied onto it: another shape, so
       formatted to D3's first, then every sector written.
+  D6  a blank single-density disk.  Formatted single density, G4DOS,
+      Bootable (phase 159) -- as D3 is too.
+
+The bootable ones take G4DOS.SYS and SHELL.SYS from the appliance in D1,
+which carries SHELL.SYS for that.  After the run D3 and D6 are each booted
+alone, and must come to G4DOS's prompt: double and single density.
 
 The dialog is read off the screen and its buttons found from where its
 labels are: a row's buttons start six columns after its label, three
@@ -91,6 +97,8 @@ def make_disks(work):
     atr.ATRImage(256, 1440).save(paths[4])
     paths[5] = os.path.join(work, "d5.atr")
     atr.ATRImage(128, 1040).save(paths[5])
+    paths[6] = os.path.join(work, "d6.atr")
+    atr.ATRImage(128, 720).save(paths[6])
     return paths
 
 
@@ -184,6 +192,10 @@ def main():
         for ch in "TESTDISK":
             b.key(ch, shift=True)
             b.frames(12)
+        bootable = find_text(shot("bootable"), "Bootable")
+        if check(bootable is not None, "the Bootable switch"):
+            bootable = (bootable[0] + 8, bootable[1] + 4)
+            t.click(bootable)
         go = find_all(shot("go"), "Format")
         go = [h for h in go if h[1] > lbl["Exit"][1] - 4]
         if check(go, "the Format button beside Exit"):
@@ -191,9 +203,7 @@ def main():
             if alert_ok("erased", "Format"):
                 check(status_after("formatted" , "d3-done") is not None,
                       "D3: formatted, the status line says so")
-        q = shot("d3-status")
-        check(find_text(q, "D3: formatted, 182784 bytes free") is not None,
-              f"...with 714 sectors of 256 free: 182784 bytes ({q})")
+        d3_status = shot("d3-status")
 
         # -- D4: single density, DOS 2 ----------------------------------------
         t.click(drive("To", 4))
@@ -208,6 +218,22 @@ def main():
         q = shot("d4-status")
         check(find_text(q, "D4: formatted, 88375 bytes free") is not None,
               f"D4: DOS 2 on single density: 707 sectors of 125 bytes free ({q})")
+
+        # -- D6: single density, G4DOS, bootable ----------------------------
+        t.click(drive("To", 6))
+        # a button already selected is white on black, which find_text
+        # does not read: Single is D6:'s own density, chosen on asking it
+        single = button_on("Density", "Single")
+        sdfs = button_on("Files", "G4DOS")
+        if check(sdfs and bootable, "G4DOS and Bootable for D6:"):
+            if single:
+                t.click(single)
+            t.click(sdfs)
+            t.click(bootable)
+            t.click((go[0][0] + 4, go[0][1] + 4))
+            if alert_ok("erased", "Format"):
+                status_after("formatted", "d6-done")
+        d6_status = shot("d6-status")
 
         # -- copy D3 to D5 -----------------------------------------------------
         q = shot("mode")
@@ -238,15 +264,33 @@ def main():
         p = state[d]
         return atr.ATRImage.load(p) if os.path.exists(p) else None
 
-    d3, d4, d5, d2 = image(3), image(4), image(5), image(2)
+    def bootable_disk(img, name, status):
+        """An SDFS with G4DOS.SYS and SHELL.SYS, its superblock naming
+        G4DOS.SYS's map, checking clean; the free bytes the status line
+        said are the image's."""
+        fs = atr.Sdfs(img)
+        files = sorted(e.filename for e in fs.entries(""))
+        check(files == ["G4DOS.SYS", "SHELL.SYS"], f"{name}: holds {files}")
+        sb = img.read_sector(1)
+        g4 = next((e for e in fs.entries("") if e.filename == "G4DOS.SYS"), None)
+        check(g4 is not None and (sb[40] | sb[41] << 8) == g4.map,
+              f"{name}: sector 1 names map {sb[40] | sb[41] << 8} as the boot file")
+        check(not fs.check(), f"{name}'s SDFS: {fs.check()[:3]}")
+        want = f"{name} formatted, {fs.free_count() * img.sector_size} bytes free"
+        check(find_text(status, want) is not None, f"the status line: '{want}' ({status})")
+        return fs
+
+    d3, d4, d5, d2, d6 = image(3), image(4), image(5), image(2), image(6)
     if check(d3 is not None, "D3: has a working copy"):
-        fs = atr.Sdfs(d3)
+        fs = bootable_disk(d3, "D3:", d3_status)
         sb = d3.read_sector(1)
         check(sb[22:30] == b"TESTDISK", f"D3:'s volume is {sb[22:30]!r}")
-        check(not fs.check(), f"D3:'s SDFS: {fs.check()[:3]}")
-        check([e.filename for e in fs.entries("")] == [], "D3: is empty, OLD.TXT gone")
-        check(fs.free_count() == 714, f"D3: {fs.free_count()} free, 714 expected")
-        print(f"  D3: an SDFS called TESTDISK, empty, {fs.free_count()} free, checks clean")
+        print(f"  D3: an SDFS called TESTDISK, G4DOS.SYS and SHELL.SYS on it and its "
+              f"boot naming G4DOS.SYS, {fs.free_count()} free, checks clean")
+    if check(d6 is not None, "D6: has a working copy"):
+        check((d6.sector_size, d6.sector_count) == (128, 720), "D6: is single density")
+        fs = bootable_disk(d6, "D6:", d6_status)
+        print(f"  D6: single density, bootable the same way, {fs.free_count()} free")
     if check(d4 is not None, "D4: has a working copy"):
         check((d4.sector_size, d4.sector_count) == (128, 720),
               f"D4: is {d4.sector_count} of {d4.sector_size}, not single density")
@@ -260,6 +304,24 @@ def main():
         print(f"  D5: formatted from enhanced to double density, and D3: sector for "
               f"sector: {'yes' if same else 'NO'}")
     check(d2 is None or d2.data == atr.ATRImage(512, 4096).data, "D2:, a partition, was written")
+
+    # -- the bootable disks booted, alone --------------------------------------
+    from fdos_shell import wait_for as wait_screen, fresh, lines
+    for d, name in ((3, "D3: (double density)"), (6, "D6: (single density)")):
+        if not os.path.exists(state[d]):
+            continue
+        alone = os.path.join(work, f"boot{d}.atr")
+        shutil.copy(state[d], alone)
+        emu = launch(tag="m63boot", memsize="1088K", extra_args=["--disk", alone])
+        try:
+            emu.bridge.ok("COLD_RESET")
+            t2 = wait_screen(emu.bridge, fresh, 20000)
+            seen = lines(emu.bridge)
+            check(t2 >= 0, f"{name} booted alone did not come to G4DOS's prompt: {seen[-3:]}")
+            if t2 >= 0:
+                print(f"  {name} booted alone: G4DOS's prompt, {t2} frames")
+        finally:
+            emu.stop()
     shutil.rmtree(work, ignore_errors=True)
     print(f"gem4xe-m63: {'PASS' if not problems else 'FAIL'} -- DISKUTIL formats and "
           f"copies disks, {len(problems)} problem(s)")

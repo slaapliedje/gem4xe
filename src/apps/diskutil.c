@@ -32,6 +32,10 @@ static uint8_t secbuf[512];
 static uint8_t bad[DF_BADLEN];
 static char msg[160];
 static UWORD cur_ss;                /* the sector size mkfs writes in */
+static uint8_t donor[768];          /* a system disk's sectors 1-3 */
+
+static WORD find_system(WORD not);
+static LONG make_bootable(WORD src, WORD d);
 
 /* ---- strings ------------------------------------------------------------ */
 
@@ -233,6 +237,7 @@ static void setup(void)
     state(DKSDFS, DISABLED, op == 1);
     state(DKDOS2, DISABLED, op == 1);
     state(DKLABEL, DISABLED, op == 1);
+    state(DKBOOT, DISABLED, op == 1 || is_sel(DKDOS2));
     i = S_FORMAT;
     if (op)
         i = S_COPY;
@@ -287,8 +292,10 @@ static void do_format(void)
 {
     TEDINFO *lt = (TEDINFO *)(uint32_t)tree[DKLABEL].ob_spec.index;
     char *label = (char *)(uint32_t)lt->te_ptext;
-    WORD dens = 0, i, at;
+    WORD dens = 0, i, at, boot, src;
     UWORD each;
+    uint32_t free;
+    DISKINFO di;
     MKFS m;
     int32_t n;
     LONG r;
@@ -299,6 +306,17 @@ static void do_format(void)
             dens = (WORD)(i + 1);
     if (!dens)
         return;                         /* nothing it can make */
+    boot = is_sel(DKBOOT) && !is_sel(DKDOS2);
+    src = 0;
+    if (boot) {
+        graf_mouse(BUSYBEE, 0);
+        src = find_system(dst);
+        graf_mouse(ARROW, 0);
+        if (!src) {
+            alert(1, A_NOSYSTEM, dst);
+            return;
+        }
+    }
     if (alert(2, A_ERASE, dst) != 1)
         return;
     graf_mouse(BUSYBEE, 0);
@@ -329,6 +347,17 @@ static void do_format(void)
         fail(n, dst);
         return;
     }
+    free = (uint32_t)n;
+    if (boot) {
+        status(S_SYSTEM, dst);
+        r = make_bootable(src, dst);
+        if (r != 0) {
+            fail(r, dst);
+            return;
+        }
+        if (Dfree(&di, dst) == 0)
+            free = (uint32_t)di.b_free;
+    }
     progress(1, 1);
     graf_mouse(ARROW, 0);
     each = cur_ss;                      /* a DOS 2 sector's link is 3 bytes */
@@ -336,9 +365,177 @@ static void do_format(void)
         each = (UWORD)(each - 3);
     t = status_text();
     at = put_str(t, 0, with_drive(S_FORMATTED, dst));
-    at = put_num(t, at, (uint32_t)n * each);
+    at = put_num(t, at, free * each);
     at = put_str(t, at, str(S_FREE));
     status_end(at);
+}
+
+/* ---- Bootable: DUP's Write DOS files (phase 159) --------------------------
+ * G4DOS on the new SDFS disk, which then boots to G4DOS's prompt: its
+ * two files, G4DOS.SYS and SHELL.SYS, copied from a G4DOS disk in another
+ * drive, and that disk's boot -- the header in sector 1's bytes 0-8, its
+ * code from byte 48, and sectors 2 and 3 (tools/atr.py boot_gem4xe) --
+ * laid on the new disk's sector 1 around ITS OWN file-system fields, with
+ * bytes 40-41 naming the new G4DOS.SYS's map, which the boot loads by. */
+
+static void path_of(char *p, WORD d, const char *name)
+{
+    WORD k = 0;
+
+    p[0] = (char)('A' + d - 1);
+    p[1] = ':';
+    p[2] = '\\';
+    while (name[k] && k < 12) {
+        p[3 + k] = name[k];
+        k++;
+    }
+    p[3 + k] = 0;
+}
+
+static WORD has_file(WORD d, const char *name)
+{
+    char p[16];
+    LONG h;
+
+    path_of(p, d, name);
+    h = Fopen(p, 0);
+    if (h < 0)
+        return FALSE;
+    Fclose((WORD)h);
+    return TRUE;
+}
+
+/* A drive the DOS has, not `not`, with G4DOS.SYS and SHELL.SYS in its
+ * root: 0 when there is none. */
+static WORD find_system(WORD not)
+{
+    WORD d;
+
+    for (d = 1; d <= 8; d++)
+        if (d != not && (map & (1U << (d - 1)))
+            && has_file(d, "G4DOS.SYS") && has_file(d, "SHELL.SYS"))
+            return d;
+    return 0;
+}
+
+/* `name` from drive a's root to drive b's, through the far buffer at
+ * `buf` of `room` bytes: 0, or the error. */
+static LONG copy_file(WORD a, WORD b, const char *name, uint32_t buf, LONG room)
+{
+    char p[16];
+    LONG in, out, n, w, r = 0;
+
+    path_of(p, a, name);
+    in = Fopen(p, 0);
+    if (in < 0)
+        return in;
+    path_of(p, b, name);
+    out = Fcreate(p, 0);
+    if (out < 0) {
+        Fclose((WORD)in);
+        return out;
+    }
+    for (;;) {
+        n = Fread((WORD)in, room, (void FAR *)buf);
+        if (n <= 0) {
+            r = n;
+            break;
+        }
+        w = Fwrite((WORD)out, n, (const void FAR *)buf);
+        if (w != n) {
+            r = w < 0 ? w : EWRITF;
+            break;
+        }
+    }
+    Fclose((WORD)in);
+    if (Fclose((WORD)out) < 0 && r == 0)
+        r = EWRITF;
+    return r;
+}
+
+/* The map sector of G4DOS.SYS in the root of the disk in `d`, whose
+ * sectors are cur_ss bytes: 0 when it is not there. */
+static UWORD sys_map(WORD d)
+{
+    UWORD lo, hi, s, i;
+    uint8_t *e;
+
+    if (Drwsec(d, 0, 1, 1, cur_ss, secbuf) != 0)
+        return 0;
+    lo = secbuf[9];
+    hi = secbuf[10];
+    s = (UWORD)(lo | (hi << 8));            /* the root's map */
+    if (!s || Drwsec(d, 0, s, 1, cur_ss, secbuf) != 0)
+        return 0;
+    lo = secbuf[4];
+    hi = secbuf[5];
+    s = (UWORD)(lo | (hi << 8));            /* its first data sector */
+    if (!s || Drwsec(d, 0, s, 1, cur_ss, secbuf) != 0)
+        return 0;
+    for (i = 23; i + 23 <= cur_ss; i = (UWORD)(i + 23)) {
+        e = secbuf + i;
+        if (!e[0])
+            break;                          /* the end of the directory */
+        if ((e[0] & 0x08) && !memcmp(e + 6, "G4DOS   SYS", 11)) {
+            lo = e[1];
+            hi = e[2];
+            return (UWORD)(lo | (hi << 8));
+        }
+    }
+    return 0;
+}
+
+static LONG make_bootable(WORD src, WORD d)
+{
+    UWORD ss, m, i;
+    uint8_t ours[128];
+    LONG r, base, room;
+
+    r = Dgeom(src, geo);
+    if (r != 0)
+        return r;
+    ss = geo16(0);
+    if (ss > 256)
+        return EUNDEV;                      /* a floppy's boot, not a partition's */
+    r = Drwsec(src, 0, 1, 3, ss, donor);
+    if (r != 0)
+        return r;
+    room = Malloc(-1L) - 8192L;
+    if (room > 32768L)
+        room = 32768L;
+    if (room < 1024L)
+        return ENSMEM;
+    base = Malloc(room);
+    if (base <= 0)
+        return ENSMEM;
+    r = copy_file(src, d, "G4DOS.SYS", (uint32_t)base, room);
+    if (r == 0)
+        r = copy_file(src, d, "SHELL.SYS", (uint32_t)base, room);
+    Mfree((void FAR *)(uint32_t)base);
+    if (r != 0)
+        return r;
+    m = sys_map(d);
+    if (!m)
+        return EWRITF;
+    r = Drwsec(d, 0, 1, 1, cur_ss, secbuf);
+    if (r != 0)
+        return r;
+    for (i = 0; i < 128; i++)
+        ours[i] = secbuf[i];
+    for (i = 0; i <= 8; i++)                /* the boot's header */
+        ours[i] = donor[i];
+    for (i = 48; i < 128; i++)              /* ...and its code */
+        ours[i] = donor[i];
+    ours[40] = (uint8_t)m;                  /* the file it loads */
+    ours[41] = (uint8_t)(m >> 8);
+    for (i = 0; i < 128; i++)
+        secbuf[i] = ours[i];
+    r = Drwsec(d, 1, 1, 1, cur_ss, secbuf);
+    if (r == 0)
+        r = Drwsec(d, 1, 2, 1, cur_ss, (void FAR *)((uint32_t)donor + ss));
+    if (r == 0)
+        r = Drwsec(d, 1, 3, 1, cur_ss, (void FAR *)((uint32_t)donor + 2 * (uint32_t)ss));
+    return r;
 }
 
 /* ---- Copy ------------------------------------------------------------------ */
@@ -556,6 +753,11 @@ int main(void)
             draw(DKDENBOX);
         } else if (obj >= DKFROM1 && obj <= DKFROM8) {
             src = (WORD)(obj - DKFROM1 + 1);
+        } else if (obj == DKSDFS || obj == DKDOS2) {
+            state(DKBOOT, DISABLED, obj == DKDOS2);   /* DOS 2 boots no DOS */
+            if (obj == DKDOS2)
+                state(DKBOOT, SELECTED, 0);
+            draw(DKBOOT);
         } else if (obj == DKFORMAT || obj == DKCOPY) {
             op = obj == DKCOPY;
             setup();

@@ -803,6 +803,14 @@ def drives_g4dos(b, r, g, check):
     got, _ = g.listing("C:\\APPS\\*.*", FA_SUBDIR)
     compare_listing(check, "C:\\APPS\\*.*", got, image_listing(fs3, "APPS"))
     print(f"  D3: lists {len(got)} in \\APPS, as the image has them")
+    # Dfree on a 256-byte disk, whose sector 1 is 128 bytes: read as 256
+    # it failed and the answer was 0 (phase 159)
+    g.call("Dfree", L(r.sc + BUF), W(3))
+    free3, total3, secsiz3 = struct.unpack("<lll", r.read(BUF, 12))
+    check((free3, secsiz3) == (fs3.free_count(), 256),
+          f"Dfree on D3:, 256-byte sectors: {free3} free of {secsiz3}, the image "
+          f"{fs3.free_count()} of 256")
+    print(f"  D3: Dfree {free3} sectors of {secsiz3} free, as the image has it")
 
     # a 512-byte disk, as a hard disk's partition is (step 3): D4:
     tmp = tempfile.mkdtemp(prefix="m15g-512-")

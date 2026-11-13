@@ -237,8 +237,9 @@ WHAT_IT_IS = {
                     "double-sided density, as a G4DOS and SpartaDOS X disk "
                     "with folders or a DOS 2 and MyDOS one -- or copies one "
                     "whole, onto another drive or, swapping disks, onto "
-                    "another disk in the same one.  A hard disk's partition "
-                    "is never formatted",
+                    "another disk in the same one.  Bootable puts G4DOS on "
+                    "a new disk, from the system disk in another drive.  A "
+                    "hard disk's partition is never formatted",
     "DISKUTIL.RSC": "its dialog, alerts and words",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "

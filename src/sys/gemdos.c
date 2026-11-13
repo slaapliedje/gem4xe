@@ -1311,8 +1311,14 @@ static WORD gd_dfree_fs(WORD d, uint32_t *pfree, uint32_t *ptotal,
                 *ptotal = geom;
             }
         }
-    } else if (dsk_read(unit, SDFS_SUPER, sec, secsize) == SIO_OK
+    } else if (dsk_read(unit, SDFS_SUPER, sec, secsize == 256 ? 128 : secsize)
+               == SIO_OK
                && (sec[7] == SDFS_SIGN_A || sec[7] == SDFS_SIGN_B)) {
+        /* sector 1 is 128 bytes on a 256-byte disk, as sectors 1-3 are on
+         * every one: read as 256 it failed, and Dfree fell back on the
+         * listing -- which on G4DOS said nothing it could read, so every
+         * double-density SDFS disk had 0 bytes free (found by DISKUTIL,
+         * phase 159) */
         *pfree = (uint32_t)sec[13] | ((uint32_t)sec[14] << 8);
         *ptotal = (uint32_t)sec[11] | ((uint32_t)sec[12] << 8);
         ok = 1;

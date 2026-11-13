@@ -113,7 +113,7 @@ An alert before anything is erased: "Everything on D2: will be erased."
   17 sectors free, so it may not carry it.
 - Windows open on a drive that changed are read again.
 
-### 5. Write DOS files
+### 5. Write DOS files -- done, phase 159
 
 DUP's H: a formatted SDFS disk made bootable with G4DOS.SYS and
 SHELL.SYS, which makes it a system disk -- the boot sectors

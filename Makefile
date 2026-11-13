@@ -2449,11 +2449,15 @@ test-m61: build/gem-sys.atr build/gem.sym build/kitcpx/cpx.cpx build/cpanelacc.g
 
 # DISKUTIL driven as a person drives it (phase 157, docs/disk-plan.md step
 # 3): an appliance floppy starting it in the desktop's place, and the gate
-# makes four more disks to format and copy.
+# makes five more disks to format and copy.  SHELL.SYS on it, which an
+# appliance otherwise has not, so that it is the system disk a bootable
+# format takes G4DOS from (phase 159).
 build/diskutil-test.atr: build/gem.xex build/diskutil.g4a build/diskutil.rsc build/lang.rsc build/gem4xe.cfg \
-                         build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py build/fdos.elf build/fdboot.elf
+                         build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py build/fdos.elf build/fdboot.elf \
+                         build/shell.sys
 	@rm -f $@
-	python3 tools/mkfloppy.py $@ --app build/diskutil.g4a --add build/diskutil.rsc 'GEM>DISKUTIL.RSC'
+	python3 tools/mkfloppy.py $@ --app build/diskutil.g4a --add build/diskutil.rsc 'GEM>DISKUTIL.RSC' \
+	    --add build/shell.sys SHELL.SYS
 
 test-m63: build/diskutil-test.atr build/gem.sym
 	python3 tests/emu/m63_diskutil.py

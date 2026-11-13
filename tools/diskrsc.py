@@ -49,6 +49,7 @@ STRINGS = [
     ("S_WRITING", "Laying the file system ..."),
     ("S_READING", "Reading D#: ..."),
     ("S_COPYING", "Writing D#: ..."),
+    ("S_SYSTEM", "Putting G4DOS on D#: ..."),
     ("S_FORMATTED", "D#: formatted, "),
     ("S_COPIED", "Copied, "),
     ("S_NODISK", "D#: does not answer"),
@@ -66,6 +67,7 @@ STRINGS = [
     ("A_NOMEM", "[1][There is not enough|memory to copy a disk.][OK]"),
     ("A_CANTCOPY", "[1][The disk in D#: has no|floppy's shape, so it is|not copied.][OK]"),
     ("A_NORSC", "[1][DISKUTIL.RSC is missing.][OK]"),
+    ("A_NOSYSTEM", "[1][A bootable disk takes G4DOS.SYS|and SHELL.SYS from a G4DOS|disk in another drive, and|there is none.][OK]"),
 ]
 
 
@@ -134,9 +136,9 @@ def disk_tree(r):
         node("DKDENBOX", G_IBOX, NONE, NORMAL, 0, ch(2), ch(10, 2), ch(x - 1), ch(1), dens),
         label(r, "DKFSLBL", "Files", 2, 12),
         node("DKFSBOX", G_IBOX, NONE, NORMAL, 0, ch(9), ch(12), ch(16), ch(1), [
-            node("DKSDFS", G_BUTTON, RADIO, NORMAL, r.string(SYSTEMS[0]),
+            node("DKSDFS", G_BUTTON, ACT, NORMAL, r.string(SYSTEMS[0]),
                  ch(0), ch(0), ch(7), ch(1)),
-            node("DKDOS2", G_BUTTON, RADIO, NORMAL, r.string(SYSTEMS[1]),
+            node("DKDOS2", G_BUTTON, ACT, NORMAL, r.string(SYSTEMS[1]),
                  ch(9), ch(0), ch(7), ch(1)),
         ]),
         label(r, "DKLBLLBL", "Label", 2, 14),
@@ -147,6 +149,10 @@ def disk_tree(r):
         node("DKLABEL", G_FTEXT, EDITABLE, NORMAL,
              r.ted("@" * len(LABEL_TMPL), LABEL_TMPL, "N" * len(LABEL_TMPL)),
              ch(9), ch(14), ch(len(LABEL_TMPL)), ch(1)),
+        # DUP's Write DOS files (phase 159): G4DOS on the new disk, which
+        # then boots to G4DOS's prompt.  A switch, not one of a group.
+        node("DKBOOT", G_BUTTON, SELECTABLE, NORMAL, r.string("Bootable"),
+             ch(22), ch(14), ch(10), ch(1)),
         node("DKBAR", G_BOX, NONE, NORMAL, 0x00011100, ch(2), ch(16), ch(BAR_W), ch(1), [
             node("DKFILL", G_BOX, NONE, NORMAL, 0x00001171, ch(0), ch(0), ch(0), ch(1)),
         ]),
