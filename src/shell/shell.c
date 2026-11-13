@@ -27,10 +27,16 @@
  * first, then the folders in order -- so a program is run only if that
  * search finds the very file the shell means; anything deeper waits for
  * G4DOS's handler to follow paths (the plan's step 9).
+ *
+ * GEM'S NOTE (phase 162, docs/run8-plan.md): GEM ends to run a plain
+ * Atari program, and leaves a note after the place, in the same page
+ * (src/sys/runnote.h).  The shell that starts then runs the program; the
+ * one that DOSVEC loads after it -- or after a RESET -- runs GEM again.
  */
 #include "portab.h"
 #include "sdfs.h"
 #include "doscmd.h"
+#include "runnote.h"
 
 /* shstart.s */
 SIMPLE_CALL uint16_t sh_call(uint16_t addr);
@@ -92,6 +98,8 @@ static uint8_t key;
                                                         the folder, a sum */
 
 static const char banner[] = "\x9bG4DOS shell -- help lists commands\x9b";
+static const char gem_com[] = "D1:GEM.COM\x9b";   /* as G4DOS boots it */
+static const char m_gem[] = "\x9b" "A key for GEM\x9b";
 static const char kname[] = "K:\x9b";
 static const char FAR m_deep[] = "more than one folder down";
 static const char FAR m_hidden[] = "G4DOS finds another first";
@@ -348,6 +356,32 @@ int16_t dc_reboot(DC_STATE FAR *h)
 
 /* ---- the prompt ------------------------------------------------------------ */
 
+/* GEM's note, if there is one: step 1, the program, leaving the note at
+ * step 2 for the shell after it; step 2, GEM, and the note gone.  A
+ * program that could not be run has been said so (dc_run) and waits for
+ * a key, and then it is GEM, which asked for it.  Nothing comes back from
+ * a run; with no note, the shell is a prompt. */
+static void note_go(void)
+{
+    uint16_t i;
+
+    if (NOTE[0] != 'R' || NOTE[1] != 'Q' || NOTE[NOTE_LEN - 1] != note_sum())
+        return;
+    if (NOTE[NOTE_STEP] == NOTE_RUN) {
+        NOTE[NOTE_STEP] = NOTE_GEM;
+        NOTE[NOTE_LEN - 1] = note_sum();
+        for (i = 0; i < NOTE_ROOM && NOTE[NOTE_PATH + i]; i++)
+            line[i] = (char)NOTE[NOTE_PATH + i];
+        line[i] = 0;
+        dc_run(&dc, line);
+        put(m_gem, sizeof m_gem - 1);
+        (void)dc_key(&dc);
+    }
+    NOTE[0] = 0;
+    leave();
+    sh_exec((uint16_t)gem_com);
+}
+
 int main(void)
 {
     uint16_t cols = (uint16_t)(PEEK(RMARGN) - PEEK(LMARGN) + 1);
@@ -361,8 +395,9 @@ int main(void)
     IOCB(KBD, IC_AX1) = 4;
     IOCB(KBD, IC_AX2) = 0;
     cio(KBD);
-    put(banner, sizeof banner - 1);
     restore();
+    note_go();
+    put(banner, sizeof banner - 1);
     for (;;) {
         dc_prompt(&dc);
         IOCB(0, IC_COM) = CIO_GETREC;

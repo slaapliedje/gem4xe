@@ -504,14 +504,19 @@ static void win_sinfo(WNODE *pw)
  *        command line before running it, which is the whole difference,
  *        and the one extension that changes what do_open does.
  *
+ * and the 8-bit Atari's own (phase 162): COM, XEX, EXE, OBJ -- a plain
+ * program, which GEM ends to run, and starts again after (src/aes/shel.c,
+ * sh_plain).  Opening one is the same shel_write as opening a GEM one.
+ *
  * The extension is the ROLE.  The FORMAT is checked by the loader, which
  * reads the file's magic and refuses anything that is not gem4xe's
  * (src/sys/app.c, APP_E_MAGIC) -- so a 68000 .PRG or .TOS off a real
- * Atari is turned away with a message rather than run. */
+ * Atari is turned away with a message rather than run -- or, for the
+ * 8-bit names, the Atari's $FF $FF. */
 static const char FAR win_exts[][4] = {
-    "PRG", "G4A", "APP", "TOS", "TTP"
+    "PRG", "G4A", "APP", "TOS", "TTP", "COM", "XEX", "EXE", "OBJ"
 };
-#define WIN_NEXTS  5
+#define WIN_NEXTS  9
 #define WIN_TTP    4                    /* its index above: the one that asks */
 
 /* Which of win_exts[] the name ends in, or -1.  The name is the DOS's

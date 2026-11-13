@@ -518,7 +518,7 @@ build/fsel_rsc.o: build/fsel_rsc.c
 build/fsel.o: src/aes/fsel.c src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/fsel_rsc.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
-build/shel.o: src/aes/shel.c src/sys/abi.h src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/lang_rsc.h
+build/shel.o: src/aes/shel.c src/sys/abi.h src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/lang_rsc.h src/sys/runnote.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
 build/scrap.o: src/aes/scrap.c src/aes/aes.h src/sys/farmem.h
@@ -1556,7 +1556,7 @@ build/sh/shstart.o: src/shell/shstart.s
 	@mkdir -p build/sh
 	$(AS) --code-model=small --data-model=small -o $@ $<
 
-build/sh/shell.o: src/shell/shell.c src/sys/doscmd.h src/sys/sdfs.h src/portab.h
+build/sh/shell.o: src/shell/shell.c src/sys/doscmd.h src/sys/sdfs.h src/portab.h src/sys/runnote.h
 	@mkdir -p build/sh
 	$(CC) $(SH_CFLAGS) -o $@ $<
 
@@ -2073,7 +2073,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2356,6 +2356,12 @@ build/m15m-boot.atr: build/m3.xex tests/fixtures/test.txt tests/fixtures/out.txt
 
 test-m66: build/m15m-boot.atr
 	python3 tests/emu/m66_mydos.py
+
+# Phase 162: a plain Atari program from the desktop on G4DOS -- GEM ends,
+# the shell runs it from GEM's note, GEM comes back (docs/run8-plan.md)
+test-m67: build/gem-sys.atr build/gem.sym build/shell.sys build/m53_app.g4a \
+          build/m53_app.sym build/desktop.sym build/calc.sym
+	python3 tests/emu/m67_run8.py
 
 # The shell loop: sh_main runs DESKTOP.PRG, what it asks for, the desktop
 # again, until it asks to shut down -- with the harness at the keyboard
@@ -2917,4 +2923,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

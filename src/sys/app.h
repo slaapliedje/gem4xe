@@ -37,6 +37,8 @@
 #define APP_E_TAKEN  -12    /* a program aside whose bank-$00 memory is taken */
 #define APP_E_NODESK -13    /* the desktop could not be loaded; a program aside
                              * goes on instead (src/aes/shel.c) */
+#define APP_E_PLAIN  -14    /* a plain Atari program, with programs aside that
+                             * GEM's ending would lose (phase 162) */
 #define APP_E_OLDSDK -8     /* a G4A of format 1 or 2, built for the old COP
                                signatures (src/sys/abi.h): rebuild it */
 

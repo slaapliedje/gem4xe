@@ -34,6 +34,7 @@
 #include "sys/cio.h"
 #include "sys/dos.h"
 #include "sys/sdcio.h"                  /* sdc_folder: beside the modules */
+#include "sys/runnote.h"                /* a plain program: GEM's note */
 #include "sys/gemdos.h"
 #include "sys/farmem.h"
 #include "sys/ctx.h"
@@ -2241,6 +2242,87 @@ static WORD sh_nodeskgo(void)
     return APP_E_NODESK;
 }
 
+/* ---- plain Atari programs (phase 162, docs/run8-plan.md) ---------------
+ *
+ * A program in the Atari's own binary format loads where it was built to,
+ * $2000 or so -- over gem4xe -- so it cannot run beside GEM.  GEM ends
+ * instead, as Quit ends it, and leaves the DOS a note: run this, then
+ * GEM again (src/sys/runnote.h).  G4DOS's shell reads it.
+ *
+ * WHICH FILES.  The names the desktop gives a plain program's icon --
+ * .COM, .XEX, .EXE, .OBJ, which no GEM program carries -- and then the
+ * Atari's own mark, $FF $FF, as the file's first two bytes.  Only those
+ * names are opened to look, so a GEM program costs nothing more; and a
+ * file of those names without the mark goes on to the G4A loader, which
+ * refuses it as it refused it before. */
+static const char FAR sh_plainx[] = "COMXEXEXEOBJ";
+
+static WORD sh_isplain(const char *cmd)
+{
+    char cio[CIO_NAME_MAX + 1];
+    uint8_t two[2];
+    uint16_t got = 0;
+    int16_t io;
+    WORD i, e = -1;
+
+    for (i = 0; cmd[i]; i++)
+        if (cmd[i] == '.')
+            e = i + 1;
+        else if (cmd[i] == '\\' || cmd[i] == ':')
+            e = -1;
+    if (e < 0 || i - e != 3)
+        return 0;
+    for (i = 0; sh_plainx[i]; i += 3)
+        if ((cmd[e] & 0xDF) == sh_plainx[i]
+            && (cmd[e + 1] & 0xDF) == sh_plainx[i + 1]
+            && (cmd[e + 2] & 0xDF) == sh_plainx[i + 2])
+            break;
+    if (!sh_plainx[i])
+        return 0;
+    dos_cioname(cmd, cio);
+    io = cio_open(cio, CIO_A_READ, 0);
+    if (io < 0)
+        return 0;
+    (void)cio_read(io, two, 2, &got);
+    cio_close(io);
+    return (WORD)(got == 2 && two[0] == 0xFF && two[1] == 0xFF);
+}
+
+/* GEM ends, with the note for the program at `cmd` -- written in the
+ * shell's form, A:\X becoming D1:\X -- or the reason it cannot: a program
+ * put aside, which GEM's ending would lose without asking it, or a DOS
+ * with no way back yet (that load fails as it did before: not a G4A). */
+static WORD sh_plain(const char *cmd)
+{
+    WORD n = ring_n(), i, k = 0;
+
+    for (i = 0; i < n; i++)
+        if (ring_at(i) != SH_DESKREC)
+            return APP_E_PLAIN;
+    if (dos.kind != DOS_G4DOS)
+        return APP_E_MAGIC;
+    i = 0;
+    if (cmd[0] && cmd[1] == ':' && cmd[2] == '\\') {
+        NOTE[NOTE_PATH] = 'D';
+        NOTE[NOTE_PATH + 1] = (uint8_t)('1' + ((cmd[0] | 0x20) - 'a'));
+        NOTE[NOTE_PATH + 2] = ':';
+        k = 3;
+        i = 2;
+    }
+    for (; cmd[i]; i++, k++) {
+        if (k >= NOTE_ROOM - 1)
+            return APP_E_FILE;
+        NOTE[NOTE_PATH + k] = (uint8_t)cmd[i];
+    }
+    NOTE[NOTE_PATH + k] = 0;
+    NOTE[0] = 'R';
+    NOTE[1] = 'Q';
+    NOTE[NOTE_STEP] = NOTE_RUN;
+    NOTE[NOTE_LEN - 1] = note_sum();
+    sh_doexec = 4;                      /* the loop ends, and GEM with it */
+    return APP_OK;
+}
+
 WORD sh_lastret;                /* what the last one's main() returned */
 WORD sh_lastrc;                 /* the last load's status (APP_*) */
 
@@ -2296,6 +2378,10 @@ static WORD sh_ldapp(void)
         far_strget(cmd, sh_cmd_far, SH_CMDLEN);
         sh_next = SH_DESKTOP;
         sh_isgem = 1;
+        if (sh_isplain(cmd)) {          /* GEM ends to run it (above) */
+            sh_lastrc = sh_plain(cmd);
+            return sh_lastrc;
+        }
         k = ring_find(cmd);
         if (k >= 0) {
             /* started again: resumed where it was put aside -- or not, if
@@ -2509,6 +2595,7 @@ WORD sh_main(void)
                       : rc == APP_E_MANY   ? lang_str(LS_TOOMANY)
                       : rc == APP_E_TAKEN  ? lang_str(LS_NORESUME)
                       : rc == APP_E_NODESK ? lang_str(LS_NODESK)
+                      : rc == APP_E_PLAIN  ? lang_str(LS_PLAINASIDE)
                       :                      lang_str(LS_APPNOTLOAD));
         /* ...and before the first desktop, an accessory that was found
          * and not loaded: past the six slots, or no room in the pool.

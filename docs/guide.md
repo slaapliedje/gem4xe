@@ -322,6 +322,13 @@ ask it to quit.  **Quit** on the desktop asks every program that is
 loaded to quit first.  When there is not the memory to switch, an alert
 says what was short, and nothing is left half done.
 
+**Atari programs** -- a game or a tool for the 8-bit Atari itself, a
+`.COM`, `.XEX`, `.EXE` or `.OBJ` file -- open from the desktop too.
+Double-click one: GEM steps out of the way, the program has the whole
+machine, and when it ends -- or you press RESET -- GEM starts again.
+This works on the system floppy (G4DOS) so far.  Quit any program put
+aside first: GEM will not end and lose it.
+
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
 

@@ -69,7 +69,18 @@ def boot(disk, tag):
     emu = launch(tag=tag, memsize="1088K", extra_args=["--disk", disk])
     b = emu.bridge
     try:
-        b.frames(2600)
+        # UNTIL THE DESKTOP SETTLES, not a fixed count: the settings land as
+        # the panel boot-inits its modules, and that was frame 2500-2600 of
+        # a sample taken at 2600 -- so a GEM.COM a few sectors longer read
+        # the defaults in a full suite and passed alone (phase 162).
+        n, still = 0, 0
+        for _ in range(0, 20000, 250):
+            b.frames(250)
+            now = b.peek16(SYMS["app_calls"])
+            still = still + 1 if now == n else 0
+            n = now
+            if still >= 2 and now:
+                break
         # mn_display is static in src/aes/menu.c, so the delay is read
         # through the call that reports it rather than off a symbol: the
         # AES keeps it as a LONG of milliseconds.

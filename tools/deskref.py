@@ -980,7 +980,13 @@ class Desktop:
     # NAME ONLY.  Whether the file is really a program is the loader's
     # question, answered by its magic, and a document called SAMPLE.TOS
     # gets a program's icon here and a refusal there.
-    EXEC_EXTS = (".PRG", ".G4A", ".APP", ".TOS", ".TTP")
+    #
+    # And the 8-bit Atari's binary files, by the names its DOSes give them
+    # (phase 162): COM (SpartaDOS's commands and DOS 2's programs alike),
+    # XEX (the name a download carries), EXE, and OBJ (DOS 2's DUP saves
+    # one by that name, and the Atari Assembler Editor's output had it).
+    EXEC_EXTS = (".PRG", ".G4A", ".APP", ".TOS", ".TTP",
+                 ".COM", ".XEX", ".EXE", ".OBJ")
 
     @classmethod
     def win_which(cls, pf):

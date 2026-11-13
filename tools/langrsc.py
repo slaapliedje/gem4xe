@@ -156,6 +156,9 @@ STRINGS = [
     ("NOASIDE", "[1][There is not enough memory|to put this program aside.][  OK  ]"),
     ("NORESUME", "[1][This program cannot come|back yet: the memory it|was using is in use.][  OK  ]"),
     ("NODESK", "[1][There is not enough memory|to bring the desktop back.|A program goes on instead.][  OK  ]"),
+    # a plain Atari program ends GEM to run (phase 162, src/aes/shel.c
+    # sh_plain): a program put aside would be lost
+    ("PLAINASIDE", "[1][An Atari program needs all|of GEM's memory.  Quit the|programs put aside first.][  OK  ]"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -221,6 +224,7 @@ TRANSLATIONS = {
         "NOASIDE": "[1][Nicht genug Speicher, um|dieses Programm|zurückzustellen.][  OK  ]",
         "NORESUME": "[1][Dieses Programm kann noch|nicht zurückkehren: sein|Speicher wird benutzt.][  OK  ]",
         "NODESK": "[1][Nicht genug Speicher für|den Desktop. Ein Programm|läuft stattdessen weiter.][  OK  ]",
+        "PLAINASIDE": "[1][Ein Atari-Programm braucht|den ganzen Speicher. Bitte|zuerst die beiseitegelegten|Programme beenden.][  OK  ]",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -280,6 +284,7 @@ TRANSLATIONS = {
         "NOASIDE": "[1][Pas assez de mémoire pour|mettre ce programme de côté.][  OK  ]",
         "NORESUME": "[1][Ce programme ne peut pas|encore revenir : sa mémoire|est utilisée.][  OK  ]",
         "NODESK": "[1][Pas assez de mémoire pour|rappeler le bureau. Un|programme continue à sa place.][  OK  ]",
+        "PLAINASIDE": "[1][Un programme Atari a besoin|de toute la mémoire. Quittez|d'abord les programmes mis|de côté.][  OK  ]",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -339,6 +344,7 @@ TRANSLATIONS = {
         "NOASIDE": "[1][No hay memoria suficiente|para apartar este programa.][  OK  ]",
         "NORESUME": "[1][Este programa aún no puede|volver: su memoria está|en uso.][  OK  ]",
         "NODESK": "[1][No hay memoria suficiente|para volver al escritorio.|Sigue un programa en su lugar.][  OK  ]",
+        "PLAINASIDE": "[1][Un programa Atari necesita|toda la memoria. Cierre|antes los programas|apartados.][  OK  ]",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -398,6 +404,7 @@ TRANSLATIONS = {
         "NOASIDE": "[1][Za mało pamięci, aby|odłożyć ten program.][  OK  ]",
         "NORESUME": "[1][Ten program nie może|jeszcze wrócić: jego|pamięć jest zajęta.][  OK  ]",
         "NODESK": "[1][Za mało pamięci, aby|przywrócić pulpit. Zamiast|niego działa program.][  OK  ]",
+        "PLAINASIDE": "[1][Program Atari potrzebuje|całej pamięci. Najpierw|zakończ programy odłożone|na bok.][  OK  ]",
     },
 }
 

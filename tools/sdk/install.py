@@ -32,8 +32,9 @@ looks at them at all:
 
 The EXTENSION is the role and the CONTAINER is always a .g4a -- one
 build, installed under the name that says what it is.  The desktop reads
-.PRG, .APP, .TOS, .TTP and .G4A as programs; anything else is a document
-and double-clicking it offers Show, Print or Cancel.
+.PRG, .APP, .TOS, .TTP and .G4A as programs (and .COM, .XEX, .EXE and .OBJ
+as the 8-bit Atari's own, which GEM ends to run); anything else is a
+document and double-clicking it offers Show, Print or Cancel.
 
 A `>` is SpartaDOS's path separator and what these images use.  A plain
 NAME with no `>` goes in the root.
