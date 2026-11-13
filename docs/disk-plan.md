@@ -84,7 +84,7 @@ Three witnesses, not two, because a model and a target can agree and both be wro
   writing to it: G4DOS and SpartaDOS X for SDFS, MyDOS and DOS 2.5 for
   DOS 2.
 
-### 3. DISKUTIL
+### 3. DISKUTIL -- done, phase 157
 
 One dialog, TOS's shape:
 - **Format or Copy**;

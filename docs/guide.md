@@ -155,8 +155,8 @@ the way the card has them: `GEM.COM`, `DESKTOP.PRG`, `DESKTOP.RSC`,
 `CALC.RSC`, `GENERAL.CPX`, `GENERAL.RSC`, `COLOR.CPX`, `COLOR.RSC` into
 `\GEM\`; `HELLO.PRG`, `CALC.PRG`, `CALC.RSC`, `CLOCK.PRG`, `CLOCK.RSC`,
 `G4BENCH.PRG`, `GEMARC.PRG`, `GEMARC.RSC`, `EDIT.PRG`, `EDIT.RSC`,
-`QED.PRG`, `QED.RSC`, `QED.TXT`, `QEDLGPL.TXT`, `QEDAPACH.TXT` into
-`\APPS\`.
+`DISKUTIL.PRG`, `DISKUTIL.RSC`, `QED.PRG`, `QED.RSC`, `QED.TXT`,
+`QEDLGPL.TXT`, `QEDAPACH.TXT` into `\APPS\`.
 
 If what you have is a **loader that reads FAT** -- a SIDE3, an AVGCART
 -- or an SDrive-MAX, a FujiNet or a real drive, then a floppy is what
@@ -217,6 +217,8 @@ whatever name it is given:
 | `GEMARC.RSC` | its menus, alerts and words |
 | `EDIT.PRG` | a small text editor, for a CONFIG.SYS, a batch file or a README: Show a document from the desktop and press Return.  Atari files keep their $9B line ends and are drawn in the Atari's own characters; ST and PC files keep theirs.  Up to 32 KB |
 | `EDIT.RSC` | its menus, alerts and words |
+| `DISKUTIL.PRG` | formats a floppy -- single, enhanced, double or double-sided density, as a G4DOS and SpartaDOS X disk with folders or a DOS 2 and MyDOS one -- or copies one whole, onto another drive or, swapping disks, onto another disk in the same one.  A hard disk's partition is never formatted |
+| `DISKUTIL.RSC` | its dialog, alerts and words |
 | `CLOCK.ACC` | THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside GEM.COM, with CLOCK.RSC, and it appears in the Desk menu: the AES loads it once at start-up and it stays there, ticking, through every program the desktop runs. An accessory goes in the system's own directory, never in \APPS\ -- it is not something the desktop launches |
 | `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: a window listing the extensions below by their icons -- double-click one to open it -- with the time and the date along its top, beside whatever else is on the screen.  Beside GEM.COM with CPANEL.RSC |
 | `CPANEL.RSC` | its window and the words it says |

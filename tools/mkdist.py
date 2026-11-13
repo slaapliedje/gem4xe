@@ -167,6 +167,8 @@ SYSTEM = [
     ("gemarc.rsc", "GEMARC.RSC"),
     ("edit.g4a", "EDIT.PRG"),
     ("edit.rsc", "EDIT.RSC"),
+    ("diskutil.g4a", "DISKUTIL.PRG"),
+    ("diskutil.rsc", "DISKUTIL.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
@@ -231,6 +233,13 @@ WHAT_IT_IS = {
                 "drawn in the Atari's own characters; ST and PC files "
                 "keep theirs.  Up to 32 KB",
     "EDIT.RSC": "its menus, alerts and words",
+    "DISKUTIL.PRG": "formats a floppy -- single, enhanced, double or "
+                    "double-sided density, as a G4DOS and SpartaDOS X disk "
+                    "with folders or a DOS 2 and MyDOS one -- or copies one "
+                    "whole, onto another drive or, swapping disks, onto "
+                    "another disk in the same one.  A hard disk's partition "
+                    "is never formatted",
+    "DISKUTIL.RSC": "its dialog, alerts and words",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "
                  "menu: the AES loads it once at start-up and it stays "
