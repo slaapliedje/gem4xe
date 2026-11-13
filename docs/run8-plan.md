@@ -32,7 +32,7 @@ with the file's name.
 | DOS | GEM ends to | the program is run by | GEM comes back from |
 |---|---|---|---|
 | G4DOS | its shell, `SHELL.SYS` | the shell, reading GEM's note | the shell, whom DOSVEC loads when the program ends -- or after a RESET |
-| MyDOS 4.x, DOS 2 | a stub in the cassette buffer | the stub's own CIO binary loader | the stub again, through DOSVEC |
+| MyDOS 4.x, DOS 2 | a stub at $0400 | the stub's own CIO binary loader | the stub again, through DOSVEC |
 | SpartaDOS X | its command processor | a batch file GEM writes: the program, then GEM | the batch file's next line |
 
 **The note** (`src/sys/runnote.h`) sits in the cassette buffer's tail,
@@ -51,23 +51,24 @@ and says to close them first.
 
 ## Steps
 
-1. **G4DOS.**
+1. **G4DOS.** Done, phase 162.
    - The desktop's names.
    - The AES's check, the note, GEM ends.
    - The shell acts on the note: step 1 is the program, step 2 GEM.
    - Gate: a program run from the desktop prints its line and ends, and
      GEM is back.  A program that loops is RESET, and GEM is back.
 
-2. **MyDOS 4.x and DOS 2.**
-   - A stub of about 200 bytes, copied to the cassette buffer as GEM's
-     last act.
+2. **MyDOS 4.x and DOS 2.** Done, phase 163.
+   - A stub of 379 bytes, copied to $0400 as GEM's last act.  It also
+     marks the OS's boot done (COLDST 0, BOOT? bit 0), which a GEM
+     started as AUTORUN.SYS never was, so RESET is warm.
    - The stub opens the file and loads it by segments through CIO, with
      INITAD after each and RUNAD at the end, as G4DOS's loader does.
    - DOSVEC points back at the stub, which then loads GEM.COM the same
      way.
    - MyDOS has its own binary load (XIO 39/40), but DOS 2's lives in
      DUP.SYS, so one loader serves both.
-   - Gates: one on the MyDOS fixture and one on DOS 2.5.
+   - Gate: `test-m68`, on MyDOS 4.50 and a double-density DOS 2.
 
 3. **SpartaDOS X.**
    - SDX's command processor runs batch files (`-NAME`), a line at a

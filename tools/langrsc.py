@@ -159,6 +159,9 @@ STRINGS = [
     # a plain Atari program ends GEM to run (phase 162, src/aes/shel.c
     # sh_plain): a program put aside would be lost
     ("PLAINASIDE", "[1][An Atari program needs all|of GEM's memory.  Quit the|programs put aside first.][  OK  ]"),
+    # ...and on DOS 2 or MyDOS, GEM has to load itself again afterwards
+    # (phase 163, src/run8.s): it looks for its own file and did not find it
+    ("PLAINGEM", "[1][GEM cannot find its own|file, GEM.COM or AUTORUN.SYS|on D1:, to start again|after the program.][  OK  ]"),
 ]
 
 # The longest string the system will ever copy into its near buffer, and
@@ -225,6 +228,7 @@ TRANSLATIONS = {
         "NORESUME": "[1][Dieses Programm kann noch|nicht zurückkehren: sein|Speicher wird benutzt.][  OK  ]",
         "NODESK": "[1][Nicht genug Speicher für|den Desktop. Ein Programm|läuft stattdessen weiter.][  OK  ]",
         "PLAINASIDE": "[1][Ein Atari-Programm braucht|den ganzen Speicher. Bitte|zuerst die beiseitegelegten|Programme beenden.][  OK  ]",
+        "PLAINGEM": "[1][GEM findet seine eigene|Datei, GEM.COM oder|AUTORUN.SYS auf D1:, nicht,|um danach neu zu starten.][  OK  ]",
     },
     "fr": {
         "ERRFILE": "[2][Cette application ne trouve pas|le dossier ou le fichier auquel|vous tentez d'accéder.][  OK  ]",
@@ -285,6 +289,7 @@ TRANSLATIONS = {
         "NORESUME": "[1][Ce programme ne peut pas|encore revenir : sa mémoire|est utilisée.][  OK  ]",
         "NODESK": "[1][Pas assez de mémoire pour|rappeler le bureau. Un|programme continue à sa place.][  OK  ]",
         "PLAINASIDE": "[1][Un programme Atari a besoin|de toute la mémoire. Quittez|d'abord les programmes mis|de côté.][  OK  ]",
+        "PLAINGEM": "[1][GEM ne trouve pas son|fichier, GEM.COM ou|AUTORUN.SYS sur D1:, pour|redémarrer après.][  OK  ]",
     },
     "es": {
         "ERRFILE": "[2][Esta aplicación no puede|encontrar la carpeta o archivo|al que intenta acceder.][  OK  ]",
@@ -345,6 +350,7 @@ TRANSLATIONS = {
         "NORESUME": "[1][Este programa aún no puede|volver: su memoria está|en uso.][  OK  ]",
         "NODESK": "[1][No hay memoria suficiente|para volver al escritorio.|Sigue un programa en su lugar.][  OK  ]",
         "PLAINASIDE": "[1][Un programa Atari necesita|toda la memoria. Cierre|antes los programas|apartados.][  OK  ]",
+        "PLAINGEM": "[1][GEM no encuentra su|archivo, GEM.COM o|AUTORUN.SYS en D1:, para|volver a arrancar después.][  OK  ]",
     },
     "pl": {
         "ERRFILE": "[2][Ten program nie może|znaleźć folderu lub pliku,|którego próbowałeś użyć.][  OK  ]",
@@ -405,6 +411,7 @@ TRANSLATIONS = {
         "NORESUME": "[1][Ten program nie może|jeszcze wrócić: jego|pamięć jest zajęta.][  OK  ]",
         "NODESK": "[1][Za mało pamięci, aby|przywrócić pulpit. Zamiast|niego działa program.][  OK  ]",
         "PLAINASIDE": "[1][Program Atari potrzebuje|całej pamięci. Najpierw|zakończ programy odłożone|na bok.][  OK  ]",
+        "PLAINGEM": "[1][GEM nie znajduje swojego|pliku, GEM.COM lub|AUTORUN.SYS na D1:, aby|potem wystartować ponownie.][  OK  ]",
     },
 }
 

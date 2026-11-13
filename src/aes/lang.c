@@ -37,6 +37,7 @@
 #include "aes/aes.h"
 #include "sys/cio.h"
 #include "sys/farmem.h"
+#include "sys/app.h"                    /* far_read_file */
 #include "vdi/font.h"
 #include "lang_rsc.h"
 
@@ -95,6 +96,39 @@ static WORD lang_read(int16_t fd, uint32_t dst, const uint8_t *hdr, uint16_t siz
     return 1;
 }
 
+extern int16_t g4z_unpack(uint32_t src, uint32_t dst, uint32_t count);
+
+/* A SQUEEZED LANG.RSC (phase 163): "G4A" 6, the unpacked length, one G4Z
+ * stream -- what tools/squeeze.py makes of a file, as it makes DESKTOP.RSC
+ * for the floppy that boots a DOS 2 (src/aes/rsrc.c, rc_unsqueeze).  That
+ * floppy is the tight one, and LANG.RSC goes on it in 5 sectors where it
+ * was 10.  A resource cannot begin so: its first word is a version, 0 to
+ * 3, high byte first.  The file as it was before it was squeezed, in far
+ * memory of its own, with its header copied back into `hdr`; or 0.  The
+ * whole file is read first (far_read_file), after the memory it unpacks
+ * to is taken, so the read's block is the one that goes again. */
+static uint32_t lang_unsqueeze(const char *cio, uint8_t *hdr)
+{
+    uint32_t n, mem, blob = 0, len = 0;
+
+    n = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) | ((uint32_t)hdr[6] << 16)
+        | ((uint32_t)hdr[7] << 24);
+    if (n < RSH_SIZE || n > 0xFFFFUL)
+        return 0;
+    mem = far_alloc(n);
+    if (!mem)
+        return 0;
+    if (far_read_file(cio, &blob, &len) != APP_OK)
+        return 0;                       /* mem stays taken: never given back */
+    if (len <= 8 || g4z_unpack(blob + 8, mem, n) != 0) {
+        far_free(blob);
+        return 0;
+    }
+    far_free(blob);
+    far_get(hdr, mem, RSH_SIZE);
+    return mem;
+}
+
 /* The other half of a translation: the character set.  LANG.RSC in Polish
  * is unreadable in the Atari ST's set, so a translation ships SYSTEM.FNT
  * beside it and the system takes it if it is there (src/vdi/font.c).  The
@@ -121,8 +155,9 @@ void lang_init(void)
     uint8_t hdr[RSH_SIZE];
     char cio[CIO_NAME_MAX + 1];
     uint16_t size, got;
-    uint32_t mem;
+    uint32_t mem = 0;
     int16_t fd;
+    WORD squeezed;
 
     if (done)
         return;
@@ -136,13 +171,28 @@ void lang_init(void)
         cio_close(fd);
         return;
     }
+    squeezed = (WORD)(hdr[0] == 'G' && hdr[1] == '4' && hdr[2] == 'A' && hdr[3] == 6);
+    if (squeezed) {                     /* read whole and unpacked, below */
+        cio_close(fd);
+        mem = lang_unsqueeze(cio, hdr);
+        if (!mem)
+            return;
+    }
     size = be16(&hdr[RSH_RSSIZE]);
     /* Refuse what cannot be read rather than half-read it: the colour
      * format, a file that does not hold its own header, and one with
      * fewer strings than the system asks for by index. */
     if ((be16(&hdr[RSH_VRSN]) & NEW_FORMAT_RSC) || size < RSH_SIZE
         || (WORD)be16(&hdr[RSH_NSTRING]) < LANG_NSTRING) {
-        cio_close(fd);
+        if (!squeezed)
+            cio_close(fd);
+        return;
+    }
+    if (squeezed) {
+        lang_base = mem;
+        lang_frstr = be16(&hdr[RSH_FRSTR]);
+        lang_n = (WORD)be16(&hdr[RSH_NSTRING]);
+        lang_file = 1;
         return;
     }
     mem = far_alloc(size);

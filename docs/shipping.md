@@ -162,9 +162,16 @@ desktop learnt to rename folders and move by name, 769 bytes of
 free to 1.  `DESKTOP.RSC` goes on it squeezed now, as a squeezed program
 is, 28 sectors to 11 (`tools/squeeze.py`).  The AES unpacks it as it
 fills the desktop's resource cache (`src/aes/rsrc.c`, `rc_unsqueeze`).
-The floppy has 17 free.  `LANG.RSC` would squeeze from 10 sectors to 5
-but is read by another path, and stays plain.  Every other disk keeps a
-plain `DESKTOP.RSC`, which an RCS can open.
+The floppy had 17 free.  Every other disk keeps a plain `DESKTOP.RSC`,
+which an RCS can open.
+
+**Phase 163 squeezed `LANG.RSC` too.**  Plain Atari programs need a stub
+GEM.COM carries for DOS 2 and MyDOS, 769 bytes of the DOS 2 build, and a
+string more in `LANG.RSC`; the floppy went to 5 free, under its floor.
+`LANG.RSC` goes on the disks a DOS 2 or MyDOS boots squeezed now, 10
+sectors to 6, and the AES unpacks it as it reads it (`src/aes/lang.c`,
+`lang_unsqueeze`).  The floppy has 8 free.  The SDFS disks and the card
+keep a plain one, which is what a translator replaces.
 
 That is the honest shape of the thing rather than a regression to be
 fixed: a 640x240 GUI with a resident AES belongs on a volume measured in

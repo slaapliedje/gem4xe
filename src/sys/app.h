@@ -39,6 +39,9 @@
                              * goes on instead (src/aes/shel.c) */
 #define APP_E_PLAIN  -14    /* a plain Atari program, with programs aside that
                              * GEM's ending would lose (phase 162) */
+#define APP_E_PLAINGEM -15  /* a plain Atari program on DOS 2 or MyDOS, and GEM
+                             * cannot find its own file to start again after
+                             * it (phase 163) */
 #define APP_E_OLDSDK -8     /* a G4A of format 1 or 2, built for the old COP
                                signatures (src/sys/abi.h): rebuild it */
 

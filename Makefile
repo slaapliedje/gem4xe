@@ -518,7 +518,7 @@ build/fsel_rsc.o: build/fsel_rsc.c
 build/fsel.o: src/aes/fsel.c src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/fsel_rsc.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
-build/shel.o: src/aes/shel.c src/sys/abi.h src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/lang_rsc.h src/sys/runnote.h
+build/shel.o: src/aes/shel.c src/sys/abi.h src/aes/aes.h src/sys/app.h src/sys/cio.h src/sys/dos.h src/sys/farmem.h build/lang_rsc.h src/sys/runnote.h build/run8_stub.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -I build -o $@ $<
 build/scrap.o: src/aes/scrap.c src/aes/aes.h src/sys/farmem.h
@@ -1578,6 +1578,17 @@ build/shell.sys: build/shell.elf tools/mkxex.py
 build/fdboot.elf: build/fdboot.o src/fdos.scm
 	$(LD) src/fdos.scm $< -o $@ --list-file build/fdboot.map \
 	    --memories-expression "(fdboot-layout)"
+# Phase 163: the stub that runs a plain Atari program after GEM on DOS 2
+# and MyDOS (src/run8.s, docs/run8-plan.md step 2), linked at $0400 and
+# carried by GEM.COM as a C array
+build/run8.o: src/run8.s
+	@mkdir -p build
+	$(AS) -o $@ $<
+build/run8.elf: build/run8.o src/run8.scm
+	$(LD) src/run8.scm $< -o $@ --list-file build/run8.map \
+	    --memories-expression "(run8-layout)"
+build/run8_stub.h: build/run8.elf tools/run8stub.py tools/mkxex.py
+	python3 tools/run8stub.py $< $@
 # test-fdosw's program: CIO driven at G4DOS's write side (tests/emu/fdwtest.s)
 build/fdwtest.o: tests/emu/fdwtest.s
 	@mkdir -p build
@@ -1616,7 +1627,7 @@ build/gem4xe-sys.car: build/cart.elf build/cartd.elf $(CART_FILES) \
 # twelve bytes of the far image for as long as the product floppies have
 # existed, and the cause was bank $01's first page (src/gem4xe.scm).
 # --compact because the fixture's directory was full before the sweep.
-build/gem-mydos.atr: build/gem.xex build/desktop.g4a build/desktop.rsc.sq build/lang.rsc build/816.com
+build/gem-mydos.atr: build/gem.xex build/desktop.g4a build/desktop.rsc.sq build/lang.rsc.sq build/816.com
 	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
@@ -1695,18 +1706,23 @@ build/bankslow.cfg: dist/gem4xe.cfg
 # gem-apps.atr (docs/media.md) -- which a DOS 2 cannot read, so this disk
 # is a gate's more than anybody's way in.
 DOS2_FILES = --add build/desktop.g4a DESKTOP.PRG --add build/desktop.rsc.sq DESKTOP.RSC \
-	     --add build/lang.rsc LANG.RSC --add build/816.com 816.COM
+	     --add build/lang.rsc.sq LANG.RSC --add build/816.com 816.COM
 # DESKTOP.RSC squeezed, 28 sectors to 11, for the disks DOS2_FILES makes:
 # the floppy that boots a DOS 2 had 1 sector left of its floor of 6 once
 # the desktop could move by name (phase 152).  The AES unpacks it as it
 # fills the desktop's resource cache (src/aes/rsrc.c, rc_fill).
 build/desktop.rsc.sq: build/desktop.rsc tools/squeeze.py tools/mkg4a.py
 	python3 tools/squeeze.py $< $@
+# ...and LANG.RSC, 10 sectors to 5, when the plain-program stub took the
+# floppy under its floor again (phase 163).  The AES unpacks it as it
+# reads it (src/aes/lang.c, lang_unsqueeze).
+build/lang.rsc.sq: build/lang.rsc tools/squeeze.py tools/mkg4a.py
+	python3 tools/squeeze.py $< $@
 # No GEM4XE.CFG on this one since phase 43: every value in the file is the
 # default, and the seven sectors were what File -> DOS command cost the
 # floppy's floor (docs/shipping.md section 1).  The SpartaDOS X floppy
 # and the card carry it.
-build/gem-boot.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq build/m11_app.g4a build/lang.rsc build/816.com
+build/gem-boot.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq build/m11_app.g4a build/lang.rsc.sq build/816.com
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
@@ -1715,7 +1731,7 @@ build/gem-boot.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq bu
 # The same shipped disk with a GEM4XE.CFG of the safe-mode line: what a
 # user writes from the DOS prompt when the VBXE's output is not something
 # their monitor will show (tests/emu/m26_fallback.py).
-build/gem-antic.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq build/m11_app.g4a build/lang.rsc build/816.com build/safe.cfg
+build/gem-antic.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq build/m11_app.g4a build/lang.rsc.sq build/816.com build/safe.cfg
 	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
@@ -2073,7 +2089,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2362,6 +2378,12 @@ test-m66: build/m15m-boot.atr
 test-m67: build/gem-sys.atr build/gem.sym build/shell.sys build/m53_app.g4a \
           build/m53_app.sym build/desktop.sym build/calc.sym
 	python3 tests/emu/m67_run8.py
+
+# Phase 163: the same on MyDOS 4.50 and DOS 2, through the stub GEM
+# leaves at $0400 (src/run8.s)
+test-m68: build/gem-mydos.atr build/gem-boot.atr build/gem.sym build/gem-dos2.sym \
+          build/desktop.sym build/calc.sym
+	python3 tests/emu/m68_run8dos.py
 
 # The shell loop: sh_main runs DESKTOP.PRG, what it asks for, the desktop
 # again, until it asks to shut down -- with the harness at the keyboard
@@ -2923,4 +2945,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

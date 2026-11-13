@@ -35,6 +35,7 @@
 #include "sys/dos.h"
 #include "sys/sdcio.h"                  /* sdc_folder: beside the modules */
 #include "sys/runnote.h"                /* a plain program: GEM's note */
+#include "run8_stub.h"                  /* ...and DOS 2's stub (build/) */
 #include "sys/gemdos.h"
 #include "sys/farmem.h"
 #include "sys/ctx.h"
@@ -2288,10 +2289,82 @@ static WORD sh_isplain(const char *cmd)
     return (WORD)(got == 2 && two[0] == 0xFF && two[1] == 0xFF);
 }
 
-/* GEM ends, with the note for the program at `cmd` -- written in the
- * shell's form, A:\X becoming D1:\X -- or the reason it cannot: a program
- * put aside, which GEM's ending would lose without asking it, or a DOS
- * with no way back yet (that load fails as it did before: not a G4A). */
+/* DOS 2 AND MyDOS (phase 163) have no shell to read a note: GEM leaves its
+ * own stub at $0400 (src/run8.s, carried as build/run8_stub.h) and points
+ * DOSVEC at it, so GEM's way out lands there.  The stub loads the program,
+ * then GEM -- which it needs the name of.  GEM.COM or AUTORUN.SYS on D1:,
+ * whichever begins with the code running now: the file's first segment is
+ * the near code, loaded where it runs and never written, so its first 32
+ * bytes in the file and in memory agree only for this very GEM, not for
+ * another program of the name. */
+#define DOSVEC_W    (*(volatile uint16_t *)0x000A)
+
+static const char FAR sh_gemx[2][R8_GEMLEN] = { "D1:GEM.COM", "D1:AUTORUN.SYS" };
+
+static WORD sh_ourfile(const char *cio)
+{
+    uint8_t h[6 + 32];
+    uint16_t got = 0, at, i;
+    int16_t io = cio_open(cio, CIO_A_READ, 0);
+
+    if (io < 0)
+        return 0;
+    (void)cio_read(io, h, sizeof h, &got);
+    cio_close(io);
+    if (got != sizeof h || h[0] != 0xFF || h[1] != 0xFF)
+        return 0;
+    at = (uint16_t)(h[2] | (uint16_t)h[3] << 8);
+    if (at < 0x2000)
+        return 0;
+    for (i = 0; i < 32; i++)
+        if (h[6 + i] != ((const uint8_t *)at)[i])
+            return 0;
+    return 1;
+}
+
+/* The stub, filled in: the DOS's DOSVEC, the program as CIO names it,
+ * GEM; and DOSVEC pointed at it.  APP_E_FILE for a name too long for it. */
+static WORD sh_stub(const char *cmd)
+{
+    volatile uint8_t *r8 = (volatile uint8_t *)R8_AT;
+    char cio[CIO_NAME_MAX + 1], gem[R8_GEMLEN];
+    uint16_t v = DOSVEC_W;
+    WORD i, k, g;
+
+    dos_cioname(cmd, cio);
+    k = (WORD)strlen(cio);
+    if (k >= R8_PROGLEN)
+        return APP_E_FILE;
+    for (g = 0; g < 2; g++) {
+        for (i = 0; i < R8_GEMLEN - 1; i++) {
+            int c = (uint8_t)sh_gemx[g][i];     /* a byte read, then kept */
+            gem[i] = (char)c;
+        }
+        gem[R8_GEMLEN - 1] = 0;
+        if (sh_ourfile(gem))
+            break;
+    }
+    if (g == 2)
+        return APP_E_PLAINGEM;
+    for (i = 0; i < R8_LEN; i++)
+        r8[i] = r8_stub[i];
+    r8[R8_DOS] = (uint8_t)v;
+    r8[R8_DOS + 1] = (uint8_t)(v >> 8);
+    for (i = 0; i < k; i++)
+        r8[R8_PROG + i] = (uint8_t)cio[i];
+    r8[R8_PROG + k] = 0x9B;
+    for (i = 0; gem[i]; i++)
+        r8[R8_GEM + i] = (uint8_t)gem[i];
+    r8[R8_GEM + i] = 0x9B;
+    DOSVEC_W = R8_AT;
+    return APP_OK;
+}
+
+/* GEM ends, with the way back laid for the program at `cmd` -- G4DOS's
+ * shell's note, A:\X written D1:\X, or the stub on DOS 2 and MyDOS -- or
+ * the reason it cannot: a program put aside, which GEM's ending would
+ * lose without asking it; GEM's own file not found; or a DOS with no way
+ * back yet (that load fails as it did before: not a G4A). */
 static WORD sh_plain(const char *cmd)
 {
     WORD n = ring_n(), i, k = 0;
@@ -2299,6 +2372,12 @@ static WORD sh_plain(const char *cmd)
     for (i = 0; i < n; i++)
         if (ring_at(i) != SH_DESKREC)
             return APP_E_PLAIN;
+    if (dos.kind == DOS_2) {
+        k = sh_stub(cmd);
+        if (k == APP_OK)
+            sh_doexec = 4;              /* the loop ends, and GEM with it */
+        return k;
+    }
     if (dos.kind != DOS_G4DOS)
         return APP_E_MAGIC;
     i = 0;
@@ -2596,6 +2675,7 @@ WORD sh_main(void)
                       : rc == APP_E_TAKEN  ? lang_str(LS_NORESUME)
                       : rc == APP_E_NODESK ? lang_str(LS_NODESK)
                       : rc == APP_E_PLAIN  ? lang_str(LS_PLAINASIDE)
+                      : rc == APP_E_PLAINGEM ? lang_str(LS_PLAINGEM)
                       :                      lang_str(LS_APPNOTLOAD));
         /* ...and before the first desktop, an accessory that was found
          * and not loaded: past the six slots, or no room in the pool.
