@@ -21,6 +21,7 @@ built from example/cpx.c and example/cpx.cpxh (build/kitcpx/cpx.cpx), as
 
     make test-m61
 """
+import atexit
 import hashlib
 import os
 import shutil
@@ -71,6 +72,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     syms = symfile.load(SYMS)
     work = tempfile.mkdtemp(prefix="m61-")
+    atexit.register(shutil.rmtree, work, True)
     disk, written = fresh_disk(work)
     emu = launch(tag="m61", memsize="1088K",
                  extra_args=["--bootrw", "--disk", disk])

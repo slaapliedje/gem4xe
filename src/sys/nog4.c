@@ -12,11 +12,16 @@
  *
  * Should this GEM.COM find itself on G4DOS after all, it is what gem4xe
  * was before G4DOS's folders: G4DOS's own flat D: through the OS, and no
- * DOS command.
+ * DOS command. *
+ * SpartaDOS X's half of running a plain Atari program (src/aes/run8sdx.c)
+ * is left out the same way, at the end of this file: a DOS 2 floppy never
+ * boots SDX.
  */
 #include "portab.h"
 #include "sdcio.h"
 #include "gemdos.h"
+#include "app.h"                        /* APP_E_MAGIC */
+#include "aes/aes.h"                    /* run8_sdx, as shel.c calls it */
 
 void sdc_init(void)
 {
@@ -90,4 +95,14 @@ int32_t sdc_command(uint32_t line, uint32_t out, uint32_t max)
     (void)out;
     (void)max;
     return GD_EINVFN;
+}
+
+/* SpartaDOS X's way back after a plain Atari program (src/aes/run8sdx.c):
+ * this GEM.COM boots from a DOS 2 floppy and never meets SDX, so it is
+ * left out too, and a plain program here is what it was before phase 164
+ * on SDX -- not a G4A. */
+WORD run8_sdx(const char *cmd)
+{
+    (void)cmd;
+    return APP_E_MAGIC;
 }

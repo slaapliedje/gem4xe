@@ -23,6 +23,7 @@ is one open and one read whatever its length.
     python3 tests/emu/m15_gdos.py --g4dos    G4DOS, its disk gem4xe's own SDFS engine (src/sys/sdcio.h),
                                              build/m15g-boot.atr
 """
+import atexit
 import datetime
 import hashlib
 import os
@@ -814,6 +815,7 @@ def drives_g4dos(b, r, g, check):
 
     # a 512-byte disk, as a hard disk's partition is (step 3): D4:
     tmp = tempfile.mkdtemp(prefix="m15g-512-")
+    atexit.register(shutil.rmtree, tmp, True)
     d4 = os.path.join(tmp, "d4.atr")
     img = atr.ATRImage(512, 1024)
     fs4 = atr.Sdfs.format(img, "BIGSECS")
@@ -897,6 +899,7 @@ def main(argv):
         # A copy, written to: what the engine wrote is checked on the disk
         # afterwards, from the emulator's working copy (tests/emu/fdos_boot.py)
         work = tempfile.mkdtemp(prefix="m15g-")
+        atexit.register(shutil.rmtree, work, True)
         disk = os.path.join(work, os.path.basename(G4DISK))
         shutil.copy(G4DISK, disk)
         sha = hashlib.sha256(open(disk, "rb").read()).hexdigest()

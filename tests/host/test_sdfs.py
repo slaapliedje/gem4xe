@@ -23,11 +23,14 @@ All of it on 256-byte sectors and on 128.
 
     python3 tests/host/test_sdfs.py
 """
+import atexit
 import os
 import random
+import shutil
 import subprocess
 import sys
 import tempfile
+import weakref
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -53,6 +56,9 @@ class Disk:
 
     def __init__(self, secsize=256, sectors=None, src=None):
         self.dir = tempfile.mkdtemp(prefix="sdfs-")
+        # gone with the Disk, not left in /tmp: 18,785 of these, 12 GB of a
+        # RAM disk every session shares, piled up before this (2026-11-13)
+        weakref.finalize(self, shutil.rmtree, self.dir, True)
         self.path = os.path.join(self.dir, "disk.atr")
         self.n = 0
         if src:
@@ -123,6 +129,7 @@ def card_partitions():
     import apt
     img = apt.Image.load(path)
     out, tmp = [], tempfile.mkdtemp(prefix="sdfs-cf-")
+    atexit.register(shutil.rmtree, tmp, True)
     for i, part in enumerate(apt.read_table(img), 1):
         a = atr.ATRImage(512, part.sector_count)
         for n in range(1, part.sector_count + 1):

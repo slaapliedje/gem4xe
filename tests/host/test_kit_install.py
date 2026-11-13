@@ -11,6 +11,7 @@ chains and free count agree (Sdfs.check).  A name that is not there is
 added as before.
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,7 @@ def run(*args):
 class TestInstallReplaces(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="kitinst-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
         self.new = os.path.join(self.dir, "NEW.PRG")
         with open(self.new, "wb") as f:
             f.write(NEW)

@@ -2255,7 +2255,9 @@ static WORD sh_nodeskgo(void)
  * Atari's own mark, $FF $FF, as the file's first two bytes.  Only those
  * names are opened to look, so a GEM program costs nothing more; and a
  * file of those names without the mark goes on to the G4A loader, which
- * refuses it as it refused it before. */
+ * refuses it as it refused it before.  Under SpartaDOS X, which loads the
+ * program itself (src/aes/run8sdx.c), its own relocatable format's $FA $FF
+ * too. */
 static const char FAR sh_plainx[] = "COMXEXEXEOBJ";
 
 static WORD sh_isplain(const char *cmd)
@@ -2286,7 +2288,8 @@ static WORD sh_isplain(const char *cmd)
         return 0;
     (void)cio_read(io, two, 2, &got);
     cio_close(io);
-    return (WORD)(got == 2 && two[0] == 0xFF && two[1] == 0xFF);
+    return (WORD)(got == 2 && two[1] == 0xFF
+                  && (two[0] == 0xFF || (two[0] == 0xFA && dos.kind == DOS_SDX)));
 }
 
 /* DOS 2 AND MyDOS (phase 163) have no shell to read a note: GEM leaves its
@@ -2301,7 +2304,7 @@ static WORD sh_isplain(const char *cmd)
 
 static const char FAR sh_gemx[2][R8_GEMLEN] = { "D1:GEM.COM", "D1:AUTORUN.SYS" };
 
-static WORD sh_ourfile(const char *cio)
+WORD sh_ourfile(const char *cio)
 {
     uint8_t h[6 + 32];
     uint16_t got = 0, at, i;
@@ -2361,7 +2364,8 @@ static WORD sh_stub(const char *cmd)
 }
 
 /* GEM ends, with the way back laid for the program at `cmd` -- G4DOS's
- * shell's note, A:\X written D1:\X, or the stub on DOS 2 and MyDOS -- or
+ * shell's note, A:\X written D1:\X; the stub on DOS 2 and MyDOS; the
+ * batch file under SpartaDOS X -- or
  * the reason it cannot: a program put aside, which GEM's ending would
  * lose without asking it; GEM's own file not found; or a DOS with no way
  * back yet (that load fails as it did before: not a G4A). */
@@ -2372,8 +2376,8 @@ static WORD sh_plain(const char *cmd)
     for (i = 0; i < n; i++)
         if (ring_at(i) != SH_DESKREC)
             return APP_E_PLAIN;
-    if (dos.kind == DOS_2) {
-        k = sh_stub(cmd);
+    if (dos.kind == DOS_2 || dos.kind == DOS_SDX) {
+        k = (dos.kind == DOS_SDX) ? run8_sdx(cmd) : sh_stub(cmd);
         if (k == APP_OK)
             sh_doexec = 4;              /* the loop ends, and GEM with it */
         return k;

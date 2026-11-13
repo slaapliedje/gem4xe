@@ -26,6 +26,7 @@ with tools/atr.py, as test-m19 reads its own.
 
     make test-m60
 """
+import atexit
 import hashlib
 import os
 import shutil
@@ -102,6 +103,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     syms = symfile.load(SYMS)
     work = tempfile.mkdtemp(prefix="m60-")
+    atexit.register(shutil.rmtree, work, True)
     disk, written = fresh_disk(work)
     before = maps(disk)
     emu = launch(tag=TAG, memsize="1088K",

@@ -952,6 +952,11 @@ void sh_put(uint32_t pdata, WORD len);
 void sh_envrn(const char **ppath, const char *psrch);
 WORD sh_find(char *pspec);
 void sh_cioname(const char *gem, char *cio);
+/* A plain Atari program (phase 162-164, docs/run8-plan.md): whether the
+ * file a CIO name opens begins with the GEM running now (src/aes/shel.c),
+ * and SpartaDOS X's way back, the batch file (src/aes/run8sdx.c). */
+WORD sh_ourfile(const char *cio);
+WORD run8_sdx(const char *cmd);
 /* The control panel's extensions, loaded beside the accessories: how
  * many there are, each one's published CPXINFO (a far address, 0 if
  * none) and each one's header (src/app/cpx.h). */

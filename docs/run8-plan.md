@@ -70,12 +70,12 @@ and says to close them first.
      DUP.SYS, so one loader serves both.
    - Gate: `test-m68`, on MyDOS 4.50 and a double-density DOS 2.
 
-3. **SpartaDOS X.**
+3. **SpartaDOS X.** Done, phase 164: RUN8.BAT and RUN9.BAT in turn.
    - SDX's command processor runs batch files (`-NAME`), a line at a
      time, and a program that ends returns to the batch.
    - Measured first: whether a batch started through XCOMLI from a
      running program keeps going after that program has ended.
-   - Gate: the same program from SDX's desktop.
+   - Gate: `test-m69`.  Measured: it does, and a RESET abandons the batch.
 
 4. **The cartridge.**
    - A CARTRIDGE icon on the desk when the OS found a cartridge at

@@ -58,9 +58,11 @@ returns with values, or a return whose value has a join in it.
 
 Exit 1 when it finds one, or when the self-test finds the scan blind.
 """
+import atexit
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -388,6 +390,7 @@ def scan(path, inc):
 
 def fake_dir():
     d = tempfile.mkdtemp(prefix="qscan-")
+    atexit.register(shutil.rmtree, d, True)
     os.makedirs(os.path.join(d, "calypsi"))
     with open(os.path.join(d, "calypsi", "intrinsics65816.h"), "w") as f:
         f.write(FAKE_INTRINSICS)

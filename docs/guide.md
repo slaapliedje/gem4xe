@@ -326,9 +326,10 @@ says what was short, and nothing is left half done.
 `.COM`, `.XEX`, `.EXE` or `.OBJ` file -- open from the desktop too.
 Double-click one: GEM steps out of the way, the program has the whole
 machine, and when it ends -- or you press RESET -- GEM starts again.
-This works under G4DOS (the system floppy), MyDOS and DOS 2 so far;
-SpartaDOS X is next.  Quit any program put aside first: GEM will not end
-and lose it.
+This works under G4DOS (the system floppy), SpartaDOS X, MyDOS and
+DOS 2.  Under SpartaDOS X a RESET during the program leaves you at its
+prompt instead: type `GEM`.  Quit any program put aside first: GEM will
+not end and lose it.
 
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
