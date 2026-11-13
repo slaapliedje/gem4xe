@@ -2558,6 +2558,38 @@ class Desktop:
         self.fun_file2any(pw, dwh, dobj, kstate)
         return True
 
+    def hndl_ddrag(self, obj):
+        """desktop.c hndl_ddrag (phase 158): a drive dragged on the desk.
+        Let go on another drive it runs DISKUTIL to copy one onto the
+        other, which no gate driving the model does; anywhere else it is
+        where it was.  True when it was a drag, False a click."""
+        io, _ = self.call(GRAF_MKSTATE)
+        if not (signed(io[3]) & 1):             # already let go: a click
+            return False
+        if not (self.screen[obj].ob_state & SELECTED):
+            self.act_select(DESKWH, DROOT, obj)
+        io, _ = self.call(OBJC_OFFSET, (obj,), tree=self.g_screen_addr)
+        bx, by = signed(io[0]), signed(io[1])
+        d = self.wind_get_rect(0, WF_WXYWH)
+        pob = self.screen[obj]
+        self.call(GRAF_DRAGBOX,
+                  (pob.ob_width, pob.ob_height, bx, by, d.x, d.y, d.w, d.h),
+                  steps=self.take_input("dragbox"))
+        io, _ = self.call(GRAF_MKSTATE)
+        x, y = signed(io[1]), signed(io[2])
+        io, _ = self.call(WIND_FIND, (x, y))
+        if signed(io[0]) != DESKWH:
+            return True
+        io, _ = self.call(OBJC_FIND, (DROOT, MAX_DEPTH), (x, y),
+                          tree=self.g_screen_addr)
+        dobj = signed(io[0])
+        a = self.icon_letter(obj)
+        b = self.icon_letter(dobj) if dobj >= WOBS_START else 0
+        if not b or b == a:
+            return True
+        raise NotImplementedError("deskref: a drive dropped on a drive runs "
+                                  "DISKUTIL, which the model does not")
+
     def hndl_rubber(self, wh, root, mx, my):
         """desktop.c hndl_rubber: the AES draws the box while the button
         is down and says how big it got; everything it touches is the
@@ -2591,6 +2623,8 @@ class Desktop:
             self.act_select(wh, root, obj)      # just the one is opened
             return self.do_open(wh, obj)
         if obj and pw is not None and self.hndl_drag(pw, obj, wh, root):
+            return False
+        if obj and pw is None and self.icon_letter(obj) and self.hndl_ddrag(obj):
             return False
         if not obj and pw is not None and self.hndl_rubber(wh, root, mx, my):
             return False

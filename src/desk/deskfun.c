@@ -1121,6 +1121,35 @@ void fun_command(void)
         cmd_run(line);
 }
 
+/* FORMAT AND COPY A DISK (phase 158, docs/disk-plan.md step 4): DISKUTIL,
+ * the program that does both, run with what it is to do -- "F 2" formats
+ * D2:, "C 1 2" copies D1: to D2:, and its own dialog asks.  TOS's desktop
+ * does them in its own code; this one's must fit three banks of a 512 KB
+ * machine with little to spare, and the program is on the applications
+ * floppy.  `a` and `b` are drive numbers, 1 for D1:; 0 leaves the choice
+ * to DISKUTIL.  Where it is not on any disk an alert says where it is. */
+WORD fun_disk(WORD copy, WORD a, WORD b)
+{
+    char args[6];
+    WORD k = 0;
+
+    args[k++] = (char)(copy ? 'C' : 'F');
+    if (a >= 1 && a <= 8) {
+        args[k++] = ' ';
+        args[k++] = (char)('0' + a);
+    }
+    if (b >= 1 && b <= 8) {
+        args[k++] = ' ';
+        args[k++] = (char)('0' + b);
+    }
+    args[k] = 0;
+    if (do_apps("DISKUTIL.PRG", Dgetdrv(), args))
+        return TRUE;
+    fun_alert(1, STNODISK);
+    return FALSE;
+}
+
+
 /* File -> Show info: the selected item, what the listing knows about
  * it, and the two things this dialog can change -- the name, which is
  * where the desktop's rename lives, and the read-only bit.

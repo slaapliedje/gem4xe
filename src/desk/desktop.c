@@ -340,6 +340,16 @@ static WORD do_filemenu(WORD item)
                                                  * window on what it printed */
         fun_command();
         break;
+    case FORMITEM:                              /* DISKUTIL, on the drive
+                                                 * selected on the desk or
+                                                 * else the top window's */
+        obj = sel_item(DROOT);
+        if (obj && icon_letter(obj))
+            obj = (WORD)(icon_letter(obj) - 'A' + 1);
+        else
+            obj = pw ? (WORD)(pw->w_path.p_spec[0] - 'A' + 1) : 0;
+        return fun_disk(FALSE, obj, 0);         /* TRUE: it ran, and the
+                                                 * desktop ends */
     case QUITITEM:
         /* Returning is enough: a desktop that ends without asking the
          * shell for anything ends GEM (src/aes/shel.c, sh_ldapp).  It
@@ -557,6 +567,38 @@ static WORD hndl_drag(WNODE *pw, WORD obj, WORD wh, WORD root)
     return TRUE;
 }
 
+/* A DRIVE DRAGGED ON THE DESK and let go on another drive: that disk
+ * copied onto the other's, TOS's desktop's rule -- DISKUTIL run with
+ * "C 1 2", whose own dialog asks (phase 158).  Let go anywhere else it
+ * is where it was: the desk's icons keep their places.  As hndl_drag:
+ * TRUE when it was a drag, 2 when DISKUTIL ran, FALSE a click. */
+static WORD hndl_ddrag(WORD obj)
+{
+    OBJECT *pob = &G.g_screen[obj];
+    WORD x, y, mstate, kstate, bx, by, dobj, a, b, w, h;
+    GRECT d;
+
+    graf_mkstate(&x, &y, &mstate, &kstate);
+    if (!(mstate & 1))
+        return FALSE;
+    if (!(pob->ob_state & SELECTED))
+        act_select(DESKWH, DROOT, obj);
+    objc_offset(G.g_screen, obj, &bx, &by);
+    wind_get(0, WF_WORKXYWH, &d.g_x, &d.g_y, &d.g_w, &d.g_h);
+    w = pob->ob_width;
+    h = pob->ob_height;
+    graf_dragbox(w, h, bx, by, d.g_x, d.g_y, d.g_w, d.g_h, &x, &y);
+    graf_mkstate(&x, &y, &mstate, &kstate);
+    if (wind_find(x, y) != DESKWH)
+        return TRUE;
+    dobj = objc_find(G.g_screen, DROOT, MAX_DEPTH, x, y);
+    a = icon_letter(obj);
+    b = dobj >= WOBS_START ? icon_letter(dobj) : 0;
+    if (!b || b == a)
+        return TRUE;
+    return fun_disk(TRUE, (WORD)(a - 'A' + 1), (WORD)(b - 'A' + 1)) ? 2 : TRUE;
+}
+
 /* A press on the desk or in a window's work area (the control manager
  * keeps the gadgets and the windows under the top one): select the
  * item under it and no other there; two clicks open it, and opening
@@ -614,6 +656,12 @@ static WORD hndl_button(WORD clicks, WORD mx, WORD my, WORD kstate)
     }
     if (obj && pw) {
         WORD d = hndl_drag(pw, obj, wh, root);  /* 2: a program ran */
+
+        if (d)
+            return (WORD)(d == 2);
+    }
+    if (obj && !pw && icon_letter(obj)) {       /* a drive on the desk */
+        WORD d = hndl_ddrag(obj);
 
         if (d)
             return (WORD)(d == 2);
@@ -919,7 +967,9 @@ static void set_version(void)
 
 int main(void)
 {
+#if N_NOT_YET
     static const WORD not_yet[N_NOT_YET] = NOT_YET_ITEMS;
+#endif
     WORD ev_which, mx, my, button, kstate, kret, bret;
     WORD i, done;
 
@@ -949,8 +999,10 @@ int main(void)
     rsrc_gaddr(R_STRING, STFMARK, (void **)&G.g_fmark);
     desk_cicons();
     set_version();
+#if N_NOT_YET
     for (i = 0; i < N_NOT_YET; i++)
         menu_ienable(G.a_menu, not_yet[i], 0);
+#endif
     cmd_init();
 
     obj_init();

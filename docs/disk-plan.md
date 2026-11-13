@@ -102,7 +102,7 @@ Copy disk:
 
 An alert before anything is erased: "Everything on D2: will be erased."
 
-### 4. The desktop
+### 4. The desktop -- done, phase 158
 
 - **File -> Format disk...** runs DISKUTIL on the selected drive, or on
   D1: when none is selected.

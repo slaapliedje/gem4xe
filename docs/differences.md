@@ -93,8 +93,9 @@ gem4xe follows EmuTOS file by file -- each file's header names its donor
 
 - **The desktop** is EmuTOS's in shape, with what it does on this
   machine: drives named `D1:` to `D8:`, a DOS command item, colour icons
-  from `DESKICON.RSC`, and its layout file in its own folder.  Format is
-  greyed.
+  from `DESKICON.RSC`, and its layout file in its own folder.  Format...,
+  and a drive dragged onto a drive, run DISKUTIL, a program of its own,
+  where TOS formats and copies in the desktop's code.
 - **The window manager** keeps EmuTOS's rectangle lists and frame, and
   blits a window that moves rather than redrawing it (`src/aes/wind.c`).
 - **The 3D look** is EmuTOS's `CONF_WITH_3D_OBJECTS`, switched at run

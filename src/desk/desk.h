@@ -329,6 +329,7 @@ WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
 WORD fun_askline(char *line);           /* one line, in the PREFS dialog */
 void do_docu(WNODE *pw, const char FAR *name);   /* Show / Print / Cancel */
 WORD do_edit(const char *doc);           /* EDIT.PRG on doc, if there is one */
+WORD do_apps(const char *name, WORD first, const char *args); /* \APPS\name */
 void win_rebld(WNODE *pw);
 /* The listing entry an item object shows, or 0. */
 FNODE FAR *win_fnode(WNODE *pw, WORD obj);
@@ -357,6 +358,7 @@ void cnx_put(void);
 /* deskfun.c: what the desktop says, and what the File menu does to files */
 WORD fun_alert(WORD defbut, WORD stnum);
 void fun_command(void);                 /* File -> DOS command: the dialog */
+WORD fun_disk(WORD copy, WORD a, WORD b);   /* DISKUTIL: format or copy */
 void fun_mkdir(WNODE *pw);
 /* An item dragged out of pw and let go over (dst_wh, dst_obj): a copy,
  * a move when SHIFT is held, a delete over the trash. */

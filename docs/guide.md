@@ -252,6 +252,7 @@ The desktop:
 - **Select all      ^A**
 - **Set file mask...**
 - **Delete...       ^D**
+- **Format...**
 - **DOS command...  ^Z**
 - **Quit            ^Q**
 - **Show as icons**
@@ -378,7 +379,7 @@ the cartridge, which have no folders.
 These are in the menu and **disabled** — the desktop puts them up
 greyed rather than pretending:
 
-- **Format...**
+
 
 Besides those:
 

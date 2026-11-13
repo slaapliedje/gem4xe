@@ -255,6 +255,14 @@ STINSELF = 28
 MOVE_ALERT = [
     (STINSELF, "STINSELF", "[1][A folder cannot go|inside itself.][ OK ]"),
 ]
+# File -> Format... and a drive dropped on a drive run DISKUTIL (phase
+# 158, docs/disk-plan.md step 4), which is on the applications floppy and
+# not part of the desktop.  Where there is none, this says where it is.
+STNODISK = 29
+DISK_ALERT = [
+    (STNODISK, "STNODISK", "[1][Formatting and copying disks|is DISKUTIL.PRG, in \\APPS\\|"
+                           "on the applications disk.|Put that disk in a drive.][ OK ]"),
+]
 
 # PREFS.RSC's second tree: the DOS command dialog, beside the chooser
 # for the same reason the chooser is there -- loaded only while it is
@@ -330,6 +338,7 @@ IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR), ("STINSELF", STINSELF),
+    ("STNODISK", STNODISK),
     ("ADICNBOX", ADICNBOX), ("ICDRIVE", ICDRIVE), ("ICLABEL", ICLABEL),
     ("ICINST", ICINST), ("ICREMV", ICREMV), ("ICCNCL", ICCNCL),
     ("ADCNFBOX", ADCNFBOX), ("NCOLD", NCOLD), ("NCNEW", NCNEW),
@@ -385,8 +394,9 @@ INDICES = [
 ]
 
 # The items the desktop does not do yet: disabled at start (menu_ienable),
-# not in the file, so the file stays RCS-shaped.
-NOT_YET = (FORMITEM,)
+# not in the file, so the file stays RCS-shaped.  Format... was the last,
+# kept for TOS's menu, until DISKUTIL came to do it (phase 158).
+NOT_YET = ()
 
 # The menu, box by box: (title, box x, box width, items); an item is a
 # string, "-" for a separator, and (string, state) for a state.
@@ -887,6 +897,8 @@ def build():
         assert r.free_string(text) == i, (name, i)
     for i, name, text in MOVE_ALERT:
         assert r.free_string(text) == i, (name, i)
+    for i, name, text in DISK_ALERT:
+        assert r.free_string(text) == i, (name, i)
     for ib, ig in IB_TABLE:
         (mask, data, char, xchar, ychar, xicon, yicon, wicon, hicon,
          xtext, ytext, wtext, htext) = deskicons.ICONS[ig]
@@ -904,8 +916,8 @@ def c_header(data):
              "#ifndef GEM4XE_DESK_RSC_H", "#define GEM4XE_DESK_RSC_H",
              f"#define DESK_RSC_SIZE {len(data)}"]
     lines += [f"#define {name:<10s} {value}" for name, value in INDICES]
-    lines.append("#define NOT_YET_ITEMS { " + ", ".join(
-        str(i) for i in NOT_YET) + " }")
+    lines.append("#define NOT_YET_ITEMS { " + (", ".join(
+        str(i) for i in NOT_YET) or "0") + " }")
     lines.append(f"#define N_NOT_YET {len(NOT_YET)}")
     lines.append("#endif")
     return "\n".join(lines) + "\n"

@@ -1496,17 +1496,25 @@ WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name)
     return run_prog(prog, dir, doc, pw, curr);
 }
 
-/* EDIT.PRG on a document, from the viewer (deskcmd.c cmd_edit): looked
- * for in \APPS\ of the document's own drive first, then of every other
- * drive the DOS has -- the applications floppy may be in any of them.
- * FALSE when there is none. */
-WORD do_edit(const char *doc)
+/* A program of the applications floppy's, `name` in \APPS\, run with
+ * `args`: looked for on drive `first` (0 is A:) first, then on every
+ * other drive the DOS has -- that floppy may be in any of them.  FALSE
+ * when there is none. */
+WORD do_apps(const char *name, WORD first, const char *args)
 {
-    char prog[] = "A:\\APPS\\EDIT.PRG";
+    char prog[LEN_ZPATH];
     UWORD map = (UWORD)Dsetdrv(Dgetdrv());
-    WORD d, first = (WORD)(doc[0] - 'A'), i;
+    WORD d, i, k;
     LONG h;
 
+    prog[1] = ':';
+    prog[2] = '\\';
+    for (k = 0; k < 4; k++)
+        prog[3 + k] = "APPS"[k];
+    prog[7] = '\\';
+    for (k = 0; name[k] && k < 12; k++)
+        prog[8 + k] = name[k];
+    prog[8 + k] = 0;
     for (i = -1; i < 16; i++) {
         d = i < 0 ? first : i;
         if ((i >= 0 && d == first) || d < 0 || d > 15 || !(map & (1U << d)))
@@ -1515,10 +1523,17 @@ WORD do_edit(const char *doc)
         h = Fopen(prog, 0);
         if (h >= 0) {
             Fclose((WORD)h);
-            return run_prog(prog, 8, doc, 0, 0);    /* "A:\APPS\" */
+            return run_prog(prog, 8, args, 0, 0);   /* "A:\APPS\" */
         }
     }
     return FALSE;
+}
+
+/* EDIT.PRG on a document, from the viewer (deskcmd.c cmd_edit), looked
+ * for first on the document's own drive. */
+WORD do_edit(const char *doc)
+{
+    return do_apps("EDIT.PRG", (WORD)(doc[0] - 'A'), doc);
 }
 
 /* Is this listing entry a program -- the extension says so? */
