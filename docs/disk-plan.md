@@ -68,7 +68,7 @@ its own layout in one command, so there is nothing honest to map
   (`disk.cpp`); whether the SIO patch every gate runs accelerates them is
   checked first: no gate drives the real serial bus.
 
-### 2. The file systems (the program's, host-tested)
+### 2. The file systems (the program's, host-tested) -- done, phase 156
 
 A C library the program links and `tests/host` builds with gcc:
 - **SDFS**: G4DOS's and SpartaDOS's, with folders, on 128-, 256- and

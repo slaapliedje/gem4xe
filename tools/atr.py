@@ -1081,8 +1081,13 @@ class Sdfs:
             fs._mark_free(bits, s)
         # the root: one map page pointing at one data sector holding the header
         fs._write_maps([root_map], [root_data])
+        # name and extension blank-padded, "MAIN" and seven spaces, as
+        # Altirra's InitNew and a real SpartaDOS 3.2 disk have it -- a
+        # blank entry's extension is three NULs, which this wrote until
+        # src/apps/mkfs.c was held against it (phase 156)
         head = SdfsEntry.blank()
         head.status, head.size, head.name = SdfsEntry.IN_USE | SdfsEntry.SUBDIR, cls.ENTRY, "MAIN"
+        head.ext = ""
         img.write_sector(root_data, head.pack())
         fs._write_bitmap(bits)
         return fs
