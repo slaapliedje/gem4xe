@@ -120,8 +120,10 @@ drive.
 
 ## The floppies the release can carry
 
-`gem-boot.atr` boots a DOS 2, which is not gem4xe's to give away, so the
-public release (`make release`) does not carry it.  A SpartaDOS 3.2
+`gem-mydos.atr` boots MyDOS, which is not gem4xe's to give away, so the
+public release (`make release`) does not carry it; the tester's build does.
+A DOS 2 floppy, `gem-boot.atr`, was the same until phase 165, when it went:
+nobody runs DOS 2, and GEM still runs under it from any disk.  A SpartaDOS 3.2
 floppy, `gem-sp.atr`, was the same and was retired after phase 42: the
 installer is SpartaDOS X's, and a machine with a drive to install onto
 has SpartaDOS X in its flash, so a disk that boots 3.2 was one more thing

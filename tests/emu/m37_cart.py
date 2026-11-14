@@ -685,7 +685,8 @@ def whole_system(floppy=False):
               f"{drvbyt:#04x}, pool ${mark:04X} with {room} bytes left, "
               f"{naccs} accessor{'y' if naccs == 1 else 'ies'} running"
               + (f" and {full} with no room" if full else ""))
-        ref_v, ref_a, d = desk_model(mark, brk, pointer, drvbyt, cart_listing())
+        ref_v, ref_a, d = desk_model(mark, brk, pointer, drvbyt, cart_listing(),
+                                     cart=b.peek(syms["dos_cart"]))
         check(len(ref_a.shots) == 1, f"the model took {len(ref_a.shots)} shots")
         os.makedirs(SHOTDIR, exist_ok=True)
         shot = os.path.join(SHOTDIR, f"{tag}-desk.png")

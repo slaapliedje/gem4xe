@@ -1860,6 +1860,9 @@ static uint32_t gd_block(LONG a)
  *   _CPU  0           the 68000 class: no 68020 feature to rely on,
  *                     which is what an absent _CPU means too
  *   G4XE  the version, major << 8 | minor: this is gem4xe
+ *   G4CT  what cartridge there is (phase 165): 0 none, 1 the XL/XE's own
+ *         BASIC, 2 a cartridge -- found at boot (src/sys/dos.c), for the
+ *         desktop's icon
  *
  * and never NVDI, MiNT or any other software gem4xe is not.  Ssystem(-1)
  * says the call is there; every other mode is EINVFN. */
@@ -1880,6 +1883,8 @@ static LONG gd_ssystem(WORD mode, LONG arg1, LONG arg2)
         v = 0;
     else if (arg1 == 0x47345845L)                        /* G4XE */
         v = GEM4XE_VERSION_NUM;
+    else if (arg1 == 0x47344354L)                        /* G4CT */
+        v = dos_cart;
     else
         return GD_ERROR;                /* not in the jar */
     if (!arg2)

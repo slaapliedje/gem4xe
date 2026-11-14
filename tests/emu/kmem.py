@@ -39,11 +39,11 @@ from m14_sparta import screen               # noqa: E402
 from sdx816 import farmem                   # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
-DISK = os.path.join(BUILD, "gem-boot.atr")
+DISK = os.path.join(BUILD, "gem-mydos.atr")   # the DOS 2 floppy until phase 165
 FENCED = os.path.join(BUILD, "kmem-highram.atr")
 HIGHRAM = (0x10, 0x1F)
 CFG_TEXT = "HIGHRAM = $10-$1F   ; the fence\x9b".encode("latin-1")
-SYMS = os.path.join(BUILD, "gem-dos2.sym")   # a DOS 2 floppy's GEM.COM
+SYMS = os.path.join(BUILD, "gem.sym")
 LOSEGM, HISEGM = 0x024D, 0x024E
 MEMORY = "Memory"                           # the boot screen's label (LANG.RSC)
 

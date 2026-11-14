@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Host tests for the release floppy (tools/mkfloppy.py).
 
-The release cannot carry gem-boot.atr, because it boots a DOS that is
+The release cannot carry gem-mydos.atr, because it boots a DOS that is
 not gem4xe's to give away; gem-sys.atr is the floppy it can carry,
 because the only DOS on it is gem4xe's own.  So the checks are as much
 about what it boots as what it holds: G4DOS.SYS as the superblock's

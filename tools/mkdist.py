@@ -65,7 +65,7 @@ TEMPLATE = os.path.join(ROOT, "tools", "dist", "README.md")
 # machine's own flash or cartridge -- so they travel in both.  A SpartaDOS
 # 3.2 floppy, gem-sp.atr, was retired after phase 42: the installer is
 # SpartaDOS X's.
-THIRD_PARTY_DOS = {"gem-boot.atr"}
+THIRD_PARTY_DOS = {"gem-mydos.atr"}
 
 # (file in build/, where it goes, how it is read, what it says about itself)
 DISKS = [
@@ -90,13 +90,12 @@ DISKS = [
      "FujiNet -- the DOS boots first and saves go to the floppy, whose "
      "files win over the cartridge's.  It wants the same machine the "
      "rest of this does: a 65C816 and VBXE."),
-    ("gem-boot.atr", "disks/gem-boot.atr", "dos2",
-     "A double-density DOS 2 floppy, 180 KB.  GEM is AUTORUN.SYS, which "
-     "this DOS runs at boot, and the DOS's own DUP.SYS is beside it, "
-     "which is what GEM hands the machine back to when it quits.  The "
-     "system and nothing else: a DOS 2 cannot read the applications "
-     "floppy's directories, so this disk is for trying GEM rather than "
-     "for keeping it, and its Desk menu holds only the About item."),
+    ("gem-mydos.atr", "disks/gem-mydos.atr", "dos2",
+     "A double-sided MyDOS 4.50 floppy.  GEM is AUTORUN.SYS, which this "
+     "DOS runs at boot, and the DOS's own DUP.SYS is beside it, which is "
+     "what GEM hands the machine back to when it quits.  The system and "
+     "nothing else; MyDOS has folders, so the applications floppy's "
+     "programs can be copied onto it from the desktop."),
     ("gem-sys.atr", "disks/gem-sys.atr", "sdfs",
      "A double-sided double-density SDFS floppy, 360 KB: the system -- "
      "the card's `\\GEM\\`, without the desk accessory -- an "
@@ -397,7 +396,7 @@ def card_layout():
 # tester (which has the floppies) and the public release (which has not).
 # Everything else on the page is the same text.
 TESTER = {
-    "emu_disk": "--disk disks/gem-boot.atr",
+    "emu_disk": "--disk disks/gem-mydos.atr",
     "emu_note": "",
     "install": (
         "**If you already have an APT drive**, do not write the card image "
@@ -413,7 +412,7 @@ TESTER = {
         "If what you have is a **loader that reads FAT** -- a SIDE3, an "
         "AVGCART\n-- or an SDrive-MAX, a FujiNet or a real drive, then the "
         "floppies are\nwhat you want: copy `gem-sys.atr` (it boots its own "
-        "DOS, and runs\nunder SpartaDOS X too) or `gem-boot.atr` (DOS 2) "
+        "DOS, and runs\nunder SpartaDOS X too) or `gem-mydos.atr` (MyDOS) "
         "onto the card you\nalready have and load it like anything else.  `docs/media.md` in the "
         "source tree has the whole matrix\nand the reasoning."),
     "dosnote": (
@@ -471,7 +470,7 @@ def public_text():
             "`gem-sys.atr`'s boot sectors.  The card image runs under the "
             "SpartaDOS X in your machine -- Ultimate 1MB flash or a "
             "cartridge -- and the floppy `make dist` also builds, "
-            "`gem-boot.atr`, is not here because it boots a DOS that is "
+            "`gem-mydos.atr`, is not here because it boots a DOS that is "
             "not gem4xe's to give away."),
     }
 

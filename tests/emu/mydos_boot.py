@@ -174,7 +174,7 @@ def main(argv):
         brk = far_heap(b, syms)
         pointer = (b.peek16(syms["ptr_state"]), b.peek16(syms["ptr_state"] + 2))
         ref_v, ref_a, d = desk_model(mark, brk, pointer, want_map,
-                                     dos2_listing(fs))
+                                     dos2_listing(fs), cart=b.peek(syms["dos_cart"]))
         check(len(ref_a.shots) == 1, f"the model took {len(ref_a.shots)} shots")
         check((n - 1) & 0xFFFF == d.waits[0],
               f"the desktop is in call {(n - 1) & 0xFFFF}, not its first wait "

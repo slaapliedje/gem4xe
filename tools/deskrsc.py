@@ -263,6 +263,13 @@ DISK_ALERT = [
     (STNODISK, "STNODISK", "[1][Formatting and copying disks|is DISKUTIL.PRG, in \\APPS\\|"
                            "on the applications disk.|Put that disk in a drive.][ OK ]"),
 ]
+# The cartridge's icon on the desk (phase 165): BASIC when it is the XL/XE's
+# own, CARTRIDGE when one is plugged in (the AES's cookie G4CT says which).
+STBASIC, STCART = 30, 31
+CART_LABEL = [
+    (STBASIC, "STBASIC", "BASIC"),
+    (STCART, "STCART", "CARTRIDGE"),
+]
 
 # PREFS.RSC's second tree: the DOS command dialog, beside the chooser
 # for the same reason the chooser is there -- loaded only while it is
@@ -330,15 +337,19 @@ APP_ALERTS = [
 ]
 
 # ICONBLKs, in the order of the table; IG_* name them
-IB_HARD, IB_FLOPPY, IB_TRASH, IB_FOLDER, IB_APPL, IB_DOCU = 0, 1, 2, 3, 4, 5
+IB_HARD, IB_FLOPPY, IB_TRASH, IB_FOLDER, IB_APPL, IB_DOCU, IB_CART = range(7)
+# The cartridge as TOS showed one, a disk picture with a lower-case c on
+# it: EmuTOS's set has no cartridge of its own.  DESKICON.RSC draws one
+# (tools/a8icons.py, CARTRIDGE).
 IB_TABLE = ((IB_HARD, deskicons.IG_HARD), (IB_FLOPPY, deskicons.IG_FLOPPY),
             (IB_TRASH, deskicons.IG_TRASH), (IB_FOLDER, deskicons.IG_FOLDER),
-            (IB_APPL, deskicons.IG_APPLICATION), (IB_DOCU, deskicons.IG_DOCUMENT))
+            (IB_APPL, deskicons.IG_APPLICATION), (IB_DOCU, deskicons.IG_DOCUMENT),
+            (IB_CART, deskicons.IG_REMOVABLE))
 
 INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR), ("STINSELF", STINSELF),
-    ("STNODISK", STNODISK),
+    ("STNODISK", STNODISK), ("STBASIC", STBASIC), ("STCART", STCART),
     ("ADICNBOX", ADICNBOX), ("ICDRIVE", ICDRIVE), ("ICLABEL", ICLABEL),
     ("ICINST", ICINST), ("ICREMV", ICREMV), ("ICCNCL", ICCNCL),
     ("ADCNFBOX", ADCNFBOX), ("NCOLD", NCOLD), ("NCNEW", NCNEW),
@@ -391,6 +402,7 @@ INDICES = [
     *[(name, i) for i, name, _ in FILE_LINE],
     ("IB_HARD", IB_HARD), ("IB_FLOPPY", IB_FLOPPY), ("IB_TRASH", IB_TRASH),
     ("IB_FOLDER", IB_FOLDER), ("IB_APPL", IB_APPL), ("IB_DOCU", IB_DOCU),
+    ("IB_CART", IB_CART),
 ]
 
 # The items the desktop does not do yet: disabled at start (menu_ienable),
@@ -898,6 +910,8 @@ def build():
     for i, name, text in MOVE_ALERT:
         assert r.free_string(text) == i, (name, i)
     for i, name, text in DISK_ALERT:
+        assert r.free_string(text) == i, (name, i)
+    for i, name, text in CART_LABEL:
         assert r.free_string(text) == i, (name, i)
     for ib, ig in IB_TABLE:
         (mask, data, char, xchar, ychar, xicon, yicon, wicon, hicon,

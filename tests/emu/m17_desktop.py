@@ -453,7 +453,7 @@ def inputs(memo):
             unfull, scrolled, closed]
 
 
-def model(mark, brk, pointer, drvmap):
+def model(mark, brk, pointer, drvmap, cart=0):
     """The prelude and the desktop against the model: (v, a, want, d, memo).
     `brk` is the far heap (far_heap) before the shell reads the desktop's
     file to it."""
@@ -476,7 +476,7 @@ def model(mark, brk, pointer, drvmap):
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
     d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
-                g_link, drvmap, inputs(memo), **pl)
+                g_link, drvmap, inputs(memo), cart=cart, **pl)
     d.main()
     return v, a, want, d, memo
 
@@ -553,7 +553,7 @@ def main(argv):
         # The model, all the way through: the desktop's script, its plans
         # and its screens come out of it.
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))
-        ref_v, ref_a, want, d, memo = model(mark, brk, pointer, drvmap)
+        ref_v, ref_a, want, d, memo = model(mark, brk, pointer, drvmap, b.peek(syms["dos_cart"]))
         script = d.script
         print(f"  the model's desktop: {len(script)} calls, waits at {d.waits}, "
               f"near ${d.near:04X}, G ${d.G:04X}, resource ${d.rsc_base:04X}, "

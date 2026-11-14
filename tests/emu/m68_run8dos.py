@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Phase 163 gate: a plain Atari program run from the desktop on MyDOS and
-on DOS 2 (docs/run8-plan.md, step 2).
+"""Phase 163 gate: a plain Atari program run from the desktop on MyDOS
+(docs/run8-plan.md, step 2).  On a DOS 2 floppy as well until phase 165,
+when that floppy went; MyDOS goes the same way, through the same stub.
 
-Each DOS's own GEM floppy in D1: -- build/gem-mydos.atr, MyDOS 4.50 with
-GEM as AUTORUN.SYS; build/gem-boot.atr, a double-density DOS 2 the same way -- and in D2:
-a disk of that DOS's holding PROG.XEX, a program that prints a line and
-returns, and LOOP.XEX, one that prints a line and loops for ever.  On each:
+MyDOS 4.50's GEM floppy in D1: (build/gem-mydos.atr, GEM as AUTORUN.SYS)
+and in D2: a MyDOS disk holding PROG.XEX, a program that prints a line and
+returns, and LOOP.XEX, one that prints a line and loops for ever:
 
   1. D2: opened, PROG.XEX double-clicked: GEM ends, its stub at $0400
      (src/run8.s) runs PROG.XEX -- its line is on the screen -- and then
@@ -44,7 +44,6 @@ OUT = os.path.join(BUILD, "shots", "run8dos")
 # (the tag, GEM's floppy, its symbols, a MyDOS D2:)
 DOSES = [
     ("MyDOS 4.50", "gem-mydos.atr", "gem.sym", True),
-    ("a double-density DOS 2", "gem-boot.atr", "gem-dos2.sym", False),
 ]
 problems = []
 

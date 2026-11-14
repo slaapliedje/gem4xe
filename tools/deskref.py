@@ -43,7 +43,7 @@ import aesref                               # noqa: E402
 import vdiref                               # noqa: E402
 import deskrsc                              # noqa: E402
 from aesref import (Obj, Text, Iconblk, CiconNear, Rect, chunky,  # noqa: E402
-                    SV_INQUIRE, SV_SET, G4_DESKICON,
+                    SV_INQUIRE, SV_SET, G4_DESKICON, GEMDOS_OP, GD_SSYSTEM,
                     G_BOX, G_IBOX, G_ICON, G_CICON, G_STRING, NONE, NORMAL, SELECTED, WHITEBAK,
                     NIL, ROOT, MAX_DEPTH, ARROW, HOURGLASS, M_OFF, M_ON,
                     DISABLED, EDITABLE, FA_RDONLY, FRENAME, FATTRIB,
@@ -89,8 +89,11 @@ from deskrsc import (ADMENU, ADDINFO, ADMKDBOX, ADDELDIA, ADFINFO,  # noqa: E402
                      STFLINE, STFMARK, VIEWMENU, ICONITEM, TEXTITEM,
                      NAMEITEM, TYPEITEM, SIZEITEM, DATEITEM, NSRTITEM, FITITEM,
                      IB_HARD, IB_FLOPPY, IB_TRASH,
-                     IB_FOLDER, IB_APPL, IB_DOCU, NOT_YET, CMDITEM)
+                     IB_FOLDER, IB_APPL, IB_DOCU, IB_CART, NOT_YET, CMDITEM,
+                     STBASIC, STCART)
 
+# the cookie the desktop asks for its cartridge icon: 'G4CT' (src/app/gem.h)
+G4CT = 0x47344354
 # the two AES calls aesref numbers only in its dispatcher
 OBJC_ORDER = 1045
 GRAF_MOUSE = 1078
@@ -351,9 +354,9 @@ class NeedsInput(Exception):
 
 # ---- DESKICON.RSC (desktop.c, desk_cicons; phase 87, kept since 89) -------
 OBJC_SYSVAR = 1048
-N_IB = 6
+N_IB = 7                        # IB_HARD .. IB_CART (src/desk/desk.h)
 CI_NAMES = ("HARDDISK", "FLOPPYDISK", "TRASHCAN", "FOLDER", "PROGRAMFILE",
-            "TEXTFILE")
+            "TEXTFILE", "CARTRIDGE")
 CI_BYTES = 128                          # one plane of a 32 x 32 form
 DCICON_SIZE = 56                        # desk.h DCICON: ICONBLK, text, col4, sel4
 CI_SIZE = DCICON_SIZE + 2 * CI_BYTES + 2 * 5 * CI_BYTES
@@ -440,8 +443,11 @@ class Desktop:
 
     def __init__(self, v, a, mark, link_near, near_size, g_link, drvmap, inputs,
                  imbase=None, far_base=None, link_bank=2, rsc_far=None,
-                 dos_brk=None, deskicon=None):
+                 dos_brk=None, deskicon=None, cart=0):
         self.v, self.a = v, a
+        # what cartridge the machine found at boot: the gate reads it off
+        # the machine (dos_cart), as it reads the drive map
+        a.dos_cart = cart
         # DESKICON.RSC's bytes when the disk carries one (desk_cicons)
         self.deskicon = deskicon
         self.g_cicon = 0
@@ -807,6 +813,14 @@ class Desktop:
             label = disk[:LABEL_LEN - 5] + f" D{drive + 1}:"
             self.desk_icon(gx, gy, IB_HARD if drive > 1 else IB_FLOPPY,
                            label, ord("A") + drive)
+            n += 1
+        # the cartridge after the drives (phase 165): the cookie G4CT, 1
+        # the XL/XE's own BASIC, 2 a cartridge; the icon wears TOS's c
+        io, _ = self.call(GEMDOS_OP + GD_SSYSTEM, (8, G4CT & 0xFFFF, G4CT >> 16, 0, 0))
+        cart = io[0] | (io[1] << 16)
+        if cart in (1, 2):
+            label = a.mem[self.rsrc_gaddr(R_STRING, STCART if cart == 2 else STBASIC)].s
+            self.desk_icon(n % xcnt, n // xcnt, IB_CART, label, ord("c"))
             n += 1
         gx, gy = 0, ycnt - 1
         if n and (n - 1) // xcnt >= gy:

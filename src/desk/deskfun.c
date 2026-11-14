@@ -745,7 +745,7 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
     WORD i, ok, op, chose = FALSE, byname;
 
     op = (kstate & (MODE_LSHIFT | MODE_RSHIFT)) ? OP_MOVE : OP_COPY;
-    if (dst_wh == DESKWH && !icon_letter(dst_obj)) {
+    if (dst_wh == DESKWH && icon_trash(dst_obj)) {
         fun_del(pw);                            /* the trash */
         return;
     }

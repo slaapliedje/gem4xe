@@ -34,7 +34,7 @@ import symfile                                # noqa: E402
 import product_boot                           # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(HERE, "..", "..", "build"))
-SYMS = {b: symfile.load(os.path.join(BUILD, b + ".sym")) for b in ("gem", "gem-dos2")}
+SYMS = {b: symfile.load(os.path.join(BUILD, b + ".sym")) for b in ("gem",)}
 PROF = "--profile" in sys.argv
 STEP = 5
 
@@ -73,7 +73,7 @@ def phase_b_profile(b, frames):
 
 def one(label, name, cart):
     """name is the floppy in D1, or None; cart is a .car, or None."""
-    base = product_boot.gem_build(name) if name else "gem"
+    base = "gem"
     size = os.path.getsize(os.path.join(BUILD, base + ".xex"))
     args = ["--disk", os.path.join(BUILD, name)] if name else []
     emu = launch(tag="benchboot", memsize="1088K",
@@ -115,7 +115,7 @@ def one(label, name, cart):
 def main():
     sdx = next((a[6:] for a in sys.argv if a.startswith("--sdx=")), "")
     print("gem4xe boot time (not a gate)")
-    one("DOS 2.0S, gem-boot.atr", "gem-boot.atr", None)
+    one("MyDOS 4.50, gem-mydos.atr", "gem-mydos.atr", None)
     one("G4DOS, gem-sys.atr alone", "gem-sys.atr", None)
     if sdx:
         one("SpartaDOS X, gem-sys.atr", "gem-sys.atr", sdx)

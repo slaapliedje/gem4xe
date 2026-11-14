@@ -77,14 +77,41 @@ and says to close them first.
      running program keeps going after that program has ended.
    - Gate: `test-m69`.  Measured: it does, and a RESET abandons the batch.
 
-4. **The cartridge.**
-   - A CARTRIDGE icon on the desk when the OS found a cartridge at
-     power-on (TRAMSZ).  The XL/XE's built-in BASIC counts as one.
-   - Opening it runs the cartridge the way the OS would: its init at
-     $BFFE, then $BFFA.  Under SDX, the CAR command does this.
-   - A cartridge that leaves through DOS (BASIC's `DOS`) comes back to
-     GEM.
-   - Gate: BASIC from the icon, `DOS` typed, the desktop back.
+4. **The cartridge.** Done, phase 165 (and the DOS 2 floppy went with it).
+   Measured first (2026-11-13), and TRAMSZ is no use:
+   it is 1 with no cartridge, with BASIC and with a cartridge alike,
+   because the XL's BASIC counts at power-on and G4DOS then switches it
+   out.  Under GEM, $A000-$BFFF is RAM unless a cartridge is in, and that
+   RAM can read $BFFC = 0 just as a cartridge's header does.
+   - **What there is**, found once at boot, before the Rapidus windows go
+     fast, with interrupts off:
+     - a cartridge: $BFFC is 0 and does not take a write;
+     - else built-in BASIC: PORTB bit 1 cleared for a moment, and
+       BASIC's header read ($BFFC 0, $BFFA in $A000-$BFFF);
+     - else nothing.
+   - **A cookie**, `G4CT`: 0 nothing, 1 BASIC, 2 a cartridge.  The
+     desktop asks Ssystem, as it would any cookie, and touches no
+     hardware.
+   - **An icon on the desk**, labelled BASIC or CARTRIDGE, drawn for it
+     in `tools/a8icons.py` (a Falcon DESKICON.RSC without one gets the
+     removable-disk picture).  It is placed and saved like a drive icon.
+   - **Opening it** is `shel_write(SHW_EXEC)` with the name `CAR:`, the
+     name SDX gives the cartridge's device.  Any program may ask; DUP's
+     B will.  GEM ends as for a plain program:
+     - G4DOS: the note says `CAR:`.  The shell switches BASIC in if
+       there is no cartridge, sets RAMTOP to $A0, opens E: again, and
+       jumps through $BFFA, as DUP's B does.  BASIC's `DOS` goes through
+       DOSVEC to the shell, which switches BASIC out before GEM.
+     - DOS 2 and MyDOS: the stub, split in two -- what has to outlive
+       the cartridge stays below $0580, and what runs once before it
+       (`r8_go` and the cartridge start) goes in $0580-$05FF, which
+       BASIC uses only once it is running.  `r8_back` switches BASIC out
+       before GEM.
+     - SDX: the batch's first line is `CAR` or `BASIC`, SDX's own
+       commands (User Guide 4.7, 4.4).
+   - Gates: our own 8 KB test cartridge (it prints a line and leaves
+     through DOSVEC, as BASIC's DOS does) and the emulator's BASIC.  On
+     G4DOS first, then the other DOSes.
 
 5. **DUP's L and B.**
    - These are the same two calls, from DUP's menu.

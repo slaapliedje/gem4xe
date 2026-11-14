@@ -93,6 +93,17 @@ extern DOS_INFO dos;
 /* Look at the machine once; fills `dos`.  Before anything opens a file. */
 void dos_ident(void);
 
+/* WHAT CARTRIDGE THERE IS (phase 165, docs/run8-plan.md step 4), looked at
+ * once, at boot, after rapidus_speedup -- which leaves $8000-$BFFF slow --
+ * and before the interrupts are on: a cartridge, whose
+ * $BFFC is 0 in ROM; else the XL/XE's own BASIC, switched in for a look;
+ * else nothing.  The desktop asks for it as the cookie G4CT (gemdos.c). */
+#define DOS_CART_NONE   0
+#define DOS_CART_BASIC  1
+#define DOS_CART_ROM    2
+extern uint8_t dos_cart;
+void dos_cart_probe(void);
+
 /* The DOS's command processor given a line -- SpartaDOS X's XCOMLI --
  * with what it prints caught in the far buffer at `out`, `max` bytes of
  * it (src/sys/cio.s sdx_put).  The bytes caught; GD_EINVFN on a DOS

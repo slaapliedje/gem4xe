@@ -281,7 +281,7 @@ class TestDistribution(unittest.TestCase):
             elif built(src):
                 self.assertTrue(os.path.isfile(p), dest)
         self.assertIn("not gem4xe's to give away", page)
-        self.assertNotIn("--disk disks/gem-boot.atr", page)
+        self.assertNotIn("--disk disks/gem-mydos.atr", page)
         self.assertNotIn("not for redistribution", page)
         self.assertNotRegex(page, r"\{[a-z_]+\}")
         for _path, name in mkcf.SYSTEM + mkcf.APPS:
@@ -289,7 +289,7 @@ class TestDistribution(unittest.TestCase):
             self.assertRegex(page, rf"`{n}`[^;]*into\s+`\\{d}\\`",
                              f"the recipe does not put {n} in \\{d}\\")
         # ...and the tester's build still has what the tree built
-        self.assertIn("--disk disks/gem-boot.atr", self.page)
+        self.assertIn("--disk disks/gem-mydos.atr", self.page)
         self.assertNotIn("not gem4xe's to give away", self.page)
 
     def test_the_release_carries_the_floppy_whose_dos_is_its_own(self):

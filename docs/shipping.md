@@ -795,7 +795,7 @@ name: `build/gem4xe-0.1.1.tar.gz`, the same tree again as
 `gem4xe-0.1.1.atr` and (since phase 42) `gem4xe-0.1.1-apps.atr`, and one
 `gem4xe-0.1.1.sha256` covering them for the release page; the inner
 `VERSION` still carries the date and commit.  What it leaves out is
-`gem-boot.atr`, because it boots a DOS that is not gem4xe's to give away
+`gem-mydos.atr` (the DOS 2 floppy `gem-boot.atr` until phase 165), because it boots a DOS that is not gem4xe's to give away
 (`fixtures.toml.example`); the card image, `gem-sys.atr` and
 `gem-apps.atr` are built from this tree alone and carry no DOS but
 gem4xe's own, so they travel (`docs/media.md`, *The floppies the release can carry*).  The

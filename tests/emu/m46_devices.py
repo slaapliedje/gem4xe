@@ -32,7 +32,7 @@ from shots import Tour, boot, poke16, PTR_NONE, SYMS   # noqa: E402
 from deskrsc import OPTNMENU, IDSKITEM, SAVEITEM       # noqa: E402
 
 BUILD = os.path.abspath(os.path.join(ROOT, "build"))
-DOS2 = os.path.join(BUILD, "gem-boot.atr")
+MYDOS = os.path.join(BUILD, "gem-mydos.atr")   # DOS 2's until phase 165
 SPARTA = os.path.join(BUILD, "gem-shots.atr")      # SpartaDOS 3.2
 SDX = os.path.join(BUILD, "gem-sys.atr")
 D3 = os.path.join(BUILD, "gem-apps.atr")      # any disk will do
@@ -120,7 +120,7 @@ def main(argv):
     print("gem4xe-m46: Install devices")
     os.makedirs(OUT, exist_ok=True)
     syms = symfile.load(SYMS)
-    run("DOS 2", DOS2, None, None, [1, 2], [1], syms)
+    run("MyDOS", MYDOS, None, None, [1, 2], [1], syms)
     run("SpartaDOS 3.2", SPARTA, None, None, [1, 2], [1], syms)
     cart = argv[1] if len(argv) > 1 else os.environ.get("SDX_CART")
     if cart:

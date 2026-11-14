@@ -182,7 +182,7 @@ typedef union {
  * desk_cicons): its mono ICONBLK, then -- 14 bytes on, as the AES's
  * CICON_NEAR has them -- its 4-plane image and selected image, each
  * chunky and followed by its mask, all in the desktop's own far block. */
-#define N_IB        6               /* IB_HARD .. IB_DOCU */
+#define N_IB        7               /* IB_HARD .. IB_CART */
 typedef struct {
     ICONBLK ib;
     char    text[14];
@@ -195,7 +195,7 @@ typedef struct {
     OBJECT  *a_mkdir;                   /* ADMKDBOX */
     OBJECT  *a_delete;                  /* ADDELDIA */
     OBJECT  *a_finfo;                   /* ADFINFO */
-    ICONBLK *a_iblist;                  /* IB_HARD .. IB_DOCU */
+    ICONBLK *a_iblist;                  /* IB_HARD .. IB_CART */
     WORD     g_handle;                  /* the AES's VDI handle */
     WORD     g_wchar, g_hchar, g_wbox, g_hbox;
     GRECT    g_desk;                    /* the desk under the menu bar */
@@ -258,6 +258,8 @@ void obj_wfree(WORD obj, WORD x, WORD y, WORD w, WORD h);
 WORD obj_ialloc(WORD wparent, WORD x, WORD y, WORD w, WORD h);
 WORD obj_get_obid(WORD drive);
 WORD icon_letter(WORD obj);
+WORD icon_trash(WORD obj);
+WORD icon_cart(WORD obj);
 WORD drv_own_set(void);
 const char *drv_icon_label(WORD drive);
 void drv_icon_seed(WORD drive, const char *label);
@@ -324,6 +326,7 @@ void fun_mask(WNODE *pw);
 void win_setmask(WNODE *pw, const char *mask);
 void app_typeof(const char *path, char *ext);
 WORD app_install(const char *path, const char *ext);
+WORD do_cart(void);
 WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
                const char *args);   /* args: a .TTP's line, or "" */
 WORD fun_askline(char *line);           /* one line, in the PREFS dialog */

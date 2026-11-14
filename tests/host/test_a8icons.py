@@ -66,7 +66,7 @@ def planes_ok(data, hw):
 
 class A8Icons(unittest.TestCase):
     def test_the_art(self):
-        self.assertEqual(len(a8icons.ICONS), 6)
+        self.assertEqual(len(a8icons.ICONS), 7)     # CARTRIDGE, phase 165
         for label, _, digit, rows in a8icons.ICONS:
             with self.subTest(icon=label):
                 self.assertEqual(len(rows), 32)

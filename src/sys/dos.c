@@ -75,6 +75,107 @@ void dos_ident(void)
     _exit_dosvec = (uint8_t)(dos.kind == DOS_2 || dos.kind == DOS_G4DOS);
 }
 
+uint8_t dos_cart;
+
+#define PORTB       (*(volatile uint8_t *)0xD301)
+#define PORTB_BASIC 0x02                /* clear: BASIC at $A000-$BFFF */
+#define CART_LOOK   10                  /* bytes a look compares */
+
+/* What is at $A000-$BFFF, as far as a cartridge goes: its header ($BFFA
+ * the start, $BFFC 0, $BFFD the flags, $BFFE the init) and its first four
+ * bytes.  Read, never written. */
+static void cart_look(uint8_t *h)
+{
+    uint16_t i;
+    volatile const uint8_t *top = (volatile const uint8_t *)0xBFFA;
+    volatile const uint8_t *bot = (volatile const uint8_t *)0xA000;
+
+    for (i = 0; i < 6; i++)
+        h[i] = top[i];
+    for (i = 0; i < 4; i++)
+        h[6 + i] = bot[i];
+}
+
+/* A header: $BFFC 0 and a start inside the cartridge's 8 KB.  Words, not
+ * bytes, for the tests: tools/ccbug, B16. */
+static uint16_t cart_header(const uint8_t *h)
+{
+    uint16_t run = (uint16_t)(h[0] | (uint16_t)h[1] << 8);
+    uint16_t flag = h[2];
+
+    return (uint16_t)(flag == 0 && run >= 0xA000 && run <= 0xBFFF);
+}
+
+/* GEM4XE'S OWN CARTRIDGE (src/cart.s): booted from it, its boot bank is
+ * what is at $A000, and an icon for it would only start gem4xe again --
+ * measured, it came out as a cartridge (phase 165).  Its bank says so in
+ * so many words, cart_msg, and nothing else would. */
+static const char FAR cart_sig[] = "gem4xe cartridge";
+
+static uint16_t cart_ours(void)
+{
+    volatile const uint8_t *p = (volatile const uint8_t *)0xA000;
+    uint16_t i, j, c;
+
+    for (i = 0; i < 0x2000 - 16; i++) {
+        for (j = 0; cart_sig[j]; j++) {
+            c = p[i + j];
+            if (c != (uint16_t)(uint8_t)cart_sig[j])
+                break;
+        }
+        if (!cart_sig[j])
+            return 1;
+    }
+    return 0;
+}
+
+/* WITHOUT A WRITE.  The first version wrote $BFFC and read it back, as a
+ * ROM test; under the emulated Rapidus the byte read back what was
+ * written while $BFFD beside it still read the cartridge's, and every
+ * cartridge came out as RAM (measured, phase 165).  So BASIC is switched
+ * out and then in, and $A000-$BFFF looked at both ways: a cartridge
+ * overrides BASIC in the hardware and reads the same both times, while
+ * with none the first look is RAM and the second BASIC.  TRAMSZ, the OS's
+ * own word, is 1 with a cartridge, with BASIC and with neither -- the
+ * XL's BASIC counts at power-on and G4DOS switches it out -- so it is
+ * not asked.  PORTB as it was afterwards.
+ *
+ * The interrupts are off (src/crt_atari.s; irq_install comes after this),
+ * and ON A RAPIDUS THIS COMES AFTER rapidus_speedup: that is what leaves
+ * $8000-$BFFF slow, the VBXE's MEMAC window being in it, so these are the
+ * bus's bytes and not the card's copy in SRAM. */
+void dos_cart_probe(void)
+{
+    uint8_t was = PORTB, out[CART_LOOK], in[CART_LOOK];
+    uint16_t i, same = 1;
+
+    /* UNDER SPARTADOS X the ROM at $A000 is SDX's own, and it hides both a
+     * cartridge plugged in on top of it and BASIC: measured, it came out as
+     * a cartridge (phase 165).  SDX has a command for each (User Guide
+     * 4.50, 4.4 and 4.7); BASIC's is the one every XL/XE can use, and it
+     * says so itself on a 1200XL, which has none.  A cartridge on top is
+     * CAR at SDX's prompt. */
+    if (dos.kind == DOS_SDX) {
+        dos_cart = DOS_CART_BASIC;
+        return;
+    }
+    PORTB = (uint8_t)(was | PORTB_BASIC);
+    cart_look(out);
+    PORTB = (uint8_t)(was & ~PORTB_BASIC);
+    cart_look(in);
+    PORTB = was;
+    for (i = 0; i < CART_LOOK; i++)
+        if (out[i] != in[i])
+            same = 0;
+    dos_cart = DOS_CART_NONE;
+    if (same && cart_header(out)) {
+        if (!cart_ours())
+            dos_cart = DOS_CART_ROM;
+    } else if (cart_header(in)) {
+        dos_cart = DOS_CART_BASIC;
+    }
+}
+
 /* SpartaDOS X: ':' in the second flag column (Programming Guide 4.50,
  * 10.2, the short format's mode $08).  SpartaDOS 3.2: "DIR" with the
  * high bits set in the extension field -- inverse video on the screen

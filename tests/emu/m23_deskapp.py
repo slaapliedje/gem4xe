@@ -137,7 +137,7 @@ def poll_nonzero(b, addr, limit=2000, step=10):
     return -1
 
 
-def model(mark, brk, pointer, drvmap):
+def model(mark, brk, pointer, drvmap, cart=0):
     """The prelude and the desktop against the model: (v, a, want, d, memo)."""
     v, a, want = aesref.run(PRELUDE, [], {}, pointer=pointer, pool=mark)
     # Each run of the desktop takes the resource again, which is why the
@@ -151,7 +151,7 @@ def model(mark, brk, pointer, drvmap):
     model_desk(v, a)
     a.dos_brk = copy.deepcopy(arena)
     d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
-                g_link, drvmap, inputs(memo), **pl)
+                g_link, drvmap, inputs(memo), cart=cart, **pl)
     d.main()
     return v, a, want, d, memo
 
@@ -201,7 +201,7 @@ def main(argv):
               f"DOS kind {kind}, drive map {drvmap:#04x}")
 
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))
-        ref_v, ref_a, want, d, memo = model(mark, brk, pointer, drvmap)
+        ref_v, ref_a, want, d, memo = model(mark, brk, pointer, drvmap, b.peek(syms["dos_cart"]))
         print(f"  the model's desktop: {len(d.script)} calls, waits at {d.waits}, "
               f"near ${d.near:04X}, G ${d.G:04X}")
         check(len(ref_a.shots) == len(STOPS),

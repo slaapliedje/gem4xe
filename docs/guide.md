@@ -331,6 +331,13 @@ DOS 2.  Under SpartaDOS X a RESET during the program leaves you at its
 prompt instead: type `GEM`.  Quit any program put aside first: GEM will
 not end and lose it.
 
+**BASIC, or a cartridge**, is an icon on the desk too, after the
+drives: BASIC on any XL or XE, CARTRIDGE when one is plugged in.
+Double-click it and GEM steps aside for it; type `DOS` in BASIC (or
+leave the cartridge through its DOS) and GEM starts again.  Under
+SpartaDOS X the icon is always BASIC, because SDX's own cartridge hides
+whatever is plugged in on top of it: `CAR` at SDX's prompt runs that.
+
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
 
@@ -500,5 +507,5 @@ in NuttX and carry a notice the BSD licence asks to be reproduced here:
 **The only DOS in this download is gem4xe's own**: G4DOS, on `gem-
 sys.atr`'s boot sectors.  The card image runs under the SpartaDOS X in
 your machine -- Ultimate 1MB flash or a cartridge -- and the floppy
-`make dist` also builds, `gem-boot.atr`, is not here because it boots a
+`make dist` also builds, `gem-mydos.atr`, is not here because it boots a
 DOS that is not gem4xe's to give away.

@@ -2260,6 +2260,14 @@ static WORD sh_nodeskgo(void)
  * too. */
 static const char FAR sh_plainx[] = "COMXEXEXEOBJ";
 
+/* SH_CARTRIDGE, "CAR:" (src/app/gem.h, phase 165): the cartridge -- or the
+ * XL/XE's own BASIC -- run as a plain program is, by that name. */
+static WORD sh_iscart(const char *cmd)
+{
+    return (WORD)(cmd[0] == 'C' && cmd[1] == 'A' && cmd[2] == 'R'
+                  && cmd[3] == ':' && !cmd[4]);
+}
+
 static WORD sh_isplain(const char *cmd)
 {
     char cio[CIO_NAME_MAX + 1];
@@ -2326,7 +2334,11 @@ WORD sh_ourfile(const char *cio)
 }
 
 /* The stub, filled in: the DOS's DOSVEC, the program as CIO names it,
- * GEM; and DOSVEC pointed at it.  APP_E_FILE for a name too long for it. */
+ * GEM; and DOSVEC pointed at it.  APP_E_FILE for a name too long for it.
+ * The cartridge (phase 165) is no name at all: the stub starts it instead.
+ * ON G4DOS -- the stub's for the cartridge there too, the shell having no
+ * room with one in (src/shell/shstart.s) -- the name is G4DOS's own flat
+ * one, Dn:NAME.EXT, which its D: finds in the root or a folder in it. */
 static WORD sh_stub(const char *cmd)
 {
     volatile uint8_t *r8 = (volatile uint8_t *)R8_AT;
@@ -2334,7 +2346,21 @@ static WORD sh_stub(const char *cmd)
     uint16_t v = DOSVEC_W;
     WORD i, k, g;
 
-    dos_cioname(cmd, cio);
+    if (sh_iscart(cmd)) {
+        cio[0] = 0;
+    } else if (dos.kind == DOS_G4DOS && cmd[0] && cmd[1] == ':') {
+        cio[0] = 'D';
+        cio[1] = (char)('1' + ((cmd[0] | 0x20) - 'a'));
+        cio[2] = ':';
+        for (i = 2, k = 2; cmd[i]; i++)
+            if (cmd[i] == '\\')
+                k = i + 1;
+        for (i = 3; cmd[k] && i < CIO_NAME_MAX; i++, k++)
+            cio[i] = cmd[k];
+        cio[i] = 0;
+    } else {
+        dos_cioname(cmd, cio);
+    }
     k = (WORD)strlen(cio);
     if (k >= R8_PROGLEN)
         return APP_E_FILE;
@@ -2355,7 +2381,7 @@ static WORD sh_stub(const char *cmd)
     r8[R8_DOS + 1] = (uint8_t)(v >> 8);
     for (i = 0; i < k; i++)
         r8[R8_PROG + i] = (uint8_t)cio[i];
-    r8[R8_PROG + k] = 0x9B;
+    r8[R8_PROG + k] = k ? 0x9B : 0;     /* 0 first: the cartridge */
     for (i = 0; gem[i]; i++)
         r8[R8_GEM + i] = (uint8_t)gem[i];
     r8[R8_GEM + i] = 0x9B;
@@ -2376,7 +2402,13 @@ static WORD sh_plain(const char *cmd)
     for (i = 0; i < n; i++)
         if (ring_at(i) != SH_DESKREC)
             return APP_E_PLAIN;
-    if (dos.kind == DOS_2 || dos.kind == DOS_SDX) {
+    /* the cartridge, when there is none to run: not a G4A, as before */
+    if (sh_iscart(cmd) && dos_cart == DOS_CART_NONE)
+        return APP_E_MAGIC;
+    /* the stub: DOS 2 and MyDOS, and G4DOS for the cartridge or with one
+     * plugged in; the batch file: SpartaDOS X */
+    if (dos.kind == DOS_2 || dos.kind == DOS_SDX
+        || (dos.kind == DOS_G4DOS && (sh_iscart(cmd) || dos_cart == DOS_CART_ROM))) {
         k = (dos.kind == DOS_SDX) ? run8_sdx(cmd) : sh_stub(cmd);
         if (k == APP_OK)
             sh_doexec = 4;              /* the loop ends, and GEM with it */
@@ -2461,7 +2493,7 @@ static WORD sh_ldapp(void)
         far_strget(cmd, sh_cmd_far, SH_CMDLEN);
         sh_next = SH_DESKTOP;
         sh_isgem = 1;
-        if (sh_isplain(cmd)) {          /* GEM ends to run it (above) */
+        if (sh_iscart(cmd) || sh_isplain(cmd)) {    /* GEM ends (above) */
             sh_lastrc = sh_plain(cmd);
             return sh_lastrc;
         }

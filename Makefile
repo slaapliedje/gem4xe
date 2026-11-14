@@ -145,7 +145,7 @@ M16_BITS   = 320
 # target, otherwise boots a stale image and compares it against a fresh
 # linker map).
 all: build/hello-boot.atr build/m2-boot.atr build/m3-boot.atr build/m6split-boot.atr \
-     build/m12-d2.atr build/m14-boot.atr build/m17-boot.atr build/gem-boot.atr \
+     build/m12-d2.atr build/m14-boot.atr build/m17-boot.atr \
      build/gem-sys.atr build/gem-apps.atr build/gem-cf.img
 
 build/%.o: src/%.s
@@ -1074,19 +1074,19 @@ build/bench-antic.atr: build/bench_antic.xex
 # How long the product floppies take to boot, split into the DOS and the
 # first pass, the load and unpack, and the desktop (docs/phase56.md).
 # ARGS=--profile says where the load's time goes.  Not a gate.
-# G4BENCH as the desktop of a DOS 2 disk, so the shell runs it straight
+# G4BENCH as the desktop of a MyDOS disk (a DOS 2 one until phase 165), so the shell runs it straight
 # after the boot (tests/emu/g4bench.py, docs/roadmap-0.9.md).
-build/g4bench-boot.atr: build/gem-dos2.xex build/g4bench.g4a build/lang.rsc build/816.com
-	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
+build/g4bench-boot.atr: build/gem.xex build/g4bench.g4a build/lang.rsc build/816.com
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
 	@rm -f $@
-	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
 	    --add build/g4bench.g4a DESKTOP.PRG --add build/lang.rsc LANG.RSC \
 	    --add build/816.com 816.COM
 
 g4bench: build/g4bench-boot.atr build/g4bench.sym
 	python3 tests/emu/g4bench.py $(ARGS)
 
-bench-boot: build/gem-boot.atr build/gem-sys.atr build/gem4xe-sys.car
+bench-boot: build/gem-mydos.atr build/gem-sys.atr build/gem4xe-sys.car
 	python3 tests/emu/bench_boot.py --sdx="$(SRC_SDX)" $(ARGS)
 
 bench-antic: build/bench-antic.atr
@@ -1132,27 +1132,12 @@ build/gem.elf: $(GEM_OBJS) src/gem4xe.scm
 build/gem.xex: build/gem.elf
 	python3 tools/mkxex.py $< $@ --entry _atari_entry --syms build/gem.sym
 
-# GEM.COM for the floppies that boot a DOS 2 -- gem-boot.atr, gem-antic.atr,
-# g4bench-boot.atr: the product less G4DOS's half of GEMDOS (the engine,
-# CIO's D: over it and the DOS's commands, ~32 KB of far code), which runs
-# only where the DOS is G4DOS and left a 720-sector disk no room for the
-# desktop's files (src/sys/nog4.c) -- and SpartaDOS X's way back after a plain
-# program (src/aes/run8sdx.c), which a DOS 2 floppy never meets.  Its own map and symbols: the gates
-# that boot those floppies read build/gem-dos2.sym.
-GEM_DOS2_OBJS = $(filter-out build/sdcio.o build/sdfs.o build/doscmd.o build/run8sdx.o,$(GEM_OBJS)) build/nog4.o
-
-build/nog4.o: src/sys/nog4.c src/sys/sdcio.h src/sys/gemdos.h
-	@mkdir -p build
-	$(CC) $(CFLAGS) -I src -o $@ $<
-
-build/gem-dos2.elf: $(GEM_DOS2_OBJS) src/gem4xe.scm
-	$(LD) src/gem4xe.scm $(GEM_DOS2_OBJS) -o $@ $(LIB) $(LDFLAGS) --list-file build/gem-dos2.map \
-	      --memories-expression "(layout #x010000 #x7fff)"
-
-build/gem-dos2.xex: build/gem-dos2.elf
-	python3 tools/mkxex.py $< $@ --entry _atari_entry --syms build/gem-dos2.sym
-
-build/gem-dos2.sym: build/gem-dos2.xex
+# There was a second GEM.COM, gem-dos2.xex, for the floppy that booted a
+# DOS 2 (gem-boot.atr): the product less G4DOS's half of GEMDOS, to fit 720
+# sectors.  That floppy went in phase 165 -- nobody runs DOS 2, people use
+# MyDOS or SpartaDOS X, and it was a gate's disk the release never carried
+# -- and every gate that booted it boots the MyDOS one (gem-mydos.atr)
+# with the one GEM.COM.  GEM still runs under DOS 2; no disk is made for it.
 
 # GEMDIAG.COM: GEM.COM with a mark before every start-up step and the
 # console keys bisecting the two things only Altirra has ever run
@@ -1701,14 +1686,10 @@ build/bankslow.cfg: dist/gem4xe.cfg
 	        .replace(b'# BANKWINDOW=FAST', b'BANKWINDOW=SLOW') \
 	        .replace(b'\r\n', b'\n').replace(b'\n', b'\x9b'))" $< $@
 
-# The DOS's own DUP.SYS stays: it is what GEM returns to when it quits.
-# (It went, for a while, when the system outgrew the disk with the shell
-# on it -- docs/shipping.md section 2 -- and came back with the packed
-# far image.)  The system and nothing else, as every floppy is since
-# phase 42: the desk accessory went when the rest of GEMDOS took this disk
-# under its floor of free sectors, and it and the applications are on
-# gem-apps.atr (docs/media.md) -- which a DOS 2 cannot read, so this disk
-# is a gate's more than anybody's way in.
+# The files a disk that boots MyDOS carries beside it, as AUTORUN.SYS's
+# company: the system and nothing else.  The DOS's own DUP.SYS stays: it
+# is what GEM returns to when it quits.  Squeezed resources, from the days
+# of a 720-sector DOS 2 floppy (phases 152 and 163); they cost nothing.
 DOS2_FILES = --add build/desktop.g4a DESKTOP.PRG --add build/desktop.rsc.sq DESKTOP.RSC \
 	     --add build/lang.rsc.sq LANG.RSC --add build/816.com 816.COM
 # DESKTOP.RSC squeezed, 28 sectors to 11, for the disks DOS2_FILES makes:
@@ -1722,23 +1703,14 @@ build/desktop.rsc.sq: build/desktop.rsc tools/squeeze.py tools/mkg4a.py
 # reads it (src/aes/lang.c, lang_unsqueeze).
 build/lang.rsc.sq: build/lang.rsc tools/squeeze.py tools/mkg4a.py
 	python3 tools/squeeze.py $< $@
-# No GEM4XE.CFG on this one since phase 43: every value in the file is the
-# default, and the seven sectors were what File -> DOS command cost the
-# floppy's floor (docs/shipping.md section 1).  The SpartaDOS X floppy
-# and the card carry it.
-build/gem-boot.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq build/m11_app.g4a build/lang.rsc.sq build/816.com
-	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
+# The MyDOS disk with a GEM4XE.CFG of the safe-mode line: what a user
+# writes from the DOS prompt when the VBXE's output is not something
+# their monitor will show (tests/emu/m26_fallback.py).  On the DOS 2
+# floppy until phase 165.
+build/gem-antic.atr: build/gem.xex build/desktop.g4a build/desktop.rsc.sq build/lang.rsc.sq build/816.com build/safe.cfg
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
 	@rm -f $@
-	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
-	    $(DOS2_FILES)
-
-# The same shipped disk with a GEM4XE.CFG of the safe-mode line: what a
-# user writes from the DOS prompt when the VBXE's output is not something
-# their monitor will show (tests/emu/m26_fallback.py).
-build/gem-antic.atr: build/gem-dos2.xex build/desktop.g4a build/desktop.rsc.sq build/m11_app.g4a build/lang.rsc.sq build/816.com build/safe.cfg
-	@test -n "$(SRC_DD)" || { echo "no double-density DOS fixture: set [dos].dd_dos2 in fixtures.toml"; exit 1; }
-	@rm -f $@
-	python3 tools/mkdisk.py "$(SRC_DD)" $< $@ AUTORUN.SYS --sweep \
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
 	    $(DOS2_FILES) --add build/safe.cfg GEM4XE.CFG
 
 # The pictures' disk (make shots): SpartaDOS 3.2 booting the card's layout,
@@ -1858,7 +1830,7 @@ build/gem-sd.img: build/gem-cf.img build/gemdiag.com
 # double-density SDFS disk, and NO DOS -- it boots under the SpartaDOS X
 # in a cartridge or in U1MB flash, which is the one DOS that lives in the
 # machine rather than on the disk, so the disk is gem4xe's to give away
-# where gem-boot.atr is not.  Needs no fixture to build; test-boot boots
+# where a DOS 2 or MyDOS one is not.  Needs no fixture to build; test-boot boots
 # it when [spartados].sdx_cart names a cartridge.
 build/gem-sys.atr: build/gem.xex build/desktop.g4a build/desktop.rsc build/prefs.rsc build/deskicon.rsc \
                    build/lang.rsc build/gem4xe.cfg build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py \
@@ -2093,7 +2065,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-m70 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2180,7 +2152,7 @@ build/gem4xe-sdk.tar.gz: $(SDK_FILES)
 # that could go stale cannot).  DIST is the name it takes: the date and
 # the commit unless you say otherwise.
 DIST ?= build/gem4xe-$(shell date +%F)-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
-DIST_DISKS = build/gem-boot.atr build/gem-sys.atr build/gem-apps.atr build/gem-qed.atr build/gem-cf.img \
+DIST_DISKS = build/gem-mydos.atr build/gem-sys.atr build/gem-apps.atr build/gem-qed.atr build/gem-cf.img \
              build/gem4xe-sys.car
 DIST_SYS   = build/gem.xex build/desktop.g4a build/desktop.rsc \
              build/lang.rsc build/816.com build/hello_app.g4a build/gem4xe.cfg \
@@ -2192,7 +2164,7 @@ dist: $(DIST_SYS) $(DIST_DISKS) build/gem4xe-sdk.tar.gz \
 	python3 tools/mkdist.py $(DIST) --tar $(DIST).tar.gz
 
 # The release: the distribution for the public.  What differs is what it
-# does NOT carry -- gem-boot.atr boots a DOS that is not gem4xe's to give
+# does NOT carry -- gem-mydos.atr boots a DOS that is not gem4xe's to give
 # away (fixtures.toml.example), so it stays home and the page says so --
 # and the name, which is the version in VERSION rather than the date.  It
 # comes as a tarball and, for Windows, the same tree as a zip; the two
@@ -2290,15 +2262,15 @@ test-m11-os: build/m3-boot.atr build/m11_app.sym
 	python3 tests/emu/m11_abi.py --os="$(SRC_RAPIDUS_OS)"
 
 # The high RAM taken from Rapidus OS's allocator and given back (phase 112):
-# the DOS 2 floppy, which nothing frees after, run twice without a reboot.
-test-kmem: build/gem-boot.atr build/gem-dos2.sym
+# the MyDOS floppy, which nothing frees after, run twice without a reboot.
+test-kmem: build/gem-mydos.atr build/gem.sym
 	@test -n "$(SRC_RAPIDUS_OS)" || { echo "no Rapidus OS fixture: set [rapidus].os in fixtures.toml"; exit 1; }
 	python3 tests/emu/kmem.py --os="$(SRC_RAPIDUS_OS)"
 
 # FX 1.27's FEATURE_CONTROL cleared for the desktop and given back on the
 # way out (src/vbxe/vbxe.c): the emulated VBXE is 1.27 for this one alone,
 # whatever GEM4XE_VBXE says, and needs Altirra 4.50 test26 or later.
-test-vbxefeat: build/gem-boot.atr build/gem-dos2.sym
+test-vbxefeat: build/gem-mydos.atr build/gem.sym
 	python3 tests/emu/vbxe_features.py
 
 # GEM under Rapidus OS with SpartaDOS X's 65816.SYS loaded from CONFIG.SYS
@@ -2385,7 +2357,7 @@ test-m67: build/gem-sys.atr build/gem.sym build/shell.sys build/m53_app.g4a \
 
 # Phase 163: the same on MyDOS 4.50 and DOS 2, through the stub GEM
 # leaves at $0400 (src/run8.s)
-test-m68: build/gem-mydos.atr build/gem-boot.atr build/gem.sym build/gem-dos2.sym \
+test-m68: build/gem-mydos.atr build/gem.sym \
           build/desktop.sym build/calc.sym
 	python3 tests/emu/m68_run8dos.py
 
@@ -2395,6 +2367,13 @@ test-m69: build/gem-sys.atr build/gem.sym build/desktop.sym build/calc.sym \
           build/m53_app.g4a
 	@test -n "$(SRC_SDX)" || { echo "no SDX fixture: set [spartados].sdx_cart in fixtures.toml"; exit 1; }
 	python3 tests/emu/m69_run8sdx.py
+
+# Phase 165: the cartridge's icon -- BASIC or CARTRIDGE -- on G4DOS (with a
+# file dropped on it, which must not be deleted), MyDOS and SpartaDOS X;
+# our own 8 KB test cartridge is made by the gate (docs/run8-plan.md step 4)
+test-m70: build/gem-sys.atr build/gem-mydos.atr build/gem.sym build/desktop.sym \
+          build/calc.sym
+	python3 tests/emu/m70_cart.py
 
 # The shell loop: sh_main runs DESKTOP.PRG, what it asks for, the desktop
 # again, until it asks to shut down -- with the harness at the keyboard
@@ -2551,10 +2530,10 @@ test-m62: build/m15g-boot.atr
 test-m58: build/gem-shots.atr build/cpanelacc.sym
 	python3 tests/emu/m58_cpxkit.py
 # Options -> Install devices: the drives asked (Dprobe), an icon for
-# each that answers and none for one that does not, on DOS 2 and on the
+# each that answers and none for one that does not, on MyDOS and on the
 # SpartaDOS X cartridge with a disk mounted as D3: after boot; saved
 # across a cold reset.  The SDX half needs [spartados].sdx_cart.
-test-m46: build/gem-boot.atr build/gem-shots.atr build/gem-sys.atr build/gem-apps.atr
+test-m46: build/gem-mydos.atr build/gem-shots.atr build/gem-sys.atr build/gem-apps.atr
 	python3 tests/emu/m46_devices.py $(SRC_SDX)
 
 test-m45: build/m45-boot.atr build/m45_acc.sym build/calc.sym build/desktop.sym
@@ -2742,7 +2721,7 @@ test-m25: build/m25-boot.atr
 # and on one without, and then the safe mode -- VIDEO=ANTIC in
 # GEM4XE.CFG beating a VBXE that works.  Nothing is typed in any of the
 # three; the disks start GEM themselves.
-test-m26: build/gem-boot.atr build/gem-antic.atr build/gem-dos2.sym
+test-m26: build/gem-mydos.atr build/gem-antic.atr build/gem.sym
 	python3 tests/emu/m26_fallback.py
 
 # The desktop's writes to a disk (phase 14, milestone 7; phase 19): File
@@ -2835,7 +2814,7 @@ test-fdosapp: build/gem-appliance.atr build/gem.sym
 test-fdosw: build/fdos.elf build/fdboot.elf build/fdwtest.elf tools/atr.py tools/mkfloppy.py
 	python3 tests/emu/fdos_write.py
 
-test-boot: build/gem-boot.atr build/gem-sys.atr build/gem-apps.atr build/gem-cf.img build/desktop.g4a build/desktop.sym
+test-boot: build/gem-mydos.atr build/gem-sys.atr build/gem-apps.atr build/gem-cf.img build/desktop.g4a build/desktop.sym
 	python3 tests/emu/product_boot.py --sdx="$(SRC_SDX)"
 
 # The same boot off the product CF card, on the machine this project is
@@ -2956,4 +2935,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-m70 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean

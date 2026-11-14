@@ -24,12 +24,15 @@
  * when one will not open for writing, the other is used; SDX has closed
  * the older by the time it reads BATCH.  Both stay on the disk.
  *
+ * THE CARTRIDGE (phase 165) is the name "CAR:": the batch's first line is
+ * then SDX's own command for it, CAR for a cartridge or BASIC for the
+ * XL/XE's own (User Guide 4.50, 4.7 and 4.4), whichever the AES found at
+ * boot (src/sys/dos.c dos_cart).
+ *
  * A RESET abandons a batch file -- the User Guide's CLR (4.12) is for the
  * variables "a batch file aborted with <RESET>" leaves -- so a RESET
  * during the program is SDX's prompt, not GEM: type GEM there.
  *
- * Not in the GEM.COM a DOS 2 floppy boots (build/gem-dos2.xex), which
- * never meets SDX: src/sys/nog4.c has run8_sdx refusing in its place.
  */
 #include "portab.h"
 #include <string.h>
@@ -48,6 +51,8 @@ static const char FAR r8s_gems[3][R8S_NAME] = {
 };
 static const char FAR r8s_bat[2][9] = { "RUN8.BAT", "RUN9.BAT" };
 static const char FAR r8s_set[] = "SET BATCH=";
+static const char FAR r8s_car[] = "CAR";
+static const char FAR r8s_basic[] = "BASIC";
 
 /* `far` into `near`, n bytes at most and a NUL: a byte read into a word
  * first (tools/ccbug, B18). */
@@ -95,7 +100,11 @@ WORD run8_sdx(const char *cmd)
     }
     if (io < 0)
         return APP_E_FILE;
-    dos_cioname(cmd, prog);
+    if (cmd[0] == 'C' && cmd[1] == 'A' && cmd[2] == 'R' && cmd[3] == ':' && !cmd[4])
+        r8s_get(prog, dos_cart == DOS_CART_ROM ? r8s_car : r8s_basic,
+                (WORD)sizeof prog);
+    else
+        dos_cioname(cmd, prog);
     n = (WORD)strlen(prog);
     prog[n] = (char)0x9B;
     st = cio_write(io, prog, (uint16_t)(n + 1));

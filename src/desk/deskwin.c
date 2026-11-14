@@ -1289,6 +1289,30 @@ static WORD run_prog(char *app_path, WORD dir, const char *args,
     return ret;
 }
 
+/* THE CARTRIDGE ON THE DESK (phase 165): run as a program is, by the
+ * name the AES knows it by, SH_CARTRIDGE -- GEM ends, the cartridge (or
+ * the XL/XE's own BASIC) runs, and its DOS brings GEM back.  The name in
+ * a buffer of this frame, not the literal: the desktop is a large-data
+ * program and a far string does not reach the AES (phase 50's bounce). */
+WORD do_cart(void)
+{
+    static const char FAR car[] = SH_CARTRIDGE;
+    char cmd[8], tail[4];
+    WORD i, ret;
+
+    for (i = 0; i < 7 && car[i]; i++)
+        cmd[i] = car[i];
+    cmd[i] = 0;
+    tail[0] = 0;                                /* pro_run: no arguments */
+    tail[1] = 0x0D;
+    tail[2] = 0;
+    desk_busy(TRUE);
+    ret = shel_write(SHW_EXEC, 0, 0, cmd, tail);
+    if (!ret)
+        desk_busy(FALSE);
+    return ret;
+}
+
 /* A window's directory and a name in it, as one path: "A:\SUB\" and
  * "NAME.EXT" into `out`, LEN_ZPATH.  The directory's length, or -1 when
  * the whole will not fit. */
@@ -1632,6 +1656,8 @@ WORD do_open(WORD wh, WORD obj)
     if (wh == DESKWH) {
         if (icon_letter(obj))
             do_dopen(obj);
+        else if (icon_cart(obj))
+            return do_cart();
         return FALSE;                           /* else the trash */
     }
     pw = win_find(wh);

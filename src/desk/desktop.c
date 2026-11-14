@@ -131,6 +131,20 @@ static void desk_build(void)
         desk_icon(gx, gy, drive > 1 ? IB_HARD : IB_FLOPPY, label, (WORD)('A' + drive));
         n++;
     }
+    /* ...then the cartridge, when the AES found one at boot (phase 165):
+     * BASIC for the XL/XE's own, CARTRIDGE for one plugged in. */
+    {
+        LONG c = Ssystem(S_GETCOOKIE, G4CT_COOKIE, 0L);
+
+        if (c == G4CT_BASIC || c == G4CT_CART) {
+            char *name;
+
+            rsrc_gaddr(R_STRING, (WORD)(c == G4CT_CART ? STCART : STBASIC),
+                       (void **)&name);
+            desk_icon((WORD)(n % xcnt), (WORD)(n / xcnt), IB_CART, name, 'c');
+            n++;
+        }
+    }
     gx = 0;
     gy = (WORD)(ycnt - 1);
     if (n && (WORD)((n - 1) / xcnt) >= gy)
@@ -854,7 +868,8 @@ static WORD hndl_msg(void)
  * wins.  A NEWDESK.INF names its icons by number instead; reading one is
  * for later. */
 static const char *const ci_names[N_IB] = {
-    "HARDDISK", "FLOPPYDISK", "TRASHCAN", "FOLDER", "PROGRAMFILE", "TEXTFILE"
+    "HARDDISK", "FLOPPYDISK", "TRASHCAN", "FOLDER", "PROGRAMFILE", "TEXTFILE",
+    "CARTRIDGE"                         /* gem4xe's (tools/a8icons.py) */
 };
 
 #define CI_BYTES 128                    /* one plane of a 32 x 32 form */

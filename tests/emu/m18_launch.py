@@ -162,7 +162,7 @@ def model_desk(v, a):
     a.draw(0, 0, (0, 0, a.gl_width, a.gl_height))
 
 
-def model(mark, brk, pointer, drvmap):
+def model(mark, brk, pointer, drvmap, cart=0):
     """The prelude and both desktops against one model: (v, a, want, d1,
     d2, memo, m11).  `brk` is the far heap's cursor before the shell
     reads the desktop's file to it; `m11` is M11.PRG's call count."""
@@ -182,7 +182,7 @@ def model(mark, brk, pointer, drvmap):
     model_desk(v, a)
     a.dos_brk = copy.deepcopy(arena)
     d1 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_before(memo), deskicon=icons, **pl)
+                 inputs_before(memo), deskicon=icons, cart=cart, **pl)
     d1.main()
     # what outlives the desktop: the colour icons it handed the AES, the
     # system's now (far_keep), and so in every heap after this one
@@ -202,7 +202,7 @@ def model(mark, brk, pointer, drvmap):
     a.dos_brk = pl2.pop("dos_brk")
     pl2.pop("link_near"), pl2.pop("near_size")
     d2 = Desktop(v, a, mark, link_near, near_size, g_link, drvmap,
-                 inputs_after(memo), deskicon=icons, **pl2)
+                 inputs_after(memo), deskicon=icons, cart=cart, **pl2)
     d2.main()
     return v, a, want, d1, d2, memo, m11, kept
 
@@ -277,7 +277,8 @@ def main(argv):
               f"DOS kind {kind}, drive map {drvmap:#04x}")
 
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))
-        ref_v, ref_a, want, d1, d2, memo, m11, kept = model(mark, brk, pointer, drvmap)
+        ref_v, ref_a, want, d1, d2, memo, m11, kept = model(mark, brk, pointer, drvmap,
+                                                                      b.peek(syms["dos_cart"]))
         check(bool(kept) and d1.g_cicon and d2.g_cicon == d1.g_cicon,
               f"the colour icons: kept {kept}, the desktops' g_cicon "
               f"${d1.g_cicon:06X} and ${d2.g_cicon:06X}")

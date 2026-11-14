@@ -702,6 +702,10 @@ class AES:
         # GEMDOS's drive: the current one and the map Dsetdrv reports,
         # what the harness read from the DOS seam (src/sys/gemdos.c)
         self.dos_drive, self.dos_drvmap = 0, 1
+        # ...and what cartridge the machine has, the cookie G4CT the AES
+        # answers from what it found at boot (src/sys/dos.c dos_cart):
+        # also read off the machine by the harness, as the drive map is
+        self.dos_cart = 0
         # ... and what its file calls see: where the far heap's first
         # Malloc lands (the gate derives it from the shell's brk), the
         # DTA's address and what the last search put in it, the
@@ -5759,6 +5763,15 @@ class AES:
             return 0 if self.psystem else GD_EINVFN & 0xFFFFFFFF
         if fn == GD_DCAPS:
             return self.dos_caps
+        if fn == GD_SSYSTEM:            # the cookie jar (gemdos.c gd_ssystem):
+            mode = ints[0] - 0x10000 if ints[0] & 0x8000 else ints[0]
+            if mode == -1:              # S_INQUIRE
+                return 0
+            if mode != 8:               # only S_GETCOOKIE is answered
+                return GD_EINVFN & 0xFFFFFFFF
+            if long_(1) == 0x47344354:  # G4CT: written from the C's table,
+                return self.dos_cart    # which says the jar answers it so
+            return 0xFFFFFFFF           # not in the jar (GD_ERROR)
         raise ValueError(f"unknown GEMDOS function {fn:#x}")
 
 
@@ -5807,6 +5820,7 @@ FA_RDONLY, FA_HIDDEN, FA_SYSTEM, FA_VOLUME, FA_SUBDIR, FA_ARCHIVE = (
 GD_EINVFN = -32
 GD_PSYSTEM = 0x1F0                  # gem4xe's own (src/sys/gemdos.h)
 GD_DCAPS = 0x1F7                    # gem4xe's own, phase 152
+GD_SSYSTEM = 0x154                  # MiNT's: the cookie jar (phase 150)
 DC_FOLDERS, DC_RENDIR, DC_MOVE = 0x01, 0x02, 0x04
 GD_EPTHNF, GD_EACCDN, GD_EFILNF, GD_ENMFIL = -34, -36, -33, -49
 GD_ENHNDL, GD_EIHNDL = -35, -37

@@ -204,6 +204,13 @@ DOS 2.  Under SpartaDOS X a RESET during the program leaves you at its
 prompt instead: type `GEM`.  Quit any program put aside first: GEM will
 not end and lose it.
 
+**BASIC, or a cartridge**, is an icon on the desk too, after the
+drives: BASIC on any XL or XE, CARTRIDGE when one is plugged in.
+Double-click it and GEM steps aside for it; type `DOS` in BASIC (or
+leave the cartridge through its DOS) and GEM starts again.  Under
+SpartaDOS X the icon is always BASIC, because SDX's own cartridge hides
+whatever is plugged in on top of it: `CAR` at SDX's prompt runs that.
+
 A **joystick** can be the pointer too, with `MOUSE=JOY` in
 `GEM4XE.CFG`: hold the stick to move, fire to click.
 

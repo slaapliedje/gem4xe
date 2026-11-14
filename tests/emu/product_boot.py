@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """The product disks boot into the desktop, with nothing typed at all.
 
-Two of them boot, and they come up the same way by different means:
+One of them boots (the DOS 2 floppy that was the other went in phase
+165; the MyDOS disk is test-mydos's):
 
-  build/gem-boot.atr a double-density DOS 2 disk, the system named
-                     AUTORUN.SYS because that is what the DOS runs at
-                     boot, beside the DOS's own DUP.SYS, which is what
-                     GEM returns to (tools/mkdisk.py --sweep, and
-                     docs/shipping.md section 2);
   build/gem-sys.atr  a double-sided double-density SDFS disk whose only
                      DOS is gem4xe's own, G4DOS (tools/mkfloppy.py): the
                      one the release carries, because the other boots a
@@ -102,13 +98,6 @@ SYMS = os.path.join(BUILD, "gem.sym")
 ELF = os.path.join(BUILD, "gem.elf")
 
 
-def gem_build(name):
-    """The GEM.COM a floppy carries: a DOS 2 floppy's is the product less
-    G4DOS's half of GEMDOS (src/sys/nog4.c), with its own symbols."""
-    return "gem-dos2" if name in DOS2_DISKS else "gem"
-
-
-DOS2_DISKS = ("gem-boot.atr", "gem-antic.atr", "g4bench-boot.atr")
 # two lines now: the system lives in \GEM\ on the install disk
 BOOT_LINE = b"CD >GEM\x9bGEM\x9b"
 COLDST = 0x0244                 # the OS: non-zero at RESET means come up cold
@@ -137,14 +126,12 @@ HEAD = 64                       # and at the head of every chunk: where a DOS
 # (the image, what starts GEM on it, how it says so, the batch files an
 # SDFS disk must carry, and whether it wants the SDX cartridge to boot)
 PRODUCTS = [
-    ("gem-boot.atr", "AUTORUN.SYS", "a double-density DOS 2, AUTORUN.SYS",
-     (), False),
     ("gem-sys.atr", "GEM.COM", "no DOS on the disk: SpartaDOS X from the "
      "cartridge, AUTOEXEC.BAT", ("AUTOEXEC.BAT",), True),
 ]
 
 
-def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False):
+def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False, cart=0):
     """The desktop against the model, up to its first wait: the same
     prelude and the same sh_main the desktop gates run (m17_desktop), and
     then one step producer, which photographs the desk and chooses
@@ -171,38 +158,11 @@ def desk_model(mark, brk, pointer, drvmap, dirs, dev=None, psystem=False):
         return [F(3), SHOT, *menu(d, FILEMENU, QUITITEM, False)[1:]]
 
     d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
-                g_link, drvmap, [first_wait], deskicon=deskicon_for(dirs), **pl)
+                g_link, drvmap, [first_wait], deskicon=deskicon_for(dirs), cart=cart,
+                **pl)
     a.psystem = psystem                 # the DOS's command processor, or not
     d.main()
     return v, a, d
-
-
-def inf_max_bytes():
-    """The longest DESKTOP.INF src/desk/deskwin.c's inf_write can write,
-    from the C's own sizes: its fixed lines, and every program, drive
-    icon and window slot full, each string at its buffer's length less
-    the NUL.  The line formats are inf_write's, written out here."""
-    src = open(os.path.join(ROOT, "src", "desk", "deskwin.c")).read()
-    hdr = open(os.path.join(ROOT, "src", "desk", "desk.h")).read()
-
-    def const(text, name):
-        m = re.search(rf"#define\s+{name}\s+\(?(\w+)(?:\s*\+\s*(\d+))?\)?", text)
-        v = m.group(1)
-        v = const(hdr, v) if not v.isdigit() else int(v)
-        return v + int(m.group(2) or 0)
-
-    n_apps, extlen = const(src, "N_APPS"), const(src, "APP_EXTLEN")
-    n_drv, label = const(src, "N_DRVICONS"), const(hdr, "LABEL_LEN")
-    n_win, zpath = const(hdr, "NUM_WNODES"), const(hdr, "LEN_ZPATH")
-    n_scr = const(hdr, "N_SCREENS")
-    hex2 = 3                                    # put_hex2: " XX"
-    size = 2 + hex2 + 2                         # "#R 02\r\n"
-    size += 2 + 5 * hex2 + 2                    # "#E", five bytes
-    size += 2 + 2 * n_scr * hex2 + 2            # "#Q", a pair a screen
-    size += n_apps * (3 + (extlen - 1) + 2 + (zpath - 1) + 3)   # "#G ext@ path@"
-    size += n_drv * (15 + 1 + 1 + (label - 1) + 5)              # "#M 00 00 0n FF L label@ @"
-    size += n_win * (2 + 7 * hex2 + (zpath - 1) + 3)            # "#W", seven, path@
-    return size
 
 
 def far_probes(far, chunk):
@@ -271,9 +231,7 @@ def check_boot(name, report, gtia, b, syms, check, glyphs=None):
     L = lambda k: words["BOOT_" + k]        # noqa: E731
     with open(os.path.join(ROOT, "VERSION")) as f:
         version = f.read().strip()
-    # the DOS 2 floppy carries no GEM4XE.CFG (phase 43): the boot screen
-    # says the settings are the defaults, which is what the file says too
-    cfg = L("DEFAULTS") if name == "gem-boot.atr" else "GEM4XE.CFG"
+    cfg = "GEM4XE.CFG"
     for label, want in ((L("VERSION"), version),
                         (L("CPU"), "65C816, Rapidus"),
                         (L("CONFIG"), cfg),
@@ -339,7 +297,7 @@ def check_boot(name, report, gtia, b, syms, check, glyphs=None):
 
 def one(name, progname, how, batches, cart, keep, check):
     disk = os.path.abspath(os.path.join(BUILD, name))
-    base = gem_build(name)
+    base = "gem"
     syms = symfile.load(os.path.join(BUILD, base + ".sym"))
     segs, _ = mkxex.read_elf(os.path.join(BUILD, base + ".elf"))
     far = sorted((a, d) for a, d in segs if a > 0xFFFF)
@@ -406,52 +364,6 @@ def one(name, progname, how, batches, cart, keep, check):
                   f"{name}: the superblock names a DOS file at map sector "
                   f"{fs.boot_file_map}, and the only one this disk may name "
                   f"is G4DOS.SYS")
-    else:
-        # DUP.SYS is on the disk (Makefile, build/gem-boot.atr): it is the
-        # DOS's shell, and what GEM hands the machine back to.  It went,
-        # for a while, when the system outgrew the disk with the shell on
-        # it -- docs/shipping.md section 2 -- and came back when the far
-        # image started travelling packed (tools/mkxex.py), which took a
-        # third off GEM.COM.  Without it this DOS has nothing to return
-        # to, so its absence is a regression and not a saving.
-        check("DUP.SYS" in listed,
-              f"{name}: DUP.SYS is not on the disk -- GEM has no shell to "
-              f"return to")
-        free = fs.free_count() * fs.data_bytes
-        print(f"  {fs.free_count()} sectors free, {free // 1024} KB")
-        # THE FLOOR, AND WHAT IT IS NOW FOR.  It used to keep room "for a
-        # program of the user's own" and came down three times under that
-        # banner -- 80, then 72 when File -> DOS command arrived, then 64
-        # when wind_get(WF_OWNER) was put right (docs/shipping.md section
-        # 1 has the history).  The fourth time, on 2026-09-19, the ten
-        # remaining AES opcodes took it to 52 and the reason was read
-        # again instead of the number being lowered again.
-        #
-        # THE REASON WAS STALE.  A DOS 2 cannot read gem-apps.atr, so
-        # nobody puts a program on this disk -- the Makefile already calls
-        # it "a gate's more than anybody's way in", and shipping.md
-        # already argues the same thing at length.  The way in is the
-        # INSTALLER: both floppies carry INSTALL.BAT, SpartaDOS X copies
-        # them onto a drive and the machine boots from that (test-install,
-        # docs/media.md).  So the floor was guarding a use the project had
-        # already written off.
-        #
-        # WHAT IT GUARDS NOW is the one thing a person really can write to
-        # this disk: DESKTOP.INF, when they arrange the desktop and choose
-        # Options -> Save desktop.  Its size is bounded, not guessed.  It
-        # was bounded by the shell buffer it is built in (SIZE_SHELBUF,
-        # 4192 bytes: twenty sectors) until phase 90, when the system's
-        # growth took the disk under that; the tighter bound is what
-        # inf_write can actually write (inf_max_bytes, from the C's own
-        # sizes), in this DOS's sectors, plus one for the directory entry.
-        # DUP.SYS stays: it is what Quit returns to, above.
-        inf_max = inf_max_bytes()
-        INF_SECTORS = -(-inf_max // fs.data_bytes) + 1
-        check(fs.free_count() >= INF_SECTORS,
-              f"{name}: {fs.free_count()} sectors free -- under the floor of "
-              f"{INF_SECTORS}, which is the most DESKTOP.INF can take "
-              f"({inf_max} bytes) and a directory entry")
-
     if cart == "":
         print(f"  not booted: no SDX cartridge fixture ([spartados].sdx_cart "
               f"in fixtures.toml), and this disk carries no DOS of its own")
@@ -618,7 +530,7 @@ def one(name, progname, how, batches, cart, keep, check):
         # 4.4 or later whose jfsymbol is in place (src/sys/dos.c dos_command)
         psystem = kind == 2 and b.peek(0x0701) >= 0x44 and b.peek(0x07EB) == 0x4C
         ref_v, ref_a, d = desk_model(mark, brk, pointer, drvmap, dirs,
-                                     psystem=psystem)
+                                     psystem=psystem, cart=b.peek(syms["dos_cart"]))
         print(f"  the model's desktop: {len(d.script)} calls to its first wait "
               f"at {d.waits[0]}, near ${d.near:04X}, G ${d.G:04X}")
         check(len(ref_a.shots) == 1, f"{name}: the model took {len(ref_a.shots)} shots")

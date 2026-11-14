@@ -1158,6 +1158,11 @@ def open_fs(img):
         return Sdfs(img)
     if img.sector_count >= Dos2.VTOC and img.read_sector(Dos2.VTOC)[0] == 2:
         return Dos2(img)
+    # MyDOS signs its boot sector with an 'M' (the byte a SpartaDOS signs
+    # with 'S', src/sys/dos.c) and codes its VTOC by the disk's size: a
+    # DOS 2 to read, with folders (Dos2.entries)
+    if img.read_sector(1)[0] == ord("M"):
+        return Dos2(img)
     raise ATRError("neither a DOS 2 nor a SpartaDOS disk")
 
 

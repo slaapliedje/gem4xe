@@ -1303,6 +1303,17 @@ LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz);
 #define S_GETCOOKIE  8
 LONG Ssystem(WORD mode, LONG arg1, LONG arg2);
 
+/* gem4xe's cookie G4CT (phase 165): what cartridge the machine has, found
+ * at boot -- none, the XL/XE's own BASIC, or a cartridge.  To run it, ask
+ * shel_write(SHW_EXEC, 0, 0, SH_CARTRIDGE, "") as for a program: GEM ends,
+ * the cartridge runs, and its DOS (BASIC's DOS) brings GEM back.  A plain
+ * Atari program (.COM, .XEX, .EXE, .OBJ) is run the same way by its name. */
+#define G4CT_COOKIE  0x47344354L        /* 'G4CT' */
+#define G4CT_NONE    0
+#define G4CT_BASIC   1
+#define G4CT_CART    2
+#define SH_CARTRIDGE "CAR:"
+
 /* gem4xe's own (0x1F0): the DOS's command processor -- SpartaDOS X's, or
  * on G4DOS gem4xe's own commands (src/sys/doscmd.c) -- given `line`, run to completion with GEM's screen left as it is, and
  * every byte it printed caught in `out`, `max` bytes of it (a Malloc'd

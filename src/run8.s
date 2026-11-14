@@ -45,12 +45,16 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
 
-              .public r8_base, r8_dos, r8_prog, r8_gem, r8_end
+              .public r8_base, r8_dos, r8_prog, r8_gem, r8_end, r8_go, r8_goend
 
 DOSVEC:       .equ    0x000a
 DOSINI:       .equ    0x000c
 BOOTQ:        .equ    0x0009          ; BOOT?: bit 0, a disk boot was done
 COLDST:       .equ    0x0244          ; non-zero: the OS makes a RESET cold
+RAMTOP:       .equ    0x006a
+BASICF:       .equ    0x03f8          ; the XL OS's: non-zero, BASIC is off
+PORTB:        .equ    0xd301          ; bit 1 clear: BASIC in
+CARTRUN:      .equ    0xbffa          ; a cartridge's start
 RUNAD:        .equ    0x02e0
 INITAD:       .equ    0x02e2
 ICCOM:        .equ    0x0342
@@ -67,28 +71,14 @@ IOCB1:        .equ    0x10
 
 r8_base:      jmp     r8_go
 r8_dos:       .word   0               ; GEM writes these four
-r8_prog:      .space  48
+r8_prog:      .space  48              ; ...0 first: the cartridge (r8_cart)
 r8_gem:       .space  20
 
-r8_go:        ldx     #0xff           ; GEM's exit left the stack anywhere
-              txs
-              lda     dp:DOSINI          ; RESET comes back here too
-              sta     r8_ini
-              lda     dp:DOSINI+1
-              sta     r8_ini+1
-              lda     #.byte0 r8_reset
-              sta     dp:DOSINI
-              lda     #.byte1 r8_reset
-              sta     dp:DOSINI+1
-              lda     #0              ; the boot is long over: RESET is warm
-              sta     COLDST
-              lda     dp:BOOTQ        ; ...and calls DOSINI
-              ora     #1
-              sta     dp:BOOTQ
-              jsr     r8_here
-              ldx     #.byte0 r8_prog
+;;; The program: loaded and run, and an RTS from it comes back here.  Here
+;;; and not in r8_go, whose page the program may load over.
+r8_run:       ldx     #.byte0 r8_prog
               ldy     #.byte1 r8_prog
-              jsr     r8_load         ; run; an RTS from it comes back here
+              jsr     r8_load
 r8_back:      ldx     #0xff
               txs
               lda     r8_ini          ; the DOS's vectors, as it had them
@@ -99,6 +89,10 @@ r8_back:      ldx     #0xff
               sta     dp:DOSVEC
               lda     r8_dos+1
               sta     dp:DOSVEC+1
+              lda     r8_portb        ; BASIC, and the rest of PORTB, as GEM
+              sta     PORTB           ; left them: the cartridge's start put
+              lda     r8_basicf       ; BASIC in, and a program may have
+              sta     BASICF          ; switched anything
               ldx     #.byte0 r8_gem
               ldy     #.byte1 r8_gem
               jsr     r8_load         ; GEM leaves through DOSVEC itself
@@ -175,7 +169,7 @@ r8_done:      jsr     r8_close
               lda     RUNAD
               ora     RUNAD+1
               beq     r8_rts          ; nothing to run
-r8_run:       jmp     (RUNAD)
+r8_runad:     jmp     (RUNAD)
 
 ;;; r8_word -- two bytes of the file into r8_w.
 r8_word:      ldx     #IOCB1
@@ -205,6 +199,71 @@ r8_arm:       lda     #.byte0 r8_rts
 r8_rts:       rts
 
 r8_ini:       .word   0               ; the DOS's DOSINI
+r8_portb:     .byte   0               ; PORTB and BASICF as GEM left them
+r8_basicf:    .byte   0
 r8_w:         .word   0
 r8_s:         .word   0
 r8_end:
+
+;;; ---------------------------------------------------------------------------
+;;; WHAT RUNS ONCE, BEFORE THE PROGRAM OR THE CARTRIDGE: $0580-$05FF, BASIC's
+;;; line buffer -- which BASIC uses only once it is running, by when this has
+;;; done its work -- so that what has to outlive them fits below it.
+;;; ---------------------------------------------------------------------------
+              .section run8go, root
+
+r8_go:        ldx     #0xff           ; GEM's exit left the stack anywhere
+              txs
+              lda     dp:DOSINI       ; RESET comes back here too
+              sta     r8_ini
+              lda     dp:DOSINI+1
+              sta     r8_ini+1
+              lda     #.byte0 r8_reset
+              sta     dp:DOSINI
+              lda     #.byte1 r8_reset
+              sta     dp:DOSINI+1
+              lda     #0              ; the boot is long over: RESET is warm
+              sta     COLDST
+              lda     dp:BOOTQ        ; ...and calls DOSINI
+              ora     #1
+              sta     dp:BOOTQ
+              lda     PORTB
+              sta     r8_portb
+              lda     BASICF
+              sta     r8_basicf
+              jsr     r8_here
+              lda     r8_prog
+              beq     r8_cart
+              jmp     r8_run
+
+;;; THE CARTRIDGE (phase 165), as DUP's B starts one: BASIC switched in --
+;;; which a cartridge plugged in overrides anyway -- RAMTOP at $A0, E:
+;;; opened again below it, and a jump through $BFFA.  Its DOS (BASIC's)
+;;; goes through DOSVEC to r8_back, and GEM.
+r8_cart:      lda     PORTB
+              and     #0xfd           ; bit 1 clear: BASIC at $A000
+              sta     PORTB
+              lda     #0
+              sta     BASICF
+              lda     #0xa0
+              sta     dp:RAMTOP
+              ldx     #0
+              lda     #12             ; CLOSE E:
+              sta     ICCOM
+              jsr     CIOV
+              ldx     #0
+              lda     #3              ; and OPEN it, under the new RAMTOP
+              sta     ICCOM
+              lda     #.byte0 r8_ename
+              sta     ICBAL
+              lda     #.byte1 r8_ename
+              sta     ICBAH
+              lda     #12
+              sta     ICAX1
+              lda     #0
+              sta     ICAX2
+              jsr     CIOV
+              jmp     (CARTRUN)
+
+r8_ename:     .byte   "E:", 0x9b
+r8_goend:

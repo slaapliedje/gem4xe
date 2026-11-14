@@ -167,6 +167,7 @@ TASK void main(void)
 #endif
     MARK(0);  dos_ident();
     MARK(1);  UNLESS(DIAG_SKIP_SPEEDUP) rapidus_speedup();
+              dos_cart_probe();  /* window 2 slow now, IRQs still off (dos.h) */
     DIAG(diag_rapidus());       /* the signature and the windows, as found */
     MARK(2);  UNLESS(DIAG_SKIP_IRQ) irq_install();
               abi_probe_os();   /* whose COP a foreign one is (src/sys/abi.s);

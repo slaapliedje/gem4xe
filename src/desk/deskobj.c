@@ -130,6 +130,21 @@ WORD icon_letter(WORD obj)
     return 0;
 }
 
+/* THE OTHER TWO DESK ICONS, by the character on them as a drive is: the
+ * trash none, the cartridge (phase 165) a lower-case c, TOS's letter for
+ * the cartridge's drive, which icon_letter does not take for a drive.
+ * Not "whatever is not a drive" -- a file dropped on the cartridge would
+ * have been deleted (deskfun.c fun_file2any). */
+WORD icon_trash(WORD obj)
+{
+    return (WORD)((obj_info(obj)->i.blk.ib_char & 0xFF) == 0);
+}
+
+WORD icon_cart(WORD obj)
+{
+    return (WORD)((obj_info(obj)->i.blk.ib_char & 0xFF) == 'c');
+}
+
 /* A path as it is shown: "A:\GEM" as "D1:\GEM", anything else as it is.
  * At most n bytes go into d, the NUL among them; d's end is returned. */
 char *drv_show(char *d, const char *path, WORD n)

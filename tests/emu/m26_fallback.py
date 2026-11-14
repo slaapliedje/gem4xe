@@ -76,7 +76,7 @@ from vbxeref import (SCR_W as VB_W, SCR_H as VB_H,   # noqa: E402
                      SHOT_X0 as VB_X0, SHOT_Y0 as VB_Y0)
 
 BUILD = os.path.join(ROOT, "build")
-SYMS = os.path.join(BUILD, "gem-dos2.sym")   # a DOS 2 floppy's GEM.COM
+SYMS = os.path.join(BUILD, "gem.sym")
 SHOTDIR = os.path.join(BUILD, "shots")
 
 # The playfield's top left in a screenshot.  The two devices do not put it
@@ -95,8 +95,8 @@ ANTIC_GEOM = (AN_W, AN_H, 1, 6, 6)
 VBXE_GEOM = (VB_W, VB_H, 4, 8, 8)
 
 CASES = [
-    ("auto-vbxe",  "gem-boot.atr",  True,  CFG_VIDEO_AUTO,  "vbxe",  VBXE_GEOM),
-    ("auto-antic", "gem-boot.atr",  False, CFG_VIDEO_AUTO,  "antic", ANTIC_GEOM),
+    ("auto-vbxe",  "gem-mydos.atr", True,  CFG_VIDEO_AUTO,  "vbxe",  VBXE_GEOM),
+    ("auto-antic", "gem-mydos.atr", False, CFG_VIDEO_AUTO,  "antic", ANTIC_GEOM),
     ("safe-mode",  "gem-antic.atr", True,  CFG_VIDEO_ANTIC, "antic", ANTIC_GEOM),
 ]
 
@@ -227,7 +227,10 @@ def one(tag, disk, has_vbxe, want_cfg, want_dev, geom, syms, keep, check):
             # first wait, none of them the desktop's (src/sys/abi.c).
             calls = syms["app_calls"]
             kind = b.peek(syms["dos"])
-            drvmap = 0x03 if kind != DOS_2 else (b.peek(DRVBYT) or 1)
+            # MyDOS since phase 165 (the DOS 2 floppy went): its $070A is
+            # not DOS 2's drive map, and gem4xe gives it D1: and D2:
+            # (tests/emu/mydos_boot.py)
+            drvmap = 0x03
             mark = b.peek16(syms["app_pool_lo"])
             brk = far_heap(b, syms)
             pointer = (b.peek16(syms["ptr_state"]),
@@ -235,7 +238,8 @@ def one(tag, disk, has_vbxe, want_cfg, want_dev, geom, syms, keep, check):
             fs = atr.open_fs(atr.ATRImage.load(path))
             ref_v, ref_a, d = desk_model(mark, brk, pointer, drvmap,
                                          dos2_listing(fs),
-                                         dev=devref.Antic())
+                                         dev=devref.Antic(),
+                                         cart=b.peek(syms["dos_cart"]))
             check(len(ref_a.shots) == 1,
                   f"{tag}: the model took {len(ref_a.shots)} shots")
             # The ABI's counter is the desktop's own, so the call the
