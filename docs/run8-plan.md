@@ -113,7 +113,7 @@ and says to close them first.
      through DOSVEC, as BASIC's DOS does) and the emulator's BASIC.  On
      G4DOS first, then the other DOSes.
 
-5. **DUP's L and B.**
+5. **DUP's L and B.** Done, phase 166.
    - These are the same two calls, from DUP's menu.
    - K (binary save), M (run at an address) and N (MEM.SAV) stay
      refused: each needs memory GEM holds while it runs.

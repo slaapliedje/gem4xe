@@ -245,7 +245,9 @@ WHAT_IT_IS = {
     "DUP.PRG": "DOS 2's disk menu in a window: the letters A to P ask "
                "what DUP.SYS's asked -- a directory, copy, delete, rename, "
                "lock, format, duplicate a disk or a file, write DOS -- "
-               "and answer in DUP's words and error numbers, on any DOS",
+               "and answer in DUP's words and error numbers, on any DOS.  "
+               "L runs a plain Atari program and B the cartridge or BASIC, "
+               "and GEM comes back after them",
     "DUP.RSC": "its menu, and every line it prints",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "

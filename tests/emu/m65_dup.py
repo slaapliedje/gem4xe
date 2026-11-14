@@ -18,7 +18,7 @@ What DUP prints is read off the screen after each answer:
   G  unlocked;  D  deleted, asked DELETE FILE D2:E.TXT? and Y
   I, P  D3 and D4 formatted, each asked TYPE "Y" first
   H  DOS written to D3;  J  D3 duplicated onto D5
-  B  NOT UNDER GEM
+  K  NOT UNDER GEM (L and B run things: test-m71)
 Then the disks with tools/atr.py: D2 as it began, D3 an SDFS with
 G4DOS.SYS and SHELL.SYS that boots alone to G4DOS's prompt, D4 single
 density, D5 the same as D3 sector for sector.
@@ -162,9 +162,9 @@ def main():
         ask("J", "3,5", "INSERT BOTH DISKS, TYPE RETURN", "dup-ask")
         typ("\n")
         wait_for("SELECT ITEM", "dup", most=40000)
-        typ("B")
-        check(wait_for("NOT UNDER GEM", "cart") is not None, "B says it is not done under GEM")
-        print("  H, J, B: DOS written to D3:, D3: duplicated onto D5:, B refused")
+        typ("K")
+        check(wait_for("NOT UNDER GEM", "save") is not None, "K says it is not done under GEM")
+        print("  H, J, K: DOS written to D3:, D3: duplicated onto D5:, K refused")
     finally:
         emu.stop()
 

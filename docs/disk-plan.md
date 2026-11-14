@@ -144,7 +144,9 @@ its resource.
 | J. Duplicate disk | source, destination; swapping disks on one drive |
 | O. Duplicate file | a file copied onto another disk in the same drive |
 | P. Format single | as I, at single density |
-| B, K, L, M, N | the cartridge, binary save and load, run at an address, MEM.SAV: the 8-bit machine's own chores, which GEM holds the memory for; each says so in a line |
+| L. Binary load | since phase 166: a plain program run, as its icon is -- GEM ends, the program runs, GEM comes back |
+| B. Run cartridge | since phase 166: the cartridge, or the XL/XE's own BASIC, the same way |
+| K, M, N | binary save, run at an address, MEM.SAV: they need memory GEM holds; each says so in a line |
 
 Steps:
 

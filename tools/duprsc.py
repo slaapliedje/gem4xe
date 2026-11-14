@@ -155,6 +155,9 @@ STRINGS = [
     ("R_WORKING", "WORKING ON D#: ...|"),
     ("R_DIR", " DIR"),
     ("R_COPYING", "COPYING---@|"),
+    ("Q_L", "LOAD FROM WHAT FILE?|"),
+    ("R_NOCART", "NO CARTRIDGE|"),
+    ("R_NOTPLAIN", "GEM RUNS .COM .XEX .EXE AND .OBJ|FILES ONLY|"),
 ]
 
 

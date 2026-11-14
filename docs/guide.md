@@ -227,7 +227,7 @@ whatever name it is given:
 | `EDIT.RSC` | its menus, alerts and words |
 | `DISKUTIL.PRG` | formats a floppy -- single, enhanced, double or double-sided density, as a G4DOS and SpartaDOS X disk with folders or a DOS 2 and MyDOS one -- or copies one whole, onto another drive or, swapping disks, onto another disk in the same one.  Bootable puts G4DOS on a new disk, from the system disk in another drive.  A hard disk's partition is never formatted |
 | `DISKUTIL.RSC` | its dialog, alerts and words |
-| `DUP.PRG` | DOS 2's disk menu in a window: the letters A to P ask what DUP.SYS's asked -- a directory, copy, delete, rename, lock, format, duplicate a disk or a file, write DOS -- and answer in DUP's words and error numbers, on any DOS |
+| `DUP.PRG` | DOS 2's disk menu in a window: the letters A to P ask what DUP.SYS's asked -- a directory, copy, delete, rename, lock, format, duplicate a disk or a file, write DOS -- and answer in DUP's words and error numbers, on any DOS.  L runs a plain Atari program and B the cartridge or BASIC, and GEM comes back after them |
 | `DUP.RSC` | its menu, and every line it prints |
 | `CLOCK.ACC` | THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside GEM.COM, with CLOCK.RSC, and it appears in the Desk menu: the AES loads it once at start-up and it stays there, ticking, through every program the desktop runs. An accessory goes in the system's own directory, never in \APPS\ -- it is not something the desktop launches |
 | `CONTROL.ACC` | THE CONTROL PANEL, a desk accessory: a window listing the extensions below by their icons -- double-click one to open it -- with the time and the date along its top, beside whatever else is on the screen.  Beside GEM.COM with CPANEL.RSC |

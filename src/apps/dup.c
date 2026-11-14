@@ -11,9 +11,11 @@
  * It formats the way of the DOS it runs on: where the drive has folders
  * (G4DOS, SpartaDOS X; Dcaps) an SDFS, and H puts G4DOS on one; under
  * DOS 2 or MyDOS a DOS 2 disk, and H says that DOS's own DUP writes its
- * files.  B, K, L, M and N -- the cartridge, binary save and load, run at
- * an address, MEM.SAV -- are the 8-bit machine's chores, for which GEM
- * holds the memory; each says so.
+ * files.  L and B (phase 166) ask the AES to run a plain Atari program or
+ * the cartridge, as the desktop's icons do: GEM ends, the program or the
+ * cartridge runs, and GEM comes back -- so DUP quits once it has asked.
+ * K, M and N -- binary save, run at an address, MEM.SAV -- need memory
+ * GEM holds while it runs; each says so.
  *
  * Every line it prints is DUP.RSC's (tools/duprsc.py).  Errors are DUP's
  * numbers -- 170 for a file not found, 167 locked, 144 the disk refusing,
@@ -58,6 +60,7 @@ static LONG sizes[MAXNAMES];
 static uint8_t attrs[MAXNAMES];
 static char dir[PATHMAX];
 static WORD n_names, at_name;
+static WORD leaving;                /* L or B asked: DUP quits */
 static DTA dta;
 static WORD work_in[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2 };
 static WORD work_out[57];
@@ -708,6 +711,77 @@ static void item_o(char *a)
     Mfree((void FAR *)(uint32_t)buf);
 }
 
+/* L and B: the AES asked to run it once DUP has quit, as a desktop icon
+ * would (src/aes/shel.c, sh_plain).  The tail is pro_run's: none. */
+static void run_after(const char *p)
+{
+    char cmd[PATHMAX], tail[4];
+    WORD i;
+
+    for (i = 0; p[i] && i < PATHMAX - 1; i++)  /* a buffer of this frame */
+        cmd[i] = p[i];
+    cmd[i] = 0;
+    tail[0] = 0;
+    tail[1] = 0x0D;
+    tail[2] = 0;
+    if (shel_write(SHW_EXEC, 0, 0, cmd, tail))
+        leaving = TRUE;
+    else
+        out(fill(R_ERROR, 255, 0));
+}
+
+/* L: a binary file -- $FF $FF first, or SpartaDOS X's $FA $FF -- of a
+ * kind the AES runs, by its extension. */
+static void item_l(char *a)
+{
+    static const char ext[] = "COMXEXEXEOBJ";
+    char p[PATHMAX];
+    uint8_t two[2];
+    WORD d, i, e = -1, ok;
+    LONG h, n;
+
+    gempath(a, p, &d);
+    h = Fopen(p, 0);
+    if (h < 0) {
+        error(h);
+        return;
+    }
+    n = Fread((WORD)h, 2L, (void FAR *)two);
+    Fclose((WORD)h);
+    if (n != 2 || two[1] != 0xFF || (two[0] != 0xFF && two[0] != 0xFA)) {
+        out(fill(R_ERROR, 180, 0));     /* DOS 2's: not a binary file */
+        return;
+    }
+    for (i = 0; p[i]; i++)
+        if (p[i] == '.')
+            e = i + 1;
+        else if (p[i] == '\\')
+            e = -1;
+    ok = FALSE;
+    if (e > 0 && i - e == 3)
+        for (i = 0; ext[i]; i += 3)
+            if (p[e] == ext[i] && p[e + 1] == ext[i + 1] && p[e + 2] == ext[i + 2])
+                ok = TRUE;
+    if (!ok) {
+        say(R_NOTPLAIN);
+        return;
+    }
+    run_after(p);
+}
+
+/* B: the cartridge, or the XL/XE's own BASIC, as the AES found it. */
+static void item_b(void)
+{
+    static const char car[] = SH_CARTRIDGE;
+    LONG c = Ssystem(S_GETCOOKIE, G4CT_COOKIE, 0L);
+
+    if (c != G4CT_BASIC && c != G4CT_CART) {
+        say(R_NOCART);
+        return;
+    }
+    run_after(car);
+}
+
 /* An answer ended by Return. */
 static void answered(void)
 {
@@ -773,9 +847,12 @@ static void answered(void)
         }
         break;
     case 'O': item_o(line); break;
+    case 'L': item_l(line); break;
     default: break;
     }
     llen = 0;
+    if (leaving)
+        return;
     if (again) {
         mode = M_LINE;
         redraw_all();
@@ -785,7 +862,7 @@ static void answered(void)
 }
 
 static const WORD questions[16] = {
-    Q_A, 0, Q_C, Q_D, Q_E, Q_F, Q_G, Q_H, Q_I, Q_J, 0, 0, 0, 0, Q_O, Q_I
+    Q_A, 0, Q_C, Q_D, Q_E, Q_F, Q_G, Q_H, Q_I, Q_J, 0, Q_L, 0, 0, Q_O, Q_I
 };
 
 /* A key; TRUE to quit. */
@@ -831,8 +908,15 @@ static WORD do_key(WORD kr)
             return FALSE;
         put(c);
         newline();
+        if (c == 'B') {
+            item_b();
+            if (leaving)
+                return TRUE;
+            select_again();
+            return FALSE;
+        }
         q = questions[c - 'A'];
-        if (!q) {                       /* B, K, L, M, N */
+        if (!q) {                       /* K, M, N */
             say(R_NOTGEM);
             select_again();
             return FALSE;
@@ -846,6 +930,8 @@ static WORD do_key(WORD kr)
     /* M_LINE: an answer */
     if ((UWORD)kr == KEY_RET) {
         answered();
+        if (leaving)
+            return TRUE;
     } else if ((UWORD)kr == KEY_BS) {
         if (llen > 0 && col > 0) {
             llen--;
