@@ -67,12 +67,31 @@ void irq_sei(void);
 
 #elif defined(__CALYPSI_TARGET_6502__)
 
-/* THE 6502 BUILD (docs/6502.md) -- a survey block, not a design.  There is
- * no 24-bit address on a 6502: memory beyond 64 KB is a PORTB bank in the
- * $4000-$7FFF window, reached only through code that switches it.  So FAR
- * is defined away here only to see what else breaks; every FAR in the C is
- * a place the 6502 build needs a banked accessor instead (docs/6502.md,
- * "the far data"), and nothing built with this block runs. */
+/* THE 6502 DIALECT (docs/6502.md): the system's 6502 build, and the kit.
+ * tools/mksdk.py ships this file as the kit's include/portab.h, so this
+ * one block serves both: gem4xe's own C in banks (test-v6, test-f6), and
+ * an application compiled against the kit's headers.
+ *
+ * There is no 24-bit address on a 6502: memory beyond 64 KB is a PORTB
+ * bank in the $4000-$7FFF window, reached only through code that switches
+ * it (src/sys6502/farmem6502.c).  So FAR is nothing here, and a FAR
+ * pointer is a plain 16-bit one.  What that means:
+ *
+ *   - in the system, a FAR the C dereferences is a place that needs a
+ *     banked accessor instead; `make farscan` reports each (GEM4XE_FARSCAN
+ *     below makes FAR clang's noderef for it);
+ *   - in an application, a FAR parameter of the kit's API takes a near
+ *     buffer, which is all a 6502 program has;
+ *   - a far ADDRESS the system answers as a number -- Malloc's LONG, a
+ *     24-bit address above bank $00 -- cannot be made a pointer here.
+ *     `(T *)(uint32_t)addr` compiles without a word and keeps the low 16
+ *     bits, and neither farscan nor b6scan can see an explicit cast.
+ *
+ * WHAT THIS PROMISES FOR THE KIT: its headers compile under cc6502.
+ * NOTHING MORE.  How a 6502 application calls the VDI, the AES and GEMDOS
+ * is step 5 and is not decided; the kit's call gates are 65C816 COPs
+ * (lib/gemabi.s), so a 6502 application compiles against these headers
+ * and does not link. */
 #ifdef GEM4XE_FARSCAN                   /* tools/bsp6502/farscan.py: host clang */
 #define FAR          __attribute__((noderef))
 #else
