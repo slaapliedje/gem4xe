@@ -112,8 +112,7 @@ class Bank6502(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertRegex(r.stdout, r"jsr helper -- in bank 1, from bank 2",
                          "the assembly check did not see bank 2 calling bank 1's static")
-        self.assertRegex(r.stdout, r"\.word helper, twice -- |\.word helper -- in bank 1, "
-                                   r"from resident|helper -- in bank 1, from resident",
+        self.assertRegex(r.stdout, r"\.word helper -- the address of a function in bank 1",
                          "the assembly check did not see the table of statics")
 
     def test_through_bankasm_is_clean(self):
@@ -375,6 +374,63 @@ class BankData(unittest.TestCase):
         r = self.build(SRC_D_BAD, "db")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertRegex(r.stdout, r"sta pool -- in bank 1, from bank 2")
+
+
+# step 4c's crash: a function in bank 1 hands a pointer to a static in its
+# OWN bank to code in another bank, which calls it there
+SRC_P = r"""
+typedef int (*cbf)(int);
+int walk(cbf f, int x);
+#pragma clang section text="bank1"
+__attribute__((noinline)) static int cb(int x) { return x + 7; }
+int fp(int x) { return walk(cb, x); }
+#pragma clang section text="bank2"
+int walk(cbf f, int x) { return f(x) + f(x + 1); }
+"""
+
+
+@unittest.skipUnless(os.path.exists(CC), "cc6502 not installed")
+class SameBankPointer(unittest.TestCase):
+    """A function pointer is called from whatever bank holds when it is
+    called, so its address must be the resident veneer even when the
+    function taking it is in the pointer's own bank (newrect handing
+    everyobj mkrect, step 4c).  bankasm.py must emit the veneer, and the
+    assembly check must refuse the raw address."""
+
+    BANKS = ["--bank", "bank1=1", "--bank", "bank2=2"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.d = tempfile.mkdtemp(prefix="bank6502p-")
+        weakref.finalize(cls, shutil.rmtree, cls.d, True)
+        d = cls.d
+        with open(os.path.join(d, "p.c"), "w") as f:
+            f.write(SRC_P)
+        r = run(CC, "-O2", "--core", "6502", "--no-cross-call", "-c", "p.c", "-o", "p.o",
+                "--assembly-source=p.s", cwd=d)
+        assert r.returncode == 0, r.stderr
+        r = run(sys.executable, os.path.join(TOOLS, "bankasm.py"), "--index", "p.idx",
+                *cls.BANKS, "p.s", cwd=d)
+        assert r.returncode == 0, r.stdout + r.stderr
+        r = run(sys.executable, os.path.join(TOOLS, "bankasm.py"), "p.s", "p.b.s", "--tu", "p",
+                *cls.BANKS, "--index", "p.idx", cwd=d)
+        assert r.returncode == 0, r.stdout + r.stderr
+        with open(os.path.join(d, "p.b.s")) as f:
+            cls.text = f.read()
+
+    def test_the_pointer_is_the_resident_veneer(self):
+        self.assertRegex(self.text, r"#\.byte0 p__cb__v\b", "fp hands walk cb's own address")
+        self.assertIn("p__cb__v:", self.text)
+
+    def test_the_raw_address_is_refused(self):
+        d = self.d
+        with open(os.path.join(d, "raw.b.s"), "w") as f:
+            f.write(self.text.replace("#.byte0 p__cb__v", "#.byte0 cb")
+                    .replace("#.byte1 p__cb__v", "#.byte1 cb"))
+        r = run(sys.executable, os.path.join(TOOLS, "bankcheck.py"), "--asm", "raw.b.s",
+                *self.BANKS, "--index", "p.idx", cwd=d)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertRegex(r.stdout, r"cb -- the address of a function in bank 1")
 
 
 if __name__ == "__main__":

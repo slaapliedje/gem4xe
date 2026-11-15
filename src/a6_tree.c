@@ -1,0 +1,160 @@
+/* a6_tree.c -- step 4c of docs/6502.md: the AES's window manager and menu
+ * bar on a 6502.  Called by src/a6_aes.c once the AES has started on its
+ * one process; banked.
+ *
+ * Two trees are written into far memory, where rsrc_load would put a
+ * resource's, by tree_put: the desk (one patterned box the size of the
+ * screen, the tree wind_set(WF_NEWDESK) names) and a menu bar laid out as
+ * the Resource Construction Set lays one out for this screen's 6x6 cell
+ * (bar gl_hchar+2 high, titles gl_hchar+3, the first title indented two
+ * cells, the Desk box's eight children).  Then the window manager's calls,
+ * test-m8's: two windows, the second over the first, each named; and
+ * menu_bar.  The handles wm_create answers go to $0660.
+ */
+#include "portab.h"
+#include "aes/aes.h"
+#include "sys/farmem.h"
+#include <string.h>
+
+#define STATUS ((volatile unsigned char *)0x0600)
+
+/* One object: links, type, flags, state, the spec when it is not a
+ * string, the box. */
+typedef struct {
+    WORD next, head, tail, type, flags, state;
+    uint32_t spec;
+    WORD x, y, w, h;
+} OBDEF;
+
+/* The table and its strings into one far block: the objects, then the
+ * strings, each string object's ob_spec its far address.  0 when the far
+ * heap has not the room. */
+static OBTREE tree_put(const OBDEF *d, WORD n, const char *const *str)
+{
+    uint32_t size = (uint32_t)n * sizeof(OBJECT), far, at;
+    WORD i;
+
+    for (i = 0; i < n; i++)
+        if (str[i])
+            size += strlen(str[i]) + 1;
+    far = far_alloc(size);
+    if (!far)
+        return 0;
+    at = far + (uint32_t)n * sizeof(OBJECT);
+    for (i = 0; i < n; i++) {
+        OBTREE t = (OBTREE)far;
+        uint32_t spec = d[i].spec;
+
+        if (str[i]) {
+            uint16_t len = (uint16_t)(strlen(str[i]) + 1);
+            far_put(at, (const uint8_t *)str[i], len);
+            spec = at;
+            at += len;
+        }
+        OB_SET(t, i, ob_next, d[i].next);
+        OB_SET(t, i, ob_head, d[i].head);
+        OB_SET(t, i, ob_tail, d[i].tail);
+        OB_SET(t, i, ob_type, d[i].type);
+        OB_SET(t, i, ob_flags, d[i].flags);
+        OB_SET(t, i, ob_state, d[i].state);
+        OB_SET(t, i, ob_spec, spec);
+        OB_SET(t, i, ob_x, d[i].x);
+        OB_SET(t, i, ob_y, d[i].y);
+        OB_SET(t, i, ob_width, d[i].w);
+        OB_SET(t, i, ob_height, d[i].h);
+    }
+    return (OBTREE)far;
+}
+
+/* The desk: the box test-m7's desk() is, the size of this screen. */
+static const OBDEF desk[1] = {
+    { -1, -1, -1, G_BOX, LASTOB, NORMAL, 0x00001148UL, 0, 0, 320, 192 },
+};
+static const char *const desk_str[1] = { 0 };
+
+/* The menu bar: test-m9's shape at 6x6.  Objects 0-6 are the AES's
+ * fixed positions (the screen, the bar, the titles' box, the titles, the
+ * drop-downs' box); the Desk box has its eight children. */
+#define MW 120                          /* the Desk box: 20 cells */
+static const OBDEF menu[21] = {
+    /* next head tail  type      flags   state     spec           x   y    w    h */
+    { -1,   1,   6, G_IBOX,   NONE,   NORMAL,   0,            0,  0, 320, 192 },  /* 0 */
+    {  6,   2,   2, G_BOX,    NONE,   NORMAL,   0x00001100UL, 0,  0, 320,   8 },  /* 1 bar */
+    {  1,   3,   5, G_IBOX,   NONE,   NORMAL,   0,           12,  0, 108,   9 },  /* 2 */
+    {  4,  -1,  -1, G_TITLE,  NONE,   NORMAL,   0,            0,  0,  36,   9 },  /* 3 Desk */
+    {  5,  -1,  -1, G_TITLE,  NONE,   NORMAL,   0,           36,  0,  36,   9 },  /* 4 File */
+    {  2,  -1,  -1, G_TITLE,  NONE,   NORMAL,   0,           72,  0,  36,   9 },  /* 5 View */
+    {  0,   7,  19, G_IBOX,   NONE,   NORMAL,   0,            0,  9, 320, 183 },  /* 6 */
+    { 16,   8,  15, G_BOX,    NONE,   NORMAL,   0x00FF1100UL,12,  0,  MW,  48 },  /* 7 Desk */
+    {  9,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0,  0,  MW,   6 },
+    { 10,  -1,  -1, G_STRING, NONE,   DISABLED, 0,            0,  6,  MW,   6 },
+    { 11,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0, 12,  MW,   6 },
+    { 12,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0, 18,  MW,   6 },
+    { 13,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0, 24,  MW,   6 },
+    { 14,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0, 30,  MW,   6 },
+    { 15,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0, 36,  MW,   6 },
+    {  7,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0, 42,  MW,   6 },
+    { 19,  17,  18, G_BOX,    NONE,   NORMAL,   0x00FF1100UL,48,  0,  60,  12 },  /* 16 File */
+    { 18,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0,  0,  60,   6 },
+    { 16,  -1,  -1, G_STRING, NONE,   NORMAL,   0,            0,  6,  60,   6 },
+    {  6,  20,  20, G_BOX,    NONE,   NORMAL,   0x00FF1100UL,84,  0,  60,   6 },  /* 19 View */
+    { 19,  -1,  -1, G_STRING, LASTOB, CHECKED,  0,            0,  0,  60,   6 },
+};
+static const char *const menu_str[21] = {
+    0, 0, 0, " Desk ", " File ", " View ", 0, 0,
+    "  About gem4xe...", "--------------------", "1", "2", "3", "4", "5", "6",
+    0, "  Open", "  Quit", 0, "  Icons",
+};
+
+#define KINDS (NAME | CLOSER | FULLER | MOVER | INFO | SIZER)
+
+static void name(WORD wh, WORD field, const char *s)
+{
+    WORD w[4];
+    uint16_t len = (uint16_t)(strlen(s) + 1);
+    uint32_t far = far_alloc(len);
+
+    far_put(far, (const uint8_t *)s, len);
+    w[0] = (WORD)(far >> 16);
+    w[1] = (WORD)far;
+    w[2] = w[3] = 0;
+    wm_set(wh, field, w);
+}
+
+void a6_tree(void)
+{
+    OBTREE d = tree_put(desk, 1, desk_str);
+    OBTREE m = tree_put(menu, 21, menu_str);
+    WORD w[4];
+    GRECT full, r;
+
+    STATUS[0x5C] = (unsigned char)(d != 0);
+    STATUS[0x5D] = (unsigned char)(m != 0);
+    if (!d || !m)
+        return;
+    STATUS[3] = 'a';
+    w[0] = (WORD)((uint32_t)d >> 16);
+    w[1] = (WORD)(uint32_t)d;
+    w[2] = ROOT;
+    w[3] = 0;
+    wm_set(0, WF_NEWDESK, w);
+
+    full = gl_rfull;
+    STATUS[3] = 'b';
+    STATUS[0x60] = (unsigned char)wm_create(KINDS, &full);
+    name(1, WF_NAME, "First");
+    name(1, WF_INFO, "a window on a 6502");
+    r.g_x = 10; r.g_y = 20; r.g_w = 200; r.g_h = 110;
+    STATUS[3] = 'c';
+    wm_open(1, &r);
+
+    STATUS[0x61] = (unsigned char)wm_create(NAME | MOVER | CLOSER, &full);
+    name(2, WF_NAME, "Second");
+    r.g_x = 100; r.g_y = 70; r.g_w = 200; r.g_h = 100;
+    STATUS[3] = 'd';
+    wm_open(2, &r);
+
+    STATUS[3] = 'e';
+    mn_bar(m, TRUE);
+    STATUS[3] = 'f';
+}

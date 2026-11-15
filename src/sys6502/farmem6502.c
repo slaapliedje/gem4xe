@@ -61,7 +61,11 @@ static void unmap(void)
 
 static uint8_t is_near(uint32_t a)
 {
-    return (uint8_t)(a >> 16) == 0;
+    /* the bank byte, stored first: cc6502 compares (uint8_t)(a >> 16)
+     * as bits 16-31 (tools/bsp6502/b6scan.py) */
+    uint8_t bank = (uint8_t)(a >> 16);
+
+    return bank == 0;
 }
 
 void far_write8(uint32_t addr, uint8_t v)

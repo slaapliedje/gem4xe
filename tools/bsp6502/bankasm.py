@@ -24,10 +24,12 @@ own.  Then, for every reference to a banked function F:
     BANK k, `TU__F__vk`.  The trampoline (src/sys6502/bank6502.s, _bcall)
     reads the veneer before it maps F's bank, so the caller's bank may
     hold it, and resident memory -- the 6502 build's scarcest -- does not;
-  - an address taken (.word, #.byte0, #.byte1) or a reference from
-    resident code: the RESIDENT veneer, which maps F's bank, calls F and
-    maps the caller's back.  A function pointer may be called from any
-    bank, so it must name resident code.  A jump table of static handlers
+  - an address taken (.word, #.byte0, #.byte1) -- from ANY bank, F's own
+    included -- or a reference from resident code: the RESIDENT veneer,
+    which maps F's bank, calls F and maps the caller's back.  A function
+    pointer may be called from any bank, so it must name resident code
+    (step 4c: newrect handed everyobj, in another bank, the raw address of
+    mkrect, in newrect's own).  A jump table of static handlers
     and a device's table of functions work as written, and the C needs
     nothing.
 
@@ -280,15 +282,25 @@ def main(argv):
                 else:
                     return f
                 hb = bank(here)
+                # AN ADDRESS TAKEN -- #.byte0 F, .word F -- is the resident
+                # veneer, whatever bank takes it: a function pointer is
+                # called from wherever it is handed, and handed to another
+                # bank's code (everyobj, in objc's banks, calling wind.c's
+                # mkrect) the bank's own address names whatever that bank
+                # has there.  Step 4c's crash: newrect passed mkrect, both
+                # in bank wind, as $4A0F, and everyobj jumped into the
+                # middle of ob_format.
+                if op not in ("jsr", "jmp"):
+                    return via_veneer(f) if f in banked else f
                 if hb and hb == fb:
                     if f not in banked:
                         direct += 1
                         used_ext.add(entry(f))
                     return entry(f)
-                if hb and op in ("jsr", "jmp"):
+                if hb:
                     return bank_veneer(f, hb, here)
-                # an address taken, or resident code: the resident veneer
-                # (another file's public F is its own resident veneer)
+                # resident code: the resident veneer (another file's
+                # public F is its own resident veneer)
                 return via_veneer(f) if f in banked else f
             # comments after ';' are left alone
             code, sep, comment = operand.partition(";")

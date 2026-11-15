@@ -553,7 +553,9 @@ static WORD path_changed(OBTREE tree, const char *path)
     far_strget(text, TED_GET(ted, te_ptext), sizeof text);
 
     if (shown_drive(path)) {
-        if (line[0] != 'D' || line[1] != (char)('1' + path[0] - 'A'))
+        char d = (char)('1' + path[0] - 'A');  /* stored: b6scan's fault A */
+
+        if (line[0] != 'D' || line[1] != d)
             return TRUE;
         line += 2;
         path++;

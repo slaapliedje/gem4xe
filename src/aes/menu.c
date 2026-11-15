@@ -897,6 +897,9 @@ static WORD sm_opens(OBTREE tree, WORD item)
  * the title and item when an enabled item was chosen.  The button's
  * state is left as it is: the control manager holds the mouse until it
  * is up (event.c). */
+/* THE 6502'S TWO BANKS (docs/6502.md, step 4c): mn_do alone is 10 KB
+ * there, and has bank `menu_b` to itself. */
+BANK_TEXT("menu_b")
 WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
 {
     /* FAR, because gl_mntree is: a menu tree can live in far memory now
@@ -1151,6 +1154,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
  * process that last showed one, while it is shown. */
 ZWIN static PROC *mn_barpd;
 
+BANK_TEXT("menu")
 WORD mn_barowner(void)
 {
     return (gl_mntree && mn_barpd) ? proc_pid(mn_barpd) : -1;

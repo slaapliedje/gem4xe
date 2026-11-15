@@ -42,6 +42,10 @@ banked file as tools/bsp6502/bankasm.py leaves it, every JSR, JMP, .word
 and #.byte naming a function in a bank other than the referring line's
 must name a veneer instead (resident data and code count as no bank).
 
+AN ADDRESS OF A BANKED FUNCTION -- #.byte0 F, .word F -- is refused
+from anywhere, F's own bank included: a function pointer is called from
+whatever bank holds when it is called, so it must name a resident veneer.
+
 A VENEER IN A BANK (`TU__F__vk`, bankasm.py's for bank k's calls) refers
 to another bank on purpose and holds data after its JSR: the map check
 lets it refer, the code scan does not decode it, and the assembly check
@@ -305,7 +309,15 @@ def check_asm(path, banks, ext=None):
             n = fbank.get(t)
             if n is None:
                 continue
-            if n != here:
+            fn = not (func.get(t) or "").endswith(BANK_DATA_SECT) \
+                and not BANK_VENEER.search(t)
+            if fn and r.group(1) not in ("jsr", "jmp"):
+                # a function's ADDRESS -- a pointer someone will call, from
+                # whatever bank holds then: only a resident veneer will do,
+                # its own bank's code included (step 4c's mkrect)
+                bad.append(f"{path}:{k}: {r.group(1)} {t} -- the address of a function "
+                           f"in bank {n}: a pointer to it must name its resident veneer")
+            elif n != here:
                 bad.append(f"{path}:{k}: {r.group(1)} {t} -- in bank {n}, from "
                            f"{'bank ' + str(here) if here else 'resident ' + str(sect)}")
     return bad

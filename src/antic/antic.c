@@ -350,6 +350,21 @@ static void an_op_pen(AN_OP *o, int16_t mode, uint8_t pen)
  * this device, most of it the call (docs/phase52.md).  `d_` is the
  * caller's scratch byte; the store is of a value computed first, never of
  * an expression through the pointer (tools/ccbug rule 3). */
+#ifdef __CALYPSI_TARGET_6502__
+/* The mask a byte, STORED: cc6502 widens (uint8_t)(a & b) signed, so a
+ * full mask compared with 0xFF reads as $FFFF and the screen byte is read
+ * when it need not be (tools/bsp6502/b6scan.py).  The 65C816's compiler
+ * has no such fault, and the store costs 86 bytes in its hot path. */
+#define AN_PUT(p, o, s, m, d_)                                  \
+    do {                                                        \
+        uint8_t m_ = (uint8_t)(m);                              \
+        (d_) = 0;                                               \
+        if (m_ != 0xFF || AN_READS(o))                          \
+            (d_) = *(p);                                        \
+        (d_) = AN_MIX(o, (d_), (uint8_t)(s), m_);               \
+        *(p) = (d_);                                            \
+    } while (0)
+#else
 #define AN_PUT(p, o, s, m, d_)                                  \
     do {                                                        \
         (d_) = 0;                                               \
@@ -358,6 +373,7 @@ static void an_op_pen(AN_OP *o, int16_t mode, uint8_t pen)
         (d_) = AN_MIX(o, (d_), (uint8_t)(s), (uint8_t)(m));     \
         *(p) = (d_);                                            \
     } while (0)
+#endif
 
 /* A solid run: the source is all ones, so REPLACE and TRANS write the
  * pen, XOR inverts and ERASE does nothing. */

@@ -20,14 +20,37 @@
 #include "aes/aes.h"
 #include "sys/gemdos.h"
 
-/* ---- the rest of the AES, for the object library (step 3c) ------------
- * objc.c's desktop-icon call keeps a GEMDOS block and re-fits the
- * windows; neither is here, so the keep fails and objc.c gives the icon
- * back, as it does when GEMDOS refuses it.  gl_rzero is wind.c's. */
+/* ---- GEMDOS, for the object library (step 3c) ------------------------
+ * objc.c's desktop-icon call keeps a GEMDOS block; it is not here, so the
+ * keep fails and objc.c gives the icon back, as it does when GEMDOS
+ * refuses it.  (wind.c's w_look and gl_rzero, which a program without
+ * the window manager needs: src/sys6502/v6stub.c.) */
 int16_t gd_keep(int32_t a)  { (void)a; return 0; }
 void    gd_unkeep(int32_t a) { (void)a; }
-void    w_look(void) {}
-GRECT   gl_rzero;
+
+/* A stub that must not be reached: its letter at $0604, and stop -- the
+ * gate names it rather than chasing what ran after. */
+static void b6_unreached(char what)
+{
+    *(volatile char *)0x0604 = what;
+    for (;;)
+        ;
+}
+
+/* ---- the context switch: step 4d (src/sys/ctx.s on the 65C816) --------
+ * Step 4c runs one process and never parks it, so a context is made and
+ * marked running, and a switch is never asked for. */
+int16_t ctx_make(CTX *c, uint32_t entry) { (void)c; (void)entry; return 1; }
+void    ctx_init(CTX *first) { ctx_cur = first; }
+void    ctx_switch(CTX *to) { (void)to; b6_unreached('S'); }
+
+/* ---- the shell (src/aes/shel.c): not on the 6502 yet ------------------
+ * The Desk menu's list of programs and the switch key: one program, and
+ * nothing to switch to.  A request to switch must not come. */
+void     sh_hotkey(void) {}
+WORD     sh_nprogs(void) { return 0; }
+uint32_t sh_prog(WORD i, char *text) { (void)i; text[0] = 0; return 0; }
+void     sh_request(uint32_t e) { (void)e; b6_unreached('R'); }
 
 /* ---- CIO: a face loaded from a file is refused ------------------------ */
 int16_t  cio_open(const char *name, uint8_t aux1, uint8_t aux2)

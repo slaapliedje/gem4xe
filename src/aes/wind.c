@@ -96,8 +96,20 @@ static const TEDINFO gl_asamp = {
 
 /* ---- state ---------------------------------------------------------- */
 
+#ifdef __CALYPSI_TARGET_6502__
+/* ON THE 6502 THE TWO TREES ARE FAR (docs/6502.md, step 4c): 650 bytes
+ * the resident RAM has not got, taken from the far heap by wm_init and
+ * reached through the OB_ accessors like any tree.  On the 65C816 they
+ * are bank $00 arrays, and OB_GET(W_TREE, i, f) is W_TREE[i].f. */
+static OBTREE W_TREE, W_ACTIVE;
+typedef OBTREE WTREE;
+#define WT(t)       (t)
+#else
 ZWIN static OBJECT  W_TREE[NUM_WIN];
 ZWIN static OBJECT  W_ACTIVE[NUM_ELEM];
+typedef OBJECT *WTREE;
+#define WT(t)       OB_NEAR(t)
+#endif
 WINDOW         gl_win[NUM_WIN];
 /* THE RECTANGLE POOL IS IN FAR MEMORY, and it is the one AES structure
  * that could go there.  Bank $00 is 5.5 KB of data for the whole engine
@@ -113,7 +125,7 @@ WINDOW         gl_win[NUM_WIN];
  * bss in src/gem4xe.scm and adding one to hold a single array would be a
  * second way of doing the same thing.  It is taken ONCE, at AES start-up,
  * as the system's (owner 0), which no program's exit frees. */
-static ORECT FAR_816 *gl_olist;
+BANK_DATA("wind") static ORECT FAR_816 *gl_olist;   /* named only from bank wind */
 #ifdef __CALYPSI_TARGET_6502__
 /* ON THE 6502 THE POOL IS IN WIND.C'S OWN BANK (docs/6502.md, step 4b):
  * no far allocation and no 24-bit pointers -- every ORECT is reached from
@@ -122,7 +134,7 @@ static ORECT FAR_816 *gl_olist;
  * pointers stay FAR_816: far on the 65C816, where the pool is far. */
 BANK_DATA("wind") static ORECT gl_orects[NUM_ORECT];
 #endif
-static ORECT FAR_816 *gl_rul;         /* the free rectangles */
+BANK_DATA("wind") static ORECT FAR_816 *gl_rul;   /* the free rectangles */
 static ORECT   gl_mkrect;           /* the rectangle newrect is breaking:
                                      * a value, near, passed by address */
 static TEDINFO gl_aname, gl_ainfo;
@@ -363,10 +375,10 @@ static void newrect(OBTREE tree, WORD wh, WORD sx, WORD sy)
 
 /* ---- the window tree and the frame -------------------------------------- */
 
-static void w_nilit(WORD num, OBJECT olist[])
+static void w_nilit(WORD num, WTREE olist)
 {
     while (num--)
-        olist[num].ob_next = olist[num].ob_head = olist[num].ob_tail = NIL;
+        OB_SET(olist, num, ob_next, OB_SET(olist, num, ob_head, OB_SET(olist, num, ob_tail, NIL)));
 }
 
 static void w_setup(WORD w_handle, WORD kind)
@@ -387,9 +399,11 @@ static GRECT *w_getxptr(WORD which, WORD w_handle)
     WINDOW *pwin = w_win(w_handle);
 
     switch (which) {
+#ifndef __CALYPSI_TARGET_6502__         /* on the 6502, w_getsize's and w_setsize's */
     case WS_CURR:
     case WS_TRUE:
-        return (GRECT *)&W_TREE[w_handle].ob_x;
+        return (GRECT *)&OB_GET(W_TREE, w_handle, ob_x);
+#endif
     case WS_PREV:
         return &pwin->w_prev;
     case WS_WORK:
@@ -401,6 +415,15 @@ static GRECT *w_getxptr(WORD which, WORD w_handle)
 
 void w_getsize(WORD which, WORD w_handle, GRECT *pt)
 {
+#ifdef __CALYPSI_TARGET_6502__
+    /* W_TREE is far there: its object's four words, not a pointer to them */
+    if (which == WS_CURR || which == WS_TRUE) {
+        pt->g_x = OB_GET(W_TREE, w_handle, ob_x);
+        pt->g_y = OB_GET(W_TREE, w_handle, ob_y);
+        pt->g_w = OB_GET(W_TREE, w_handle, ob_width);
+        pt->g_h = OB_GET(W_TREE, w_handle, ob_height);
+    } else
+#endif
     *pt = *w_getxptr(which, w_handle);
     if (which == WS_TRUE && pt->g_w && pt->g_h) {
         pt->g_w = (WORD)(pt->g_w + DROP_SHADOW_SIZE);
@@ -410,17 +433,26 @@ void w_getsize(WORD which, WORD w_handle, GRECT *pt)
 
 void w_setsize(WORD which, WORD w_handle, const GRECT *pt)
 {
+#ifdef __CALYPSI_TARGET_6502__
+    if (which == WS_CURR || which == WS_TRUE) {
+        OB_SET(W_TREE, w_handle, ob_x, pt->g_x);
+        OB_SET(W_TREE, w_handle, ob_y, pt->g_y);
+        OB_SET(W_TREE, w_handle, ob_width, pt->g_w);
+        OB_SET(W_TREE, w_handle, ob_height, pt->g_h);
+        return;
+    }
+#endif
     *w_getxptr(which, w_handle) = *pt;
 }
 
 static void w_adjust(WORD parent, WORD obj, WORD x, WORD y, WORD w, WORD h)
 {
-    W_ACTIVE[obj].ob_x = x;
-    W_ACTIVE[obj].ob_y = y;
-    W_ACTIVE[obj].ob_width = w;
-    W_ACTIVE[obj].ob_height = h;
-    W_ACTIVE[obj].ob_head = W_ACTIVE[obj].ob_tail = NIL;
-    ob_add(OB_NEAR(W_ACTIVE), parent, obj);
+    OB_SET(W_ACTIVE, obj, ob_x, x);
+    OB_SET(W_ACTIVE, obj, ob_y, y);
+    OB_SET(W_ACTIVE, obj, ob_width, w);
+    OB_SET(W_ACTIVE, obj, ob_height, h);
+    OB_SET(W_ACTIVE, obj, ob_head, OB_SET(W_ACTIVE, obj, ob_tail, NIL));
+    ob_add(WT(W_ACTIVE), parent, obj);
 }
 
 /* Draw obj of tree, depth deep, once per rectangle of window wh's list
@@ -468,7 +500,7 @@ static WORD w_top(void)
  * (GEMWMLIB.C), and the tree already knows. */
 static WORD w_above(WORD w_handle)
 {
-    WORD up = W_TREE[w_handle].ob_next;
+    WORD up = OB_GET(W_TREE, w_handle, ob_next);
 
     return (up == ROOT || up == NIL) ? DESKWH : up;
 }
@@ -477,9 +509,9 @@ static WORD w_below(WORD w_handle)
 {
     WORD i;
 
-    for (i = W_TREE[ROOT].ob_head; i != NIL && i != ROOT;
-         i = W_TREE[i].ob_next)
-        if (W_TREE[i].ob_next == w_handle)
+    for (i = OB_GET(W_TREE, ROOT, ob_head); i != NIL && i != ROOT;
+         i = OB_GET(W_TREE, i, ob_next))
+        if (OB_GET(W_TREE, i, ob_next) == w_handle)
             return i;
     return DESKWH;
 }
@@ -680,6 +712,13 @@ static void w3_bldhbar(UWORD kind, const WINDOW *pw,
 }
 
 /* The 3D frame inside W_BOX, whose size is t's (EmuTOS w_bldactive). */
+/* THE 6502'S TWO BANKS (docs/6502.md, step 4c): wind.c is 22 KB there.
+ * Bank `wind` keeps every function that touches a rectangle -- the pool
+ * is in that bank (gl_orects) and only its code may reach it -- and
+ * `wind_b` takes the big ones that never do: the active window's tree,
+ * draw_change, the save, and wm_set to the end but wm_restore.  A
+ * function that comes to walk a rectangle list belongs in `wind`. */
+BANK_TEXT("wind_b")
 static void w3_bldactive(const WINDOW *pw, WORD istop, WORD kind, GRECT t)
 {
     WORD havevbar, havehbar, corner_x, corner_y, tempw, i, g;
@@ -703,7 +742,7 @@ static void w3_bldactive(const WINDOW *pw, WORD istop, WORD kind, GRECT t)
             tempw = (WORD)(tempw - 2 * ADJ3DSTD);
             w_adjust(W_TITLE, W_NAME, (WORD)(t.g_x + ADJ3DSTD),
                      (WORD)(t.g_y + ADJ3DSTD), tempw, gl_hbox);
-            W_ACTIVE[W_NAME].ob_state = istop ? NORMAL : DISABLED;
+            OB_SET(W_ACTIVE, W_NAME, ob_state, istop ? NORMAL : DISABLED);
         }
         t.g_x = 0;
         t.g_y = (WORD)(t.g_y + W3_HBOX);
@@ -746,25 +785,25 @@ static void w3_bldactive(const WINDOW *pw, WORD istop, WORD kind, GRECT t)
     }
     if (corner_x >= 0) {
         w_adjust(W_DATA, W_SIZER, corner_x, corner_y, gl_wbox, gl_hbox);
-        W_ACTIVE[W_SIZER].ob_spec &= 0x00ffffffUL;
+        OB_AND(W_ACTIVE, W_SIZER, ob_spec, 0x00ffffffUL);
         if (kind & SIZER)
-            W_ACTIVE[W_SIZER].ob_spec |= 0x06000000UL;
+            OB_OR(W_ACTIVE, W_SIZER, ob_spec, 0x06000000UL);
     }
 
     /* the look: activators on a white fill, which objc_draw greys; the
      * title, info line and bars on the 3D ground */
     for (i = 0; i < NUM_ELEM; i++)
         if ((W3_ACTS >> i) & 1) {
-            W_ACTIVE[i].ob_flags = FL3DACT;
-            W_ACTIVE[i].ob_spec &= 0xFFFFFFF0UL;
+            OB_SET(W_ACTIVE, i, ob_flags, FL3DACT);
+            OB_AND(W_ACTIVE, i, ob_spec, 0xFFFFFFF0UL);
         }
-    W_ACTIVE[W_NAME].ob_flags = (kind & NAME) ? FL3DACT : 0;
+    OB_SET(W_ACTIVE, W_NAME, ob_flags, (kind & NAME) ? FL3DACT : 0);
     gl_aname.te_color = (kind & NAME) ? 0x1100 : 0x1170;
     g = ob_3dground();
     gl_ainfo.te_color = (WORD)(0x1170 | g);
-    W_ACTIVE[W_TITLE].ob_spec = W3_GROUND(W_ACTIVE[W_TITLE].ob_spec, g);
-    W_ACTIVE[W_VBAR].ob_spec = W3_GROUND(W_ACTIVE[W_VBAR].ob_spec, g);
-    W_ACTIVE[W_HBAR].ob_spec = W3_GROUND(W_ACTIVE[W_HBAR].ob_spec, g);
+    OB_SET(W_ACTIVE, W_TITLE, ob_spec, W3_GROUND(OB_GET(W_ACTIVE, W_TITLE, ob_spec), g));
+    OB_SET(W_ACTIVE, W_VBAR, ob_spec, W3_GROUND(OB_GET(W_ACTIVE, W_VBAR, ob_spec), g));
+    OB_SET(W_ACTIVE, W_HBAR, ob_spec, W3_GROUND(OB_GET(W_ACTIVE, W_HBAR, ob_spec), g));
 }
 
 /* Lay W_ACTIVE out for window w_handle: the frame's parts, sized from
@@ -788,12 +827,12 @@ void w_bldactive(WORD w_handle)
     /* the colours and flags the last frame left, whichever look it had:
      * every element but the two TEDINFOs, whose words are below */
     for (tempw = 0; tempw < NUM_ELEM; tempw++) {
-        W_ACTIVE[tempw].ob_flags = 0;
+        OB_SET(W_ACTIVE, tempw, ob_flags, 0);
         if (tempw != W_NAME && tempw != W_INFO)
-            W_ACTIVE[tempw].ob_spec = gl_waspec[tempw];
+            OB_SET(W_ACTIVE, tempw, ob_spec, gl_waspec[tempw]);
     }
     gl_ainfo.te_color = UNTOPPED_COLOR;
-    W_ACTIVE[W_TITLE].ob_type = G_BOX;          /* and see the title bar */
+    OB_SET(W_ACTIVE, W_TITLE, ob_type, G_BOX);          /* and see the title bar */
 
     w_ptext(&gl_aname, pw->w_pname);
     w_ptext(&gl_ainfo, pw->w_pinfo);
@@ -801,10 +840,10 @@ void w_bldactive(WORD w_handle)
 
     /* the outer box, at the window's position */
     w_getsize(WS_CURR, w_handle, &t);
-    W_ACTIVE[W_BOX].ob_x = t.g_x;
-    W_ACTIVE[W_BOX].ob_y = t.g_y;
-    W_ACTIVE[W_BOX].ob_width = t.g_w;
-    W_ACTIVE[W_BOX].ob_height = t.g_h;
+    OB_SET(W_ACTIVE, W_BOX, ob_x, t.g_x);
+    OB_SET(W_ACTIVE, W_BOX, ob_y, t.g_y);
+    OB_SET(W_ACTIVE, W_BOX, ob_width, t.g_w);
+    OB_SET(W_ACTIVE, W_BOX, ob_height, t.g_h);
     t.g_x = t.g_y = 0;
     if (gl_3d) {
         w3_bldactive(pw, istop, kind, t);
@@ -827,7 +866,7 @@ void w_bldactive(WORD w_handle)
         }
         if (kind & NAME) {
             w_adjust(W_TITLE, W_NAME, t.g_x, t.g_y, tempw, gl_hbox);
-            W_ACTIVE[W_NAME].ob_state = istop ? NORMAL : DISABLED;
+            OB_SET(W_ACTIVE, W_NAME, ob_state, istop ? NORMAL : DISABLED);
             gl_aname.te_color = istop ? TOPPED_COLOR : UNTOPPED_COLOR;
             /* WITH A NAME THE BAR IS TILED: closer, name and fuller side
              * by side, each drawing every pixel of its own box in
@@ -837,8 +876,8 @@ void w_bldactive(WORD w_handle)
              * draws nothing now (phase 104).  Not in 3D, where it is the
              * ground in the gaps between them. */
             if (tempw > 0) {
-                W_ACTIVE[W_TITLE].ob_type = G_IBOX;
-                W_ACTIVE[W_TITLE].ob_spec = 0;
+                OB_SET(W_ACTIVE, W_TITLE, ob_type, G_IBOX);
+                OB_SET(W_ACTIVE, W_TITLE, ob_spec, 0);
             }
         }
         t.g_x = 0;
@@ -884,14 +923,15 @@ void w_bldactive(WORD w_handle)
     }
     if (sizer_x >= 0) {
         w_adjust(W_DATA, W_SIZER, sizer_x, sizer_y, gl_wbox, gl_hbox);
-        W_ACTIVE[W_SIZER].ob_spec &= 0x00ffffffUL;
+        OB_AND(W_ACTIVE, W_SIZER, ob_spec, 0x00ffffffUL);
         if (istop && (kind & SIZER))
-            W_ACTIVE[W_SIZER].ob_spec |= 0x06000000UL;
+            OB_OR(W_ACTIVE, W_SIZER, ob_spec, 0x06000000UL);
     }
 }
 
 /* Draw obj of window wh's frame (the whole frame for W_BOX), clipped to
  * the window's true rectangle, or to the current clip plus the shadow. */
+BANK_TEXT("wind")
 void w_cpwalk(WORD wh, WORD obj, WORD depth, WORD usetrue)
 {
     GRECT c;
@@ -1026,10 +1066,10 @@ void w_update(WORD bottom, GRECT *pt, WORD top, WORD moved)
     rc_intersect(&gl_rfull, pt);
     gsx_moff();
     if (bottom == DESKWH)
-        bottom = W_TREE[ROOT].ob_head;
+        bottom = OB_GET(W_TREE, ROOT, ob_head);
     if (bottom != NIL) {
         if (top == DESKWH)
-            top = W_TREE[ROOT].ob_tail;
+            top = OB_GET(W_TREE, ROOT, ob_tail);
         do {
             if (!(moved && top == gl_wtop)) {
                 gsx_sclip(pt);
@@ -1040,7 +1080,7 @@ void w_update(WORD bottom, GRECT *pt, WORD top, WORD moved)
             i = bottom;
             done = (i == top);
             while (i != top) {
-                ni = W_TREE[i].ob_next;
+                ni = OB_GET(W_TREE, i, ob_next);
                 if (ni == top)
                     top = i;
                 else
@@ -1059,6 +1099,7 @@ void w_update(WORD bottom, GRECT *pt, WORD top, WORD moved)
 static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr);
 static void w_topchanged(WORD oldtop, WORD bottomed);
 
+BANK_TEXT("wind_b")
 static void draw_change(WORD wh, const GRECT *pt)
 {
     GRECT c;
@@ -1096,7 +1137,7 @@ static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr)
 
     everyobj(gl_wtree, ROOT, NIL, newrect, 0, 0, MAX_DEPTH);
     oldtop = gl_wtop;
-    gl_wtop = W_TREE[ROOT].ob_tail;
+    gl_wtop = OB_GET(W_TREE, ROOT, ob_tail);
     w_setactive();
     w_topchanged(oldtop, FALSE);
 
@@ -1106,7 +1147,7 @@ static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr)
     if (!rc_equal(&gl_rzero, pt) && pt->g_x == c.g_x && pt->g_y == c.g_y) {
         if (pt->g_w == c.g_w && pt->g_h == c.g_h) {
             /* same place, same size: a change of top, or nothing */
-            if (wh != W_TREE[ROOT].ob_tail || wh == oldtop)
+            if (wh != OB_GET(W_TREE, ROOT, ob_tail) || wh == oldtop)
                 return;
             if (oldtop != NIL) {
                 w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE);
@@ -1153,7 +1194,7 @@ static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr)
     }
 
     /* a new top: its frame is redrawn with the rest */
-    if (oldtop != W_TREE[ROOT].ob_tail && gl_wtop != NIL) {
+    if (oldtop != OB_GET(W_TREE, ROOT, ob_tail) && gl_wtop != NIL) {
         GRECT t;
         w_getsize(WS_CURR, gl_wtop, &t);
         rc_union(&t, &c);
@@ -1177,6 +1218,7 @@ static void draw_change2(WORD wh, const GRECT *pt, GRECT *pc, WORD wasclr)
  * keep the right edge when x moves: a snapped window asked to move by an
  * odd amount must stay the same size, or draw_change sees a resize and
  * redraws it instead of blitting it.  See the file comment. */
+BANK_TEXT("wind")
 static void w_snap(GRECT *pt)
 {
     pt->g_x = (WORD)(pt->g_x & ~1);
@@ -1191,31 +1233,37 @@ void wm_init(void)
     WORD i;
     ORECT FAR_816 *po;
 
+#ifdef __CALYPSI_TARGET_6502__
+    if (!W_TREE) {                      /* once, the system's (owner 0) */
+        W_TREE = (OBTREE)far_alloc((uint32_t)NUM_WIN * sizeof(OBJECT));
+        W_ACTIVE = (OBTREE)far_alloc((uint32_t)NUM_ELEM * sizeof(OBJECT));
+    }
+#endif
     or_start();
     for (i = 0; i < NUM_WIN; i++) {
-        W_TREE[i].ob_type = G_IBOX;
-        W_TREE[i].ob_flags = 0;
-        W_TREE[i].ob_state = 0;
-        W_TREE[i].ob_spec = 0;
-        W_TREE[i].ob_x = W_TREE[i].ob_y = 0;
-        W_TREE[i].ob_width = W_TREE[i].ob_height = 0;
+        OB_SET(W_TREE, i, ob_type, G_IBOX);
+        OB_SET(W_TREE, i, ob_flags, 0);
+        OB_SET(W_TREE, i, ob_state, 0);
+        OB_SET(W_TREE, i, ob_spec, 0);
+        OB_SET(W_TREE, i, ob_x, OB_SET(W_TREE, i, ob_y, 0));
+        OB_SET(W_TREE, i, ob_width, OB_SET(W_TREE, i, ob_height, 0));
         w_win(i)->w_flags = 0;
         w_win(i)->w_rlist = 0;
     }
     w_nilit(NUM_WIN, W_TREE);
-    W_TREE[ROOT].ob_type = G_BOX;
-    W_TREE[ROOT].ob_spec = DESK_SPEC;
+    OB_SET(W_TREE, ROOT, ob_type, G_BOX);
+    OB_SET(W_TREE, ROOT, ob_spec, DESK_SPEC);
 
     for (i = 0; i < NUM_ELEM; i++) {
-        W_ACTIVE[i].ob_type = gl_watype[i];
-        W_ACTIVE[i].ob_flags = 0;
-        W_ACTIVE[i].ob_state = 0;
-        W_ACTIVE[i].ob_spec = gl_waspec[i];
-        W_ACTIVE[i].ob_x = W_ACTIVE[i].ob_y = 0;
-        W_ACTIVE[i].ob_width = W_ACTIVE[i].ob_height = 0;
+        OB_SET(W_ACTIVE, i, ob_type, gl_watype[i]);
+        OB_SET(W_ACTIVE, i, ob_flags, 0);
+        OB_SET(W_ACTIVE, i, ob_state, 0);
+        OB_SET(W_ACTIVE, i, ob_spec, gl_waspec[i]);
+        OB_SET(W_ACTIVE, i, ob_x, OB_SET(W_ACTIVE, i, ob_y, 0));
+        OB_SET(W_ACTIVE, i, ob_width, OB_SET(W_ACTIVE, i, ob_height, 0));
     }
     w_nilit(NUM_ELEM, W_ACTIVE);
-    W_ACTIVE[ROOT].ob_state = SHADOWED;
+    OB_SET(W_ACTIVE, ROOT, ob_state, SHADOWED);
 
     /* the desktop owns the whole screen below the menu bar */
     po = get_orect();
@@ -1229,8 +1277,8 @@ void wm_init(void)
     w_setsize(WS_WORK, DESKWH, &gl_rfull);
 
     gl_wtop = NIL;
-    gl_wtree = OB_NEAR(W_TREE);
-    gl_awind = OB_NEAR(W_ACTIVE);
+    gl_wtree = WT(W_TREE);
+    gl_awind = WT(W_ACTIVE);
     gl_newdesk = 0;
     gl_newroot = ROOT;
     r_set(&gl_rzero, 0, 0, 0, 0);
@@ -1238,8 +1286,8 @@ void wm_init(void)
     gl_aname = gl_asamp;
     gl_ainfo = gl_asamp;
     gl_aname.te_just = TE_CNTR;
-    W_ACTIVE[W_NAME].ob_spec = (uint16_t)&gl_aname;
-    W_ACTIVE[W_INFO].ob_spec = (uint16_t)&gl_ainfo;
+    OB_SET(W_ACTIVE, W_NAME, ob_spec, (uint16_t)&gl_aname);
+    OB_SET(W_ACTIVE, W_INFO, ob_spec, (uint16_t)&gl_ainfo);
 }
 
 /* A new window of this kind, whose largest size is *pt: its handle, or
@@ -1280,7 +1328,7 @@ WORD wm_open(WORD w_handle, const GRECT *pt)
     w_snap(&t);
     wm_update(BEG_UPDATE);
     pwin->w_flags |= VF_ISOPEN;
-    ob_add(OB_NEAR(W_TREE), ROOT, w_handle);
+    ob_add(WT(W_TREE), ROOT, w_handle);
     draw_change(w_handle, &t);
     w_setsize(WS_PREV, w_handle, &t);
     wm_update(END_UPDATE);
@@ -1435,7 +1483,7 @@ WORD wm_get(WORD w_handle, WORD w_field, WORD *poutwds, const WORD *pinwds)
         /* The bottom window, the desk NOT counted (p.456) -- so the one
          * directly above the desk, which is the donor's own reading of
          * it, and DESKWH when there is no window at all. */
-        poutwds[0] = (W_TREE[ROOT].ob_head != NIL) ? W_TREE[ROOT].ob_head
+        poutwds[0] = (OB_GET(W_TREE, ROOT, ob_head) != NIL) ? OB_GET(W_TREE, ROOT, ob_head)
                                                    : DESKWH;
         break;
     default:
@@ -1465,7 +1513,7 @@ static WORD w_linked(WORD wh)
 {
     WORD k;
 
-    for (k = W_TREE[ROOT].ob_head; k != NIL && k != ROOT; k = W_TREE[k].ob_next)
+    for (k = OB_GET(W_TREE, ROOT, ob_head); k != NIL && k != ROOT; k = OB_GET(W_TREE, k, ob_next))
         if (k == wh)
             return TRUE;
     return FALSE;
@@ -1473,6 +1521,7 @@ static WORD w_linked(WORD wh)
 
 ZWIN static uint8_t w_quiet;            /* wm_restore is reopening */
 
+BANK_TEXT("wind_b")
 static void w_topchanged(WORD oldtop, WORD bottomed)
 {
     WORD newtop = gl_wtop;
@@ -1538,7 +1587,7 @@ uint16_t wm_save(uint32_t at)
     uint16_t n = 0;
     WORD k;
 
-    for (k = W_TREE[ROOT].ob_head; k != NIL && k != ROOT; k = W_TREE[k].ob_next)
+    for (k = OB_GET(W_TREE, ROOT, ob_head); k != NIL && k != ROOT; k = OB_GET(W_TREE, k, ob_next))
         if (k != DESKWH && w_win(k)->w_owner == 0) {
             p = w_save1(p, k, 1);
             n++;
@@ -1553,6 +1602,7 @@ uint16_t wm_save(uint32_t at)
     return (uint16_t)(p - at);
 }
 
+BANK_TEXT("wind")
 void wm_restore(uint32_t at)
 {
     uint16_t n, h, i;
@@ -1612,11 +1662,11 @@ static void wm_mkbottom(WORD w_handle)
     GRECT t;
     WORD oldtop = gl_wtop;
 
-    if (W_TREE[ROOT].ob_head == w_handle)
+    if (OB_GET(W_TREE, ROOT, ob_head) == w_handle)
         return;
     ob_order(gl_wtree, w_handle, 0);
     everyobj(gl_wtree, ROOT, NIL, newrect, 0, 0, MAX_DEPTH);
-    gl_wtop = W_TREE[ROOT].ob_tail;
+    gl_wtop = OB_GET(W_TREE, ROOT, ob_tail);
     w_setactive();
     w_topchanged(oldtop, TRUE);
     w_getsize(WS_CURR, w_handle, &t);
@@ -1627,6 +1677,7 @@ static void wm_mkbottom(WORD w_handle)
         w_cpwalk(gl_wtop, 0, MAX_DEPTH, TRUE);
 }
 
+BANK_TEXT("wind_b")
 WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
 {
     WINDOW *pwin = get_pwin(w_handle);
@@ -1914,8 +1965,8 @@ void w_look(void)
     GRECT t;
     WINDOW *pwin;
 
-    for (wh = W_TREE[ROOT].ob_head; wh != NIL && wh != ROOT;
-         wh = W_TREE[wh].ob_next) {
+    for (wh = OB_GET(W_TREE, ROOT, ob_head); wh != NIL && wh != ROOT;
+         wh = OB_GET(W_TREE, wh, ob_next)) {
         pwin = w_win(wh);
         w_getsize(WS_CURR, wh, &t);
         wm_calc(WC_WORK, pwin->w_kind, t.g_x, t.g_y, t.g_w, t.g_h,
