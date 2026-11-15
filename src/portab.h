@@ -55,6 +55,7 @@
  * silently, which is this project's oldest failure shape. */
 #define SAVEDS       __attribute__((saveds))
 #define SECTION(s)   __attribute__((section(s)))
+#define BANK_TEXT(s)                    /* the 6502's banks: nothing here */
 #define memcpy_far   __memcpy_far
 /* Not __disable_interrupts(): an SEI in native mode can start an IRQ
  * storm on Windows Altirra (src/sys/sei.s). */
@@ -77,6 +78,12 @@ void irq_sei(void);
 #define TASK
 #define SAVEDS
 #define SECTION(s)   __attribute__((section(s)))
+/* THE BANKS (docs/6502.md).  BANK_TEXT("name") sends the code after it to
+ * section `name`, which the link map puts in a bank of its own; every
+ * reference across a bank then goes through a veneer that
+ * tools/bsp6502/bankasm.py writes into the file's assembly. */
+#define BANK_STR_(x) #x
+#define BANK_TEXT(s) _Pragma(BANK_STR_(clang section text=s))
 #define memcpy_far   memcpy
 void irq_sei(void);
 #define cpu_sei()    irq_sei()

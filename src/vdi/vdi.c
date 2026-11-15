@@ -1084,6 +1084,11 @@ static void vdi_v_opnbm(void)
     contrl[6] = vwk.handle;
 }
 
+/* THE 6502'S BANKS (docs/6502.md): this file is 39 KB of 6502 code and a
+ * PORTB bank is 16, so it is cut in three, here and before clc_pts.
+ * Nothing on the 65C816. */
+BANK_TEXT("vdi_b")
+
 static void vdi_v_opnvwk(void)
 {
     WORD i;
@@ -2058,6 +2063,9 @@ static WORD mul_div(WORD m1, WORD m2, WORD d)
 {
     return (WORD)((int32_t)m1 * m2 / d);
 }
+
+/* the 6502's third bank (docs/6502.md) */
+BANK_TEXT("vdi_c")
 
 /* clc_pts: where an angle lands on the ellipse, in raster coordinates.
  * y grows downward, so the first quadrant's y offset is negative -- which

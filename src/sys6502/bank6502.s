@@ -1,0 +1,276 @@
+;;; ---------------------------------------------------------------------------
+;;; bank6502.s -- the PORTB window, owned by gem4xe (docs/6502.md).
+;;;
+;;; On a 6502 every bank is reached through $4000-$7FFF, switched by PORTB.
+;;; Calypsi places code in a bank and calls it with a plain JSR to the
+;;; window address, never switching anything, so this file is what does:
+;;;
+;;;   b6_probe   INITAD at load: which PORTB values give distinct banks.
+;;;   b6_sel     INITAD at load: bank b6_next mapped, for the segment after.
+;;;   b6_main    INITAD at load: main memory back in the window.
+;;;   _bcall     the trampoline every veneer calls (tools/bsp6502/veneers.py):
+;;;                  F:  jsr _bcall
+;;;                      .word F__b      ; the function, at its window address
+;;;                      .byte n         ; its bank
+;;;              It maps bank n, calls F__b, maps the caller's bank again and
+;;;              returns to F's caller.  A and the _Zp pseudo-registers pass
+;;;              through both ways (Calypsi's arguments and results); X and Y
+;;;              are a call's to destroy anyway.  Parameters that go on the C
+;;;              stack are on Calypsi's virtual stack, not the 6502's, so the
+;;;              two bytes this pushes there are nobody's business.
+;;;
+;;; ALL OF IT IS RESIDENT, below the window, and so is everything an
+;;; interrupt runs: an IRQ arrives with any bank mapped.
+;;;
+;;; THE MAP IS FOUND, NOT ASSUMED.  Which PORTB bits select a bank depends on
+;;; the board (a 130XE: bits 2-3; 1088K boards: 1, 2, 3, 5, 6, 7), and on a
+;;; 130XE bit 1 clear is BASIC over $A000 and bit 7 clear the self-test ROM
+;;; over $5000.  So every value with bit 4 (CPU bank enable) clear is tried,
+;;; the safest first, and a value is kept only when what it maps is RAM
+;;; across the window, the resident sentinel at $A000-$BFFF still reads, and
+;;; no value kept before it maps the same bank.
+;;; ---------------------------------------------------------------------------
+
+              .rtmodel version, "1"
+              .rtmodel cpu, "*"
+
+              .public b6_probe, b6_sel, b6_main, b6_next, _bcall
+              .public b6_cur, b6_count, b6_portb, bc_t
+
+PORTB:        .equ    0xd301
+BANKMAX:      .equ    64
+DOSVEC:       .equ    0x000a
+
+              .section zpage, bss
+bc_t:         .space  2               ; the callee, for JMP (bc_t)
+bc_p:         .space  2               ; the veneer's data
+bc_a:         .space  1               ; A across the switch
+
+;;; NOINIT, not bss: b6_probe fills these during the load, before the C
+;;; startup runs -- which zeroes bss, and with it the PORTB table, after
+;;; which every veneer would map PORTB 0: the OS ROM out.
+              .section b6keep, noinit
+b6_cur:       .space  1               ; the bank mapped now: 0 is main
+b6_count:     .space  1               ; banks found, main not counted
+b6_next:      .space  1               ; for b6_sel, written by the loader
+b6_portb:     .space  BANKMAX + 1     ; PORTB for each bank, [0] main
+pr_v:         .space  1
+pr_k:         .space  1
+
+;;; THE SENTINEL: a resident constant in $A000-$BFFF.  A PORTB value that
+;;; puts BASIC (or anything) over it is not one to keep.
+              .section hicdata, rodata
+sentinel:     .byte   0x47, 0x34, 0x58, 0x45  ; "G4XE"
+
+              .section code
+;;; ---------------------------------------------------------------------------
+;;; _bcall -- see the head of the file.
+;;; ---------------------------------------------------------------------------
+_bcall:       sta     bc_a
+              pla                     ; JSR's return: the veneer's data - 1
+              sta     bc_p
+              pla
+              sta     bc_p+1
+              ldy     #1
+              lda     (bc_p),y
+              sta     bc_t
+              iny
+              lda     (bc_p),y
+              sta     bc_t+1
+              iny
+              lda     (bc_p),y
+              tax                     ; the bank to go to
+              lda     b6_cur          ; the caller's, on the 6502 stack under
+              pha                     ; the return into the caller
+              stx     b6_cur
+              lda     b6_portb,x
+              sta     PORTB
+              lda     bc_a
+              jsr     10$             ; the call
+              sta     bc_a
+              pla
+              tax
+              stx     b6_cur
+              lda     b6_portb,x
+              sta     PORTB
+              lda     bc_a
+              rts                     ; to the veneer's caller
+10$:          jmp     (bc_t)
+
+;;; ---------------------------------------------------------------------------
+;;; b6_probe -- INITAD, before any bank's segment.  Fills b6_portb and
+;;; b6_count.  Uses nothing of the C runtime: none of it is set up yet.
+;;;
+;;; Each candidate v: map it, write its own index to $4000 and a pattern to
+;;; $5000 and $7FFF, and read them back.  Then the main bank's $4000 is
+;;; checked for the main marker and every bank kept so far for its own
+;;; index: a candidate that aliases one of them has overwritten it, and an
+;;; earlier keeper overwritten means the earlier one is the duplicate --
+;;; so the newest wins, which is why the candidates come safest LAST.
+;;; ---------------------------------------------------------------------------
+b6_probe:     lda     PORTB
+              ora     #0x10           ; main: CPU sees main RAM
+              sta     b6_portb
+              sta     PORTB
+              lda     #0
+              sta     b6_count
+              sta     b6_cur
+              lda     #0xa5           ; main's marker
+              sta     0x4000
+              lda     #0              ; candidate counter k = 0..63
+              sta     pr_k
+20$:          jsr     cand            ; A = the PORTB value for k
+              sta     pr_v
+              sta     PORTB
+              ldx     b6_count        ; the index this one would get
+              inx
+              stx     0x4000
+              lda     #0x5a
+              sta     0x5000
+              lda     #0xc3
+              sta     0x7fff
+              cpx     0x4000
+              bne     40$
+              lda     0x5000
+              cmp     #0x5a
+              bne     40$
+              lda     0x7fff
+              cmp     #0xc3
+              bne     40$
+              lda     sentinel        ; resident $A000-$BFFF still there?
+              cmp     #0x47
+              bne     40$
+              lda     sentinel+3
+              cmp     #0x45
+              bne     40$
+              lda     b6_portb        ; main untouched?
+              sta     PORTB
+              lda     0x4000
+              cmp     #0xa5
+              bne     40$
+              ldx     b6_count        ; keep it
+              inx
+              stx     b6_count
+              lda     pr_v
+              sta     b6_portb,x
+              jsr     dedup           ; earlier keepers it overwrote go
+40$:          lda     b6_portb
+              sta     PORTB
+              inc     pr_k
+              lda     pr_k
+              cmp     #BANKMAX
+              bne     20$
+              rts
+
+;;; cand -- the k-th candidate.  Bit 4 clear, bit 0 set (the OS stays);
+;;; k's six bits spread over 1, 2, 3, 5, 6, 7, with 1 and 7 INVERTED so
+;;; that k = 63 is the value with BASIC and the self-test off -- tried last
+;;; and so the one kept on a 130XE.
+cand:         lda     pr_k
+              eor     #0x21           ; k bit 0 -> PORTB bit 1, k bit 5 -> 7
+              tax
+              lda     #0x01
+              sta     pr_v
+              txa
+              and     #0x01
+              beq     1$
+              lda     pr_v
+              ora     #0x02
+              sta     pr_v
+1$:           txa
+              and     #0x02
+              beq     2$
+              lda     pr_v
+              ora     #0x04
+              sta     pr_v
+2$:           txa
+              and     #0x04
+              beq     3$
+              lda     pr_v
+              ora     #0x08
+              sta     pr_v
+3$:           txa
+              and     #0x08
+              beq     4$
+              lda     pr_v
+              ora     #0x20
+              sta     pr_v
+4$:           txa
+              and     #0x10
+              beq     5$
+              lda     pr_v
+              ora     #0x40
+              sta     pr_v
+5$:           txa
+              and     #0x20
+              beq     6$
+              lda     pr_v
+              ora     #0x80
+              sta     pr_v
+6$:           lda     pr_v
+              rts
+
+;;; dedup -- the keeper just added is at b6_count.  Each earlier keeper is
+;;; mapped and its $4000 read: not its own index any more means the new one
+;;; aliases it, so the earlier one is dropped and the list closed up.
+dedup:        ldx     #1
+10$:          cpx     b6_count
+              bcs     90$
+              lda     b6_portb,x
+              sta     PORTB
+              txa
+              cmp     0x4000
+              beq     30$             ; still its own: a distinct bank
+              ldy     b6_count        ; dropped: the newest takes its slot
+              lda     b6_portb,y
+              sta     b6_portb,x
+              dey
+              sty     b6_count
+              lda     b6_portb,x      ; ...and is renumbered there
+              sta     PORTB
+              stx     0x4000
+              jmp     10$
+30$:          inx
+              jmp     10$
+90$:          lda     b6_portb
+              sta     PORTB
+              rts
+
+;;; ---------------------------------------------------------------------------
+;;; b6_sel -- INITAD: bank b6_next in the window, for the segment that the
+;;; loader puts after this.  A bank the machine does not have stops the load
+;;; with a word on the screen, and back to DOS.
+;;; ---------------------------------------------------------------------------
+b6_sel:       ldx     b6_next
+              cpx     b6_count
+              beq     10$
+              bcs     nobank
+10$:          stx     b6_cur
+              lda     b6_portb,x
+              sta     PORTB
+              rts
+
+b6_main:      ldx     #0
+              stx     b6_cur
+              lda     b6_portb
+              sta     PORTB
+              rts
+
+nobank:       jsr     b6_main
+              ldx     #0              ; PUT RECORD on E:
+              lda     #9
+              sta     0x342
+              lda     #.byte0 nomsg
+              sta     0x344
+              lda     #.byte1 nomsg
+              sta     0x345
+              lda     #nomsg_len
+              sta     0x348
+              lda     #0
+              sta     0x349
+              jsr     0xe456
+              jmp     (DOSVEC)
+
+              .section cdata, rodata
+nomsg:        .byte   "NOT ENOUGH EXTENDED MEMORY", 0x9b
+nomsg_len:    .equ    . - nomsg
