@@ -16,6 +16,7 @@
  */
 #include "portab.h"
 #include "antic.h"
+#include "../sys/farmem.h"     /* far_read8, for FAR_IDX8 on the 6502 */
 
 /* Character N's row r of a face.  The strip is one byte per character
  * per row, 256 of them, the glyph LEFT-ALIGNED in its byte -- which is
@@ -31,9 +32,8 @@
  * vdi_font_expand and draw_glyph_cpu use on the other device. */
 static uint8_t an_font_row(uint32_t face, uint16_t ch, uint16_t row)
 {
-    const uint8_t FAR *sr =
-        (const uint8_t FAR *)(face + (uint32_t)row * AN_FONT_STRIDE);
-    return sr[ch & 0xFF];
+    far_src8 sr = (far_src8)(face + (uint32_t)row * AN_FONT_STRIDE);
+    return FAR_IDX8(sr, ch & 0xFF);
 }
 
 #define REG8(a)  (*(volatile uint8_t *)(a))
@@ -609,7 +609,7 @@ extern TINY uint16_t pr_buf, pr_scr, pr_last;
 extern TINY uint8_t pr_lm, pr_rm, pr_x1, pr_y1, pr_x0, pr_y0;
 void an_put_row_s(void);
 
-static void an_pack6(uint8_t *buf, const uint8_t FAR *sr,
+static void an_pack6(uint8_t *buf, far_src8 sr,
                      const int16_t *chars, uint16_t n, uint16_t lead)
 {
     ap_sr = (uint32_t)sr;
@@ -640,7 +640,7 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
     uint8_t buf[AN_STRIDE + 1];         /* on the stack, as antic_copy's:
                                          * bank $00 has no 41 bytes to
                                          * keep (tests/host/test_memory) */
-    const uint8_t FAR *sr = (const uint8_t FAR *)face;
+    far_src8 sr = (far_src8)face;
     volatile uint8_t *p;
     AN_OP o;
     uint16_t row, k, lead, last;

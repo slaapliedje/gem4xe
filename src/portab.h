@@ -94,4 +94,21 @@ void irq_cli(void);
 #error "portab.h: no dialect for this compiler -- add one here"
 #endif
 
+/* A FAR SOURCE OF BYTES (docs/6502.md, step 3b): a face's strip, a form,
+ * a buffer far_alloc gave.  On the 65C816 it is a far pointer, read where
+ * it points; on the 6502 there is no such pointer -- what is beyond 64 KB
+ * is a PORTB bank in the window -- so it is the 24-bit address itself,
+ * read through far_read8 (src/sys/farmem.h), which reads bank 0 directly.
+ * Adding a byte count to one means the same on both.  FAR_IDX8 is the
+ * subscripted form, for code whose 65C816 object must stay as it was. */
+#ifdef __CALYPSI_TARGET_6502__
+typedef unsigned long far_src8;
+#define FAR_RD8(a)      far_read8((unsigned long)(a))
+#define FAR_IDX8(a, i)  far_read8((unsigned long)(a) + (i))
+#else
+typedef const unsigned char FAR *far_src8;
+#define FAR_RD8(a)      (*(const unsigned char FAR *)(a))
+#define FAR_IDX8(a, i)  (((const unsigned char FAR *)(a))[i])
+#endif
+
 #endif /* GEM4XE_PORTAB_H */

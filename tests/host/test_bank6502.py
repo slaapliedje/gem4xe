@@ -136,5 +136,57 @@ class Bank6502(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
 
 
+class SharedTail(unittest.TestCase):
+    """bankcheck's code scan, on bytes made here (no compiler needed).
+
+    Bank 1 has two functions, the second jumping into the middle of the
+    first -- the optimiser's shared tail -- at an address where bank 2's
+    function starts.  As a JMP onto one of bank 1's instructions that is
+    a tail and passes (step 3b's antic_cursor_restore); the same address
+    from a JSR, or a JMP between two of bank 1's instructions, is refused
+    as a call into bank 2."""
+
+    def scan(self, op, target, h_at=0x4002):
+        sys.path.insert(0, TOOLS)
+        import bankcheck
+        sys.path.remove(TOOLS)
+        # bank 1: f at $4000 = LDA #0 / LDA #0 / RTS (tail at $4002),
+        #         g at $4005 = <op> target / RTS
+        # bank 2: h at h_at, NOPs before it
+        b1 = bytes([0xA9, 0, 0xA9, 0, 0x60, op, target & 0xFF, target >> 8, 0x60])
+        b2 = bytes([0xEA] * (h_at - 0x4000) + [0x60])
+        mem = {}
+        for k, v in enumerate(b1):
+            mem[0x10000 + k] = v
+        for k, v in enumerate(b2):
+            mem[0x14000 + k] = v
+        frags = {
+            "f": dict(name="f", section="bank1", bank="Store1", run=(0x4000, 0x4004),
+                      store=(0x10000, 0x10004)),
+            "g": dict(name="g", section="bank1", bank="Store1", run=(0x4005, 0x4008),
+                      store=(0x10005, 0x10008)),
+            "p": dict(name="p", section="bank2", bank="Store2", run=(0x4000, h_at - 1),
+                      store=(0x14000, 0x10000 + h_at - 1)),
+            "h": dict(name="h", section="bank2", bank="Store2", run=(h_at, h_at),
+                      store=(0x10000 + h_at, 0x10000 + h_at)),
+        }
+        bad, _ = bankcheck.check_code(frags, mem)
+        return bad
+
+    def test_jmp_onto_an_instruction_is_a_tail(self):
+        self.assertEqual(self.scan(0x4C, 0x4002), [])
+
+    def test_jsr_there_is_a_call_into_bank_2(self):
+        bad = self.scan(0x20, 0x4002)
+        self.assertEqual(len(bad), 1, bad)
+        self.assertIn("a function in Store2", bad[0])
+
+    def test_jmp_between_instructions_is_refused(self):
+        # bank 2's function at $4003, the middle of LDA #0 in bank 1
+        bad = self.scan(0x4C, 0x4003, h_at=0x4003)
+        self.assertEqual(len(bad), 1, bad)
+        self.assertIn("a function in Store2", bad[0])
+
+
 if __name__ == "__main__":
     unittest.main()

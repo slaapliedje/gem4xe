@@ -168,14 +168,31 @@ def load_elf(path):
     return mem
 
 
+def boundaries(f, mem):
+    """The run addresses where a banked fragment's instructions start,
+    decoding it from its first byte."""
+    lo, hi = f["run"]
+    base = f["store"][0] - lo
+    out, pc = set(), lo
+    while pc <= hi:
+        op = mem.get(pc + base)
+        if op is None:
+            break
+        out.add(pc)
+        pc += LEN[op]
+    return out
+
+
 def check_code(frags, mem):
     bad, scanned = [], 0
     starts = {}                         # bank -> {run address of a fragment start}
     spans = {}                          # bank -> [(lo, hi)]
+    insns = {}                          # bank -> {run address of an instruction}
     for f in frags.values():
         if f["bank"] and f["run"]:
             starts.setdefault(f["bank"], set()).add(f["run"][0])
             spans.setdefault(f["bank"], []).append(f["run"])
+            insns.setdefault(f["bank"], set()).update(boundaries(f, mem))
     for f in frags.values():
         if not f["run"]:
             continue
@@ -204,9 +221,15 @@ def check_code(frags, mem):
                         # inside one of this bank's fragments but not at its
                         # start: the optimiser's shared tails do that.  It is
                         # a cross-bank call when the address is where another
-                        # bank's function starts.
+                        # bank's function starts -- unless it is a JMP onto
+                        # an instruction of this bank's code: a shared tail
+                        # is only ever jumped to, and the two banks' layouts
+                        # can put a tail where another bank's function
+                        # starts (antic_cursor_restore's, in step 3b).  A
+                        # missed tail call by name is check_asm's.
                         others = [b for b, s in starts.items() if t in s and b != f["bank"]]
-                        if others:
+                        tail = op == 0x4C and t in insns[f["bank"]]
+                        if others and not tail:
                             bad.append(f"{what}: not the start of anything in this bank "
                                        f"-- it is a function in {', '.join(others)}")
             pc += n

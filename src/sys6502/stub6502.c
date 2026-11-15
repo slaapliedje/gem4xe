@@ -4,8 +4,8 @@
  * on a stock 6502.  The VDI also reaches for things the steps after it
  * bring: far memory (step 3), CIO for a loaded face, the interrupt
  * handler's keyboard queue, the printer device, the process context.
- * Each is answered here the way the VDI already copes with its absence:
- * no far memory is a failed allocation, which every caller checks; no
+ * (Far memory is real since step 3b: src/sys6502/farmem6502.c.)  Each
+ * is answered here the way the VDI already copes with its absence: no
  * keyboard is an empty queue; no printer is a workstation that will not
  * open.  Nothing here pretends to work.
  */
@@ -17,18 +17,6 @@
 #include "vdi/vdi.h"
 #include "vdi/vdidev.h"
 #include "vdi/print.h"
-
-/* ---- far memory: none yet (step 3) ------------------------------------ */
-uint32_t far_alloc(uint32_t bytes)     { (void)bytes; return 0; }
-uint32_t far_alloc_top(uint32_t bytes) { (void)bytes; return 0; }
-uint16_t far_free(uint32_t addr)       { (void)addr; return 0; }
-uint16_t far_keep(uint32_t addr)       { (void)addr; return 0; }
-uint32_t far_size(uint32_t addr)       { (void)addr; return 0; }
-uint8_t  far_read8(uint32_t addr)      { (void)addr; return 0; }
-void     far_write8(uint32_t addr, uint8_t v) { (void)addr; (void)v; }
-void     far_get(uint8_t *dst, uint32_t src, uint16_t len) { (void)dst; (void)src; (void)len; }
-void     far_put(uint32_t dst, const uint8_t *src, uint16_t len) { (void)dst; (void)src; (void)len; }
-void     far_copy(uint32_t dst, uint32_t src, uint16_t len) { (void)dst; (void)src; (void)len; }
 
 /* ---- CIO: a face loaded from a file is refused ------------------------ */
 int16_t  cio_open(const char *name, uint8_t aux1, uint8_t aux2)

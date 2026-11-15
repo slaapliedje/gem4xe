@@ -13,16 +13,22 @@
  *   vro_cpyfm's S XOR D and S AND D on the screen,
  *   and vqt_name's face, which names this screen's cell.
  *
- * Not yet: text at twice its size, which takes a far buffer (step 3), and
- * the AES (step 4).
+ * and text at twice its size, which goes through a buffer in far memory
+ * (step 3b): src/sys/farmem.c's allocator in a bank of its own, the far
+ * heap in the PORTB banks after the code's (src/sys6502/farmem6502.c).
+ *
+ * Not yet: the AES (step 4).
  *
  * STATUS at $0600: 'A' 'V' as it starts, 'K' at $0602 when it is done;
- * vqt_name's bytes at $0630; the banks it found at $0608.
+ * vqt_name's bytes at $0630; the banks it found at $0608, the far banks
+ * the heap made of them at $0609.
  */
 #include "portab.h"
 #include "vdi/vdi.h"
 #include "vdi/font.h"
 #include "vdi/vdidev.h"
+#include "sys/farmem.h"
+#include "sys/hiprobe.h"           /* farmem_probe */
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -67,6 +73,8 @@ int main(void)
     STATUS[2] = 0;
     STATUS[8] = b6_count;
 
+    farmem_probe();                     /* the far heap, before the VDI */
+    STATUS[9] = (unsigned char)farmem.banks;
     vdev = &vdev_antic;
     STATUS[3] = '1';                    /* how far it got, at $0603 */
     vdi_font_default();
@@ -109,6 +117,15 @@ int main(void)
             call(VRO_CPYFM, 4, 1);
         }
     }
+
+    /* the face at twice its size: 6x6 doubled, by vst_height 8 (phase
+     * 149) -- its raster built in the VDI's far buffer -- and back */
+    STATUS[3] = '7';
+    ptsin[0] = 0; ptsin[1] = 8;
+    call(VST_HEIGHT, 1, 0);
+    text(230, 180, "BIG");
+    ptsin[0] = 0; ptsin[1] = 0;
+    call(VST_HEIGHT, 1, 0);
 
     {
         volatile unsigned char *nm = (volatile unsigned char *)0x0630;

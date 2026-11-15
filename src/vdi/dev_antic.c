@@ -147,7 +147,7 @@ void dev_font_changed(void)
 {
 }
 
-void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
+void dev_raster_1bpp(far_src8 bits, uint16_t stride,
                      WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
 
@@ -197,9 +197,8 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
         WORD row;
 
         for (row = 0; row < FONT_H; row++)
-            g[row] = *(const uint8_t FAR *)
-                      (vdi_font + (uint32_t)row * FONT_STRIDE + (ch & 0xFF));
-        dev_raster_1bpp((const uint8_t FAR *)g, 1, 0, 0, FONT_W, FONT_H,
+            g[row] = FAR_RD8(vdi_font + (uint32_t)row * FONT_STRIDE + (ch & 0xFF));
+        dev_raster_1bpp((far_src8)g, 1, 0, 0, FONT_W, FONT_H,
                         cx, cy, mode, vwk.text_color,
                         mode == MD_ERASE ? vwk.text_color : 0);
         return;
@@ -244,7 +243,7 @@ void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
  * touches each screen byte once: about 160 for the same icon, and none
  * of them a read where a replace covers the whole byte (docs/phase52.md).
  * The pixels are the same ones; test-m26's desk says so. */
-void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
+void dev_raster_1bpp(far_src8 bits, uint16_t stride,
                      WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
 {
@@ -270,6 +269,24 @@ void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
 
     for (r = 0; r < h; r++) {
         WORD y = (WORD)(dy + r);
+#ifdef __CALYPSI_TARGET_6502__
+        /* THE 6502: the source is an address that may be in a PORTB bank,
+         * so the bytes of the row this draws come into a near buffer
+         * first -- from the byte its first bit is in, to one past the
+         * last, which antic_raster_row may read (an_src8). */
+        uint8_t near_row[AN_STRIDE + 2];
+        uint16_t s0 = (uint16_t)(sx + (xl - dx));
+
+        if (y < 0 || y >= AN_H)
+            continue;
+        if (vwk.clip && (y < vwk.ymn_clip || y > vwk.ymx_clip))
+            continue;
+        far_get(near_row, bits + (uint16_t)(sy + r) * stride + (s0 >> 3),
+                (uint16_t)((((s0 & 7) + (uint16_t)(xr - xl)) >> 3) + 2));
+        antic_raster_row(near_row, (uint16_t)(s0 & 7),
+                         (int16_t)xl, (int16_t)xr, (int16_t)y,
+                         (int16_t)mode, pen, pap);
+#else
         const uint8_t FAR *row = bits + (uint16_t)(sy + r) * stride;
 
         if (y < 0 || y >= AN_H)
@@ -279,6 +296,7 @@ void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
         antic_raster_row(row, (uint16_t)(sx + (xl - dx)),
                          (int16_t)xl, (int16_t)xr, (int16_t)y,
                          (int16_t)mode, pen, pap);
+#endif
     }
 }
 
@@ -545,7 +563,7 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
  * an_op has for the screen -- set bits the ink in replace and
  * transparent, inverted in XOR; clear bits the background in replace
  * and erase. */
-void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
+void dev_raster_form(const RFORM *dst, far_src8 bits,
                      uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
 {
@@ -554,12 +572,12 @@ void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
     WORD r, c;
 
     for (r = 0; r < h; r++) {
-        const uint8_t FAR *row = bits + (uint16_t)(sy + r) * stride;
+        far_src8 row = bits + (uint16_t)(sy + r) * stride;
         WORD y = (WORD)(dy + r);
 
         for (c = 0; c < w; c++) {
             WORD x = (WORD)(dx + c), sxc = (WORD)(sx + c);
-            WORD set = (WORD)((row[(UWORD)sxc >> 3] >> (7 - (sxc & 7))) & 1);
+            WORD set = (WORD)((FAR_IDX8(row, (UWORD)sxc >> 3) >> (7 - (sxc & 7))) & 1);
 
             switch (mode) {
             case MD_TRANS:  if (set) form_put(dst, x, y, pen);            break;

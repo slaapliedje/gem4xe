@@ -9,6 +9,7 @@
  */
 #include "portab.h"
 #include <stdint.h>
+#include "sys/farmem.h"
 
 TINY uint32_t ap_sr;
 TINY uint16_t ap_chars, ap_buf, ap_n, ap_lead;
@@ -20,13 +21,14 @@ TINY uint8_t pr_lm, pr_rm, pr_x1, pr_y1, pr_x0, pr_y0;
 void an_pack6_s(void)
 {
     const uint8_t *sr = (const uint8_t *)(uint16_t)ap_sr;
+    uint8_t far = (uint8_t)(ap_sr >> 16) != 0;  /* a face in a PORTB bank */
     const int16_t *chars = (const int16_t *)ap_chars;
     uint8_t *buf = (uint8_t *)ap_buf;
     uint16_t i, k = 0, acc = 0, bits = ap_lead;
     uint8_t g;
 
     for (i = 0; i < ap_n; i++) {
-        g = sr[chars[i] & 0xFF];
+        g = far ? far_read8(ap_sr + (uint16_t)(chars[i] & 0xFF)) : sr[chars[i] & 0xFF];
         acc = (uint16_t)((acc << 6) | (uint16_t)(g >> 2));
         bits += 6;
         if (bits >= 8) {

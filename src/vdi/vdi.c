@@ -427,8 +427,7 @@ static void glyph2(WORD ch, WORD cx, WORD cy, WORD overlay)
     WORD mode = (WORD)(vwk.wrt_mode + 1), r, fh = FONT_H;
 
     for (r = 0; r < fh; r++) {
-        UWORD b = *(const uint8_t FAR *)
-                   (vdi_font + (uint32_t)r * FONT_STRIDE + (uint32_t)(ch & 0xFF));
+        UWORD b = FAR_RD8(vdi_font + (uint32_t)r * FONT_STRIDE + (uint32_t)(ch & 0xFF));
         uint8_t hi = dbl4[(b >> 4) & 15], lo = dbl4[b & 15];
 
         g[r * 4] = hi;
@@ -438,7 +437,7 @@ static void glyph2(WORD ch, WORD cx, WORD cy, WORD overlay)
     }
     if (overlay && mode == MD_REPLACE)
         mode = MD_TRANS;
-    dev_raster_1bpp((const uint8_t FAR *)g, 2, 0, 0, TS(FONT_W), TS(FONT_H),
+    dev_raster_1bpp((far_src8)g, 2, 0, 0, TS(FONT_W), TS(FONT_H),
                     cx, cy, mode, vwk.text_color,
                     (WORD)(mode == MD_ERASE ? vwk.text_color : 0));
 }
@@ -485,7 +484,7 @@ static void run2(const WORD *chars, WORD lo, WORD hi, WORD x, WORD cy,
         UWORD pend = 0, c;
 
         for (i = lo; i <= hi; i++) {
-            UWORD b = *(const uint8_t FAR *)(f + (uint32_t)(chars[i] & 0xFF));
+            UWORD b = FAR_RD8(f + (uint32_t)(chars[i] & 0xFF));
             UWORD d = (UWORD)(((UWORD)dbl4[(b >> 4) & 15] << 8) | dbl4[b & 15]);
 
             if (fw == 8) {
@@ -515,7 +514,7 @@ static void run2(const WORD *chars, WORD lo, WORD hi, WORD x, WORD cy,
         far_put(at, q, (uint16_t)stride);   /* and the row twice */
         far_put(at + (uint32_t)stride, q, (uint16_t)stride);
     }
-    dev_raster_1bpp((const uint8_t FAR *)t2_buf, (uint16_t)stride, 0, 0, w,
+    dev_raster_1bpp((far_src8)t2_buf, (uint16_t)stride, 0, 0, w,
                     (WORD)(2 * fh), x, cy, mode, vwk.text_color,
                     (WORD)(mode == MD_ERASE ? vwk.text_color : 0));
 }
@@ -2706,7 +2705,7 @@ static void vdi_vrt_cpyfm(void)
         sy1 = (WORD)(sy1 - cy1);
         if (!clip_to(&cx1, &cy1, &cx2, &cy2, dst.w, dst.h))
             return;
-        dev_raster_form(&dst, (const uint8_t FAR *)src->fd_addr,
+        dev_raster_form(&dst, (far_src8)src->fd_addr,
                         (uint16_t)((uint16_t)wdwidth * 2u),
                         (WORD)(sx1 + cx1), (WORD)(sy1 + cy1),
                         (WORD)(cx2 - cx1 + 1), (WORD)(cy2 - cy1 + 1),
@@ -2717,7 +2716,7 @@ static void vdi_vrt_cpyfm(void)
      * to sixteen here, which was right only while every memory form was
      * in bank $00.  A resource's icons are in far memory now
      * (src/aes/rsrc.c). */
-    dev_raster_1bpp((const uint8_t FAR *)src->fd_addr,
+    dev_raster_1bpp((far_src8)src->fd_addr,
                     (uint16_t)((uint16_t)wdwidth * 2u),
                     sx1, sy1, (WORD)(sx2 - sx1 + 1), (WORD)(sy2 - sy1 + 1),
                     ptsin[4], ptsin[5], intin[0], intin[1], intin[2]);

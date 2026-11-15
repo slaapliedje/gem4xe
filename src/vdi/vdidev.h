@@ -247,7 +247,7 @@ typedef struct {
      * fd_addr has been 32 bits since phase 2, but it used to be
      * truncated here on the way in, because a memory form had always
      * been in bank $00. */
-    void (*raster_1bpp)(const uint8_t FAR *bits, uint16_t stride,
+    void (*raster_1bpp)(far_src8 bits, uint16_t stride,
                         WORD sx, WORD sy, WORD w, WORD h,
                         WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
 
@@ -393,7 +393,7 @@ typedef struct {
      * Already clipped to the form, and planes the device's -- the VDI
      * has seen to both -- and no clip rectangle, which is the screen's:
      * EmuTOS applies it only when the destination is the screen. */
-    void (*raster_form)(const RFORM *dst, const uint8_t FAR *bits,
+    void (*raster_form)(const RFORM *dst, far_src8 bits,
                         uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
                         WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
 
