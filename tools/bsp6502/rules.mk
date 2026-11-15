@@ -13,9 +13,14 @@
 #   banks 1-3  vdi.c, cut by its two BANK_TEXTs   (sections vdi_a, vdi_b, vdi_c)
 #   bank 4     dev_antic.c's functions, font.c and pointer.c   (section dev)
 #   bank 5     antic.c                                  (section antic)
-#   bank 6     src/sys/farmem.c, the far heap's allocator  (section far);
+#   bank 6     src/sys/farmem.c, the far heap's allocator, and src/v6_tree.c,
+#              the object library's test               (section far);
 #              the far_* helpers resident (src/sys6502/farmem6502.c), and
-#              the heap in the PORTB banks after these six
+#              the heap in the PORTB banks after these ten
+#   banks 7-9  src/aes/objc.c, the object library, cut by its BANK_TEXTs
+#                                         (sections objc, objc_b, objc_c)
+#   bank 10    src/aes/graf.c, the AES's drawing        (section graf);
+#              its tables (build/gemdata.c) resident
 #
 # Banked files are compiled with --no-cross-call: the optimiser's shared
 # fragments go to section `code` whatever the pragma says -- 6.6 KB of
@@ -37,13 +42,13 @@ DEVANTIC6  = -DGEM4XE_DEV_IMPL -DGEM4XE_DEV_PREFIX=and_ -DGEM4XE_DEV_ANTIC
 HDRS6      = src/portab.h $(wildcard src/vdi/*.h src/sys/*.h src/antic/*.h src/aes/*.h)
 
 # the bank of each section, for veneers.py: the same as gem6502.scm's
-BANKS6     = --bank vdi_a=1 --bank vdi_b=2 --bank vdi_c=3 --bank dev=4 --bank antic=5 --bank far=6
+BANKS6     = --bank vdi_a=1 --bank vdi_b=2 --bank vdi_c=3 --bank dev=4 --bank antic=5 --bank far=6 --bank objc=7 --bank objc_b=8 --bank objc_c=9 --bank graf=10
 
 V6_RES     = $(B6)/res/v6_vdi.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/v6farmem6502.o
-V6_UNITS   = vdi dev_antic antic font pointer v6farmem
+             $(B6)/res/v6farmem6502.o $(B6)/res/gemdata.o
+V6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf v6tree
 V6_PRE     = $(V6_UNITS:%=$(B6)/pre/%.o)
 V6_BANK    = $(V6_UNITS:%=$(B6)/bank/%.o)
 
@@ -56,10 +61,14 @@ $(B6)/res/%.o: src/sys6502/%.c $(HDRS6)
 $(B6)/res/%.o: src/vdi/%.c $(HDRS6)
 	@mkdir -p $(dir $@)
 	$(CC6) $(CFLAGS6) -c $< -o $@
-# the far_* helpers: the heap's banks start after the code's six
+# the far_* helpers: the heap's banks start after the code's ten
 $(B6)/res/v6farmem6502.o: src/sys6502/farmem6502.c $(HDRS6)
 	@mkdir -p $(dir $@)
-	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=6 -c $< -o $@
+	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=10 -c $< -o $@
+# the AES's tables, generated (tools/gemdata.py), resident
+$(B6)/res/gemdata.o: build/gemdata.c build/gemdata.h $(HDRS6)
+	@mkdir -p $(dir $@)
+	$(CC6) $(CFLAGS6) -I src/aes -I build -c $< -o $@
 $(B6)/res/bank6502.o: src/sys6502/bank6502.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@
@@ -70,6 +79,9 @@ $(B6)/w/dev_antic.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="
 $(B6)/w/antic.c:     ; @mkdir -p $(dir $@); printf '#pragma clang section text="antic"\n#include "../../../src/antic/antic.c"\n' > $@
 $(B6)/w/font.c:      ; @mkdir -p $(dir $@); printf '#pragma clang section text="dev"\n#include "../../../src/vdi/font.c"\n' > $@
 $(B6)/w/pointer.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="dev"\n#include "../../../src/vdi/pointer.c"\n' > $@
+$(B6)/w/objc.c:      ; @mkdir -p $(dir $@); printf '#pragma clang section text="objc"\n#include "../../../src/aes/objc.c"\n' > $@
+$(B6)/w/graf.c:      ; @mkdir -p $(dir $@); printf '#pragma clang section text="graf"\n#include "../../../src/aes/graf.c"\n' > $@
+$(B6)/w/v6tree.c:    ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/v6_tree.c"\n' > $@
 $(B6)/w/v6farmem.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/sys/farmem.c"\n' > $@
 
 $(B6)/pre/vdi.o:       $(B6)/w/vdi.c src/vdi/vdi.c $(HDRS6)
@@ -80,6 +92,10 @@ $(B6)/pre/font.o:      $(B6)/w/font.c src/vdi/font.c $(HDRS6)
 $(B6)/pre/pointer.o:   $(B6)/w/pointer.c src/vdi/pointer.c $(HDRS6)
 $(B6)/pre/v6farmem.o:  $(B6)/w/v6farmem.c src/sys/farmem.c $(HDRS6)
 $(B6)/pre/v6farmem.o:  EXTRA6 = -I src/sys
+$(B6)/pre/v6tree.o:    $(B6)/w/v6tree.c src/v6_tree.c $(HDRS6)
+$(B6)/pre/objc.o:      $(B6)/w/objc.c src/aes/objc.c $(HDRS6)
+$(B6)/pre/graf.o:      $(B6)/w/graf.c src/aes/graf.c build/gemdata.h $(HDRS6)
+$(B6)/pre/objc.o $(B6)/pre/graf.o: EXTRA6 = -I src/aes -I build
 $(V6_PRE):
 	@mkdir -p $(dir $@) $(B6)/asm
 	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \

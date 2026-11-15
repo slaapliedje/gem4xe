@@ -95,4 +95,30 @@ void     far_fill(uint32_t dst, uint8_t v, uint16_t len);
 void     far_strget(char *dst, uint32_t src, uint16_t max);   /* bounded strcpy, */
 void     far_strput(uint32_t dst, const char *src, uint16_t max); /* NUL always */
 
+/* A FIELD OF A STRUCT IN FAR MEMORY (docs/6502.md, step 3c): a TEDINFO,
+ * an ICONBLK, an object.  On the 65C816 a far pointer's member, as the C
+ * always wrote it; on the 6502 the field's bytes read or written through
+ * the far_* helpers, at its offset, as the field's own type.  The address
+ * is a uint32_t on both. */
+#ifdef __CALYPSI_TARGET_6502__
+#include <stddef.h>
+uint16_t far_rd16(uint32_t addr);
+uint32_t far_rd32(uint32_t addr);
+void     far_wr16(uint32_t addr, uint16_t v);
+void     far_wr32(uint32_t addr, uint32_t v);
+#define FAR_FLD_(type, f)   (((type *)0)->f)
+#define FAR_AT_(type, a, f) ((uint32_t)(a) + offsetof(type, f))
+#define FAR_GETF(type, a, f) ((__typeof__(FAR_FLD_(type, f)))                \
+    (sizeof FAR_FLD_(type, f) == 4 ? far_rd32(FAR_AT_(type, a, f))           \
+     : sizeof FAR_FLD_(type, f) == 2 ? (uint32_t)far_rd16(FAR_AT_(type, a, f)) \
+     : (uint32_t)far_read8(FAR_AT_(type, a, f))))
+#define FAR_SETF(type, a, f, v)                                              \
+    (sizeof FAR_FLD_(type, f) == 4 ? far_wr32(FAR_AT_(type, a, f), (uint32_t)(v)) \
+     : sizeof FAR_FLD_(type, f) == 2 ? far_wr16(FAR_AT_(type, a, f), (uint16_t)(v)) \
+     : far_write8(FAR_AT_(type, a, f), (uint8_t)(v)))
+#else
+#define FAR_GETF(type, a, f)    (((const type FAR *)(uint32_t)(a))->f)
+#define FAR_SETF(type, a, f, v) (((type FAR *)(uint32_t)(a))->f = (v))
+#endif
+
 #endif /* GEM4XE_FARMEM_H */

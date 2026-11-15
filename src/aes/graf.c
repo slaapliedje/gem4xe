@@ -705,7 +705,7 @@ void gr_rect(WORD icolor, WORD ipattern, const GRECT *pt)
 
 /* Stage a C string into intin[] as v_gtext wants it, one word per unsigned
  * byte; returns the count.  Clamped to the parameter block. */
-WORD expand_string(WORD *dst, const char FAR *s)
+WORD expand_string(WORD *dst, far_str s)
 {
     WORD n = 0;
     /* The byte is read into a local FIRST.  `dst[n++] = (uint8_t)*s++`
@@ -714,7 +714,7 @@ WORD expand_string(WORD *dst, const char FAR *s)
      * tools/ccbug/b18_farloop.c).  Splitting the read from the narrowing
      * is one of four shapes it accepts; this one costs nothing. */
     while (n < INTIN_SIZE - 1) {
-        char c = *s++;
+        char c = FAR_CHAR(s++);
         if (!c)
             break;
         dst[n++] = (WORD)(uint8_t)c;
@@ -742,7 +742,7 @@ void gsx_tblt(WORD font, WORD x, WORD y, WORD nc)
  * miscompiles `*out = c ? a : b` once it inlines a static function -- the
  * store lands in a dead stack slot and *out is never written
  * (tools/ccbug/, `make check-cc`) -- so the count is returned instead. */
-static WORD gsx_tcalc(WORD font, const char FAR *ptext, WORD *pw, WORD *ph)
+static WORD gsx_tcalc(WORD font, far_str ptext, WORD *pw, WORD *ph)
 {
     WORD wc, hc, n;
 
@@ -762,7 +762,7 @@ static WORD gsx_tcalc(WORD font, const char FAR *ptext, WORD *pw, WORD *ph)
 /* Place text of the given justification inside (pt->g_x, pt->g_y, w, h):
  * pt is moved to where the first character goes.  Returns the number of
  * characters that fit (staged in intin[]). */
-WORD gr_just(WORD just, WORD font, const char FAR *ptext, WORD w, WORD h, GRECT *pt)
+WORD gr_just(WORD just, WORD font, far_str ptext, WORD w, WORD h, GRECT *pt)
 {
     WORD numchs;
 
@@ -788,7 +788,7 @@ WORD gr_just(WORD just, WORD font, const char FAR *ptext, WORD w, WORD h, GRECT 
     return numchs;
 }
 
-void gr_gtext(WORD just, WORD font, const char FAR *ptext, const GRECT *pt)
+void gr_gtext(WORD just, WORD font, far_str ptext, const GRECT *pt)
 {
     GRECT t;
     WORD numchs;

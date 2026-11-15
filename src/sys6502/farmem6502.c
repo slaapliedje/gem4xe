@@ -24,6 +24,7 @@
 #include "portab.h"
 #include "sys/farmem.h"
 #include "sys/hiprobe.h"
+#include "aes/aes.h"                /* OBJECT, for ob_rd16 and the rest */
 #include <string.h>
 
 #ifndef B6_CODE_BANKS
@@ -129,6 +130,48 @@ void far_get(uint8_t *dst, uint32_t src, uint16_t len)
         len = (uint16_t)(len - k);
     }
 }
+
+/* A field's two or four bytes (FAR_GETF, src/sys/farmem.h), through
+ * far_get, which maps once for both unless they straddle a piece. */
+uint16_t far_rd16(uint32_t addr)
+{
+    uint16_t v;
+
+    far_get((uint8_t *)&v, addr, 2);
+    return v;
+}
+
+uint32_t far_rd32(uint32_t addr)
+{
+    uint32_t v;
+
+    far_get((uint8_t *)&v, addr, 4);
+    return v;
+}
+
+void far_wr16(uint32_t addr, uint16_t v)
+{
+    far_put(addr, (const uint8_t *)&v, 2);
+}
+
+void far_wr32(uint32_t addr, uint32_t v)
+{
+    far_put(addr, (const uint8_t *)&v, 4);
+}
+
+/* An object's field: tree t, object i, the field's offset (OB_GET,
+ * src/aes/aes.h).  24 bytes an object. */
+static uint32_t ob_at(uint32_t t, WORD i, uint8_t off)
+{
+    uint16_t k = (uint16_t)i;
+
+    return t + (uint32_t)(uint16_t)((k << 4) + (k << 3)) + off;
+}
+
+uint16_t ob_rd16(uint32_t t, WORD i, uint8_t off) { return far_rd16(ob_at(t, i, off)); }
+uint32_t ob_rd32(uint32_t t, WORD i, uint8_t off) { return far_rd32(ob_at(t, i, off)); }
+void ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v) { far_wr16(ob_at(t, i, off), v); }
+void ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v) { far_wr32(ob_at(t, i, off), v); }
 
 /* Far to far goes through a near buffer: the window holds one bank. */
 static uint8_t bounce[64];

@@ -31,15 +31,17 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
+import aesref                               # noqa: E402
 import devref                               # noqa: E402
-import vdiref                               # noqa: E402
+from m4_aes import Layout, GSX_START, OBJC_DRAW, FULL   # noqa: E402
+import m25_antic_vdi                        # noqa: E402  test-m25's tree
 from anticref import AN_W, AN_H              # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
                     VS_CLIP, VRO_CPYFM, VST_HEIGHT)
 
 FIS_SOLID, MD_REPLACE, MD_XOR = 1, 1, 3
-BANKS_NEEDED = 6
+BANKS_NEEDED = 10
 
 # src/v6_vdi.c's calls, in its order
 SCRIPT = [
@@ -62,7 +64,10 @@ SCRIPT = [
     (VST_HEIGHT, (0, 8), ()),
     (V_GTEXT, (230, 180), tuple(b"BIG")),
     (VST_HEIGHT, (0, 0), ()),
+    (GSX_START,),
+    (OBJC_DRAW, FULL, (0, 8)),
 ]
+FIND_AT, FIND_WANT = (30 + 56 + 18, 100 + 30 + 5), 3     # the OK button
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "v6-boot.atr"))
 SHOT = os.path.abspath(os.path.join(ROOT, "build", "v6.png"))
@@ -72,8 +77,11 @@ FONT_W, FONT_H = 6, 6
 
 
 def model():
-    v = vdiref.VDI(devref.Antic())
-    v.run(SCRIPT)
+    """test-m25's models, as test-m25 runs them: tools/vdiref.py and
+    tools/aesref.py's object library on tools/devref.py's ANTIC, the tree
+    test-m25's own."""
+    L = Layout(m25_antic_vdi.POOL)
+    v, a, _ = aesref.run(SCRIPT, m25_antic_vdi.tree(L), L.mem, dev=devref.Antic())
     return v.dev
 
 
@@ -98,7 +106,12 @@ def main(argv):
             if bytes(b.memdump(STATUS, 3)) == b"AVK":
                 break
         st = bytes(b.memdump(STATUS, 3))
-        if not check(st == b"AVK", f"the program ran to its end (status {st!r})"):
+        if not check(st == b"AVK", f"the program ran to its end (status {st!r}, "
+                                   f"stage {chr(b.peek(STATUS + 3))!r})"):
+            if b.peek(STATUS + 3) == ord("9"):  # the tree was written, then stuck
+                good = b.peek(0x0655)
+                check(good == 4, f"far_get reads back {good} of the 4 objects OB_SET "
+                                 f"wrote, want 4")
             b.screenshot(SHOT)
             print(f"  screen: {SHOT}")
             return 1
@@ -109,6 +122,14 @@ def main(argv):
         far = b.peek(STATUS + 9)
         check(far >= 1, f"the far heap has {far} far bank(s) of 64 KB, want at least one")
 
+        tree = int.from_bytes(bytes(b.memdump(0x0650, 4)), "little")
+        check(tree >> 16 >= 1, f"the tree is in far memory: ${tree:06X}, bank {tree >> 16}")
+        good = b.peek(0x0655)
+        check(good == 4, f"far_get reads back {good} of the 4 objects OB_SET wrote at the "
+                         f"tree's far address, want 4")
+        found = b.peek(0x0654)
+        check(found == FIND_WANT, f"objc_find at the OK button's middle {FIND_AT} "
+                                  f"answered {found}, want {FIND_WANT}")
         name = bytes(b.memdump(0x0630, 20)).split(b"\0")[0].decode("latin-1")
         want = f"gem4xe system {FONT_W}x{FONT_H}"
         check(name == want, f"vqt_name says {name!r}, want {want!r}")

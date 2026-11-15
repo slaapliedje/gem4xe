@@ -17,17 +17,28 @@
  * (step 3b): src/sys/farmem.c's allocator in a bank of its own, the far
  * heap in the PORTB banks after the code's (src/sys6502/farmem6502.c).
  *
- * Not yet: the AES (step 4).
+ * Then the object library on top (step 3c), as test-m25 has it: the
+ * AES's gsx_start (src/aes/graf.c) and ob_draw (src/aes/objc.c) of
+ * test-m25's dialog -- with the tree and its strings in FAR memory, where
+ * rsrc_load puts a resource's, every field read through OB_GET -- and
+ * objc_find on its OK button.
+ *
+ * Not yet: the rest of the AES (step 4).
  *
  * STATUS at $0600: 'A' 'V' as it starts, 'K' at $0602 when it is done;
  * vqt_name's bytes at $0630; the banks it found at $0608, the far banks
- * the heap made of them at $0609.
+ * the heap made of them at $0609; the tree's far address at $0650 (four
+ * bytes), what objc_find answered at the OK button's middle at $0654, and
+ * how many of the four objects far_get reads back as written at $0655.
  */
 #include "portab.h"
 #include "vdi/vdi.h"
 #include "vdi/font.h"
 #include "vdi/vdidev.h"
 #include "sys/farmem.h"
+#include "aes/aes.h"
+
+void v6_tree(void);                     /* src/v6_tree.c, bank 6 */
 #include "sys/hiprobe.h"           /* farmem_probe */
 
 #define STATUS ((volatile unsigned char *)0x0600)
@@ -135,6 +146,12 @@ int main(void)
         for (k = 0; k < 20; k++)
             nm[k] = (unsigned char)intout[k + 1];
     }
+
+    /* -- the object library: test-m25's dialog, from far memory
+     * (src/v6_tree.c, banked: resident room is all taken) */
+    STATUS[3] = '8';
+    gsx_start();
+    v6_tree();
 
     STATUS[2] = 'K';
     for (;;)

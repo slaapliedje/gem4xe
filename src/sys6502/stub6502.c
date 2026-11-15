@@ -17,6 +17,17 @@
 #include "vdi/vdi.h"
 #include "vdi/vdidev.h"
 #include "vdi/print.h"
+#include "aes/aes.h"
+#include "sys/gemdos.h"
+
+/* ---- the rest of the AES, for the object library (step 3c) ------------
+ * objc.c's desktop-icon call keeps a GEMDOS block and re-fits the
+ * windows; neither is here, so the keep fails and objc.c gives the icon
+ * back, as it does when GEMDOS refuses it.  gl_rzero is wind.c's. */
+int16_t gd_keep(int32_t a)  { (void)a; return 0; }
+void    gd_unkeep(int32_t a) { (void)a; }
+void    w_look(void) {}
+GRECT   gl_rzero;
 
 /* ---- CIO: a face loaded from a file is refused ------------------------ */
 int16_t  cio_open(const char *name, uint8_t aux1, uint8_t aux2)
@@ -46,7 +57,7 @@ volatile uint8_t irq_kb[8];
 
 /* The printer's table: a printer workstation is never opened here, and
  * vdi.c only compares against this one's address before it would be. */
-const VDIDEV FAR vdev_print;
+const VDIDEV FAR vdev_print = { 0 };     /* initialised: with the code, not in RAM */
 
 /* ...and the rest of the handler's variables, which the VDI's timer and
  * pointer code read and pointer.c's tables fill: there, unread, until the

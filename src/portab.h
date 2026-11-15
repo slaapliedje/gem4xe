@@ -111,4 +111,14 @@ typedef const unsigned char FAR *far_src8;
 #define FAR_IDX8(a, i)  (((const unsigned char FAR *)(a))[i])
 #endif
 
+/* ...and a far STRING, the same way: a TEDINFO's text, an icon's label.
+ * FAR_CHAR(p) is the character at p. */
+#ifdef __CALYPSI_TARGET_6502__
+typedef unsigned long far_str;
+#define FAR_CHAR(p)     ((char)far_read8((unsigned long)(p)))
+#else
+typedef const char FAR *far_str;
+#define FAR_CHAR(p)     (*(p))
+#endif
+
 #endif /* GEM4XE_PORTAB_H */

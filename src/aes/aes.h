@@ -39,6 +39,41 @@ typedef struct {
     WORD  ob_width, ob_height;
 } OBJECT;
 
+/* A TREE, and an object's fields in it (docs/6502.md, step 3c).  A tree
+ * is in far memory (docs/phase47.md).  On the 65C816 OBTREE is the far
+ * pointer it always was and OB_GET(t, i, f) is t[i].f, letter for letter;
+ * on the 6502 a tree is its 24-bit address and the fields are read and
+ * written through the far_* helpers (src/sys/farmem.h's FAR_GETF).  OB_OR
+ * and OB_AND are |= and &=: on the 65C816 written as such, because
+ * `P->a = P->b | e` is a shape cc65816 miscompiles (tools/ccbug, B15). */
+#ifdef __CALYPSI_TARGET_6502__
+#include "../sys/farmem.h"
+typedef uint32_t OBTREE;
+typedef uint32_t OBCTREE;
+/* A call each, the address worked out in the helper
+ * (src/sys6502/farmem6502.c): worked out at every access it was 33 KB
+ * of objc.c, two banks. */
+uint16_t ob_rd16(uint32_t t, WORD i, uint8_t off);
+uint32_t ob_rd32(uint32_t t, WORD i, uint8_t off);
+void     ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v);
+void     ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v);
+#define OB_F_(f)            (((OBJECT *)0)->f)
+#define OB_GET(t, i, f)     ((__typeof__(OB_F_(f)))(sizeof OB_F_(f) == 4             \
+    ? ob_rd32(t, i, offsetof(OBJECT, f)) : (uint32_t)ob_rd16(t, i, offsetof(OBJECT, f))))
+#define OB_SET(t, i, f, v)  (sizeof OB_F_(f) == 4                                   \
+    ? ob_wr32(t, i, offsetof(OBJECT, f), (uint32_t)(v))                             \
+    : ob_wr16(t, i, offsetof(OBJECT, f), (uint16_t)(v)))
+#define OB_OR(t, i, f, v)   OB_SET(t, i, f, OB_GET(t, i, f) | (v))
+#define OB_AND(t, i, f, v)  OB_SET(t, i, f, OB_GET(t, i, f) & (v))
+#else
+typedef OBJECT FAR *OBTREE;
+typedef const OBJECT FAR *OBCTREE;
+#define OB_GET(t, i, f)     ((t)[i].f)
+#define OB_SET(t, i, f, v)  ((t)[i].f = (v))
+#define OB_OR(t, i, f, v)   ((t)[i].f |= (v))
+#define OB_AND(t, i, f, v)  ((t)[i].f &= (v))
+#endif
+
 /* ob_type */
 #define G_BOX       20
 #define G_TEXT      21
@@ -552,12 +587,12 @@ void bb_fill(WORD mode, WORD fis, WORD patt, WORD x, WORD y, WORD w, WORD h);
 void bb_screen(WORD sx, WORD sy, WORD dx, WORD dy, WORD w, WORD h);
 void bb_save(const GRECT *pr);
 void bb_restore(const GRECT *pr);
-WORD expand_string(WORD *dst, const char FAR *s);
+WORD expand_string(WORD *dst, far_str s);
 void gr_crack(UWORD color, WORD *pbc, WORD *ptc, WORD *pip, WORD *pic, WORD *pmd);
 void gr_inside(GRECT *pt, WORD th);
 void gr_rect(WORD icolor, WORD ipattern, const GRECT *pt);
-WORD gr_just(WORD just, WORD font, const char FAR *ptext, WORD w, WORD h, GRECT *pt);
-void gr_gtext(WORD just, WORD font, const char FAR *ptext, const GRECT *pt);
+WORD gr_just(WORD just, WORD font, far_str ptext, WORD w, WORD h, GRECT *pt);
+void gr_gtext(WORD just, WORD font, far_str ptext, const GRECT *pt);
 void gr_box(WORD x, WORD y, WORD w, WORD h, WORD th);
 void gsx_xbox(const GRECT *pt);
 void gsx_xcbox(const GRECT *pt);
@@ -576,7 +611,7 @@ WORD gr_stilldn(WORD out, WORD x, WORD y, WORD w, WORD h);
 void gr_movebox(WORD w, WORD h, WORD srcx, WORD srcy, WORD dstx, WORD dsty);
 void gr_growbox(const GRECT *po, const GRECT *pt);
 void gr_shrinkbox(const GRECT *po, const GRECT *pt);
-WORD gr_watchbox(OBJECT FAR *tree, WORD obj, WORD instate, WORD outstate);
+WORD gr_watchbox(OBTREE tree, WORD obj, WORD instate, WORD outstate);
 void gr_mouse(WORD mode, const WORD *pmform);
 void gr_mkstate(WORD *pmx, WORD *pmy, WORD *pmstat, WORD *pkstat);
 void gr_rubwind(WORD xo, WORD yo, WORD wmin, WORD hmin, const GRECT *poff,
@@ -584,7 +619,7 @@ void gr_rubwind(WORD xo, WORD yo, WORD wmin, WORD hmin, const GRECT *poff,
 void gr_rubbox(WORD xo, WORD yo, WORD wmin, WORD hmin, WORD *pw, WORD *ph);
 void gr_dragbox(WORD w, WORD h, WORD sx, WORD sy, const GRECT *pc,
                 WORD *pdx, WORD *pdy);
-WORD gr_slidebox(OBJECT FAR *tree, WORD parent, WORD obj, WORD isvert);
+WORD gr_slidebox(OBTREE tree, WORD parent, WORD obj, WORD isvert);
 
 /* ---- events: event.c (gemevlib.c + geminput.c) ------------------------- */
 void ev_init(void);
@@ -621,7 +656,7 @@ void ct_arrow_repeat(void);      /* a held arrow: one WM_ARROWED per ask */
 void ct_arrow_stop(void);
 
 /* ---- the menu library: menu.c (gemmnlib.c) ----------------------------- */
-extern OBJECT FAR *gl_mntree;       /* the menu bar showing, or 0 */
+extern OBTREE gl_mntree;       /* the menu bar showing, or 0 */
 /* shel_write's gem4xe mode: the caller put aside, resumed when it is
  * started again (src/aes/shel.c, sh_suspend; src/app/gem.h). */
 #define SWM_G4SUSPEND   71
@@ -650,14 +685,14 @@ uint16_t wm_save(uint32_t at);
 void     wm_restore(uint32_t at);
 extern MOBLK   gl_ctwait;       /* the rectangle whose entry runs the menu */
 void mn_init(void);
-void mn_bar(OBJECT FAR *tree, WORD showit);
+void mn_bar(OBTREE tree, WORD showit);
 /* mn_do also says WHICH TREE and which box the item came from, because
  * with sub-menus the item may be in neither the menu bar's tree nor its
  * drop-down: those are MN_SELECTED's words 5, 6 and 7 (ctrl.c). */
 WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu);
-WORD do_chg(OBJECT FAR *tree, WORD iitem, UWORD chgvalue, WORD dochg,
+WORD do_chg(OBTREE tree, WORD iitem, UWORD chgvalue, WORD dochg,
             WORD dodraw, WORD chkdisabled);
-void mn_text(OBJECT FAR *tree, WORD item, const char *text);
+void mn_text(OBTREE tree, WORD item, const char *text);
 
 /* menu_popup: the box `imenu` of `tree` put up with item `istart` under
  * the pointer at (x, y), tracked, and taken away again.  The item chosen
@@ -668,7 +703,7 @@ void mn_text(OBJECT FAR *tree, WORD item, const char *text);
  * an AESMENU struct with a far-pointer field delivered the tree with a
  * bank of $3E and no reduced case reproduced it, so the reason is not
  * known and is not being guessed at in a comment (src/sys/abi.c). */
-WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
+WORD mn_popup(OBTREE tree, WORD imenu, WORD istart, WORD x, WORD y,
               WORD *pkeystate);
 
 /* menu_attach's flag, and menu_istart's.  The ROM writes bare integers
@@ -692,7 +727,7 @@ void mn_settings(WORD flag, WORD *set);
 /* menu_attach.  The four words are OUT on an inquiry and IN on an
  * attach, where mn_item is clamped into the box and written back.  The
  * tree is an ADDRESS for the reason menu.c gives. */
-WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
+WORD mn_attach(WORD flag, OBTREE tree, WORD item,
                uint32_t *ptree, WORD *pmenu, WORD *pitem, WORD *pscroll);
 /* menu_istart: the start item, or 0 for an error -- the ROM's ambiguity,
  * harmless because object 0 is a root and never a menu item. */
@@ -744,48 +779,48 @@ void ap_sendmsg(struct PROC *to, WORD type, WORD w3, WORD w4,
 
 /* ---- forms: form.c (gemfmlib.c) --------------------------------------- */
 void fm_own(WORD beg_ownit);
-WORD fm_do(OBJECT FAR *tree, WORD start);
+WORD fm_do(OBTREE tree, WORD start);
 WORD fm_dial(WORD type, const GRECT *pi, const GRECT *pt);
-WORD fm_keybd(OBJECT FAR *tree, WORD obj, WORD *pchar, WORD *pnew_obj);
-WORD fm_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj);
+WORD fm_keybd(OBTREE tree, WORD obj, WORD *pchar, WORD *pnew_obj);
+WORD fm_button(OBTREE tree, WORD new_obj, WORD clks, WORD *pnew_obj);
 
-WORD form_do(OBJECT FAR *tree, WORD start);
+WORD form_do(OBTREE tree, WORD start);
 WORD form_dial(WORD type, const GRECT *pi, const GRECT *pt);
 WORD fm_alert(WORD defbut, const char *palstr);   /* form_alert */
 WORD fm_error(WORD n);                            /* form_error */
-WORD form_keybd(OBJECT FAR *tree, WORD obj, WORD *pchar, WORD *pnew_obj);
-WORD form_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj);
+WORD form_keybd(OBTREE tree, WORD obj, WORD *pchar, WORD *pnew_obj);
+WORD form_button(OBTREE tree, WORD new_obj, WORD clks, WORD *pnew_obj);
 
 /* ---- the object library: objc.c ---------------------------------------- */
-typedef void (*OBJ_ROUTINE)(OBJECT FAR *tree, WORD obj, WORD sx, WORD sy);
-void everyobj(OBJECT FAR *tree, WORD this, WORD last, OBJ_ROUTINE routine,
+typedef void (*OBJ_ROUTINE)(OBTREE tree, WORD obj, WORD sx, WORD sy);
+void everyobj(OBTREE tree, WORD this, WORD last, OBJ_ROUTINE routine,
               WORD startx, WORD starty, WORD maxdep);
-void ob_draw(OBJECT FAR *tree, WORD obj, WORD depth);
-void ob_add(OBJECT FAR *tree, WORD parent, WORD child);
-WORD ob_delete(OBJECT FAR *tree, WORD obj);
-WORD ob_order(OBJECT FAR *tree, WORD mov_obj, WORD new_pos);
-void ob_offset(OBJECT FAR *tree, WORD obj, WORD *px, WORD *py);
-void ob_actxywh(OBJECT FAR *tree, WORD obj, GRECT *pt);
-void ob_relxywh(OBJECT FAR *tree, WORD obj, GRECT *pt);
-WORD ob_get_par(OBJECT FAR *tree, WORD obj);
+void ob_draw(OBTREE tree, WORD obj, WORD depth);
+void ob_add(OBTREE tree, WORD parent, WORD child);
+WORD ob_delete(OBTREE tree, WORD obj);
+WORD ob_order(OBTREE tree, WORD mov_obj, WORD new_pos);
+void ob_offset(OBTREE tree, WORD obj, WORD *px, WORD *py);
+void ob_actxywh(OBTREE tree, WORD obj, GRECT *pt);
+void ob_relxywh(OBTREE tree, WORD obj, GRECT *pt);
+WORD ob_get_par(OBTREE tree, WORD obj);
 void ob_format(WORD just, char *raw, const char *tmpl, char *fmt);
-void ob_center(OBJECT FAR *tree, GRECT *pt);
-void ob_change(OBJECT FAR *tree, WORD obj, UWORD new_state, WORD redraw);
-WORD ob_find(OBJECT FAR *tree, WORD currobj, WORD depth, WORD mx, WORD my);
-WORD ob_edit(OBJECT FAR *tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
+void ob_center(OBTREE tree, GRECT *pt);
+void ob_change(OBTREE tree, WORD obj, UWORD new_state, WORD redraw);
+WORD ob_find(OBTREE tree, WORD currobj, WORD depth, WORD mx, WORD my);
+WORD ob_edit(OBTREE tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
 WORD ob_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
                WORD *out1, WORD *out2);
 
-void objc_draw(OBJECT FAR *tree, WORD start, WORD depth, const GRECT *clip);
-WORD objc_find(OBJECT FAR *tree, WORD start, WORD depth, WORD mx, WORD my);
-void objc_offset(OBJECT FAR *tree, WORD obj, WORD *px, WORD *py);
-void objc_change(OBJECT FAR *tree, WORD obj, const GRECT *clip, UWORD newstate,
+void objc_draw(OBTREE tree, WORD start, WORD depth, const GRECT *clip);
+WORD objc_find(OBTREE tree, WORD start, WORD depth, WORD mx, WORD my);
+void objc_offset(OBTREE tree, WORD obj, WORD *px, WORD *py);
+void objc_change(OBTREE tree, WORD obj, const GRECT *clip, UWORD newstate,
                  WORD redraw);
-WORD objc_edit(OBJECT FAR *tree, WORD obj, WORD kchar, WORD *idx, WORD kind);
+WORD objc_edit(OBTREE tree, WORD obj, WORD kchar, WORD *idx, WORD kind);
 
 /* ---- the window manager: wind.c (gemwmlib.c + gemwrect.c) ------------- */
-extern OBJECT FAR *gl_wtree;            /* the window tree: W_TREE[NUM_WIN] */
-extern OBJECT FAR *gl_awind;            /* the frame being drawn: W_ACTIVE[] */
+extern OBTREE gl_wtree;            /* the window tree: W_TREE[NUM_WIN] */
+extern OBTREE gl_awind;            /* the frame being drawn: W_ACTIVE[] */
 extern WORD    gl_wtop;             /* the top window, NIL for none */
 extern WINDOW  gl_win[NUM_WIN];
 /* k * n for a constant n under 256, as shifts and adds: one term for each
@@ -806,7 +841,7 @@ static inline WINDOW *w_win(WORD h)
 {
     return (WINDOW *)((char *)gl_win + MUL_BY((uint16_t)h, sizeof(WINDOW)));
 }
-extern OBJECT FAR *gl_newdesk;          /* the desktop tree, if one is installed */
+extern OBTREE gl_newdesk;          /* the desktop tree, if one is installed */
 extern WORD    gl_newroot;
 extern GRECT   gl_rzero;
 
@@ -866,7 +901,7 @@ void rs_hold(RSHOLD *h);
 void rs_unclaim(const RSHOLD *h);
 WORD rs_gaddr(UWORD rtype, UWORD rindex, uint32_t *paddr);
 WORD rs_saddr(UWORD rtype, UWORD rindex, uint32_t addr);
-void rs_obfix(OBJECT FAR *tree, WORD obj);
+void rs_obfix(OBTREE tree, WORD obj);
 void rs_fixit(uint32_t base);       /* the loader's fix-up, on any image, at any base */
 
 /* ---- what the system says: LANG.RSC (src/aes/lang.c) ------------------ */
