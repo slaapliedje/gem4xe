@@ -16,7 +16,7 @@ in the vendor's simulator (python3 tools/bsp6502/b6cast.py: -O0, -O1 and
      UNSIGNED int operand is right ((uint8_t)(k + 1u), (uint8_t)(u + 1)
      with u unsigned), and so are a plain load, a call's result, a ?:, a
      comma, and * / % (library calls).  So is a value that cannot have
-     bit 7 set: masked below $80.  >> is right but on a signed char.  A
+     bit 7 set: masked below $80, or a truth value (== < && ! ...).  >> is right but on a signed char.  A
      cast to SIGNED char is right: sign extension is what it wants.
 
   B, BITS 8-15 SURVIVE.  A 32-bit value, signed or unsigned, narrowed to
@@ -52,7 +52,7 @@ The routes into a widened byte, each one measured:
     and not followed.
 The flags below hold those.  The self-test holds the scan to its
 fixture; `b6cast.py` holds the scan to the compiler, by running both on
-the same 89 shapes and failing on any disagreement.
+the same 92 shapes and failing on any disagreement.
 
     python3 tools/bsp6502/b6scan.py [--root DIR] [FILE.c ...]
                                        (default: the 6502 build's files)
@@ -184,6 +184,10 @@ def narrowing_fault(x, to_signed=False):
     if to_signed or not signed or plain(x):
         return None
     if op in FINE_OPS:
+        return None
+    # bit 7 never set, measured: a truth value is 0 or 1
+    if op in ("==", "!=", "<", ">", "<=", ">=", "&&", "||") or (
+            xs.get("kind") == "UnaryOperator" and xs.get("opcode") == "!"):
         return None
     # bit 7 never set, measured: masked below $80
     if op == "&" and any(0 <= (const_value(k) if const_value(k) is not None else -1) < 0x80
@@ -556,6 +560,9 @@ int over_u8_shl(void) { return (U8)(gb << 1); }
 int fine_int_shr(void) { return (U8)(gi >> 1); }
 int shape_schar_shr(void) { return (U8)(gs >> 1); }
 int fine_byte_shr4(void) { return (U8)(gb >> 4); }
+int fine_cmp_narrow(void) { return (U8)(gb == 0x80) == (U8)(gk == 0x40); }
+int fine_not_narrow(void) { return (U8)!gb == 1; }
+int fine_and_narrow(void) { return (U8)(gb && gk) > 0; }
 int fine_byte_and0f(void) { return (U8)(gb & 0x0F); }
 int fine_int_and7f(void) { return (U8)(gi & 0x7F); }
 int fine_own_sub(void) { return (U8)((U8)(gul >> 24) & 0x0F) == 9; }

@@ -176,6 +176,10 @@ SHAPES = [
     ("ulong_and0f", "return (U8)(gul & 0x0F);",       lambda v: v & 15, None),
     ("is_near",    "return (U8)(gtop >> 16) == 0;",   lambda v: 1, "B"),
     ("drive",      "return (char)('1' + gb7 - 'A');", lambda v: (0x31 + (v & 0x3F) - 0x41) & 0xFF, "A"),
+    # truth values: 0 or 1, bit 7 never set
+    ("cmp_narrow", "return (U8)(gb == 0x80) == (U8)(gk == 0x40);", lambda v: int(v == 0x80), None),
+    ("not_narrow", "return (U8)!gb == 1;",            lambda v: int(v == 0), None),
+    ("and_narrow", "return (U8)(gb && gk) > 0;",      lambda v: int(v != 0), None),
     # right, and reported on purpose (b6scan.py's over_ lines)
     ("ulong_add",  "return (U8)(gul + 1);",           lambda v: (v + 1) & 0xFF, "over"),
     ("u8_shl",     "return (U8)(gb << 1);",           lambda v: (v << 1) & 0xFF, "over"),
