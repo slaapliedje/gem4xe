@@ -2,7 +2,8 @@
 """bankasm.py -- a banked file's assembly, every cross-bank reference
 sent through a veneer.
 
-    python3 tools/bsp6502/bankasm.py IN.s OUT.s --tu NAME --bank SECTION=N ...
+    python3 tools/bsp6502/bankasm.py --index OUT.idx --bank SECTION=N ... A.s B.s ...
+    python3 tools/bsp6502/bankasm.py IN.s OUT.s --tu NAME --bank SECTION=N ... [--index IDX]
 
 cc6502 compiles a banked file to assembly (--assembly-source), each
 function in a `.section NAME,text` of its own, named for its bank by the
@@ -10,21 +11,32 @@ file's `#pragma clang section` and its BANK_TEXT cuts (docs/6502.md).
 Calypsi calls a function in a bank with a plain JSR to the window, and
 nothing maps the bank first, so this rewrites the file before it is
 assembled.  A FUNCTION here is the first label of a text section; it is
-BANKED when that section is in the --bank list.  Then:
+BANKED when that section is in the --bank list.
 
-  - Every reference to a banked function F -- JSR, JMP, .word, #.byte0,
-    #.byte1 -- from anywhere but F's own bank (another bank's code, the
-    file's resident code, a table in its data) is pointed at a veneer
-    instead, which maps F's bank, calls F and maps the caller's back
-    (src/sys6502/bank6502.s, _bcall).  So a jump table of static handlers,
-    a device's table of functions and a call across a BANK_TEXT cut all
-    work as written, and the C needs nothing.
-  - A PUBLIC banked function F is renamed F__b, and its veneer takes the
-    name F: every other file calls F and arrives through the veneer.
-    References in F's own bank go straight to F__b.
-  - A STATIC banked function referenced from another bank gets a public
-    alias NAME__F (NAME the --tu, so two files' statics do not meet) and a
-    veneer NAME__F__v.
+THE INDEX (--index alone) is the program's: which bank every public
+banked function is in, read from all its banked files.  With it, a file
+knows the banks of the functions it calls in other files, not only its
+own.  Then, for every reference to a banked function F:
+
+  - from F's own bank (JSR, JMP, or anything else): straight to F, no
+    trampoline -- also across files, which is most of what the index buys;
+  - a JSR or JMP from another bank k: through a veneer of this file's in
+    BANK k, `TU__F__vk`.  The trampoline (src/sys6502/bank6502.s, _bcall)
+    reads the veneer before it maps F's bank, so the caller's bank may
+    hold it, and resident memory -- the 6502 build's scarcest -- does not;
+  - an address taken (.word, #.byte0, #.byte1) or a reference from
+    resident code: the RESIDENT veneer, which maps F's bank, calls F and
+    maps the caller's back.  A function pointer may be called from any
+    bank, so it must name resident code.  A jump table of static handlers
+    and a device's table of functions work as written, and the C needs
+    nothing.
+
+A PUBLIC banked function F is renamed F__b, and its resident veneer takes
+the name F: resident code and every other file's address of F arrive
+through it.  Each resident veneer is a section of its own, so the linker
+keeps only the ones something refers to.  A STATIC banked function
+referenced from another bank gets a public alias TU__F (TU the --tu, so
+two files' statics do not meet); its resident veneer is TU__F__v.
 
 A JMP to a shared tail in another bank -- the optimiser merges identical
 function tails across functions -- is replaced by a copy of that tail.
@@ -33,9 +45,8 @@ The compiler's copy of the C source, its `;` comment lines, is dropped:
 as6502 reads /* */ inside them as a comment, and a C comment spread over
 two lines takes the assembly between them with it.
 
-The veneers go at the end of the file, in section `veneer`, which the
-link map keeps resident.  tools/bsp6502/bankcheck.py checks the result
-from the other side: the link map, and the linked code itself.
+tools/bsp6502/bankcheck.py checks the result from the other side: the
+assembly (with the same index), the link map, and the linked code itself.
 """
 import re
 import sys
@@ -96,31 +107,9 @@ def localise_tails(lines, banks):
     return out
 
 
-def main(argv):
-    if len(argv) < 3:
-        print(__doc__)
-        return 2
-    src, dst = argv[1], argv[2]
-    tu = argv[argv.index("--tu") + 1]
-    banks = {}
-    i = 3
-    while i < len(argv):
-        if argv[i] == "--bank":
-            sect, n = argv[i + 1].split("=")
-            banks[sect] = int(n)
-            i += 2
-        else:
-            i += 1
-    # The C source, which cc6502 copies in as `;` comment lines, goes: as6502
-    # still honours /* */ inside them, so a C comment that opens on one
-    # line and closes on a later one swallows the assembly between --
-    # `static WORD cur_drawn;  /* ...` over two lines lost cur_drawn's
-    # label, and every use of it was "undefined symbol" (Calypsi 5.18).
-    lines = [ln for ln in open(src).read().splitlines() if not ln.lstrip().startswith(";")]
-
-    lines = localise_tails(lines, banks)
-
-    # pass 1: which section each line is in, the functions and their banks
+def scan(lines, banks):
+    """Pass 1: which section each line is in, the file's functions and their
+    sections, and its .public names."""
     sect_of_line, func_sect, publics = [], {}, set()
     cur, first = None, False
     for ln in lines:
@@ -139,12 +128,86 @@ def main(argv):
             if p:
                 publics |= {x.strip() for x in p.group(1).split(",")}
         sect_of_line.append(cur)
+    return sect_of_line, func_sect, publics
+
+
+def read_source(path):
+    # The C source, which cc6502 copies in as `;` comment lines, goes: as6502
+    # still honours /* */ inside them, so a C comment that opens on one
+    # line and closes on a later one swallows the assembly between --
+    # `static WORD cur_drawn;  /* ...` over two lines lost cur_drawn's
+    # label, and every use of it was "undefined symbol" (Calypsi 5.18).
+    return [ln for ln in open(path).read().splitlines() if not ln.lstrip().startswith(";")]
+
+
+def parse_banks(argv):
+    banks, rest, i = {}, [], 0
+    while i < len(argv):
+        if argv[i] == "--bank":
+            sect, n = argv[i + 1].split("=")
+            banks[sect] = int(n)
+            i += 2
+        else:
+            rest.append(argv[i])
+            i += 1
+    return banks, rest
+
+
+def make_index(argv):
+    """--index OUT.idx --bank ... A.s B.s ...: every public function in a
+    bank, program-wide, as `NAME BANK` lines."""
+    banks, rest = parse_banks(argv)
+    out = rest[rest.index("--index") + 1]
+    srcs = [a for a in rest if a.endswith(".s")]
+    seen = {}
+    for src in srcs:
+        _, func_sect, publics = scan(read_source(src), banks)
+        for f, sct in func_sect.items():
+            if sct in banks and f in publics:
+                if f in seen:
+                    raise SystemExit(f"bankasm: {f} is defined in {seen[f][0]} and {src}")
+                seen[f] = (src, banks[sct])
+    with open(out, "w") as fh:
+        for f in sorted(seen):
+            fh.write(f"{f} {seen[f][1]}\n")
+    print(f"bankasm: {out}: {len(seen)} public banked function(s) in {len(srcs)} file(s)")
+    return 0
+
+
+def read_index(path):
+    ext = {}
+    for ln in open(path):
+        if ln.strip():
+            name, n = ln.split()
+            ext[name] = int(n)
+    return ext
+
+
+def main(argv):
+    if "--index" in argv and "--tu" not in argv:
+        return make_index(argv)
+    if len(argv) < 3:
+        print(__doc__)
+        return 2
+    src, dst = argv[1], argv[2]
+    tu = argv[argv.index("--tu") + 1]
+    banks, _ = parse_banks(argv[3:])
+    ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
+    lines = localise_tails(read_source(src), banks)
+    sect_of_line, func_sect, publics = scan(lines, banks)
 
     banked = {f: s for f, s in func_sect.items() if s in banks}
+    for f in banked:                    # this file's own, as this file has them
+        ext.pop(f, None)
 
     def bank(s):
         return banks.get(s, 0)          # 0: resident (or data)
 
+    def entry(f):
+        """The name a same-bank reference to f uses."""
+        return f + "__b" if (f not in banked or f in publics) else f
+
+    # RESIDENT veneers: an address taken, or resident code's reference
     veneer_for, need_alias = {}, set()
 
     def via_veneer(f):
@@ -156,7 +219,17 @@ def main(argv):
         veneer_for[f] = v
         return v
 
-    out = []
+    # BANK veneers: a call from bank k, in a section of bank k
+    bank_veneers = {}                   # (f, k) -> (name, section)
+
+    def bank_veneer(f, k, sect):
+        if (f, k) not in bank_veneers:
+            if f in banked and f not in publics:
+                need_alias.add(f)
+            bank_veneers[(f, k)] = (f"{tu}__{f}__v{k}", sect)
+        return bank_veneers[(f, k)][0]
+
+    out, direct, used_ext = [], 0, set()
     for idx, ln in enumerate(lines):
         here = sect_of_line[idx]
         m = REFLINE.match(ln)
@@ -178,13 +251,25 @@ def main(argv):
             head, op, sp, operand = m.groups()
 
             def sub(t):
+                nonlocal direct
                 f = t.group(1)
-                if f not in banked:
+                if f in banked:
+                    fb = banks[banked[f]]
+                elif f in ext:
+                    fb = ext[f]
+                else:
                     return f
-                same = bank(here) == banks[banked[f]] and bank(here) != 0
-                if same:
-                    return f + "__b" if f in publics else f
-                return via_veneer(f)
+                hb = bank(here)
+                if hb and hb == fb:
+                    if f not in banked:
+                        direct += 1
+                        used_ext.add(entry(f))
+                    return entry(f)
+                if hb and op in ("jsr", "jmp"):
+                    return bank_veneer(f, hb, here)
+                # an address taken, or resident code: the resident veneer
+                # (another file's public F is its own resident veneer)
+                return via_veneer(f) if f in banked else f
             # comments after ';' are left alone
             code, sep, comment = operand.partition(";")
             code = TOKEN.sub(sub, code)
@@ -201,25 +286,44 @@ def main(argv):
             final.append(f"{a}:")
         final.append(ln)
 
-    # every public banked function gets a veneer, called or not here:
-    # other files reach it by its name
+    # every public banked function gets a resident veneer, called or not
+    # here: other files and resident code reach it by its name.  Each is a
+    # section of its own, so the linker keeps only those something uses.
     for f in banked:
         if f in publics:
             veneer_for.setdefault(f, f)
 
+    def target(f):
+        return entry(f) if f not in banked or f in publics else f"{tu}__{f}"
+
+    def fbank(f):
+        return banks[banked[f]] if f in banked else ext[f]
+
     final.append("")
     final.append(";;; veneers (tools/bsp6502/bankasm.py)")
     final.append("              .extern _bcall")
-    final.append("              .section veneer")
     for f, v in sorted(veneer_for.items()):
-        target = f + "__b" if f in publics else f"{tu}__{f}"
+        final.append("              .section veneer")
         final.append(f"              .public {v}")
         final.append(f"{v}:          jsr     _bcall")
-        final.append(f"              .word   {target}")
-        final.append(f"              .byte   {banks[banked[f]]}")
+        final.append(f"              .word   {target(f)}")
+        final.append(f"              .byte   {fbank(f)}")
+    # a bank's veneers in the bank: _bcall reads the veneer before it maps
+    # the target's bank, so the caller's bank may hold it
+    for (f, k), (v, sect) in sorted(bank_veneers.items()):
+        final.append(f"              .section {sect},text")
+        final.append(f"              .public {v}")
+        final.append(f"{v}:          jsr     _bcall")
+        final.append(f"              .word   {target(f)}")
+        final.append(f"              .byte   {fbank(f)}")
+    # another file's entries, named here only now
+    externs = sorted(used_ext | {target(f) for (f, _k) in bank_veneers if f not in banked})
+    if externs:
+        final.insert(0, f"              .extern {', '.join(externs)}")
     open(dst, "w").write("\n".join(final) + "\n")
-    print(f"bankasm: {src}: {len(banked)} banked function(s), {len(veneer_for)} veneer(s), "
-          f"{len(need_alias)} static(s) aliased")
+    print(f"bankasm: {src}: {len(banked)} banked function(s), {len(veneer_for)} resident "
+          f"veneer(s), {len(bank_veneers)} in banks, {direct} direct call(s) to another "
+          f"file in the same bank, {len(need_alias)} static(s) aliased")
     return 0
 
 

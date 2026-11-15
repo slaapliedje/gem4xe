@@ -42,6 +42,12 @@ banked file as tools/bsp6502/bankasm.py leaves it, every JSR, JMP, .word
 and #.byte naming a function in a bank other than the referring line's
 must name a veneer instead (resident data and code count as no bank).
 
+A VENEER IN A BANK (`TU__F__vk`, bankasm.py's for bank k's calls) refers
+to another bank on purpose and holds data after its JSR: the map check
+lets it refer, the code scan does not decode it, and the assembly check
+skips it.  With --index, the assembly check also knows every other file's
+banked entry F__b, so a direct call to one from the wrong bank is refused.
+
 A bank is the Store a fragment is scattered to: "(scatter to 10000-1001f
 in Store1)" on its placement line.  Anything not scattered is resident.
 
@@ -59,6 +65,9 @@ REF = re.compile(r"^\s+(\S+ )?\((.+?) unit (\d+) section index (\d+)\)\s*$")
 MORE = re.compile(r"^\s+\.\.\. \d+ more\s*$")
 CODE_SECTIONS = {"code", "startup"}
 VENEER = "veneer"
+# a veneer in a bank, for that bank's calls (tools/bsp6502/bankasm.py):
+# its .word and .byte are data, and it refers to another bank on purpose
+BANK_VENEER = re.compile(r"__v\d+$")
 WIN_LO, WIN_HI = 0x4000, 0x7FFF
 
 # 6502 instruction lengths, by opcode; the undocumented ones as the NMOS
@@ -139,7 +148,7 @@ def check_map(frags):
                 bad.append(f"{f['name'] or key} ({b}): referred to by an unknown fragment "
                            f"{rname or (u, x)}")
                 continue
-            if r["bank"] == b or r["section"] == VENEER:
+            if r["bank"] == b or r["section"] == VENEER or BANK_VENEER.search(r["name"]):
                 continue
             if r["bank"] is None and r["section"] not in CODE_SECTIONS:
                 outside = [frags.get((uu, xx)) for uu, xx, _ in r["refs"]]
@@ -192,9 +201,10 @@ def check_code(frags, mem):
         if f["bank"] and f["run"]:
             starts.setdefault(f["bank"], set()).add(f["run"][0])
             spans.setdefault(f["bank"], []).append(f["run"])
-            insns.setdefault(f["bank"], set()).update(boundaries(f, mem))
+            if not BANK_VENEER.search(f["name"]):       # data after its JSR
+                insns.setdefault(f["bank"], set()).update(boundaries(f, mem))
     for f in frags.values():
-        if not f["run"]:
+        if not f["run"] or BANK_VENEER.search(f["name"]):
             continue
         banked = f["bank"] is not None
         if not banked and (f["section"] not in CODE_SECTIONS):
@@ -242,8 +252,9 @@ ASM_REF = re.compile(r"^\s*(?:[A-Za-z_]\w*:|`[^`]+`:)?\s*(jsr|jmp|\.word|lda|ldx
 ASM_TOKEN = re.compile(r"(?<![\w`?])([A-Za-z_]\w*)(?![\w`])")
 
 
-def check_asm(path, banks):
-    """Every reference by name to a function in another bank."""
+def check_asm(path, banks, ext=None):
+    """Every reference by name to a function in another bank: this file's,
+    and (ext, from bankasm.py's index) every other file's entry F__b."""
     lines = open(path).read().splitlines()
     func, sect, first = {}, None, False
     for ln in lines:
@@ -257,22 +268,29 @@ def check_asm(path, banks):
             func[lab.group(1)] = sect
         elif lab is None and ln.strip() and not ln.lstrip().startswith((";", ".")):
             first = False
-    bad, sect = [], None
+    fbank = {f: banks[s] for f, s in func.items() if s in banks}
+    for f, n in (ext or {}).items():
+        fbank.setdefault(f + "__b", n)
+    bad, sect, in_veneer = [], None, False
     for k, ln in enumerate(lines, 1):
         m = ASM_SECTION.match(ln)
         if m:
             sect = m.group(1)
+            in_veneer = False
             continue
+        lab = ASM_LABEL.match(ln)
+        if lab:
+            in_veneer = bool(BANK_VENEER.search(lab.group(1)))
         r = ASM_REF.match(ln)
-        if not r or sect == "veneer":
+        if not r or sect == "veneer" or in_veneer:
             continue
         here = banks.get(sect, 0)
         for t in ASM_TOKEN.findall(r.group(2).split(";")[0]):
-            fs = func.get(t)
-            if fs is None or fs not in banks:
+            n = fbank.get(t)
+            if n is None:
                 continue
-            if banks[fs] != here:
-                bad.append(f"{path}:{k}: {r.group(1)} {t} -- in bank {banks[fs]}, from "
+            if n != here:
+                bad.append(f"{path}:{k}: {r.group(1)} {t} -- in bank {n}, from "
                            f"{'bank ' + str(here) if here else 'resident ' + str(sect)}")
     return bad
 
@@ -285,7 +303,14 @@ def main(argv):
                 sct, n = argv[i + 1].split("=")
                 banks[sct] = int(n)
         path = argv[argv.index("--asm") + 1]
-        bad = check_asm(path, banks)
+        ext = None
+        if "--index" in argv:
+            ext = {}
+            for ln in open(argv[argv.index("--index") + 1]):
+                if ln.strip():
+                    name, n = ln.split()
+                    ext[name] = int(n)
+        bad = check_asm(path, banks, ext)
         for b in bad:
             print(f"bankcheck: {b}")
         print(f"bankcheck: {path}: {len(bad)} reference(s) across a bank by name")

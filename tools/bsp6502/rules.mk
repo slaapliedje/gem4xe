@@ -8,8 +8,9 @@
 # resident test program calling it through veneers, on a stock 6502.
 #
 #   resident   src/v6_vdi.c, the trampoline (src/sys6502/bank6502.s), the
-#              veneers, the C stand-ins for what is not here yet, the
-#              faces and tables, and every banked file's veneers
+#              C stand-ins for what is not here yet, the faces and
+#              tables, and the veneers resident code and function
+#              pointers need (a call from a bank has its veneer there)
 #   banks 1-3  vdi.c, cut by its two BANK_TEXTs   (sections vdi_a, vdi_b, vdi_c)
 #   bank 4     dev_antic.c's functions, font.c and pointer.c   (section dev)
 #   bank 5     antic.c                                  (section antic)
@@ -27,7 +28,8 @@
 # them, resident, where room is scarcest -- so they are not made.
 #
 # A banked file is compiled through a wrapper that names its section, to
-# assembly (build/b6502/asm/); tools/bsp6502/bankasm.py sends every
+# assembly (build/b6502/asm/); tools/bsp6502/bankasm.py, given the
+# program's index of which bank each function is in, sends every
 # reference across a bank through a veneer it writes into that assembly;
 # the link map and the linked code are then checked by
 # tools/bsp6502/bankcheck.py before the binary is made.
@@ -41,7 +43,8 @@ B6         = build/b6502
 DEVANTIC6  = -DGEM4XE_DEV_IMPL -DGEM4XE_DEV_PREFIX=and_ -DGEM4XE_DEV_ANTIC
 HDRS6      = src/portab.h $(wildcard src/vdi/*.h src/sys/*.h src/antic/*.h src/aes/*.h)
 
-# the bank of each section, for veneers.py: the same as gem6502.scm's
+# the bank of each section, for bankasm.py and bankcheck.py: the same as
+# gem6502.scm's
 BANKS6     = --bank vdi_a=1 --bank vdi_b=2 --bank vdi_c=3 --bank dev=4 --bank antic=5 --bank far=6 --bank objc=7 --bank objc_b=8 --bank objc_c=9 --bank graf=10
 
 V6_RES     = $(B6)/res/v6_vdi.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
@@ -101,10 +104,16 @@ $(V6_PRE):
 	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \
 	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
 
-$(B6)/bank/%.o: $(B6)/pre/%.o tools/bsp6502/bankasm.py
+# which bank every public banked function is in, program-wide: a call
+# within a bank goes straight there, a call from another bank through a
+# veneer in the caller's bank (tools/bsp6502/bankasm.py)
+$(B6)/v6.idx: $(V6_PRE) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(BANKS6) $(V6_UNITS:%=$(B6)/asm/%.s)
+
+$(B6)/bank/%.o: $(B6)/pre/%.o $(B6)/v6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@)
-	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/asm/$*.b.s --tu $* $(BANKS6)
-	python3 tools/bsp6502/bankcheck.py --asm $(B6)/asm/$*.b.s $(BANKS6)
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/asm/$*.b.s --tu $* $(BANKS6) --index $(B6)/v6.idx
+	python3 tools/bsp6502/bankcheck.py --asm $(B6)/asm/$*.b.s $(BANKS6) --index $(B6)/v6.idx
 	$(AS6) --core 6502 $(B6)/asm/$*.b.s -o $@
 
 build/v6.elf: $(V6_RES) $(V6_BANK) tools/bsp6502/gem6502.scm tools/bsp6502/bankcheck.py
@@ -152,10 +161,13 @@ $(B6)/pre/farmem.o $(B6)/pre/f6_bank.o:
 	@mkdir -p $(dir $@) $(B6)/asm
 	$(CC6) $(CFLAGS6) -I src/sys --no-cross-call -c $< -o $@ \
 	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
-$(B6)/bank/farmem.o $(B6)/bank/f6_bank.o: $(B6)/bank/%.o: $(B6)/pre/%.o tools/bsp6502/bankasm.py
+$(B6)/f6.idx: $(F6_UNITS:%=$(B6)/pre/%.o) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(F6_BANKS6) $(F6_UNITS:%=$(B6)/asm/%.s)
+
+$(B6)/bank/farmem.o $(B6)/bank/f6_bank.o: $(B6)/bank/%.o: $(B6)/pre/%.o $(B6)/f6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@)
-	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/asm/$*.b.s --tu $* $(F6_BANKS6)
-	python3 tools/bsp6502/bankcheck.py --asm $(B6)/asm/$*.b.s $(F6_BANKS6)
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/asm/$*.b.s --tu $* $(F6_BANKS6) --index $(B6)/f6.idx
+	python3 tools/bsp6502/bankcheck.py --asm $(B6)/asm/$*.b.s $(F6_BANKS6) --index $(B6)/f6.idx
 	$(AS6) --core 6502 $(B6)/asm/$*.b.s -o $@
 
 build/f6.elf: $(F6_RES) $(F6_BANK) tools/bsp6502/f6.scm tools/bsp6502/bankcheck.py

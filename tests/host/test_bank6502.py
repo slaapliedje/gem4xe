@@ -188,5 +188,111 @@ class SharedTail(unittest.TestCase):
         self.assertIn("a function in Store2", bad[0])
 
 
+# two files, one program: ga in bank 1 (a.c); gb in bank 1 and gc in bank 2
+# calling it, and a table in b.c taking its address (b.c)
+SRC_A = r"""
+#pragma clang section text="bank1"
+int ga(int x) { return x * 5 + 1; }
+"""
+SRC_B = r"""
+int ga(int);
+typedef int (*fn)(int);
+#pragma clang section text="bank1"
+int gb(int x) { return ga(x) + 2; }
+#pragma clang section text="bank2"
+const fn tab[1] = { ga };
+int gc(int x) { return ga(x) + tab[0](x); }
+"""
+MAIN2 = r"""
+int gb(int); int gc(int);
+int main(void) { return gb(1) + gc(2); }
+"""
+
+
+@unittest.skipUnless(os.path.exists(CC), "cc6502 not installed")
+class AcrossFiles(unittest.TestCase):
+    """bankasm.py's index: a call into another FILE'S function in the same
+    bank goes straight to it (no trampoline), a call from another bank
+    through a veneer in the CALLER'S bank, and only an address taken needs
+    the resident veneer.  bankcheck --asm --index must refuse a direct
+    call into another file's function in another bank."""
+
+    BANKS = ["--bank", "bank1=1", "--bank", "bank2=2"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.d = tempfile.mkdtemp(prefix="bank6502x-")
+        weakref.finalize(cls, shutil.rmtree, cls.d, True)
+        d = cls.d
+        for name, text in (("a.c", SRC_A), ("b.c", SRC_B), ("m.c", MAIN2), ("t.scm", SCM)):
+            with open(os.path.join(d, name), "w") as f:
+                f.write(text)
+        for c in ("a", "b"):
+            r = run(CC, "-O2", "--core", "6502", "--no-cross-call", "-c", f"{c}.c",
+                    "-o", f"{c}.o", f"--assembly-source={c}.s", cwd=d)
+            assert r.returncode == 0, r.stderr
+        r = run(CC, "-O2", "--core", "6502", "-c", "m.c", "-o", "m.o", cwd=d)
+        assert r.returncode == 0, r.stderr
+        r = run(AS, "--core", "6502", os.path.join(ROOT, "src", "sys6502", "bank6502.s"),
+                "-o", "bank.o", cwd=d)
+        assert r.returncode == 0, r.stderr
+        r = run(sys.executable, os.path.join(TOOLS, "bankasm.py"), "--index", "p.idx",
+                *cls.BANKS, "a.s", "b.s", cwd=d)
+        assert r.returncode == 0, r.stdout + r.stderr
+        for c in ("a", "b"):
+            r = run(sys.executable, os.path.join(TOOLS, "bankasm.py"), f"{c}.s", f"{c}.b.s",
+                    "--tu", c, *cls.BANKS, "--index", "p.idx", cwd=d)
+            assert r.returncode == 0, r.stdout + r.stderr
+        with open(os.path.join(d, "b.b.s")) as f:
+            cls.text = f.read()
+
+    def test_the_index(self):
+        with open(os.path.join(self.d, "p.idx")) as f:
+            self.assertIn("ga 1", f.read().split("\n"))
+
+    def test_same_bank_is_direct(self):
+        # gb, in bank 1, calls ga__b itself
+        body = self.text.split("gb__b:")[1].split(".section")[0]
+        self.assertRegex(body, r"j(sr|mp)\s+ga__b\b", body)
+
+    def test_other_bank_through_its_own_veneer(self):
+        self.assertIn("b__ga__v2:", self.text, "no veneer in bank 2 for its call to ga")
+        tail = self.text.split("b__ga__v2:")[0].rsplit(".section", 1)[1]
+        self.assertTrue(tail.startswith(" bank2"), "bank 2's veneer is not in bank 2: " + tail)
+
+    def test_an_address_takes_the_resident_veneer(self):
+        self.assertRegex(self.text, r"\.word\s+ga\b", "the table does not name ga's veneer")
+
+    def test_links_and_checks_clean(self):
+        d = self.d
+        for c in ("a", "b"):
+            r = run(AS, "--core", "6502", f"{c}.b.s", "-o", f"{c}.b.o", cwd=d)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = run(LN, "t.scm", "a.b.o", "b.b.o", "m.o", "bank.o", "-o", "x.elf",
+                os.path.join(CAL, "lib", "clib-6502.a"), "--verbose", "--list-file", "x.map",
+                cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = run(sys.executable, os.path.join(TOOLS, "bankcheck.py"), "x.map", "--elf", "x.elf",
+                cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        for c in ("a", "b"):
+            r = run(sys.executable, os.path.join(TOOLS, "bankcheck.py"), "--asm", f"{c}.b.s",
+                    *self.BANKS, "--index", "p.idx", cwd=d)
+            self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_direct_call_into_another_bank_is_refused(self):
+        d = self.d
+        # bank 2's calls straight to ga__b, the veneer left unused
+        broken = self.text.replace("b__ga__v2:", "b__ga__vx:")
+        broken = broken.replace(".public b__ga__v2", ".public b__ga__vx")
+        broken = broken.replace("b__ga__v2", "ga__b")
+        with open(os.path.join(d, "bad.b.s"), "w") as f:
+            f.write(broken)
+        r = run(sys.executable, os.path.join(TOOLS, "bankcheck.py"), "--asm", "bad.b.s",
+                *self.BANKS, "--index", "p.idx", cwd=d)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertRegex(r.stdout, r"j(sr|mp) ga__b -- in bank 1, from bank 2")
+
+
 if __name__ == "__main__":
     unittest.main()
