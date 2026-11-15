@@ -432,7 +432,7 @@ typedef struct {
  * dereferences it.  A VDI call before that is a null far read, not a
  * diagnosable error -- which is why setting it is the first line of
  * every bring-up and not something arranged later. */
-extern const VDIDEV FAR *vdev;
+extern const VDIDEV FAR_816 *vdev;
 
 /* The two tables, in the two device files.  A build links whichever
  * devices it has a screen for; naming one that is not linked is a link
@@ -445,14 +445,14 @@ extern const VDIDEV FAR *vdev;
  * VB_WIDTHS/VB_HEIGHTS: nothing above the seam includes that header, and
  * this declaration is above it.  dev_vbxe.c defines the table with the
  * named constants and would not link if the two disagreed. */
-extern const VDIDEV FAR vdev_vbxe_tab[3][3];
+extern const VDIDEV FAR_816 vdev_vbxe_tab[3][3];
 /* ...and the plain one, 640x240, for a runner with nothing to say about
  * it.  A POINTER, so `vdev = vdev_vbxe` where it used to be `&vdev_vbxe`. */
-extern const VDIDEV FAR *const vdev_vbxe;
-extern const VDIDEV FAR vdev_antic;
+extern const VDIDEV FAR_816 *const vdev_vbxe;
+extern const VDIDEV FAR_816 vdev_antic;
 /* ...and the page, which is a device open BESIDE one of those rather
  * than instead of it: a workstation carries its own (src/vdi/vdi.h). */
-extern const VDIDEV FAR vdev_print;
+extern const VDIDEV FAR_816 vdev_print;
 /* ...and the page it draws on, which unlike a screen has to be taken
  * before it can be drawn on and given back after (src/vdi/print.h). */
 int16_t pr_page_open(void);

@@ -109,12 +109,29 @@ static void fix_chpos(WORD *pfix, WORD which)
     *pfix = cpos;
 }
 
-void rs_obfix(OBJECT FAR *tree, WORD obj)
+void rs_obfix(OBTREE tree, WORD obj)
 {
-    WORD *p = &tree[obj].ob_x;
+#ifdef __CALYPSI_TARGET_6502__
+    /* the four words through the accessors, in order: ob_x .. ob_height */
+    WORD v[4];
+    WORD k;
+
+    v[0] = OB_GET(tree, obj, ob_x);
+    v[1] = OB_GET(tree, obj, ob_y);
+    v[2] = OB_GET(tree, obj, ob_width);
+    v[3] = OB_GET(tree, obj, ob_height);
+    for (k = 0; k < 4; k++)
+        fix_chpos(v + k, k);
+    OB_SET(tree, obj, ob_x, v[0]);
+    OB_SET(tree, obj, ob_y, v[1]);
+    OB_SET(tree, obj, ob_width, v[2]);
+    OB_SET(tree, obj, ob_height, v[3]);
+#else
+    WORD *p = &OB_GET(tree, obj, ob_x);
     WORD k;
     for (k = 0; k < 4; k++)
         fix_chpos(p + k, k);
+#endif
 }
 
 /* An offset from the start of the file made an address; -1 stays -1. */
@@ -265,6 +282,7 @@ void rs_fixit(uint32_t base)
         BITBLK  bb;
         uint8_t raw[RSZ_ICONBLK];
     } r;
+    OBJECT *np;
 
     hdr_get(base, &h);
     swap_words(&h, sizeof h / 2);
@@ -293,7 +311,10 @@ void rs_fixit(uint32_t base)
         far_get(r.raw, at, RSZ_OBJECT);
         swap_words(r.raw, RSZ_OBJECT / 2);
         swap_long((uint16_t *)&r.o.ob_spec);
-        rs_obfix(&r.o, 0);              /* the near copy: a bank-zero tree */
+        np = &r.o;                      /* a pointer first: cc6502 crashes on
+                                         * (uint16_t)&r.o, a member's address
+                                         * as a number (docs/6502.md) */
+        rs_obfix(OB_NEAR(np), 0);       /* the near copy: a bank-zero tree */
         switch (r.o.ob_type & 0xFF) {
         case G_BOX:
         case G_IBOX:

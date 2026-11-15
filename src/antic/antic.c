@@ -699,7 +699,7 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
 /* Eight source bits starting at bit `b` of `row`, bit 7 leftmost, the way
  * a screen byte holds them.  It may read one byte past the bits it uses,
  * which is a read and nothing else. */
-static uint8_t an_src8(const uint8_t FAR *row, uint16_t b)
+static uint8_t an_src8(const uint8_t FAR_816 *row, uint16_t b)
 {
     uint16_t i = (uint16_t)(b >> 3);
     uint8_t sh = (uint8_t)(b & 7);
@@ -712,7 +712,7 @@ static uint8_t an_src8(const uint8_t FAR *row, uint16_t b)
     return (uint8_t)((uint8_t)(hi << sh) | (uint8_t)(lo >> (8 - sh)));
 }
 
-void antic_raster_row(const uint8_t FAR *row, uint16_t sbit,
+void antic_raster_row(const uint8_t FAR_816 *row, uint16_t sbit,
                       int16_t x1, int16_t x2, int16_t y,
                       int16_t mode, uint8_t pen, uint8_t pap)
 {
@@ -945,7 +945,7 @@ void antic_copy(int16_t sx, int16_t sy, int16_t dx, int16_t dy,
                 uint8_t v = an_byte_at(syy, (int16_t)(sb + k));
                 buf[k] = v;
             }
-            antic_raster_row((const uint8_t FAR *)buf,
+            antic_raster_row((const uint8_t FAR_816 *)buf,
                              (uint16_t)(s0 - (int16_t)(sb * 8)),
                              xl, xr, dyy, AN_MD_REPLACE, 1, 0);
         }

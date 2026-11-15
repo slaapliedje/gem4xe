@@ -46,17 +46,17 @@
 
 /* GEM's own file under SDX, as the boot disks start it: AUTOEXEC.BAT
  * changes into \GEM and runs GEM, so the current directory first. */
-static const char FAR r8s_gems[3][R8S_NAME] = {
+static const char FAR_816 r8s_gems[3][R8S_NAME] = {
     "D1:GEM.COM", "D1:>GEM>GEM.COM", "D1:>GEM.COM"
 };
-static const char FAR r8s_bat[2][9] = { "RUN8.BAT", "RUN9.BAT" };
-static const char FAR r8s_set[] = "SET BATCH=";
-static const char FAR r8s_car[] = "CAR";
-static const char FAR r8s_basic[] = "BASIC";
+static const char FAR_816 r8s_bat[2][9] = { "RUN8.BAT", "RUN9.BAT" };
+static const char FAR_816 r8s_set[] = "SET BATCH=";
+static const char FAR_816 r8s_car[] = "CAR";
+static const char FAR_816 r8s_basic[] = "BASIC";
 
 /* `far` into `near`, n bytes at most and a NUL: a byte read into a word
  * first (tools/ccbug, B18). */
-static WORD r8s_get(char *near, const char FAR *far, WORD n)
+static WORD r8s_get(char *near, const char FAR_816 *far, WORD n)
 {
     WORD i;
 

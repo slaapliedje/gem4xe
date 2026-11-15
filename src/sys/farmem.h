@@ -106,6 +106,7 @@ uint16_t far_rd16(uint32_t addr);
 uint32_t far_rd32(uint32_t addr);
 void     far_wr16(uint32_t addr, uint16_t v);
 void     far_wr32(uint32_t addr, uint32_t v);
+#define FAR_RD32(a)         far_rd32(a)
 #define FAR_FLD_(type, f)   (((type *)0)->f)
 #define FAR_AT_(type, a, f) ((uint32_t)(a) + offsetof(type, f))
 #define FAR_GETF(type, a, f) ((__typeof__(FAR_FLD_(type, f)))                \
@@ -118,6 +119,7 @@ void     far_wr32(uint32_t addr, uint32_t v);
      : far_write8(FAR_AT_(type, a, f), (uint8_t)(v)))
 #else
 #define FAR_GETF(type, a, f)    (((const type FAR *)(uint32_t)(a))->f)
+#define FAR_RD32(a)             (*(const uint32_t FAR *)(uint32_t)(a))
 #define FAR_SETF(type, a, f, v) (((type FAR *)(uint32_t)(a))->f = (v))
 #endif
 

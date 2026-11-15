@@ -68,6 +68,17 @@ VENEER = "veneer"
 # a veneer in a bank, for that bank's calls (tools/bsp6502/bankasm.py):
 # its .word and .byte are data, and it refers to another bank on purpose
 BANK_VENEER = re.compile(r"__v\d+$")
+# a bank's own data, BANK_DATA("X") (src/portab.h): section X__bank
+BANK_DATA_SECT = "__bank"
+
+
+def sect_bank(banks, s):
+    """The bank of a section: its own, or for X__bank, X's."""
+    if s in banks:
+        return banks[s]
+    if s and s.endswith(BANK_DATA_SECT) and s[:-len(BANK_DATA_SECT)] in banks:
+        return banks[s[:-len(BANK_DATA_SECT)]]
+    return 0
 WIN_LO, WIN_HI = 0x4000, 0x7FFF
 
 # 6502 instruction lengths, by opcode; the undocumented ones as the NMOS
@@ -201,10 +212,11 @@ def check_code(frags, mem):
         if f["bank"] and f["run"]:
             starts.setdefault(f["bank"], set()).add(f["run"][0])
             spans.setdefault(f["bank"], []).append(f["run"])
-            if not BANK_VENEER.search(f["name"]):       # data after its JSR
+            if not BANK_VENEER.search(f["name"]) and not f["section"].endswith(BANK_DATA_SECT):
                 insns.setdefault(f["bank"], set()).update(boundaries(f, mem))
     for f in frags.values():
-        if not f["run"] or BANK_VENEER.search(f["name"]):
+        if not f["run"] or BANK_VENEER.search(f["name"]) \
+                or f["section"].endswith(BANK_DATA_SECT):     # data, not code
             continue
         banked = f["bank"] is not None
         if not banked and (f["section"] not in CODE_SECTIONS):
@@ -248,7 +260,7 @@ def check_code(frags, mem):
 
 ASM_SECTION = re.compile(r"^\s+\.section\s+([A-Za-z_][\w.]*)\s*(?:,\s*(\w+))?")
 ASM_LABEL = re.compile(r"^([A-Za-z_]\w*):")
-ASM_REF = re.compile(r"^\s*(?:[A-Za-z_]\w*:|`[^`]+`:)?\s*(jsr|jmp|\.word|lda|ldx|ldy|\.byte)\s+(.*)$")
+ASM_REF = re.compile(r"^\s*(?:[A-Za-z_]\w*:|`[^`]+`:)?\s*([a-z]{3}|\.word|\.byte|\.long)\s+(.*)$")
 ASM_TOKEN = re.compile(r"(?<![\w`?])([A-Za-z_]\w*)(?![\w`])")
 
 
@@ -264,11 +276,13 @@ def check_asm(path, banks, ext=None):
             first = (m.group(2) or "") == "text" or sect in banks
             continue
         lab = ASM_LABEL.match(ln)
-        if lab and first:
+        if lab and sect and sect.endswith(BANK_DATA_SECT):
+            func[lab.group(1)] = sect           # a bank's data: every label
+        elif lab and first:
             func[lab.group(1)] = sect
         elif lab is None and ln.strip() and not ln.lstrip().startswith((";", ".")):
             first = False
-    fbank = {f: banks[s] for f, s in func.items() if s in banks}
+    fbank = {f: sect_bank(banks, s) for f, s in func.items() if sect_bank(banks, s)}
     for f, n in (ext or {}).items():
         fbank.setdefault(f + "__b", n)
     bad, sect, in_veneer = [], None, False
@@ -284,7 +298,9 @@ def check_asm(path, banks, ext=None):
         r = ASM_REF.match(ln)
         if not r or sect == "veneer" or in_veneer:
             continue
-        here = banks.get(sect, 0)
+        here = sect_bank(banks, sect)
+        if sect and sect.endswith(BANK_DATA_SECT):
+            continue                    # the data's own lines
         for t in ASM_TOKEN.findall(r.group(2).split(";")[0]):
             n = fbank.get(t)
             if n is None:

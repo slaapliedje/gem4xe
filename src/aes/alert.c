@@ -68,12 +68,12 @@ static uint32_t al_icon(WORD n)
 /* The donor has these in util/; here they are one line each. */
 static WORD al_max(WORD a, WORD b) { return a > b ? a : b; }
 
-static void ob_setxywh(OBJECT FAR *tree, WORD obj, const GRECT *pt)
+static void ob_setxywh(OBTREE tree, WORD obj, const GRECT *pt)
 {
-    tree[obj].ob_x = pt->g_x;
-    tree[obj].ob_y = pt->g_y;
-    tree[obj].ob_width = pt->g_w;
-    tree[obj].ob_height = pt->g_h;
+    OB_SET(tree, obj, ob_x, pt->g_x);
+    OB_SET(tree, obj, ob_y, pt->g_y);
+    OB_SET(tree, obj, ob_width, pt->g_w);
+    OB_SET(tree, obj, ob_height, pt->g_h);
 }
 
 #define endstring(a)    ((a) == ']' || (a) == '\0')
@@ -82,7 +82,7 @@ static void ob_setxywh(OBJECT FAR *tree, WORD obj, const GRECT *pt)
 /* The donor's fm_strbrk: break the string at | and ], writing each piece
  * into the buffer the object already points at.  A doubled || or ]] is a
  * literal one, as Atari TOS and PC GEM both have it. */
-static const char *fm_strbrk(OBJECT FAR *tree, WORD start, WORD maxnum,
+static const char *fm_strbrk(OBTREE tree, WORD start, WORD maxnum,
                              WORD maxlen, const char *alert,
                              WORD *pnum, WORD *plen)
 {
@@ -94,7 +94,7 @@ static const char *fm_strbrk(OBJECT FAR *tree, WORD start, WORD maxnum,
         alert++;
 
     for (i = 0; i < maxnum; i++, alert++) {
-        p = (char *)(uint16_t)tree[start + i].ob_spec;
+        p = (char *)(uint16_t)OB_GET(tree, start + i, ob_spec);
         for (j = 0; j < maxlen; j++) {
             if (endsubstring(*alert)) {
                 if (*alert != '\0' && *alert == *(alert + 1))
@@ -105,7 +105,7 @@ static const char *fm_strbrk(OBJECT FAR *tree, WORD start, WORD maxnum,
             *p++ = *alert++;
         }
         *p = 0;
-        len = (WORD)(p - (char *)(uint16_t)tree[start + i].ob_spec);
+        len = (WORD)(p - (char *)(uint16_t)OB_GET(tree, start + i, ob_spec));
         if (len > *plen)
             *plen = len;
         while (!endsubstring(*alert))   /* a substring that was too long */
@@ -122,7 +122,7 @@ static const char *fm_strbrk(OBJECT FAR *tree, WORD start, WORD maxnum,
 }
 
 /* [icon][line|line][button|button] -> the pieces, in the tree. */
-static void fm_parse(OBJECT FAR *tree, const char *palstr, WORD *picnum,
+static void fm_parse(OBTREE tree, const char *palstr, WORD *picnum,
                      WORD *pnummsg, WORD *plenmsg, WORD *pnumbut, WORD *plenbut)
 {
     const char *alert = palstr;
@@ -136,12 +136,12 @@ static void fm_parse(OBJECT FAR *tree, const char *palstr, WORD *picnum,
 
 /* The donor's fm_build, in character cells: the icon at the left, the
  * message lines beside it, the buttons under whichever is taller. */
-static void fm_build(OBJECT FAR *tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
+static void fm_build(OBTREE tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
                      WORD numbut, WORD mlenbut)
 {
     WORD i, hicon, allbut;
     GRECT al, ic, bt, ms;
-    OBJECT FAR *obj;
+    OBTREE obj;
 
     r_set(&al, 0, 0, 1, 1);
     r_set(&ms, 1, 1, mlenmsg, 1);
@@ -169,8 +169,8 @@ static void fm_build(OBJECT FAR *tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
                            (WORD)(ic.g_y + ic.g_h)) + 1);
 
     ob_setxywh(tree, ROOT, &al);
-    for (i = 0, obj = tree; i < NUM_ALOBJS; i++, obj++)
-        obj->ob_next = obj->ob_head = obj->ob_tail = NIL;
+    for (i = 0, obj = tree; i < NUM_ALOBJS; i++, obj = OB_PTR(obj, 1))
+        OB_SET(obj, 0, ob_next, OB_SET(obj, 0, ob_head, OB_SET(obj, 0, ob_tail, NIL)));
 
     if (iconnum) {
         ob_setxywh(tree, 1, &ic);
@@ -181,14 +181,15 @@ static void fm_build(OBJECT FAR *tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
         ms.g_y++;
         ob_add(tree, ROOT, (WORD)(MSGOFF + i));
     }
-    for (i = 0, obj = tree + BUTOFF; i < numbut; i++, obj++) {
-        obj->ob_flags = SELECTABLE | EXIT | FL3DACT;   /* the 3D look's */
-        obj->ob_state = NORMAL;
+    for (i = 0, obj = OB_PTR(tree, BUTOFF); i < numbut; i++, obj = OB_PTR(obj, 1)) {
+        OB_SET(obj, 0, ob_flags, SELECTABLE | EXIT | FL3DACT);   /* the 3D look's */
+        OB_SET(obj, 0, ob_state, NORMAL);
         ob_setxywh(tree, (WORD)(BUTOFF + i), &bt);
         bt.g_x = (WORD)(bt.g_x + mlenbut + 2);
         ob_add(tree, ROOT, (WORD)(BUTOFF + i));
     }
-    (--obj)->ob_flags |= LASTOB;
+    obj = OB_PTR(obj, -1);
+    OB_OR(obj, 0, ob_flags, LASTOB);
 
     for (i = 0; i < NUM_ALOBJS; i++)
         rs_obfix(tree, i);
@@ -196,37 +197,37 @@ static void fm_build(OBJECT FAR *tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
 
 /* The tree an alert is made of, in the pool: ten objects, then the
  * strings they point at.  0 when the pool has not the room. */
-static OBJECT FAR *al_tree(void)
+static OBTREE al_tree(void)
 {
-    OBJECT FAR *tree = pool_alloc(NUM_ALOBJS * (uint16_t)sizeof(OBJECT), 2);
+    OBTREE tree = OB_NEAR(pool_alloc(NUM_ALOBJS * (uint16_t)sizeof(OBJECT), 2));
     char *str = pool_alloc(ALSTR_SIZE, 2);
     WORD i;
 
     if (!tree || !str)
         return 0;
-    memset(tree, 0, NUM_ALOBJS * sizeof(OBJECT));
+    OB_MEMSET(tree, 0, NUM_ALOBJS * sizeof(OBJECT));
     for (i = 0; i < NUM_ALOBJS; i++) {
-        tree[i].ob_next = tree[i].ob_head = tree[i].ob_tail = NIL;
-        tree[i].ob_type = G_STRING;
-        tree[i].ob_flags = NONE;
-        tree[i].ob_state = NORMAL;
+        OB_SET(tree, i, ob_next, OB_SET(tree, i, ob_head, OB_SET(tree, i, ob_tail, NIL)));
+        OB_SET(tree, i, ob_type, G_STRING);
+        OB_SET(tree, i, ob_flags, NONE);
+        OB_SET(tree, i, ob_state, NORMAL);
     }
-    tree[ROOT].ob_type = G_BOX;
-    tree[ROOT].ob_flags = FL3DBAK;          /* LASTOB goes on the last button;
+    OB_SET(tree, ROOT, ob_type, G_BOX);
+    OB_SET(tree, ROOT, ob_flags, FL3DBAK);          /* LASTOB goes on the last button;
                                              * FL3DBAK is drawn only with the
                                              * 3D look on, as on the ST */
-    tree[ROOT].ob_spec = 0x00011100UL;      /* the donor's DIALERT root:
+    OB_SET(tree, ROOT, ob_spec, 0x00011100UL);      /* the donor's DIALERT root:
                                              * no character, one pixel of
                                              * border, colour word 0x1100 */
-    tree[ROOT].ob_state = OUTLINED;
-    tree[1].ob_type = G_IMAGE;
+    OB_SET(tree, ROOT, ob_state, OUTLINED);
+    OB_SET(tree, 1, ob_type, G_IMAGE);
     for (i = 0; i < MAX_LINENUM; i++, str += MAX_LINELEN + 1) {
-        tree[MSGOFF + i].ob_spec = (uint16_t)str;
+        OB_SET(tree, MSGOFF + i, ob_spec, (uint16_t)str);
         *str = 0;
     }
     for (i = 0; i < MAX_BUTNUM; i++, str += MAX_BUTLEN + 1) {
-        tree[BUTOFF + i].ob_type = G_BUTTON;
-        tree[BUTOFF + i].ob_spec = (uint16_t)str;
+        OB_SET(tree, BUTOFF + i, ob_type, G_BUTTON);
+        OB_SET(tree, BUTOFF + i, ob_spec, (uint16_t)str);
         *str = 0;
     }
     return tree;
@@ -237,10 +238,10 @@ static OBJECT FAR *al_tree(void)
 WORD fm_alert(WORD defbut, const char *palstr)
 {
     WORD i, icnum, nummsg, mlenmsg, numbut, mlenbut;
-    OBJECT FAR *tree;
+    OBTREE tree;
     GRECT d, t;
     uint16_t mark;
-    BITBLK FAR *bi;
+    BITBLK FAR_816 *bi;                 /* the pool: bank $00 */
     uint8_t *icon;
 
     mark = pool_mark();
@@ -263,7 +264,7 @@ WORD fm_alert(WORD defbut, const char *palstr)
     fm_build(tree, icnum, nummsg, mlenmsg, numbut, mlenbut);
 
     if (defbut >= 1 && defbut <= numbut)
-        tree[BUTOFF + defbut - 1].ob_flags |= DEFAULT;
+        OB_OR(tree, BUTOFF + defbut - 1, ob_flags, DEFAULT);
 
     /* the icon: a 32x32 image, whatever the character cell made of it */
     if (icnum) {
@@ -275,8 +276,8 @@ WORD fm_alert(WORD defbut, const char *palstr)
         bi->bi_hl = GEM_ICON_HL;
         bi->bi_x = bi->bi_y = 0;
         bi->bi_color = BLACK;
-        tree[1].ob_spec = (uint16_t)bi;
-        tree[1].ob_width = tree[1].ob_height = GEM_ICON_HL;
+        OB_SET(tree, 1, ob_spec, (uint16_t)bi);
+        OB_SET(tree, 1, ob_width, OB_SET(tree, 1, ob_height, GEM_ICON_HL));
     }
 
     ob_center(tree, &d);

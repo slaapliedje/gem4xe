@@ -487,7 +487,7 @@ WORD dev_planes(void)   { return 1; }
 /* ---- the table (vdidev.h) --------------------------------------------- */
 extern const uint8_t FAR font8x8[];
 
-const VDIDEV FAR vdev_print = {
+const VDIDEV FAR_816 vdev_print = {
     SCR_W, SCR_H, SCR_STRIDE,
     FONT_W, FONT_H,
     FONT_TOP, FONT_ASCENT, FONT_HALF, FONT_DESCENT, FONT_BOTTOM,

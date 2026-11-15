@@ -131,6 +131,26 @@ def scan(lines, banks):
     return sect_of_line, func_sect, publics
 
 
+BANK_DATA = re.compile(r"^(\s+\.section\s+)([A-Za-z_]\w*)__bank\s*,\s*(bss|data)\s*$")
+
+
+def bank_data(lines, banks):
+    """A variable BANK_DATA("X") put in section X__bank (src/portab.h): its
+    bytes go into bank X with the code, PORTB banks being RAM -- the
+    section's kind made text, so the linker places its bits in the bank's
+    memory (gem6502.scm lists X__bank with X).  Zero for bss, as .space
+    assembles in a text section."""
+    out = []
+    for ln in lines:
+        m = BANK_DATA.match(ln)
+        if m:
+            if m.group(2) not in banks:
+                raise SystemExit(f"bankasm: BANK_DATA(\"{m.group(2)}\"): no such bank section")
+            ln = f"{m.group(1)}{m.group(2)}__bank,text"
+        out.append(ln)
+    return out
+
+
 def read_source(path):
     # The C source, which cc6502 copies in as `;` comment lines, goes: as6502
     # still honours /* */ inside them, so a C comment that opens on one
@@ -193,7 +213,7 @@ def main(argv):
     tu = argv[argv.index("--tu") + 1]
     banks, _ = parse_banks(argv[3:])
     ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
-    lines = localise_tails(read_source(src), banks)
+    lines = localise_tails(bank_data(read_source(src), banks), banks)
     sect_of_line, func_sect, publics = scan(lines, banks)
 
     banked = {f: s for f, s in func_sect.items() if s in banks}

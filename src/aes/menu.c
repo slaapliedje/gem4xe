@@ -65,7 +65,7 @@ WORD        gl_dafirst;
 #define OUTSIDE_STATE   4       /* off the bar and the items, menu down */
 #define SUBMENU_STATE   5       /* on an item of an open submenu */
 
-OBJECT FAR *gl_mntree;              /* the menu bar showing, or 0 */
+OBTREE gl_mntree;              /* the menu bar showing, or 0 */
 MOBLK   gl_ctwait;              /* the rectangle that wakes the menu: the
                                  * active bar while there is one, else
                                  * gl_rmenu (which nothing enters, as a
@@ -74,14 +74,14 @@ MOBLK   gl_ctwait;              /* the rectangle that wakes the menu: the
 
 /* The drop-down for a title: the titles and the drop-downs are children
  * of THEACTIVE and of the box after the bar, in the same order. */
-static WORD menu_sub(OBJECT FAR *tree, WORD ititle)
+static WORD menu_sub(OBTREE tree, WORD ititle)
 {
     WORD themenus, imenu, i;
 
-    themenus = tree[THESCREEN].ob_tail;
-    imenu = tree[themenus].ob_head;
+    themenus = OB_GET(tree, THESCREEN, ob_tail);
+    imenu = OB_GET(tree, themenus, ob_head);
     for (i = ititle - THEACTIVE; i > 1; i--)
-        imenu = tree[imenu].ob_next;
+        imenu = OB_GET(tree, imenu, ob_next);
     return imenu;
 }
 
@@ -101,14 +101,14 @@ static WORD menu_sub(OBJECT FAR *tree, WORD ititle)
  * which is what turns a click into a menu id (ctrl.c). */
 static void menu_fixup(void)
 {
-    OBJECT FAR *tree = gl_mntree;
+    OBTREE tree = gl_mntree;
     WORD themenus, dabox, cnt, i, slot, ob, height;
 
     if (tree == 0)
         return;
-    themenus = tree[THESCREEN].ob_tail;
-    dabox = tree[themenus].ob_head;
-    tree[dabox].ob_head = tree[dabox].ob_tail = NIL;
+    themenus = OB_GET(tree, THESCREEN, ob_tail);
+    dabox = OB_GET(tree, themenus, ob_head);
+    OB_SET(tree, dabox, ob_head, OB_SET(tree, dabox, ob_tail, NIL));
     gl_dafirst = dabox + 3;
 
     cnt = gl_accreg ? (WORD)(2 + gl_accreg) : 1;
@@ -122,16 +122,16 @@ static void menu_fixup(void)
                 slot++;
             if (slot >= MAX_ACCS)
                 break;
-            tree[ob].ob_spec = (int32_t)gl_acctitle[slot];
+            OB_SET(tree, ob, ob_spec, (int32_t)gl_acctitle[slot]);
             slot++;
         }
         height += gl_hchar;
     }
-    tree[dabox].ob_height = height;
+    OB_SET(tree, dabox, ob_height, height);
 }
 
 /* A mouse rectangle wait on an object: leave it if x, else enter it. */
-static void rect_change(OBJECT FAR *tree, MOBLK *prmob, WORD iob, WORD x)
+static void rect_change(OBTREE tree, MOBLK *prmob, WORD iob, WORD x)
 {
     ob_actxywh(tree, iob, &prmob->m_gr);
     prmob->m_out = x;
@@ -140,12 +140,12 @@ static void rect_change(OBJECT FAR *tree, MOBLK *prmob, WORD iob, WORD x)
 /* Set or clear a state bit on an object, redrawing it with the clip off
  * if dodraw; FALSE, and nothing done, when chkdisabled and the object is
  * disabled.  The menu_icheck/ienable/tnormal calls come here directly. */
-WORD do_chg(OBJECT FAR *tree, WORD iitem, UWORD chgvalue, WORD dochg,
+WORD do_chg(OBTREE tree, WORD iitem, UWORD chgvalue, WORD dochg,
             WORD dodraw, WORD chkdisabled)
 {
     UWORD curr_state;
 
-    curr_state = tree[iitem].ob_state;
+    curr_state = OB_GET(tree, iitem, ob_state);
     if (chkdisabled && (curr_state & DISABLED))
         return FALSE;
     if (dochg)
@@ -170,7 +170,7 @@ static WORD item_changed(WORD last_item, WORD cur_item)
 /* Select or deselect last_item, if it is something and not cur_item.
  * Called with the two swapped to select the new one: then it is "the new
  * one, if it is something and not the old one". */
-static WORD menu_select(OBJECT FAR *tree, WORD last_item, WORD cur_item,
+static WORD menu_select(OBTREE tree, WORD last_item, WORD cur_item,
                         WORD setit)
 {
     if (item_changed(last_item, cur_item))
@@ -180,7 +180,7 @@ static WORD menu_select(OBJECT FAR *tree, WORD last_item, WORD cur_item,
 
 /* Save or restore what is under a drop-down, one pixel of frame
  * included on the left, right and bottom. */
-static void menu_sr(WORD saveit, OBJECT FAR *tree, WORD imenu)
+static void menu_sr(WORD saveit, OBTREE tree, WORD imenu)
 {
     GRECT t;
 
@@ -199,7 +199,7 @@ static void menu_sr(WORD saveit, OBJECT FAR *tree, WORD imenu)
  * drop-down saved, the drop-down drawn.  A disabled title gets none of
  * it.  Returns the drop-down's object -- in `it`, which is the bar's own
  * tree, or for the Desk title the list below (its root). */
-static WORD menu_down(OBJECT FAR *tree, OBJECT FAR *it, WORD ititle)
+static WORD menu_down(OBTREE tree, OBTREE it, WORD ititle)
 {
     WORD imenu = ROOT;
 
@@ -241,37 +241,37 @@ static WORD menu_down(OBJECT FAR *tree, OBJECT FAR *it, WORD ititle)
 #define DT_ACC      0xFE000000UL        /* + the slot */
 #define DT_SELF     0xFD000000UL        /* the one in front */
 
-static void dt_put(OBJECT FAR *d, WORD *pk, UWORD type, UWORD flags,
+static void dt_put(OBTREE d, WORD *pk, UWORD type, UWORD flags,
                    UWORD state, uint32_t spec, uint32_t act)
 {
     WORD k = *pk;
 
-    d[k].ob_type = type;
-    d[k].ob_flags = (UWORD)(flags & ~LASTOB);
-    d[k].ob_state = state;
-    d[k].ob_spec = spec;
-    d[k].ob_x = 0;
-    d[k].ob_y = (WORD)((k - 1) * gl_hchar);
-    d[k].ob_width = d[ROOT].ob_width;
-    d[k].ob_height = gl_hchar;
-    d[k].ob_head = d[k].ob_tail = NIL;
+    OB_SET(d, k, ob_type, type);
+    OB_SET(d, k, ob_flags, (UWORD)(flags & ~LASTOB));
+    OB_SET(d, k, ob_state, state);
+    OB_SET(d, k, ob_spec, spec);
+    OB_SET(d, k, ob_x, 0);
+    OB_SET(d, k, ob_y, (WORD)((k - 1) * gl_hchar));
+    OB_SET(d, k, ob_width, OB_GET(d, ROOT, ob_width));
+    OB_SET(d, k, ob_height, gl_hchar);
+    OB_SET(d, k, ob_head, OB_SET(d, k, ob_tail, NIL));
     ob_add(d, ROOT, k);
     far_put((uint32_t)d + DT_ACTS + 4UL * (uint32_t)k, (const uint8_t *)&act, 4);
     *pk = (WORD)(k + 1);
 }
 
-static OBJECT FAR *dt_build(OBJECT FAR *tree)
+static OBTREE dt_build(OBTREE tree)
 {
     WORD n = sh_nprogs(), themenus, dabox, k, i, x, y;
     uint8_t keep = far_owner, keept = far_tag;
     uint32_t blk, e, s;
     char text[MN_TITLELEN];
-    OBJECT FAR *d;
+    OBTREE d;
 
     if (!n)
         return 0;
-    themenus = tree[THESCREEN].ob_tail;
-    dabox = tree[themenus].ob_head;
+    themenus = OB_GET(tree, THESCREEN, ob_tail);
+    dabox = OB_GET(tree, themenus, ob_head);
     far_owner = 0;                      /* the system's, for the menu's life */
     far_tag = 0;
     blk = far_alloc(DT_BYTES);
@@ -279,29 +279,29 @@ static OBJECT FAR *dt_build(OBJECT FAR *tree)
     far_tag = keept;
     if (!blk)
         return 0;                       /* the resource's box, then */
-    d = (OBJECT FAR *)blk;
+    d = (OBTREE)blk;
     ob_offset(tree, dabox, &x, &y);
-    d[ROOT].ob_next = d[ROOT].ob_head = d[ROOT].ob_tail = NIL;
-    d[ROOT].ob_type = tree[dabox].ob_type;
-    d[ROOT].ob_flags = tree[dabox].ob_flags;
-    d[ROOT].ob_state = tree[dabox].ob_state;
-    d[ROOT].ob_spec = tree[dabox].ob_spec;
-    d[ROOT].ob_x = x;
-    d[ROOT].ob_y = y;
-    d[ROOT].ob_width = tree[dabox].ob_width;
+    OB_SET(d, ROOT, ob_next, OB_SET(d, ROOT, ob_head, OB_SET(d, ROOT, ob_tail, NIL)));
+    OB_SET(d, ROOT, ob_type, OB_GET(tree, dabox, ob_type));
+    OB_SET(d, ROOT, ob_flags, OB_GET(tree, dabox, ob_flags));
+    OB_SET(d, ROOT, ob_state, OB_GET(tree, dabox, ob_state));
+    OB_SET(d, ROOT, ob_spec, OB_GET(tree, dabox, ob_spec));
+    OB_SET(d, ROOT, ob_x, x);
+    OB_SET(d, ROOT, ob_y, y);
+    OB_SET(d, ROOT, ob_width, OB_GET(tree, dabox, ob_width));
     k = 1;
-    dt_put(d, &k, tree[dabox + 1].ob_type, tree[dabox + 1].ob_flags,
-           tree[dabox + 1].ob_state, tree[dabox + 1].ob_spec, DT_ABOUT);
+    dt_put(d, &k, OB_GET(tree, dabox + 1, ob_type), OB_GET(tree, dabox + 1, ob_flags),
+           OB_GET(tree, dabox + 1, ob_state), OB_GET(tree, dabox + 1, ob_spec), DT_ABOUT);
     if (gl_accreg) {
-        dt_put(d, &k, tree[dabox + 2].ob_type, tree[dabox + 2].ob_flags,
-               DISABLED, tree[dabox + 2].ob_spec, 0);
+        dt_put(d, &k, OB_GET(tree, dabox + 2, ob_type), OB_GET(tree, dabox + 2, ob_flags),
+               DISABLED, OB_GET(tree, dabox + 2, ob_spec), 0);
         for (i = 0; i < MAX_ACCS; i++)
             if (gl_acctitle[i])
                 dt_put(d, &k, G_STRING, 0, NORMAL, gl_acctitle[i],
                        DT_ACC + (uint32_t)i);
     }
-    dt_put(d, &k, tree[dabox + 2].ob_type, tree[dabox + 2].ob_flags,
-           DISABLED, tree[dabox + 2].ob_spec, 0);
+    dt_put(d, &k, OB_GET(tree, dabox + 2, ob_type), OB_GET(tree, dabox + 2, ob_flags),
+           DISABLED, OB_GET(tree, dabox + 2, ob_spec), 0);
     for (i = 0; i < n && i <= SH_PROGS; i++) {
         e = sh_prog(i, text);
         s = blk + DT_TEXT + (uint32_t)i * MN_TITLELEN;
@@ -311,8 +311,8 @@ static OBJECT FAR *dt_build(OBJECT FAR *tree)
         else
             dt_put(d, &k, G_STRING, 0, CHECKED, s, DT_SELF);
     }
-    d[k - 1].ob_flags |= LASTOB;
-    d[ROOT].ob_height = (WORD)((k - 1) * gl_hchar);
+    OB_OR(d, k - 1, ob_flags, LASTOB);
+    OB_SET(d, ROOT, ob_height, (WORD)((k - 1) * gl_hchar));
     return d;
 }
 
@@ -320,12 +320,12 @@ static OBJECT FAR *dt_build(OBJECT FAR *tree)
  * and the rest set as if it came from the resource's own box (About, an
  * accessory); FALSE when it was a program, asked for here, or the one in
  * front -- and then the title is put back, as for an accessory. */
-static WORD dt_chosen(OBJECT FAR *tree, OBJECT FAR *d, WORD title,
+static WORD dt_chosen(OBTREE tree, OBTREE d, WORD title,
                       WORD item, WORD *pitem, uint32_t *ptree, WORD *pmenu)
 {
     uint32_t act;
-    WORD themenus = tree[THESCREEN].ob_tail;
-    WORD dabox = tree[themenus].ob_head;
+    WORD themenus = OB_GET(tree, THESCREEN, ob_tail);
+    WORD dabox = OB_GET(tree, themenus, ob_head);
 
     far_get((uint8_t *)&act, (uint32_t)d + DT_ACTS + 4UL * (uint32_t)item, 4);
     *ptree = (uint32_t)tree;
@@ -378,10 +378,10 @@ static WORD dt_chosen(OBJECT FAR *tree, OBJECT FAR *d, WORD title,
  * be used, which reads as an omission in the one caller rather than a
  * decision.  Clamping can only move a box that would have been unusable,
  * so no program that places one properly sees a difference. */
-static void popup_place(OBJECT FAR *tree, WORD imenu, WORD istart,
+static void popup_place(OBTREE tree, WORD imenu, WORD istart,
                         WORD x, WORD y)
 {
-    WORD w = tree[imenu].ob_width, h = tree[imenu].ob_height;
+    WORD w = OB_GET(tree, imenu, ob_width), h = OB_GET(tree, imenu, ob_height);
     WORD ox, oy, bx, by;
 
     /* WHERE THE BOX'S PARENT BEGINS, so that everything below is in
@@ -393,13 +393,13 @@ static void popup_place(OBJECT FAR *tree, WORD imenu, WORD istart,
      * off an IBOX below the bar.  Subtracting the parent's origin costs
      * one call and is right either way. */
     ob_offset(tree, imenu, &ox, &oy);
-    ox = (WORD)(ox - tree[imenu].ob_x);
-    oy = (WORD)(oy - tree[imenu].ob_y);
+    ox = (WORD)(ox - OB_GET(tree, imenu, ob_x));
+    oy = (WORD)(oy - OB_GET(tree, imenu, ob_y));
 
     /* x and y name where the START ITEM goes, not the box: the item's own
      * offset within the box comes off first (both donors do this). */
     bx = x;
-    by = (WORD)(y - tree[istart].ob_y);
+    by = (WORD)(y - OB_GET(tree, istart, ob_y));
     while (bx + w + MENU_THICKNESS > gl_width)
         bx = (WORD)(bx - gl_wchar);
     while (bx < MENU_THICKNESS)
@@ -408,14 +408,14 @@ static void popup_place(OBJECT FAR *tree, WORD imenu, WORD istart,
         by = (WORD)(by - gl_hchar);
     while (by < gl_rfull.g_y)
         by = (WORD)(by + gl_hchar);
-    tree[imenu].ob_x = (WORD)(bx - ox);
-    tree[imenu].ob_y = (WORD)(by - oy);
+    OB_SET(tree, imenu, ob_x, (WORD)(bx - ox));
+    OB_SET(tree, imenu, ob_y, (WORD)(by - oy));
 }
 
 /* Track the box until a press: the item under the pointer, or NIL.  The
  * wait is mn_do's, one rectangle: leave the item the pointer is on, or
  * enter the box when it is outside. */
-static WORD popup_track(OBJECT FAR *tree, WORD imenu, WORD istart)
+static WORD popup_track(OBTREE tree, WORD imenu, WORD istart)
 {
     MOBLK m;
     WORD  rets[6];
@@ -424,7 +424,7 @@ static WORD popup_track(OBJECT FAR *tree, WORD imenu, WORD istart)
 
     /* The start item comes up selected, as the donor does it, so that a
      * press with no movement chooses it. */
-    if (!(tree[istart].ob_state & DISABLED))
+    if (!(OB_GET(tree, istart, ob_state) & DISABLED))
         cur = istart;
     if (cur != NIL)
         do_chg(tree, cur, SELECTED, TRUE, FALSE, TRUE);
@@ -455,7 +455,7 @@ static WORD popup_track(OBJECT FAR *tree, WORD imenu, WORD istart)
     return cur;
 }
 
-WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
+WORD mn_popup(OBTREE tree, WORD imenu, WORD istart, WORD x, WORD y,
               WORD *pkeystate)
 {
     WORD rets[6], chosen;
@@ -467,7 +467,7 @@ WORD mn_popup(OBJECT FAR *tree, WORD imenu, WORD istart, WORD x, WORD y,
     if (!tree || imenu <= 0)
         return NIL;
     if (istart < 0)
-        istart = tree[imenu].ob_head;
+        istart = OB_GET(tree, imenu, ob_head);
     if (istart <= 0)
         return NIL;
 
@@ -551,11 +551,11 @@ static SMI *smi_at(WORD n)
 }
 
 /* The slot an item names, out of ob_type's high byte. */
-static SMI *smi_of(OBJECT FAR *tree, WORD item)
+static SMI *smi_of(OBTREE tree, WORD item)
 {
-    if (!(tree[item].ob_flags & SUBMENU))
+    if (!(OB_GET(tree, item, ob_flags) & SUBMENU))
         return 0;
-    return smi_at((WORD)((tree[item].ob_type >> 8) & 0xFF));
+    return smi_at((WORD)((OB_GET(tree, item, ob_type) >> 8) & 0xFF));
 }
 
 static WORD smi_slot(SMI *s)
@@ -590,7 +590,7 @@ static SMI *smi_new(void)
  * what this was.  Spelled as mn_attach -> sm_mark -> sm_str, with the
  * far `tree` handed down both levels, the mark silently did not happen:
  * sm_str returned the right length and sm_mark behaved as though it had
- * not.  Any read of tree[item].ob_spec in mn_attach before the call --
+ * not.  Any read of OB_GET(tree, item, ob_spec) in mn_attach before the call --
  * even one whose result was thrown away -- made it work, which is the
  * signature of something going wrong in the far pointer's passage and
  * not of a bug in the arithmetic.  One level down it is right.  No
@@ -601,13 +601,13 @@ static SMI *smi_new(void)
  * are touched, and bringing forty characters down to count them would
  * be the expensive way to find that out.  The byte goes into a WORD
  * before it is tested, which is tools/ccbug's B16 rule. */
-static WORD sm_mark(OBJECT FAR *tree, WORD item, WORD ch)
+static WORD sm_mark(OBTREE tree, WORD item, WORD ch)
 {
-    uint32_t p = tree[item].ob_spec;
+    uint32_t p = OB_GET(tree, item, ob_spec);
     WORD n;
 
-    if (tree[item].ob_flags & INDIRECT)
-        p = *(const uint32_t FAR *)(uint32_t)p;
+    if (OB_GET(tree, item, ob_flags) & INDIRECT)
+        p = FAR_RD32(p);
     if (!p)
         return FALSE;
     for (n = 0; n < MAX_LEN; n++) {
@@ -621,13 +621,13 @@ static WORD sm_mark(OBJECT FAR *tree, WORD item, WORD ch)
     return TRUE;
 }
 
-static void sm_detach(OBJECT FAR *tree, WORD item)
+static void sm_detach(OBTREE tree, WORD item)
 {
     SMI *s = smi_of(tree, item);
 
     sm_mark(tree, item, ' ');        /* a SPACE, as the ROM leaves it */
-    tree[item].ob_type &= 0x00FF;
-    tree[item].ob_flags &= ~SUBMENU;
+    OB_AND(tree, item, ob_type, 0x00FF);
+    OB_AND(tree, item, ob_flags, ~SUBMENU);
     if (s && --s->s_count <= 0)
         s->s_tree = 0;
 }
@@ -636,7 +636,7 @@ static void sm_detach(OBJECT FAR *tree, WORD item)
  * EmuTOS names ME_INQUIRE, ME_ATTACH and ME_REMOVE.  On an inquiry the
  * four words are the pair attached; on an attach they are what to
  * attach, and mn_item is clamped into the box as the ROM clamps it. */
-WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
+WORD mn_attach(WORD flag, OBTREE tree, WORD item,
                uint32_t *ptree, WORD *pmenu, WORD *pitem, WORD *pscroll)
 {
     SMI *s;
@@ -646,7 +646,7 @@ WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
     /* A G_STRING, and only one.  The ROM tests this before anything else
      * and so does EmuTOS: the mark is a character IN THE ITEM'S TEXT,
      * and a type that does not have text has nowhere to put it. */
-    if ((tree[item].ob_type & 0x00FF) != G_STRING)
+    if ((OB_GET(tree, item, ob_type) & 0x00FF) != G_STRING)
         return FALSE;
 
     if (flag == ME_INQUIRE) {
@@ -662,7 +662,7 @@ WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
     if (flag != ME_ATTACH && flag != ME_REMOVE)
         return FALSE;
 
-    if (tree[item].ob_flags & SUBMENU)
+    if (OB_GET(tree, item, ob_flags) & SUBMENU)
         sm_detach(tree, item);      /* one attachment at a time */
     if (flag == ME_REMOVE)
         return TRUE;
@@ -687,19 +687,19 @@ WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
         return FALSE;
     }
     {
-        OBJECT FAR *st = (OBJECT FAR *)s->s_tree;
+        OBTREE st = (OBTREE)s->s_tree;
         WORD start = *pitem;
-        if (start < st[s->s_menu].ob_head)
-            start = st[s->s_menu].ob_head;
-        if (start > st[s->s_menu].ob_tail)
-            start = st[s->s_menu].ob_tail;
+        if (start < OB_GET(st, s->s_menu, ob_head))
+            start = OB_GET(st, s->s_menu, ob_head);
+        if (start > OB_GET(st, s->s_menu, ob_tail))
+            start = OB_GET(st, s->s_menu, ob_tail);
         s->s_start = start;
         *pitem = start;             /* the ROM writes the clamp back */
     }
     s->s_count++;
-    tree[item].ob_type = (UWORD)((tree[item].ob_type & 0x00FF)
-                                 | (smi_slot(s) << 8));
-    tree[item].ob_flags |= SUBMENU;
+    OB_SET(tree, item, ob_type, (UWORD)((OB_GET(tree, item, ob_type) & 0x00FF)
+                                 | (smi_slot(s) << 8)));
+    OB_OR(tree, item, ob_flags, SUBMENU);
     return TRUE;
 }
 
@@ -709,7 +709,7 @@ WORD mn_attach(WORD flag, OBJECT FAR *tree, WORD item,
  * tree's root and never a menu item. */
 WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item)
 {
-    OBJECT FAR *t = (OBJECT FAR *)tree;
+    OBTREE t = (OBTREE)tree;
     SMI *s;
 
     if (!tree || imenu <= 0)
@@ -721,10 +721,10 @@ WORD mn_istart(WORD flag, uint32_t tree, WORD imenu, WORD item)
         return s->s_start;
     if (flag != MIS_SET)
         return 0;
-    if (item < t[imenu].ob_head)
-        item = t[imenu].ob_head;
-    if (item > t[imenu].ob_tail)
-        item = t[imenu].ob_tail;
+    if (item < OB_GET(t, imenu, ob_head))
+        item = OB_GET(t, imenu, ob_head);
+    if (item > OB_GET(t, imenu, ob_tail))
+        item = OB_GET(t, imenu, ob_tail);
     s->s_start = item;
     return item;
 }
@@ -838,35 +838,35 @@ void mn_settings(WORD flag, WORD *set)
  * equals the screen before it -- and m9 does not check that.  So the
  * reason for the gap is read out of graf.c and is not gated; setting it
  * to 0 changes only where the box lands, which IS gated. */
-static uint32_t sm_show(OBJECT FAR *tree, WORD item, WORD *psmroot)
+static uint32_t sm_show(OBTREE tree, WORD item, WORD *psmroot)
 {
     SMI *s = smi_of(tree, item);
-    OBJECT FAR *st;
+    OBTREE st;
     GRECT r;
     WORD w, h, ox, oy, bx, by;
 
     if (!s)
         return 0;
-    st = (OBJECT FAR *)s->s_tree;
+    st = (OBTREE)s->s_tree;
     ob_actxywh(tree, item, &r);
-    w = st[s->s_menu].ob_width;
-    h = st[s->s_menu].ob_height;
+    w = OB_GET(st, s->s_menu, ob_width);
+    h = OB_GET(st, s->s_menu, ob_height);
     ob_offset(st, s->s_menu, &ox, &oy);
-    ox = (WORD)(ox - st[s->s_menu].ob_x);
-    oy = (WORD)(oy - st[s->s_menu].ob_y);
+    ox = (WORD)(ox - OB_GET(st, s->s_menu, ob_x));
+    oy = (WORD)(oy - OB_GET(st, s->s_menu, ob_y));
 
     bx = (WORD)(r.g_x + r.g_w + SM_GAP);
     if (bx + w + MENU_THICKNESS > gl_width)
         bx = (WORD)(r.g_x - w - SM_GAP);    /* flop to the other side */
     if (bx < MENU_THICKNESS)
         return 0;                           /* and no room there either */
-    by = (WORD)(r.g_y - st[s->s_start].ob_y);
+    by = (WORD)(r.g_y - OB_GET(st, s->s_start, ob_y));
     while (by > (WORD)(gl_height - h))
         by = (WORD)(by - gl_hchar);
     while (by < gl_rfull.g_y)
         by = (WORD)(by + gl_hchar);
-    st[s->s_menu].ob_x = (WORD)(bx - ox);
-    st[s->s_menu].ob_y = (WORD)(by - oy);
+    OB_SET(st, s->s_menu, ob_x, (WORD)(bx - ox));
+    OB_SET(st, s->s_menu, ob_y, (WORD)(by - oy));
 
     menu_sr(TRUE, st, s->s_menu);
     gsx_sclip(&gl_rzero);
@@ -875,19 +875,19 @@ static uint32_t sm_show(OBJECT FAR *tree, WORD item, WORD *psmroot)
     return s->s_tree;
 }
 
-static void sm_hide(OBJECT FAR *tree, WORD item)
+static void sm_hide(OBTREE tree, WORD item)
 {
     SMI *s = smi_of(tree, item);
 
     if (s)
-        menu_sr(FALSE, (OBJECT FAR *)s->s_tree, s->s_menu);
+        menu_sr(FALSE, (OBTREE)s->s_tree, s->s_menu);
 }
 
 /* Does this item open one?  Enabled, marked, and with a slot behind the
  * mark -- an item whose slot was freed is still marked and must not. */
-static WORD sm_opens(OBJECT FAR *tree, WORD item)
+static WORD sm_opens(OBTREE tree, WORD item)
 {
-    if (item == NIL || (tree[item].ob_state & DISABLED))
+    if (item == NIL || (OB_GET(tree, item, ob_state) & DISABLED))
         return FALSE;
     return smi_of(tree, item) != 0;
 }
@@ -908,12 +908,12 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
      * its menu would not drop: the bar drew (objc_draw takes FAR), then
      * ob_find and rect_change here were handed a bank-$00 address that
      * was never a tree.  Everything this passes tree to already takes
-     * OBJECT FAR *. */
-    OBJECT FAR *tree, *p1tree;
+     * a tree (OBTREE). */
+    OBTREE tree, p1tree;
     /* WHERE THE OPEN DROP-DOWN'S ITEMS ARE: the bar's own tree, or the
      * Desk menu's list of programs (dt_build, above), built the first time
      * the Desk title drops and freed when the menu ends. */
-    OBJECT FAR *itree, *dtree = 0;
+    OBTREE itree, dtree = 0;
     WORD    dtried = FALSE;
     uint32_t buparm, smtree = 0;
     WORD    mnu_flags, done, main_rect;
@@ -975,7 +975,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
             break;
         case SUBMENU_STATE:
             /* the pointer off the SUBMENU's item, in the submenu's tree */
-            p1tree = (OBJECT FAR *)smtree;
+            p1tree = (OBTREE)smtree;
             main_rect = cur_sub;
             buparm = (button & 0x0001) ? 0x00010100UL : 0x00010101UL;
             leave_flag = TRUE;
@@ -1030,7 +1030,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
                  * when the pointer is in it: the parent item has to stay
                  * selected while its own menu is open, and it is also
                  * what says which submenu is showing. */
-                cur_sub = smtree ? ob_find((OBJECT FAR *)smtree, smroot, 1,
+                cur_sub = smtree ? ob_find((OBTREE)smtree, smroot, 1,
                                            rets[0], rets[1]) : NIL;
                 if (cur_sub == smroot)
                     cur_sub = NIL;      /* in the box, on no item */
@@ -1040,7 +1040,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
                     cur_item = ob_find(itree, cur_menu, 1, rets[0], rets[1]);
                     if (cur_item != NIL) {
                         menu_state = INITEM_STATE;
-                    } else if (tree[cur_title].ob_state & DISABLED) {
+                    } else if (OB_GET(tree, cur_title, ob_state) & DISABLED) {
                         cur_title = NIL;
                         done = TRUE;
                     } else {
@@ -1055,7 +1055,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
          * so that a box is never taken off the screen while something
          * drawn on top of it is still there. */
         if (smtree)
-            menu_select((OBJECT FAR *)smtree, last_sub, cur_sub, FALSE);
+            menu_select((OBTREE)smtree, last_sub, cur_sub, FALSE);
         if (smtree && cur_item != smparent) {
             sm_hide(tree, smparent);
             smtree = 0;
@@ -1094,7 +1094,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
                 smnoroom = cur_item;
         }
         if (smtree)
-            menu_select((OBJECT FAR *)smtree, cur_sub, last_sub, TRUE);
+            menu_select((OBTREE)smtree, cur_sub, last_sub, TRUE);
     }
 
     /* Clean up: the menu up, and the item reported only if it is one
@@ -1107,7 +1107,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
         if (smtree) {
             sm_hide(tree, smparent);
             if (cur_sub != NIL)
-                do_chg((OBJECT FAR *)smtree, cur_sub, SELECTED, FALSE,
+                do_chg((OBTREE)smtree, cur_sub, SELECTED, FALSE,
                        FALSE, FALSE);
         }
         menu_sr(FALSE, itree, cur_menu);
@@ -1117,7 +1117,7 @@ WORD mn_do(WORD *ptitle, WORD *pitem, uint32_t *ptree, WORD *pmenu)
          * the menu bar's tree and find something else.  Those are
          * MN_SELECTED's words 5, 6 and 7 (ctrl.c). */
         if (smtree && cur_sub != NIL
-            && do_chg((OBJECT FAR *)smtree, cur_sub, SELECTED, FALSE,
+            && do_chg((OBTREE)smtree, cur_sub, SELECTED, FALSE,
                       FALSE, TRUE)) {
             *ptitle = cur_title;
             *pitem = cur_sub;
@@ -1156,13 +1156,13 @@ WORD mn_barowner(void)
     return (gl_mntree && mn_barpd) ? proc_pid(mn_barpd) : -1;
 }
 
-void mn_bar(OBJECT FAR *tree, WORD showit)
+void mn_bar(OBTREE tree, WORD showit)
 {
     if (showit) {
         mn_barpd = rlr;
         gl_mntree = tree;
         menu_fixup();
-        tree[THEBAR].ob_width = gl_width - tree[THEBAR].ob_x;
+        OB_SET(tree, THEBAR, ob_width, gl_width - OB_GET(tree, THEBAR, ob_x));
         ob_actxywh(tree, THEACTIVE, &gl_ctwait.m_gr);
         gsx_sclip(&gl_rzero);
         ob_draw(tree, THEBAR, MAX_DEPTH);
@@ -1193,9 +1193,9 @@ void mn_bar(OBJECT FAR *tree, WORD showit)
  * far_strput rather than a walked pointer: far pointer arithmetic is
  * 16 bits on this compiler and does not carry into the bank byte
  * (tools/ccbug), so a string near the top of a bank would wrap. */
-void mn_text(OBJECT FAR *tree, WORD item, const char *text)
+void mn_text(OBTREE tree, WORD item, const char *text)
 {
-    uint32_t d = (uint32_t)tree[item].ob_spec;
+    uint32_t d = (uint32_t)OB_GET(tree, item, ob_spec);
 
     far_strput(d, text, (uint16_t)(strlen(text) + 1));
 }

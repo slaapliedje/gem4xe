@@ -48,23 +48,37 @@ typedef struct {
  * `P->a = P->b | e` is a shape cc65816 miscompiles (tools/ccbug, B15). */
 #ifdef __CALYPSI_TARGET_6502__
 #include "../sys/farmem.h"
+#ifdef GEM4XE_FARSCAN
+/* tools/bsp6502/farscan.py: a tree is OPAQUE to the scan -- `tree + n`
+ * (bytes here, objects on the 65C816), `tree->ob_x` and a tree taken as
+ * a number without a cast are errors, so only OB_ and a cast get by */
+typedef struct ob_tree_ *OBTREE;
+typedef const struct ob_tree_ *OBCTREE;
+#define OB_A_(t)            ((uint32_t)(uintptr_t)(t))
+#else
 typedef uint32_t OBTREE;
 typedef uint32_t OBCTREE;
+#define OB_A_(t)            (t)
+#endif
 /* A call each, the address worked out in the helper
  * (src/sys6502/farmem6502.c): worked out at every access it was 33 KB
  * of objc.c, two banks. */
 uint16_t ob_rd16(uint32_t t, WORD i, uint8_t off);
 uint32_t ob_rd32(uint32_t t, WORD i, uint8_t off);
-void     ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v);
-void     ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v);
+uint16_t ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v);   /* v, for a = b = c */
+uint32_t ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v);
 #define OB_F_(f)            (((OBJECT *)0)->f)
 #define OB_GET(t, i, f)     ((__typeof__(OB_F_(f)))(sizeof OB_F_(f) == 4             \
-    ? ob_rd32(t, i, offsetof(OBJECT, f)) : (uint32_t)ob_rd16(t, i, offsetof(OBJECT, f))))
-#define OB_SET(t, i, f, v)  (sizeof OB_F_(f) == 4                                   \
-    ? ob_wr32(t, i, offsetof(OBJECT, f), (uint32_t)(v))                             \
-    : ob_wr16(t, i, offsetof(OBJECT, f), (uint16_t)(v)))
+    ? ob_rd32(OB_A_(t), i, offsetof(OBJECT, f))                                     \
+    : (uint32_t)ob_rd16(OB_A_(t), i, offsetof(OBJECT, f))))
+#define OB_SET(t, i, f, v)  ((__typeof__(OB_F_(f)))(sizeof OB_F_(f) == 4             \
+    ? ob_wr32(OB_A_(t), i, offsetof(OBJECT, f), (uint32_t)(v))                      \
+    : (uint32_t)ob_wr16(OB_A_(t), i, offsetof(OBJECT, f), (uint16_t)(v))))
 #define OB_OR(t, i, f, v)   OB_SET(t, i, f, OB_GET(t, i, f) | (v))
 #define OB_AND(t, i, f, v)  OB_SET(t, i, f, OB_GET(t, i, f) & (v))
+#define OB_PTR(t, i)        ((OBTREE)(OB_A_(t) + (uint32_t)(WORD)(i) * sizeof(OBJECT)))
+#define OB_NEAR(p)          ((OBTREE)(uint16_t)(p))
+#define OB_MEMSET(t, v, n)  far_fill(OB_A_(t), v, n)
 #else
 typedef OBJECT FAR *OBTREE;
 typedef const OBJECT FAR *OBCTREE;
@@ -72,7 +86,13 @@ typedef const OBJECT FAR *OBCTREE;
 #define OB_SET(t, i, f, v)  ((t)[i].f = (v))
 #define OB_OR(t, i, f, v)   ((t)[i].f |= (v))
 #define OB_AND(t, i, f, v)  ((t)[i].f &= (v))
+#define OB_PTR(t, i)        (&(t)[i])
+#define OB_NEAR(p)          ((OBJECT FAR *)(p))
+#define OB_MEMSET(t, v, n)  memset(t, v, n)
 #endif
+/* OB_PTR(t, i): object i's own address, a tree whose root it is (&t[i]);
+ * OB_NEAR(p): a tree in near memory, an OBJECT * -- bank 0 to the far
+ * helpers; OB_MEMSET: memset of a tree, which on the 6502 is far_fill. */
 
 /* ob_type */
 #define G_BOX       20
@@ -485,7 +505,7 @@ typedef struct {
 /* A window's visible-rectangle list: what an application may draw into
  * without touching the windows above it.  The pool is gl_olist[]. */
 typedef struct orect {
-    struct orect FAR *o_link;
+    struct orect FAR_816 *o_link;
     GRECT               o_gr;
 } ORECT;
 
@@ -523,8 +543,8 @@ typedef struct {
     WORD        w_hslide, w_vslide;     /* 0..1000 */
     WORD        w_hslsiz, w_vslsiz;     /* 0..1000, -1 = the default */
     /* Far, because the rectangle pool is (src/aes/wind.c says why). */
-    ORECT FAR *w_rlist;   /* the visible rectangles */
-    ORECT FAR *w_rnext;   /* the WF_NEXTXYWH cursor */
+    ORECT FAR_816 *w_rlist;   /* the visible rectangles: wind.c's pool */
+    ORECT FAR_816 *w_rnext;   /* the WF_NEXTXYWH cursor */
 } WINDOW;
 
 /* ---- AES-wide screen geometry (gemgraf.c's gl_* globals) ---------------

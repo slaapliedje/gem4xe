@@ -59,19 +59,19 @@ void fm_own(WORD beg_ownit)
 }
 
 /* ob_fs: an object's state, and its flags through pflag. */
-static WORD ob_fs(OBJECT FAR *tree, WORD obj, WORD *pflag)
+static WORD ob_fs(OBTREE tree, WORD obj, WORD *pflag)
 {
     WORD st;
 
-    *pflag = (WORD)tree[obj].ob_flags;
-    st = (WORD)tree[obj].ob_state;
+    *pflag = (WORD)OB_GET(tree, obj, ob_flags);
+    st = (WORD)OB_GET(tree, obj, ob_state);
     return st;
 }
 
 /* The next EDITABLE field after (FORWARD) or before (BACKWARD) start_obj,
  * or the DEFAULT object (DEFLT), skipping hidden and disabled ones;
  * start_obj itself if there is none. */
-static WORD find_obj(OBJECT FAR *tree, WORD start_obj, WORD which)
+static WORD find_obj(OBTREE tree, WORD start_obj, WORD which)
 {
     WORD obj, flag, state, inc, theflag;
 
@@ -104,7 +104,7 @@ static WORD find_obj(OBJECT FAR *tree, WORD start_obj, WORD which)
     return start_obj;
 }
 
-static WORD fm_inifld(OBJECT FAR *tree, WORD start_fld)
+static WORD fm_inifld(OBTREE tree, WORD start_fld)
 {
     if (start_fld == 0)
         start_fld = find_obj(tree, 0, FORWARD);
@@ -115,7 +115,7 @@ static WORD fm_inifld(OBJECT FAR *tree, WORD start_fld)
  * (*pchar = 0) and name the next field in *pnew_obj; RETURN/ENTER select
  * the DEFAULT object and end the form (FALSE).  Anything else is left for
  * objc_edit. */
-WORD fm_keybd(OBJECT FAR *tree, WORD obj, WORD *pchar, WORD *pnew_obj)
+WORD fm_keybd(OBTREE tree, WORD obj, WORD *pchar, WORD *pnew_obj)
 {
     WORD direction = -1;
     WORD new_obj, st;
@@ -140,7 +140,7 @@ WORD fm_keybd(OBJECT FAR *tree, WORD obj, WORD *pchar, WORD *pnew_obj)
         new_obj = find_obj(tree, obj, direction);
         *pnew_obj = new_obj;
         if (direction == DEFLT && new_obj != 0) {
-            st = (WORD)tree[new_obj].ob_state;
+            st = (WORD)OB_GET(tree, new_obj, ob_state);
             ob_change(tree, new_obj, (UWORD)(st | SELECTED), TRUE);
             return FALSE;
         }
@@ -154,7 +154,7 @@ WORD fm_keybd(OBJECT FAR *tree, WORD obj, WORD *pchar, WORD *pnew_obj)
  * form: an EXIT object selected, or any TOUCHEXIT.  *pnew_obj is the
  * object to go on editing (an EDITABLE one) or the exit object, with
  * bit 15 for a double-clicked TOUCHEXIT. */
-WORD fm_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj)
+WORD fm_button(OBTREE tree, WORD new_obj, WORD clks, WORD *pnew_obj)
 {
     WORD tobj, orword, parent, state, flags, cont, tstate, tflags;
     WORD rets[6];
@@ -173,7 +173,7 @@ WORD fm_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj)
         if (flags & RBUTTON) {
             /* turn the old radio button off and this one on */
             parent = ob_get_par(tree, new_obj);
-            tobj = tree[parent].ob_head;
+            tobj = OB_GET(tree, parent, ob_head);
             while (tobj != parent) {
                 tstate = ob_fs(tree, tobj, &tflags);
                 if ((tflags & RBUTTON) &&
@@ -186,7 +186,7 @@ WORD fm_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj)
                     }
                     ob_change(tree, tobj, (UWORD)tstate, TRUE);
                 }
-                tobj = tree[tobj].ob_next;
+                tobj = OB_GET(tree, tobj, ob_next);
             }
         } else {
             if (gr_watchbox(tree, new_obj, (WORD)(state ^ SELECTED), state))
@@ -210,7 +210,7 @@ WORD fm_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj)
 
 /* Run the dialog until an EXIT or TOUCHEXIT object is chosen; returns it.
  * start_fld is the field to put the cursor in, 0 for the first. */
-WORD fm_do(OBJECT FAR *tree, WORD start_fld)
+WORD fm_do(OBTREE tree, WORD start_fld)
 {
     WORD edit_obj, next_obj, which, cont, idx;
     WORD rets[6];
@@ -289,7 +289,7 @@ WORD fm_dial(WORD fmd_type, const GRECT *pi, const GRECT *pt)
 
 /* ---- the AES entry points ------------------------------------------- */
 
-WORD form_do(OBJECT FAR *tree, WORD start)
+WORD form_do(OBTREE tree, WORD start)
 {
     return fm_do(tree, start);
 }
@@ -299,13 +299,13 @@ WORD form_dial(WORD type, const GRECT *pi, const GRECT *pt)
     return fm_dial(type, pi, pt);
 }
 
-WORD form_keybd(OBJECT FAR *tree, WORD obj, WORD *pchar, WORD *pnew_obj)
+WORD form_keybd(OBTREE tree, WORD obj, WORD *pchar, WORD *pnew_obj)
 {
     gsx_sclip(&gl_rfull);
     return fm_keybd(tree, obj, pchar, pnew_obj);
 }
 
-WORD form_button(OBJECT FAR *tree, WORD new_obj, WORD clks, WORD *pnew_obj)
+WORD form_button(OBTREE tree, WORD new_obj, WORD clks, WORD *pnew_obj)
 {
     gsx_sclip(&gl_rfull);
     return fm_button(tree, new_obj, clks, pnew_obj);

@@ -1095,7 +1095,7 @@ static WORD sh_ldacc(const char *name)
  * person may double-click, and what boots without being asked. */
 static WORD sh_isprog(const char *name)
 {
-    static const char FAR exts[][4] = { "PRG", "G4A", "APP", "TOS" };
+    static const char FAR_816 exts[][4] = { "PRG", "G4A", "APP", "TOS" };
     const char *s = name;
     WORD i;
 
@@ -2166,7 +2166,7 @@ static int16_t sh_unpark(APP *app, uint32_t rec)
                                                           * forgot it */
     far_get((uint8_t *)&tree, rec + SU_MENU, 4);
     if (tree)
-        mn_bar((OBJECT FAR *)tree, TRUE);
+        mn_bar((OBTREE)tree, TRUE);
     wm_restore(rec + SU_WIN);
     app_near = app->near_base;
     app_far = app->far_addr;
@@ -2258,7 +2258,7 @@ static WORD sh_nodeskgo(void)
  * refuses it as it refused it before.  Under SpartaDOS X, which loads the
  * program itself (src/aes/run8sdx.c), its own relocatable format's $FA $FF
  * too. */
-static const char FAR sh_plainx[] = "COMXEXEXEOBJ";
+static const char FAR_816 sh_plainx[] = "COMXEXEXEOBJ";
 
 /* SH_CARTRIDGE, "CAR:" (src/app/gem.h, phase 165): the cartridge -- or the
  * XL/XE's own BASIC -- run as a plain program is, by that name. */
@@ -2310,7 +2310,7 @@ static WORD sh_isplain(const char *cmd)
  * another program of the name. */
 #define DOSVEC_W    (*(volatile uint16_t *)0x000A)
 
-static const char FAR sh_gemx[2][R8_GEMLEN] = { "D1:GEM.COM", "D1:AUTORUN.SYS" };
+static const char FAR_816 sh_gemx[2][R8_GEMLEN] = { "D1:GEM.COM", "D1:AUTORUN.SYS" };
 
 WORD sh_ourfile(const char *cio)
 {

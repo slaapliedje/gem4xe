@@ -57,7 +57,7 @@ volatile uint8_t irq_kb[8];
 
 /* The printer's table: a printer workstation is never opened here, and
  * vdi.c only compares against this one's address before it would be. */
-const VDIDEV FAR vdev_print = { 0 };     /* initialised: with the code, not in RAM */
+const VDIDEV FAR_816 vdev_print = { 0 };     /* initialised: with the code, not in RAM */
 
 /* ...and the rest of the handler's variables, which the VDI's timer and
  * pointer code read and pointer.c's tables fill: there, unread, until the

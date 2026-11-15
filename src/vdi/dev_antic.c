@@ -672,7 +672,7 @@ WORD dev_planes(void)
  */
 extern const uint8_t FAR font6x6[];
 
-const VDIDEV FAR vdev_antic = {
+const VDIDEV FAR_816 vdev_antic = {
     SCR_W, SCR_H, SCR_STRIDE,
     FONT_W, FONT_H,
     FONT_TOP, FONT_ASCENT, FONT_HALF, FONT_DESCENT, FONT_BOTTOM,

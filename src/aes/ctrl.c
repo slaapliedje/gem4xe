@@ -106,7 +106,7 @@ void ct_arrow_stop(void)
             w_bldactive(ct_wh);
             ct_show(ct_wh, ct_pressed, NORMAL);
         } else {
-            gl_awind[ct_pressed].ob_state = NORMAL;
+            OB_SET(gl_awind, ct_pressed, ob_state, NORMAL);
         }
         ct_pressed = 0;
     }

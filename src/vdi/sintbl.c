@@ -12,7 +12,7 @@
 #include "portab.h"
 #include "vdi.h"
 
-const UWORD FAR vdi_sin_tbl[VDI_SIN_SIZE] = {
+const UWORD FAR_816 vdi_sin_tbl[VDI_SIN_SIZE] = {
         0,   915,  1830,  2744,  3658,  4572,  5484,  6395,
      7305,  8214,  9121, 10026, 10929, 11831, 12729, 13626,
     14519, 15410, 16298, 17183, 18064, 18942, 19816, 20686,

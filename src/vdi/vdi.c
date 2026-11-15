@@ -22,7 +22,7 @@
 /* The device this VDI is drawing on (vdidev.h).  The PROGRAM sets it
  * before vdi_init() and it does not move afterwards; every SCR_ and
  * FONT_ name in this file, and every dev_ call, is a read through it. */
-const VDIDEV FAR *vdev;
+const VDIDEV FAR_816 *vdev;
 
 WORD contrl[CONTRL_SIZE];
 WORD intin[INTIN_SIZE];
@@ -264,7 +264,7 @@ static void vdev_phys(void);
 
 static void cursor_show_now(void)
 {
-    const VDIDEV FAR *keep = vdev;
+    const VDIDEV FAR_816 *keep = vdev;
 
     vdev_phys();
     /* The hot spot is the VDI's: where the form is DRAWN is this side of
@@ -278,7 +278,7 @@ static void cursor_show_now(void)
 static void cursor_hide_now(void)
 {
     if (cur_drawn) {
-        const VDIDEV FAR *keep = vdev;
+        const VDIDEV FAR_816 *keep = vdev;
 
         vdev_phys();
         dev_cursor_hide();
@@ -316,7 +316,7 @@ static void vdi_vsc_form(void)
         cur_data[i] = (UWORD)intin[21 + i];
     }
     {
-        const VDIDEV FAR *keep = vdev;
+        const VDIDEV FAR_816 *keep = vdev;
 
         vdev_phys();
         dev_cursor_form(cur_bg, cur_fg, cur_mask, cur_data);
@@ -416,7 +416,7 @@ static WORD align_y(WORD y)
  * replace, clear bits pen 0; erase paints the clear ones in the ink.  The
  * second pass of a thickened one (overlay) is drawn as dev_glyph draws
  * it, without the cell's background. */
-static const uint8_t FAR dbl4[16] = {
+static const uint8_t FAR_816 dbl4[16] = {
     0x00, 0x03, 0x0C, 0x0F, 0x30, 0x33, 0x3C, 0x3F,
     0xC0, 0xC3, 0xCC, 0xCF, 0xF0, 0xF3, 0xFC, 0xFF,
 };
@@ -868,7 +868,7 @@ static WORD vwk_select(WORD h)
         /* ...and the surface it draws on, which need not be the one the
          * last workstation drew on (src/vdi/vdi.h). */
         if (vwk.dev)
-            vdev = (const VDIDEV FAR *)vwk.dev;
+            vdev = (const VDIDEV FAR_816 *)vwk.dev;
         /* A user pattern lives in the Vwk, so PAT_USER names a
          * different sixteen rows in every workstation that has one, and
          * the cache cannot tell them apart: what it holds may be the
@@ -967,19 +967,19 @@ static void vdi_v_opnwk(void)
 static void vdev_phys(void)
 {
     if (vwk_cur == 0)
-        vdev = (const VDIDEV FAR *)vwk.dev;
+        vdev = (const VDIDEV FAR_816 *)vwk.dev;
     else
         far_get((uint8_t *)&vdev, vwk_at(0) + offsetof(Vwk, dev),
                 (uint16_t)sizeof vdev);
 }
 
 /* Slot i's device, the live copy's when it is current. */
-static const VDIDEV FAR *dev_of(WORD i)
+static const VDIDEV FAR_816 *dev_of(WORD i)
 {
-    const VDIDEV FAR *d;
+    const VDIDEV FAR_816 *d;
 
     if (i == vwk_cur)
-        return (const VDIDEV FAR *)vwk.dev;
+        return (const VDIDEV FAR_816 *)vwk.dev;
     far_get((uint8_t *)&d, vwk_at(i) + offsetof(Vwk, dev), (uint16_t)sizeof d);
     return d;
 }
@@ -989,7 +989,7 @@ static const VDIDEV FAR *dev_of(WORD i)
  * address, and the page's device's, which has none. */
 static WORD is_bitmap(WORD i)
 {
-    const VDIDEV FAR *d = dev_of(i);
+    const VDIDEV FAR_816 *d = dev_of(i);
 
     return (WORD)(d != dev_of(0) && d->surface != 0);
 }
@@ -1032,7 +1032,7 @@ static void far_put32(uint32_t a, uint32_t v)
 static void vdi_v_opnbm(void)
 {
     MFDB *m = (MFDB *)(uint16_t)contrl[7];   /* forms live in bank $00 */
-    const VDIDEV FAR *scr = vdev;
+    const VDIDEV FAR_816 *scr = vdev;
     WORD i, k, w, h;
     uint32_t at = 0, tab;
     RFORM f;
@@ -1066,7 +1066,7 @@ static void vdi_v_opnbm(void)
     far_put32(tab + offsetof(VDIDEV, surface), at);
     vwk_save(vwk_cur);
     vwk_cur = i;
-    vdev = (const VDIDEV FAR *)tab;
+    vdev = (const VDIDEV FAR_816 *)tab;
     init_wk((WORD)(i + 1));
     vwk_hdl[i] = vwk.handle;
     vwk_save(i);
@@ -1149,7 +1149,7 @@ static void vwk_to_phys(void)
      * drew on the page; a bitmap's, whose table had just been given back.
      * vwk_select answers "already current" for slot 0 and would never
      * have put it right. */
-    vdev = (const VDIDEV FAR *)vwk.dev;
+    vdev = (const VDIDEV FAR_816 *)vwk.dev;
     if (vwk.patsrc == PAT_USER)
         dev_invalidate();
 }
@@ -1166,7 +1166,7 @@ static void vwk_to_phys(void)
 static void print_closed(void)
 {
     WORD i;
-    const VDIDEV FAR *d;
+    const VDIDEV FAR_816 *d;
 
     if (!pr_page)
         return;
@@ -2939,7 +2939,7 @@ static TINY uint8_t kb_switch;          /* direct page: LoRAM is at its floor */
  * ISO key.  The keys the switch below names keep their own codes.  FAR,
  * in cfar beside the fill patterns: bank $00's near region has no 64
  * bytes to spare (tests/host/test_memory.py). */
-static const uint8_t FAR kb_st[64] = {
+static const uint8_t FAR_816 kb_st[64] = {
     0x26, 0x24, 0x27, 0x00, 0x00, 0x25, 0x4E, 0x66,   /* L J ; F1 F2 K + *   */
     0x18, 0x00, 0x19, 0x16, 0x1C, 0x17, 0x0C, 0x0D,   /* O . P U RET I - =   */
     0x2F, 0x00, 0x2E, 0x00, 0x00, 0x30, 0x2D, 0x2C,   /* V HELP C F3 F4 B X Z*/
@@ -3437,7 +3437,7 @@ typedef void (*VDI_OP)(void);
  * genuinely does not serve is vqt_real_extent (240), which is in the
  * FSM/GDOS range outside both tables -- and gem4xe has no GDOS by
  * design, which vq_gdos() answers 0 to so a program can ask. */
-static const VDI_OP FAR jmptb1[] = {
+static const VDI_OP FAR_816 jmptb1[] = {
     vdi_v_opnwk,     /*  1 */  v_nop,           /*  2 v_clswk (nop) */
     vdi_v_clrwk,     /*  3 */  vdi_v_updwk,     /*  4 */
     vdi_v_escape,    /*  5 */                   vdi_v_pline,     /*  6 */
@@ -3460,7 +3460,7 @@ static const VDI_OP FAR jmptb1[] = {
     vdi_vst_alignment /* 39 */
 };
 
-static const VDI_OP FAR jmptb2[] = {
+static const VDI_OP FAR_816 jmptb2[] = {
     vdi_v_opnvwk,    /* 100 */
     vdi_v_clsvwk,    /* 101 */
     vdi_vq_extnd,    /* 102 */

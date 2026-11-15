@@ -113,8 +113,16 @@ WINDOW         gl_win[NUM_WIN];
  * bss in src/gem4xe.scm and adding one to hold a single array would be a
  * second way of doing the same thing.  It is taken ONCE, at AES start-up,
  * as the system's (owner 0), which no program's exit frees. */
-static ORECT FAR *gl_olist;
-static ORECT FAR *gl_rul;         /* the free rectangles */
+static ORECT FAR_816 *gl_olist;
+#ifdef __CALYPSI_TARGET_6502__
+/* ON THE 6502 THE POOL IS IN WIND.C'S OWN BANK (docs/6502.md, step 4b):
+ * no far allocation and no 24-bit pointers -- every ORECT is reached from
+ * this file's functions in that bank, so a near pointer into the bank is
+ * all they need, and 800 bytes of resident memory are not taken.  The
+ * pointers stay FAR_816: far on the 65C816, where the pool is far. */
+BANK_DATA("wind") static ORECT gl_orects[NUM_ORECT];
+#endif
+static ORECT FAR_816 *gl_rul;         /* the free rectangles */
 static ORECT   gl_mkrect;           /* the rectangle newrect is breaking:
                                      * a value, near, passed by address */
 static TEDINFO gl_aname, gl_ainfo;
@@ -139,15 +147,15 @@ static TEDINFO gl_aname, gl_ainfo;
  * The ST's semantics are the better ones anyway and are what is left: the
  * AES keeps the address and reads the string again at every redraw, so an
  * application editing its title in place sees the change. */
-static void w_ptext(TEDINFO FAR *pt, uint32_t addr)
+static void w_ptext(TEDINFO FAR_816 *pt, uint32_t addr)    /* gl_aname, gl_ainfo */
 {
     pt->te_ptext = addr;
 }
 
-OBJECT FAR *gl_wtree;
-OBJECT FAR *gl_awind;
+OBTREE gl_wtree;
+OBTREE gl_awind;
 WORD    gl_wtop;
-OBJECT FAR *gl_newdesk;
+OBTREE gl_newdesk;
 WORD    gl_newroot;
 GRECT   gl_rzero;
 
@@ -164,8 +172,12 @@ static void or_start(void)
          * did, get_orect answers 0 and the window manager behaves as it
          * does when the pool is empty, which is a documented limit
          * rather than a crash. */
-        gl_olist = (ORECT FAR *)far_alloc(
+#ifdef __CALYPSI_TARGET_6502__
+        gl_olist = gl_orects;
+#else
+        gl_olist = (ORECT FAR_816 *)far_alloc(
                         (uint32_t)NUM_ORECT * sizeof(ORECT));
+#endif
         if (!gl_olist)
             return;
     }
@@ -176,9 +188,9 @@ static void or_start(void)
     }
 }
 
-static ORECT FAR *get_orect(void)
+static ORECT FAR_816 *get_orect(void)
 {
-    ORECT FAR *po = gl_rul;
+    ORECT FAR_816 *po = gl_rul;
 
     if (po)
         gl_rul = po->o_link;
@@ -194,10 +206,10 @@ static ORECT FAR *get_orect(void)
  * linked in front of `old`.  NULL if the pool is empty: that piece is then
  * simply not in the list and never drawn into -- the documented limit of
  * NUM_ORECT (the reference raises instead, so a case that hits it fails). */
-static ORECT FAR *mkpiece(WORD tlrb, const ORECT FAR *new,
-                            ORECT FAR *old)
+static ORECT FAR_816 *mkpiece(WORD tlrb, const ORECT FAR_816 *new,
+                            ORECT FAR_816 *old)
 {
-    ORECT FAR *rl = get_orect();
+    ORECT FAR_816 *rl = get_orect();
     WORD x, y, w, h;
     WORD oy2, ny2;
 
@@ -246,12 +258,12 @@ static ORECT FAR *mkpiece(WORD tlrb, const ORECT FAR *new,
 
 /* Break r around new: the pieces of r not under new replace r in the
  * list after p.  Returns the last piece, or NULL if they do not overlap. */
-static ORECT FAR *brkrct(const ORECT FAR *new, ORECT FAR *r,
-                           ORECT FAR *p)
+static ORECT FAR_816 *brkrct(const ORECT FAR_816 *new, ORECT FAR_816 *r,
+                           ORECT FAR_816 *p)
 {
     WORD have_piece[4];
     WORD i;
-    ORECT FAR *piece;
+    ORECT FAR_816 *piece;
 
     if (new->o_gr.g_x < r->o_gr.g_x + r->o_gr.g_w &&
         new->o_gr.g_x + new->o_gr.g_w > r->o_gr.g_x &&
@@ -280,10 +292,10 @@ static ORECT FAR *brkrct(const ORECT FAR *new, ORECT FAR *r,
 }
 
 /* Break every rectangle in window wh's list around gl_mkrect. */
-static void mkrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
+static void mkrect(OBTREE tree, WORD wh, WORD sx, WORD sy)
 {
     WINDOW *pwin = w_win(wh);
-    ORECT FAR *p, *r;
+    ORECT FAR_816 *p, *r;
 
     (void)tree; (void)sx; (void)sy;
     /* o_link is the first field, so the window's own list head can be
@@ -294,13 +306,13 @@ static void mkrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
      * for the bank and is right to.
      *
      * CAST THE POINTER, NOT AN INTEGER.  Writing the same thing as
-     * `uint32_t a = (uint16_t)&pwin->w_rlist; (ORECT FAR *)a` crashes
+     * `uint32_t a = (uint16_t)&pwin->w_rlist; (ORECT FAR_816 *)a` crashes
      * cc65816 5.18 outright -- "internal error:
      * Translator/Compiler/IL/Evaluate.hs:370: Irrefutable pattern failed"
      * -- and it was the first thing tried here.  Converting a near
      * POINTER to a far one is fine; converting an integer VARIABLE to one
      * is what it cannot do. */
-    p = (ORECT FAR *)&pwin->w_rlist;
+    p = (ORECT FAR_816 *)&pwin->w_rlist;
     r = p->o_link;
     while (r) {
         p = brkrct(&gl_mkrect, r, p);
@@ -318,16 +330,16 @@ static void mkrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
  * every window from the desktop up to wh loses what wh now covers; wh's
  * own list becomes its whole true rectangle (its own occluders are broken
  * out of it by the windows above it calling this in turn). */
-static void newrect(OBJECT FAR *tree, WORD wh, WORD sx, WORD sy)
+static void newrect(OBTREE tree, WORD wh, WORD sx, WORD sy)
 {
     WINDOW *pwin = w_win(wh);
-    ORECT FAR *r, *new;
+    ORECT FAR_816 *r, *new;
 
     (void)sx; (void)sy;
     /* free the old list */
     r = pwin->w_rlist;
     while (r) {
-        ORECT FAR *next = r->o_link;
+        ORECT FAR_816 *next = r->o_link;
         r->o_link = gl_rul;
         gl_rul = r;
         r = next;
@@ -408,14 +420,14 @@ static void w_adjust(WORD parent, WORD obj, WORD x, WORD y, WORD w, WORD h)
     W_ACTIVE[obj].ob_width = w;
     W_ACTIVE[obj].ob_height = h;
     W_ACTIVE[obj].ob_head = W_ACTIVE[obj].ob_tail = NIL;
-    ob_add(W_ACTIVE, parent, obj);
+    ob_add(OB_NEAR(W_ACTIVE), parent, obj);
 }
 
 /* Draw obj of tree, depth deep, once per rectangle of window wh's list
  * that meets pc (the screen if NULL), with the clip set to the piece. */
-static void do_walk(WORD wh, OBJECT FAR *tree, WORD obj, WORD depth, GRECT *pc)
+static void do_walk(WORD wh, OBTREE tree, WORD obj, WORD depth, GRECT *pc)
 {
-    ORECT FAR *po;
+    ORECT FAR_816 *po;
     GRECT t;
 
     if (wh == NIL)
@@ -488,7 +500,7 @@ static void w_setactive(void)
  * through the desktop's rectangle list. */
 void w_drawdesk(const GRECT *pc)
 {
-    OBJECT FAR *tree;
+    OBTREE tree;
     WORD depth, root;
     GRECT c;
 
@@ -898,7 +910,7 @@ void w_cpwalk(WORD wh, WORD obj, WORD depth, WORD usetrue)
 /* ---- redraw messages ------------------------------------------------------ */
 
 /* pt = the bounding box of window wh's rectangle list; FALSE if empty. */
-static WORD w_union(const ORECT FAR *po, GRECT *pt)
+static WORD w_union(const ORECT FAR_816 *po, GRECT *pt)
 {
     if (!po)
         return FALSE;
@@ -1177,7 +1189,7 @@ static void w_snap(GRECT *pt)
 void wm_init(void)
 {
     WORD i;
-    ORECT FAR *po;
+    ORECT FAR_816 *po;
 
     or_start();
     for (i = 0; i < NUM_WIN; i++) {
@@ -1217,8 +1229,8 @@ void wm_init(void)
     w_setsize(WS_WORK, DESKWH, &gl_rfull);
 
     gl_wtop = NIL;
-    gl_wtree = W_TREE;
-    gl_awind = W_ACTIVE;
+    gl_wtree = OB_NEAR(W_TREE);
+    gl_awind = OB_NEAR(W_ACTIVE);
     gl_newdesk = 0;
     gl_newroot = ROOT;
     r_set(&gl_rzero, 0, 0, 0, 0);
@@ -1268,7 +1280,7 @@ WORD wm_open(WORD w_handle, const GRECT *pt)
     w_snap(&t);
     wm_update(BEG_UPDATE);
     pwin->w_flags |= VF_ISOPEN;
-    ob_add(W_TREE, ROOT, w_handle);
+    ob_add(OB_NEAR(W_TREE), ROOT, w_handle);
     draw_change(w_handle, &t);
     w_setsize(WS_PREV, w_handle, &t);
     wm_update(END_UPDATE);
@@ -1311,7 +1323,7 @@ WORD wm_delete(WORD w_handle)
 /* The rectangle list walk of WF_FIRSTXYWH/WF_NEXTXYWH: the next piece
  * of the list from po that meets pt, into pout, leaving the cursor after
  * it; an empty rectangle when the list is done. */
-static void w_owns(WINDOW *pwin, ORECT FAR *po, const GRECT *pt,
+static void w_owns(WINDOW *pwin, ORECT FAR_816 *po, const GRECT *pt,
                    GRECT *pout)
 {
     while (po) {
@@ -1679,7 +1691,7 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
          * the low one until 2026-09-19, which silently truncated the
          * background tree of any program whose globals are in far
          * memory (src/app/gem.h wind_newdesk). */
-        gl_newdesk = (OBJECT FAR *)((((uint32_t)(uint16_t)pinwds[0]) << 16)
+        gl_newdesk = (OBTREE)((((uint32_t)(uint16_t)pinwds[0]) << 16)
                                     | (uint16_t)pinwds[1]);
         gl_newroot = pinwds[2];
         break;

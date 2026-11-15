@@ -294,5 +294,88 @@ class AcrossFiles(unittest.TestCase):
         self.assertRegex(r.stdout, r"j(sr|mp) ga__b -- in bank 1, from bank 2")
 
 
+# BANK_DATA (src/portab.h): an array in bank 1's own memory, used there
+SRC_D = r"""
+#pragma clang section text="bank1"
+__attribute__((section("bank1__bank"))) static int pool[40];
+int fd(int i) { pool[i] = i + 7; return pool[i]; }
+"""
+SRC_D_BAD = r"""
+#pragma clang section text="bank1"
+__attribute__((section("bank1__bank"))) static int pool[40];
+int fd(int i) { pool[i] = i + 7; return pool[i]; }
+#pragma clang section text="bank2"
+void fe(int i) { pool[i] = 3; }
+"""
+MAIN_D = r"""
+int fd(int);
+int main(void) { return fd(1); }
+"""
+SCM_D = SCM.replace("(section bank1))", "(section bank1 bank1__bank))")
+
+
+@unittest.skipUnless(os.path.exists(CC), "cc6502 not installed")
+class BankData(unittest.TestCase):
+    """A BANK_DATA array: bankasm.py makes its section bits in the bank, the
+    link puts them in bank 1's store with the code, and the checks pass;
+    a store to it from bank 2 is refused by the assembly check."""
+
+    BANKS = ["--bank", "bank1=1", "--bank", "bank2=2"]
+
+    def build(self, src, tag):
+        d = self.d
+        with open(os.path.join(d, f"{tag}.c"), "w") as f:
+            f.write(src)
+        r = run(CC, "-O2", "--core", "6502", "--no-cross-call", "-c", f"{tag}.c",
+                "-o", f"{tag}.o", f"--assembly-source={tag}.s", cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = run(sys.executable, os.path.join(TOOLS, "bankasm.py"), "--index", f"{tag}.idx",
+                *self.BANKS, f"{tag}.s", cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = run(sys.executable, os.path.join(TOOLS, "bankasm.py"), f"{tag}.s", f"{tag}.b.s",
+                "--tu", tag, *self.BANKS, "--index", f"{tag}.idx", cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return run(sys.executable, os.path.join(TOOLS, "bankcheck.py"), "--asm", f"{tag}.b.s",
+                   *self.BANKS, "--index", f"{tag}.idx", cwd=d)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.d = tempfile.mkdtemp(prefix="bank6502d-")
+        weakref.finalize(cls, shutil.rmtree, cls.d, True)
+        for name, text in (("m.c", MAIN_D), ("t.scm", SCM_D)):
+            with open(os.path.join(cls.d, name), "w") as f:
+                f.write(text)
+        r = run(CC, "-O2", "--core", "6502", "-c", "m.c", "-o", "m.o", cwd=cls.d)
+        assert r.returncode == 0, r.stderr
+        r = run(AS, "--core", "6502", os.path.join(ROOT, "src", "sys6502", "bank6502.s"),
+                "-o", "bank.o", cwd=cls.d)
+        assert r.returncode == 0, r.stderr
+
+    def test_in_the_bank_and_clean(self):
+        d = self.d
+        r = self.build(SRC_D, "dd")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        with open(os.path.join(d, "dd.b.s")) as f:
+            self.assertIn(".section bank1__bank,text", f.read())
+        r = run(AS, "--core", "6502", "dd.b.s", "-o", "dd.b.o", cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = run(LN, "t.scm", "dd.b.o", "m.o", "bank.o", "-o", "dd.elf",
+                os.path.join(CAL, "lib", "clib-6502.a"), "--verbose", "--list-file", "dd.map",
+                cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(d, "dd.map")) as f:
+            m = f.read()
+        self.assertRegex(m, r"bank1__bank\s+4[0-9a-f]{3}-4[0-9a-f]{3}\s+0050\s+Bank1",
+                         "the array is not 80 bytes in bank 1's window")
+        r = run(sys.executable, os.path.join(TOOLS, "bankcheck.py"), "dd.map", "--elf", "dd.elf",
+                cwd=d)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_used_from_another_bank_is_refused(self):
+        r = self.build(SRC_D_BAD, "db")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertRegex(r.stdout, r"sta pool -- in bank 1, from bank 2")
+
+
 if __name__ == "__main__":
     unittest.main()

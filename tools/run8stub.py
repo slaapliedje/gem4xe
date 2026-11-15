@@ -60,7 +60,7 @@ def main(argv):
             f.write(f"#define {name.upper():<11} {off}\n")
         f.write(f"#define R8_PROGLEN  {PROG_LEN}\n")
         f.write(f"#define R8_GEMLEN   {GEM_LEN}\n")
-        f.write("static const uint8_t FAR r8_stub[R8_LEN] = {\n    ")
+        f.write("static const uint8_t FAR_816 r8_stub[R8_LEN] = {\n    ")
         f.write(",\n    ".join(rows))
         f.write("\n};\n")
     print(f"{argv[2]}: {len(code[AT])} bytes at ${AT:04X} ({ROOM - len(code[AT])} spare), "

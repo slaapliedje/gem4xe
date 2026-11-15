@@ -403,7 +403,7 @@ static TINY uint32_t gl_dicon;
  * another, and the buttons came out white and the dialog yellow
  * (tools/ccbug B24).  An index has no join. */
 static WORD col3d[4] = { LWHITE, LWHITE, LWHITE, LWHITE };
-static const uint8_t FAR col3d_btn[4] = { 1, 1, 2, 1 };  /* a BUTTON: an
+static const uint8_t FAR_816 col3d_btn[4] = { 1, 1, 2, 1 };  /* a BUTTON: an
                                  * activator's ground, or an indicator's */
 #define indbutcol col3d[1]
 #define actbutcol col3d[2]
@@ -433,7 +433,7 @@ WORD ob_3dground(void)
  * what a colour-changing object is drawn in when it is selected. */
 static WORD xor_color(WORD color)
 {
-    static const uint8_t FAR comp16[16] = {     /* FAR: bank $00's near
+    static const uint8_t FAR_816 comp16[16] = {     /* FAR: bank $00's near
                                                  * region is full */
         BLACK, WHITE, 13, 15, 14, 10, 12, 11,
         LBLACK, LWHITE, 5, 7, 6, 2, 4, 3

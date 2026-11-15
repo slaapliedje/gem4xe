@@ -38,7 +38,7 @@ CAL6      ?= $(HOME)/dev/toolchains/calypsi-6502
 CC6        = $(CAL6)/bin/cc6502
 AS6        = $(CAL6)/bin/as6502
 LN6        = $(CAL6)/bin/ln6502
-CFLAGS6    = -O2 --core 6502 -I src -I src/vdi -DGEM4XE_BANKED
+CFLAGS6    = -O2 --core 6502 -I src -I src/vdi -DGEM4XE_BANKED -Werror=int-conversion
 B6         = build/b6502
 DEVANTIC6  = -DGEM4XE_DEV_IMPL -DGEM4XE_DEV_PREFIX=and_ -DGEM4XE_DEV_ANTIC
 HDRS6      = src/portab.h $(wildcard src/vdi/*.h src/sys/*.h src/antic/*.h src/aes/*.h)

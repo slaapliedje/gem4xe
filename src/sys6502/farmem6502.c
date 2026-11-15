@@ -170,8 +170,8 @@ static uint32_t ob_at(uint32_t t, WORD i, uint8_t off)
 
 uint16_t ob_rd16(uint32_t t, WORD i, uint8_t off) { return far_rd16(ob_at(t, i, off)); }
 uint32_t ob_rd32(uint32_t t, WORD i, uint8_t off) { return far_rd32(ob_at(t, i, off)); }
-void ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v) { far_wr16(ob_at(t, i, off), v); }
-void ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v) { far_wr32(ob_at(t, i, off), v); }
+uint16_t ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v) { far_wr16(ob_at(t, i, off), v); return v; }
+uint32_t ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v) { far_wr32(ob_at(t, i, off), v); return v; }
 
 /* Far to far goes through a near buffer: the window holds one bank. */
 static uint8_t bounce[64];

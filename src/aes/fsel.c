@@ -148,34 +148,35 @@ static void unfmt_str(const char *instr, char *outstr)
 
 /* The tree is far, and so is every TEDINFO and string in it: what the
  * selector reads or writes of them goes through farmem's helpers. */
-static TEDINFO FAR *ted_of(OBJECT FAR *tree, WORD obj)
+static uint32_t ted_of(OBTREE tree, WORD obj)
 {
-    return (TEDINFO FAR *)tree[obj].ob_spec;
+    return OB_GET(tree, obj, ob_spec);
 }
+#define TED_GET(t, f)       FAR_GETF(TEDINFO, t, f)
 
 /* The string into the object's text, cut to the TEDINFO's length. */
-static void inf_sset(OBJECT FAR *tree, WORD obj, const char *pstr)
+static void inf_sset(OBTREE tree, WORD obj, const char *pstr)
 {
-    TEDINFO FAR *ted = ted_of(tree, obj);
-    WORD len = ted->te_txtlen;      /* a scalar first: B5, tools/ccbug */
+    uint32_t ted = ted_of(tree, obj);
+    WORD len = TED_GET(ted, te_txtlen);     /* a scalar first: B5, tools/ccbug */
 
-    far_strput(ted->te_ptext, pstr, (uint16_t)len);
+    far_strput(TED_GET(ted, te_ptext), pstr, (uint16_t)len);
 }
 
-static void inf_sget(OBJECT FAR *tree, WORD obj, char *pstr)
+static void inf_sget(OBTREE tree, WORD obj, char *pstr)
 {
-    far_strget(pstr, ted_of(tree, obj)->te_ptext, LEN_FSNAME);
+    far_strget(pstr, TED_GET(ted_of(tree, obj), te_ptext), LEN_FSNAME);
 }
 
 /* 1 if `ok` is SELECTED, 0 if the object after it is, -1 if neither; the
  * one that was is put back to NORMAL. */
-static WORD inf_what(OBJECT FAR *tree, WORD ok)
+static WORD inf_what(OBTREE tree, WORD ok)
 {
     WORD field;
 
     for (field = 0; field < 2; field++)
-        if (tree[ok + field].ob_state & SELECTED) {
-            tree[ok + field].ob_state = NORMAL;
+        if (OB_GET(tree, ok + field, ob_state) & SELECTED) {
+            OB_SET(tree, ok + field, ob_state, NORMAL);
             return field == 0;
         }
     return -1;
@@ -216,12 +217,10 @@ static void ins_char(char *str, WORD pos, char chr, WORD tot_len)
 
 /* ---- gemfslib.c ------------------------------------------------------ */
 
-static void centre_title(OBJECT FAR *tree, WORD objnum)
+static void centre_title(OBTREE tree, WORD objnum)
 {
-    OBJECT FAR *str = tree + objnum;
-
-    str->ob_x = (tree->ob_width
-                 - (WORD)far_slen(str->ob_spec) * gl_wchar) / 2;
+    OB_SET(tree, objnum, ob_x, (OB_GET(tree, ROOT, ob_width)
+                 - (WORD)far_slen(OB_GET(tree, objnum, ob_spec)) * gl_wchar) / 2);
 }
 
 /* Back from the end of the path to the last separator, or the colon of
@@ -348,16 +347,14 @@ static WORD fs_1scroll(WORD curr, WORD count, WORD touchob)
 }
 
 /* The nine name lines from the list at currtop, and the elevator. */
-static void fs_format(OBJECT FAR *tree, WORD currtop, WORD count)
+static void fs_format(OBTREE tree, WORD currtop, WORD count)
 {
     WORD i, cnt, y, h, th;
     char name[LEN_FSNAME], raw[LEN_FSNAME];
-    OBJECT FAR *obj;
-
     cnt = count - currtop;
     if (cnt > NM_NAMES)
         cnt = NM_NAMES;
-    for (i = 0, obj = tree + NAME_OFFSET; i < NM_NAMES; i++, obj++) {
+    for (i = 0; i < NM_NAMES; i++) {
         if (i < cnt) {
             far_strget(raw, fs_slot(currtop + i), LEN_FSNAME);
             fmt_str(raw + 1, name + 1);
@@ -367,25 +364,23 @@ static void fs_format(OBJECT FAR *tree, WORD currtop, WORD count)
             name[1] = 0;
         }
         inf_sset(tree, NAME_OFFSET + i, name);
-        obj->ob_type = G_FBOXTEXT;
-        obj->ob_state = NORMAL;
+        OB_SET(tree, NAME_OFFSET + i, ob_type, G_FBOXTEXT);
+        OB_SET(tree, NAME_OFFSET + i, ob_state, NORMAL);
     }
 
     y = 0;
-    obj = tree + FS_FSVSLID;
-    th = h = obj->ob_height;
+    th = h = OB_GET(tree, FS_FSVSLID, ob_height);
     if (count > NM_NAMES) {
         h = mul_div_round(NM_NAMES, h, count);
         if (h < gl_hbox)
             h = gl_hbox;
         y = mul_div_round(currtop, th - h, count - NM_NAMES);
     }
-    obj = tree + FS_FSVELEV;
-    obj->ob_y = y;
-    obj->ob_height = h;
+    OB_SET(tree, FS_FSVELEV, ob_y, y);
+    OB_SET(tree, FS_FSVELEV, ob_height, h);
 }
 
-static void fs_sel(OBJECT FAR *tree, WORD sel, WORD state)
+static void fs_sel(OBTREE tree, WORD sel, WORD state)
 {
     if (sel)
         ob_change(tree, FS_F1NAME + sel - 1, state, TRUE);
@@ -393,7 +388,7 @@ static void fs_sel(OBJECT FAR *tree, WORD sel, WORD state)
 
 /* Scroll the list n names the arrow's way: the rows that stay are
  * blitted, the rest redrawn. */
-static WORD fs_nscroll(OBJECT FAR *tree, WORD *psel, WORD curr, WORD count,
+static WORD fs_nscroll(OBTREE tree, WORD *psel, WORD curr, WORD count,
                        WORD touchob, WORD n)
 {
     WORD i, newcurr, diffcurr, sy, dy, neg;
@@ -441,7 +436,7 @@ static WORD fs_nscroll(OBJECT FAR *tree, WORD *psel, WORD curr, WORD count,
 }
 
 /* A new directory: read it, show it.  FALSE when it could not be read. */
-static WORD fs_newdir(char *fpath, char *pspec, OBJECT FAR *tree, WORD *pcount)
+static WORD fs_newdir(char *fpath, char *pspec, OBTREE tree, WORD *pcount)
 {
     static const WORD gl_fsobj[3] = {FS_FTITLE, FS_FILEBOX, FS_SCRLBAR};
     WORD i;
@@ -450,7 +445,7 @@ static WORD fs_newdir(char *fpath, char *pspec, OBJECT FAR *tree, WORD *pcount)
     if (!fs_active(fpath, pspec, pcount))
         return FALSE;
     fs_format(tree, 0, *pcount);
-    ted_of(tree, FS_FTITLE)->te_ptext = (uint16_t)pspec;
+    FAR_SETF(TEDINFO, ted_of(tree, FS_FTITLE), te_ptext, (uint16_t)pspec);
     for (i = 0; i < 3; i++)
         ob_draw(tree, gl_fsobj[i], MAX_DEPTH);
     return TRUE;
@@ -472,19 +467,18 @@ static void set_mask(char *mask, char *path)
     *mask = 0;
 }
 
-static void select_drive(OBJECT FAR *tree, WORD drive, WORD redraw)
+static void select_drive(OBTREE tree, WORD drive, WORD redraw)
 {
     WORD i, olddrive = -1;
-    OBJECT FAR *obj, *start = tree + DRIVE_OFFSET;
 
     if (drive < 0 || drive >= NM_DRIVES)
         return;
-    for (i = 0, obj = start; i < NM_DRIVES; i++, obj++)
-        if (obj->ob_state & SELECTED) {
-            obj->ob_state &= ~SELECTED;
+    for (i = 0; i < NM_DRIVES; i++)
+        if (OB_GET(tree, DRIVE_OFFSET + i, ob_state) & SELECTED) {
+            OB_AND(tree, DRIVE_OFFSET + i, ob_state, ~SELECTED);
             olddrive = i;
         }
-    (start + drive)->ob_state |= SELECTED;
+    OB_OR(tree, DRIVE_OFFSET + drive, ob_state, SELECTED);
     if (redraw && drive != olddrive) {
         if (olddrive >= 0)
             ob_draw(tree, olddrive + DRIVE_OFFSET, MAX_DEPTH);
@@ -505,10 +499,10 @@ static WORD shown_drive(const char *path)
 }
 
 /* The path into the directory line, as it is shown. */
-static void dir_sset(OBJECT FAR *tree, const char *path)
+static void dir_sset(OBTREE tree, const char *path)
 {
-    TEDINFO FAR *ted = ted_of(tree, FS_FSDIRECT);
-    WORD len = ted->te_txtlen;      /* a scalar first: B5, tools/ccbug */
+    uint32_t ted = ted_of(tree, FS_FSDIRECT);
+    WORD len = TED_GET(ted, te_txtlen);     /* a scalar first: B5, tools/ccbug */
     char line[LEN_FSPATH + 2];
     char *d = line;
     char *end;
@@ -524,7 +518,7 @@ static void dir_sset(OBJECT FAR *tree, const char *path)
     while (*path && d < end)
         *d++ = *path++;
     *d = 0;
-    far_strput(ted->te_ptext, line, (uint16_t)len);
+    far_strput(TED_GET(ted, te_ptext), line, (uint16_t)len);
 }
 
 /* What was typed on the directory line, as a path: "D1:" (or "1:") is
@@ -549,14 +543,14 @@ static void dir_sget(char *path, const char *line)
 }
 
 /* Does the path differ from what the directory field shows? */
-static WORD path_changed(OBJECT FAR *tree, const char *path)
+static WORD path_changed(OBTREE tree, const char *path)
 {
-    TEDINFO FAR *ted = ted_of(tree, FS_FSDIRECT);
+    uint32_t ted = ted_of(tree, FS_FSDIRECT);
     char text[LEN_FSPATH + 2];
     const char *line = text;
-    WORD n = (WORD)(ted->te_txtlen - 1);
+    WORD n = (WORD)(TED_GET(ted, te_txtlen) - 1);
 
-    far_strget(text, ted->te_ptext, sizeof text);
+    far_strget(text, TED_GET(ted, te_ptext), sizeof text);
 
     if (shown_drive(path)) {
         if (line[0] != 'D' || line[1] != (char)('1' + path[0] - 'A'))
@@ -594,8 +588,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     WORD touchob, value, fnum;
     WORD curr, count, sel;
     WORD mx, my;
-    OBJECT FAR *tree, *obj;
-    RSHDR FAR *h;
+    OBTREE tree;
     UWORD bitmask;
     uint32_t ad_fpath, ad_fname, at;
     WORD fname_len;
@@ -628,21 +621,21 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
     /* the tree, a fresh copy in its far block, fixed up where it lies */
     far_copy(fs_tree_far, (uint32_t)(const uint8_t FAR *)fs_rsc, FS_RSC_SIZE);
     rs_fixit(fs_tree_far);
-    h = (RSHDR FAR *)fs_tree_far;
-    far_get((uint8_t *)&at, fs_tree_far + h->rsh_trindex, sizeof at);
-    tree = (OBJECT FAR *)at;
+    far_get((uint8_t *)&at, fs_tree_far + FAR_GETF(RSHDR, fs_tree_far, rsh_trindex),
+            sizeof at);
+    tree = (OBTREE)at;
 
     /* the donor's fs_start: centred, and the scroll bar the width of a
      * box in this resolution, the title (which overhangs it) narrowed
      * to match */
     ob_center(tree, &rfs);
-    diff = tree[FS_SCRLBAR].ob_width - gl_wbox;
-    tree[FS_FTITLE].ob_width -= diff;
-    tree[FS_SCRLBAR].ob_width = gl_wbox;
-    tree[FS_FUPAROW].ob_width = gl_wbox;
-    tree[FS_FDNAROW].ob_width = gl_wbox;
-    tree[FS_FSVSLID].ob_width = gl_wbox;
-    tree[FS_FSVELEV].ob_width = gl_wbox;
+    diff = OB_GET(tree, FS_SCRLBAR, ob_width) - gl_wbox;
+    OB_SET(tree, FS_FTITLE, ob_width, OB_GET(tree, FS_FTITLE, ob_width) - diff);
+    OB_SET(tree, FS_SCRLBAR, ob_width, gl_wbox);
+    OB_SET(tree, FS_FUPAROW, ob_width, gl_wbox);
+    OB_SET(tree, FS_FDNAROW, ob_width, gl_wbox);
+    OB_SET(tree, FS_FSVSLID, ob_width, gl_wbox);
+    OB_SET(tree, FS_FSVELEV, ob_width, gl_wbox);
 
     /* the caller's path, cut to what the work area holds -- the donor
      * copies it whole, docs/phase11.md */
@@ -653,26 +646,25 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
 
     /* the strings in the form */
     set_mask(mask, locstr);
-    ted_of(tree, FS_FTITLE)->te_ptext = (uint16_t)mask;
+    FAR_SETF(TEDINFO, ted_of(tree, FS_FTITLE), te_ptext, (uint16_t)mask);
 
-    ad_fpath = ted_of(tree, FS_FSDIRECT)->te_ptext;
+    ad_fpath = TED_GET(ted_of(tree, FS_FSDIRECT), te_ptext);
     dir_sset(tree, locstr);
 
-    ad_fname = ted_of(tree, FS_FSSELECT)->te_ptext;
-    fname_len = ted_of(tree, FS_FSSELECT)->te_txtlen;
+    ad_fname = TED_GET(ted_of(tree, FS_FSSELECT), te_ptext);
+    fname_len = TED_GET(ted_of(tree, FS_FSSELECT), te_txtlen);
     fmt_str(pisel, selname);
     inf_sset(tree, FS_FSSELECT, selname);
 
     if (pilabel)
-        tree[FS_FSTITLE].ob_spec = (uint16_t)pilabel;
+        OB_SET(tree, FS_FSTITLE, ob_spec, (uint16_t)pilabel);
     centre_title(tree, FS_FSTITLE);
 
-    obj = tree + DRIVE_OFFSET;
-    for (drive = 0, bitmask = 1; drive < NM_DRIVES; drive++, bitmask <<= 1, obj++) {
+    for (drive = 0, bitmask = 1; drive < NM_DRIVES; drive++, bitmask <<= 1) {
         if (gl_drvbits & bitmask)
-            obj->ob_state &= ~DISABLED;
+            OB_AND(tree, DRIVE_OFFSET + drive, ob_state, ~DISABLED);
         else
-            obj->ob_state |= DISABLED;
+            OB_OR(tree, DRIVE_OFFSET + drive, ob_state, DISABLED);
     }
     select_drive(tree, get_drive(locstr), 0);
 
@@ -790,7 +782,7 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
                 break;
             if (path_changed(tree, locstr))     /* an edited mask: no drive change */
                 break;
-            if (tree[touchob].ob_state & DISABLED)
+            if (OB_GET(tree, touchob, ob_state) & DISABLED)
                 break;
             drive_path(locstr, drive, mask);
             newdrive = TRUE;

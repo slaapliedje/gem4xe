@@ -175,7 +175,7 @@ void antic_patt_span(int16_t x1, int16_t x2, int16_t y, uint16_t patrow,
  * written once -- or only written, where a replace covers all of it --
  * because every screen access is on the 1.79 MHz bus however fast the
  * CPU is (docs/phase52.md).  Modes are the VDI's, numbered from 1. */
-void antic_raster_row(const uint8_t FAR *row, uint16_t sbit,
+void antic_raster_row(const uint8_t FAR_816 *row, uint16_t sbit,   /* near on the 6502 */
                       int16_t x1, int16_t x2, int16_t y,
                       int16_t mode, uint8_t pen, uint8_t pap);
 

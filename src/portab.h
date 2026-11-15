@@ -42,6 +42,7 @@
 #include <calypsi/intrinsics65816.h>
 
 #define FAR          __far
+#define FAR_816      __far      /* far here; near on the 6502 (below) */
 #define NEAR         __near
 #define TINY         __attribute__((tiny))
 #define SIMPLE_CALL  __simple_call
@@ -56,6 +57,7 @@
 #define SAVEDS       __attribute__((saveds))
 #define SECTION(s)   __attribute__((section(s)))
 #define BANK_TEXT(s)                    /* the 6502's banks: nothing here */
+#define BANK_DATA(s)                    /* ...nor here */
 #define memcpy_far   __memcpy_far
 /* Not __disable_interrupts(): an SEI in native mode can start an IRQ
  * storm on Windows Altirra (src/sys/sei.s). */
@@ -71,7 +73,17 @@ void irq_sei(void);
  * is defined away here only to see what else breaks; every FAR in the C is
  * a place the 6502 build needs a banked accessor instead (docs/6502.md,
  * "the far data"), and nothing built with this block runs. */
+#ifdef GEM4XE_FARSCAN                   /* tools/bsp6502/farscan.py: host clang */
+#define FAR          __attribute__((noderef))
+#else
 #define FAR
+#endif
+/* FAR_816: far on the 65C816, where the large model's placement puts the
+ * thing in another bank -- a device's table, a constant table, a block
+ * of the bank-$00 pool reached through a far pointer -- and NEAR here,
+ * where it is resident.  The scan lets it be dereferenced; a plain FAR
+ * it does not, because on the 6502 that is a 24-bit address. */
+#define FAR_816
 #define NEAR
 #define TINY         __attribute__((zpage))
 #define SIMPLE_CALL
@@ -84,6 +96,12 @@ void irq_sei(void);
  * tools/bsp6502/bankasm.py writes into the file's assembly. */
 #define BANK_STR_(x) #x
 #define BANK_TEXT(s) _Pragma(BANK_STR_(clang section text=s))
+/* BANK_DATA("name"): this variable in bank `name`'s own memory -- PORTB
+ * banks are RAM -- loaded with the code (tools/bsp6502/bankasm.py makes
+ * section name__bank the bank's bits).  ONLY that bank's code may use it,
+ * by name or through a pointer: anywhere else the window holds another
+ * bank.  bankcheck refuses a use by name from elsewhere. */
+#define BANK_DATA(s) __attribute__((section(s "__bank")))
 #define memcpy_far   memcpy
 void irq_sei(void);
 #define cpu_sei()    irq_sei()

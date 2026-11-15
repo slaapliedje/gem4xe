@@ -137,7 +137,7 @@ typedef struct {
  * the only caller. */
 #define VDI_SIN_ANGLE_MAX 896
 #define VDI_SIN_SIZE      ((VDI_SIN_ANGLE_MAX / 8) + 1)
-extern const UWORD FAR vdi_sin_tbl[VDI_SIN_SIZE];
+extern const UWORD FAR_816 vdi_sin_tbl[VDI_SIN_SIZE];
 
 /* A curve is drawn as this many segments, from the larger radius over
  * four and clamped -- fewer than the donor's 32..128, because ptsin
@@ -200,10 +200,10 @@ extern const UWORD FAR vdi_sin_tbl[VDI_SIN_SIZE];
 /* FAR, in `cfar` with the far code: 608 bytes of bank $00 is 23% of
  * all the near memory the system has, and these are read a row at a
  * time when a fill's pattern changes, not per pixel (docs/phase24.md). */
-extern const UWORD FAR fill_dither[32];
-extern const UWORD FAR fill_oem[128];
-extern const UWORD FAR fill_hatch0[48];
-extern const UWORD FAR fill_hatch1[96];
+extern const UWORD FAR_816 fill_dither[32];
+extern const UWORD FAR_816 fill_oem[128];
+extern const UWORD FAR_816 fill_hatch0[48];
+extern const UWORD FAR_816 fill_hatch1[96];
 
 /* The workstation a call names in contrl[6]: every VDI routine reads and
  * writes this one, and the dispatcher copies the right one in (vdi.c). */

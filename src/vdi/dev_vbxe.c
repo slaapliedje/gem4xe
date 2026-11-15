@@ -2151,11 +2151,11 @@ extern const uint8_t FAR font8x8[];
  * always offered -- the BUFFER is VB_H lines whatever is shown, so only
  * the XDL and what this reports change. */
 #define VBXE_DEVS(ww)  { VBXE_DEV(ww, VB_H), VBXE_DEV(ww, 224), VBXE_DEV(ww, 200) }
-const VDIDEV FAR vdev_vbxe_tab[VB_WIDTHS][VB_HEIGHTS] = {
+const VDIDEV FAR_816 vdev_vbxe_tab[VB_WIDTHS][VB_HEIGHTS] = {
     VBXE_DEVS(VB_W_NARROW),
     VBXE_DEVS(VB_W_NORMAL),
     VBXE_DEVS(VB_W_WIDE),
 };
 /* The one a runner that does not care means: the screen as it has always
  * been, 640 by 240. */
-const VDIDEV FAR *const vdev_vbxe = &vdev_vbxe_tab[VB_WIDE_NORMAL][0];
+const VDIDEV FAR_816 *const vdev_vbxe = &vdev_vbxe_tab[VB_WIDE_NORMAL][0];

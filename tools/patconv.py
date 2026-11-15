@@ -58,7 +58,7 @@ def emit(tables, out):
             # FAR: the tables are 608 bytes and bank $00 has none to
             # spare, so they live in `cfar` with the far code and are read
             # long (src/gem4xe.scm, and docs/phase24.md for what filled it)
-            f.write(f"const UWORD FAR {ours}[{rows * count}] = {{\n")
+            f.write(f"const UWORD FAR_816 {ours}[{rows * count}] = {{\n")
             for i in range(0, len(words), rows):
                 chunk = words[i:i + rows]
                 for j in range(0, len(chunk), 8):
