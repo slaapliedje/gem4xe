@@ -86,9 +86,6 @@ def main(argv):
     b = emu.bridge
     try:
         b.frames(500)
-        for k in ("V", "6", "RETURN"):
-            b.key(k)
-            b.frames(6)
         for t in range(0, 6000, 50):
             b.frames(50)
             if bytes(b.memdump(STATUS, 3)) == b"AVK":

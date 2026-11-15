@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mkxex6502.py -- a banked 6502 link as an Atari binary file.
 
-    python3 tools/bsp6502/mkxex6502.py IN.elf OUT.xex
+    python3 tools/bsp6502/mkxex6502.py IN.elf OUT.xex [--report]
 
 The link (tools/bsp6502/gem6502.scm) puts resident code and data below
 $4000 and above $8000, and each bank's code at $4000-$7FFF with its bytes
@@ -54,7 +54,8 @@ def seg(start, body):
 
 
 def main(argv):
-    if len(argv) != 3:
+    argv = [a for a in argv if a != "--report"] + (["--report"] if "--report" in argv else [])
+    if len(argv) not in (3, 4):
         print(__doc__)
         return 2
     data = open(argv[1], "rb").read()
@@ -89,13 +90,21 @@ def main(argv):
     for a, body in sorted(resident):
         out += seg(a, body)
     out += seg(INITAD, struct.pack("<H", addr("b6_probe")))
+    if "--report" in argv:              # the probe's findings on E:, now
+        out += seg(INITAD, struct.pack("<H", addr("b6_report")))
     nxt, sel = addr("b6_next"), addr("b6_sel")
     for n in sorted(banks):
         out += seg(nxt, bytes([n]))
         out += seg(INITAD, struct.pack("<H", sel))
+        if "--report" in argv:          # the bank is in the window
+            out += seg(INITAD, struct.pack("<H", addr("b6_report")))
         for a, body in sorted(banks[n]):
             out += seg(a, body)
+        if "--report" in argv:          # ...and its code went in
+            out += seg(INITAD, struct.pack("<H", addr("b6_report")))
     out += seg(INITAD, struct.pack("<H", addr("b6_main")))
+    if "--report" in argv:              # ...and again: every bank went in
+        out += seg(INITAD, struct.pack("<H", addr("b6_report")))
     out += seg(RUNAD, struct.pack("<H", entry))
     open(argv[2], "wb").write(out)
     sizes = ", ".join(f"bank {n} {sum(len(b) for _, b in banks[n])}" for n in sorted(banks))

@@ -34,7 +34,7 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
 
-              .public b6_probe, b6_sel, b6_main, b6_next, _bcall
+              .public b6_probe, b6_sel, b6_main, b6_next, _bcall, b6_report
               .public b6_cur, b6_count, b6_portb, bc_t
 
 PORTB:        .equ    0xd301
@@ -270,6 +270,74 @@ nobank:       jsr     b6_main
               sta     0x349
               jsr     0xe456
               jmp     (DOSVEC)
+
+;;; ---------------------------------------------------------------------------
+;;; b6_report -- INITAD after b6_probe, when the loader is asked for it
+;;; (tools/bsp6502/mkxex6502.py --report): "B6 nn pp pp pp pp" on E:, the
+;;; banks found and the first PORTB values, before any bank is loaded --
+;;; for a machine whose memory nothing can read (the MiSTer core).
+;;; ---------------------------------------------------------------------------
+b6_report:    lda     b6_count
+              ldx     #3
+              jsr     hexout
+              ldy     #0
+10$:          lda     b6_portb,y
+              sty     pr_k
+              tya
+              asl     a
+              asl     a
+              asl     a
+              adc     #6              ; "B6 nn " is 6, then 3 a value
+              sec
+              sbc     pr_k
+              sbc     pr_k
+              sbc     pr_k
+              sbc     pr_k
+              sbc     pr_k            ; = 6 + 3y
+              tax
+              lda     b6_portb,y
+              jsr     hexout
+              ldy     pr_k
+              iny
+              cpy     #4
+              bne     10$
+              ldx     #0
+              lda     #9
+              sta     0x342
+              lda     #.byte0 repmsg
+              sta     0x344
+              lda     #.byte1 repmsg
+              sta     0x345
+              lda     #repmsg_len
+              sta     0x348
+              lda     #0
+              sta     0x349
+              jmp     0xe456
+
+;;; two hex digits of A at repmsg+X
+hexout:       pha
+              lsr     a
+              lsr     a
+              lsr     a
+              lsr     a
+              jsr     10$
+              sta     repmsg,x
+              pla
+              and     #15
+              jsr     10$
+              sta     repmsg+1,x
+              rts
+10$:          cmp     #10
+              bcc     20$
+              adc     #6              ; carry set: +7, 'A'-'0'-10
+20$:          adc     #0x30
+              rts
+
+;;; in cdata, which the loader itself puts in place: `data` is copied there
+;;; by the C startup, which has not run when this does
+              .section cdata, rodata
+repmsg:       .byte   "B6 nn pp pp pp pp", 0x9b
+repmsg_len:   .equ    . - repmsg
 
               .section cdata, rodata
 nomsg:        .byte   "NOT ENOUGH EXTENDED MEMORY", 0x9b

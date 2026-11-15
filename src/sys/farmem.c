@@ -15,6 +15,8 @@
 FARMEM farmem;
 
 
+#ifndef __CALYPSI_TARGET_6502__
+/* (the 6502 has its own: src/sys6502/farmem6502.c, through PORTB) */
 void far_write8(uint32_t addr, uint8_t v)
 {
     uint8_t FAR *p = (uint8_t FAR *)addr;
@@ -214,6 +216,7 @@ void far_copy_span(uint32_t dst, uint32_t src, uint32_t len)
         len -= k;
     }
 }
+#endif /* !__CALYPSI_TARGET_6502__ */
 
 
 /* ---------------------------------------------------------------------------
@@ -273,18 +276,49 @@ uint32_t far_table;
 
 #define FB(i)       (((FBLK FAR *)far_table)[i])
 
+/* ONE ENTRY AT A TIME, through these: on the 65C816 they are the table's
+ * own lvalues in far memory, as they always were; on the 6502 a far
+ * address is not a pointer, and an entry is fetched and stored through
+ * far_get and far_put (src/sys6502/farmem6502.c, docs/6502.md). */
+#ifndef __CALYPSI_TARGET_6502__
+#define FBE_AT(i)        (FB(i).at)
+#define FBE_LEN(i)       (FB(i).len)
+#define FBE_SETAT(i, v)  (FB(i).at = (v))
+#define FBE_SETLEN(i, v) (FB(i).len = (v))
+#define FBE_GET(i, e)    ((e) = FB(i))
+#define FBE_PUT(i, e)    (FB(i) = (e))
+#else
+static uint32_t fb_addr(uint16_t i) { return far_table + (uint32_t)i * sizeof(FBLK); }
+static uint32_t fb_word(uint16_t i, uint16_t o)
+{
+    uint32_t v;
+    far_get((uint8_t *)&v, fb_addr(i) + o, 4);
+    return v;
+}
+static void fb_setword(uint16_t i, uint16_t o, uint32_t v)
+{
+    far_put(fb_addr(i) + o, (const uint8_t *)&v, 4);
+}
+#define FBE_AT(i)        fb_word((i), 0)
+#define FBE_LEN(i)       fb_word((i), 4)
+#define FBE_SETAT(i, v)  fb_setword((i), 0, (v))
+#define FBE_SETLEN(i, v) fb_setword((i), 4, (v))
+#define FBE_GET(i, e)    far_get((uint8_t *)&(e), fb_addr(i), sizeof(FBLK))
+#define FBE_PUT(i, e)    far_put(fb_addr(i), (const uint8_t *)&(e), sizeof(FBLK))
+#endif
+
 static uint32_t heap_lo(void) { return (uint32_t)farmem.first_bank << 16; }
 static uint32_t heap_hi(void) { return (uint32_t)(farmem.last_bank + 1) << 16; }
 
 static uint32_t fb_start(uint16_t i)
 {
-    uint32_t at = FB(i).at;
+    uint32_t at = FBE_AT(i);
     return at & FB_ADDR;
 }
 
 static uint32_t fb_end(uint16_t i)
 {
-    uint32_t len = FB(i).len & FB_LEN;
+    uint32_t len = FBE_LEN(i) & FB_LEN;
     return fb_start(i) + ((len + 3) & ~3UL);
 }
 
@@ -301,12 +335,12 @@ static uint32_t fb_insert(uint16_t i, uint32_t at, uint32_t len)
     if (far_blocks >= FB_MAX)
         return 0;
     for (k = far_blocks; k > i; k--) {
-        e = FB(k - 1);
-        FB(k) = e;
+        FBE_GET(k - 1, e);
+        FBE_PUT(k, e);
     }
     e.at = at | ((uint32_t)far_owner << 24);
     e.len = len | ((uint32_t)far_tag << 24);
-    FB(i) = e;
+    FBE_PUT(i, e);
     far_blocks++;
     return at;
 }
@@ -317,8 +351,8 @@ static void fb_remove(uint16_t i)
 
     far_blocks--;
     for (; i < far_blocks; i++) {
-        e = FB(i + 1);
-        FB(i) = e;
+        FBE_GET(i + 1, e);
+        FBE_PUT(i, e);
     }
 }
 
@@ -400,7 +434,7 @@ static uint16_t purge_level(uint16_t level)
     uint16_t i = 1, n = 0;
 
     while (i < far_blocks) {
-        uint32_t at = FB(i).at;
+        uint32_t at = FBE_AT(i);
         if ((uint16_t)(at & FB_PURGE) == level) {
             fb_remove(i);
             n++;
@@ -443,12 +477,12 @@ uint16_t far_adopt(uint32_t addr, uint8_t owner, uint8_t tag)
 
     for (i = 1; i < far_blocks; i++)
         if (fb_start(i) == addr) {
-            v = FB(i).at;
+            v = FBE_AT(i);
             v = (v & ~0xFF000000UL) | ((uint32_t)owner << 24);
-            FB(i).at = v;
-            v = FB(i).len;
+            FBE_SETAT(i, v);
+            v = FBE_LEN(i);
             v = (v & FB_LEN) | ((uint32_t)tag << 24);
-            FB(i).len = v;
+            FBE_SETLEN(i, v);
             return 1;
         }
     return 0;
@@ -461,9 +495,9 @@ uint16_t far_set_purge(uint32_t addr, uint16_t level)
 
     for (i = 1; i < far_blocks; i++)
         if (fb_start(i) == addr) {
-            at = FB(i).at;
+            at = FBE_AT(i);
             at = (at & ~FB_PURGE) | (level & FB_PURGE);
-            FB(i).at = at;
+            FBE_SETAT(i, at);
             return 1;
         }
     return 0;
@@ -675,12 +709,12 @@ uint16_t far_keep(uint32_t addr)
 
     if (i == 0xFFFF || i == 0)
         return 0;
-    at = FB(i).at;
+    at = FBE_AT(i);
     at &= FB_ADDR;
-    FB(i).at = at;
-    at = FB(i).len;                     /* ...and no kind or sub-pool */
+    FBE_SETAT(i, at);
+    at = FBE_LEN(i);                     /* ...and no kind or sub-pool */
     at &= FB_LEN;
-    FB(i).len = at;
+    FBE_SETLEN(i, at);
     return 1;
 }
 
@@ -691,7 +725,7 @@ void far_free_owner(uint8_t owner)
     if (!owner)                         /* the system's are for ever */
         return;
     while (i < far_blocks) {
-        uint32_t at = FB(i).at;
+        uint32_t at = FBE_AT(i);
         if ((uint8_t)(at >> 24) == owner)
             fb_remove(i);
         else
@@ -709,7 +743,7 @@ void far_free_sub(uint8_t owner, uint8_t sub)
     if (!owner || !sub)
         return;
     while (i < far_blocks) {
-        uint32_t at = FB(i).at, len = FB(i).len;
+        uint32_t at = FBE_AT(i), len = FBE_LEN(i);
         if ((uint8_t)(at >> 24) == owner
             && OWN_SUB((uint8_t)(len >> 24)) == sub)
             fb_remove(i);
@@ -725,10 +759,10 @@ uint16_t far_shrink(uint32_t addr, uint32_t bytes)
 
     if (i == 0xFFFF || i == 0)
         return 0;
-    len = FB(i).len;
+    len = FBE_LEN(i);
     if (bytes == 0 || bytes > (len & FB_LEN))
         return 0;
-    FB(i).len = bytes | (len & ~FB_LEN);    /* the tag stays */
+    FBE_SETLEN(i, bytes | (len & ~FB_LEN));    /* the tag stays */
     return 1;
 }
 
@@ -739,7 +773,7 @@ uint32_t far_size(uint32_t addr)
 
     if (i == 0xFFFF)
         return 0;
-    len = FB(i).len;
+    len = FBE_LEN(i);
     return len & FB_LEN;
 }
 
@@ -785,7 +819,7 @@ uint8_t far_new_owner(void)
         uint8_t o = next;
         next = (uint8_t)(next == 255 ? 1 : next + 1);
         for (i = 0; i < far_blocks; i++) {
-            uint32_t at = FB(i).at;
+            uint32_t at = FBE_AT(i);
             if ((uint8_t)(at >> 24) == o)
                 break;
         }
