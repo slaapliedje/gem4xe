@@ -4,6 +4,7 @@
 ;;; most of a window's redraw:
 ;;;
 ;;;   an_fill6    the middle of a filled row (antic_fill_rect)
+;;;   an_rect6    a whole constant-op rectangle, every row (the same)
 ;;;   an_cblk6    the block under the pointer, saved or put back
 ;;;   an_cpaint6  the pointer itself (antic_cursor_paint)
 ;;;
@@ -24,7 +25,7 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
               .extern _Zp
-              .public an_fill6, an_cblk6, an_cpaint6
+              .public an_fill6, an_rect6, an_cblk6, an_cpaint6
 
               .section antic,text
 an_fill6:     tay
@@ -41,6 +42,95 @@ an_fill6:     tay
               dey
               bpl     1$
 9$:           rts
+
+;;; ---- an_rect6 ---------------------------------------------------------
+;;;   void an_rect6(const uint8_t *a)
+;;;
+;;; A rectangle whose op is a constant per byte (antic_fill_rect's how 0),
+;;; all of it: antic_fill_rect clips it and works the op out, then hands
+;;; over ten bytes:
+;;;
+;;;   a[0-1]  the first row's first byte
+;;;   a[2]    rows, 1-192; a[3] last, the row's last byte offset, 0-39
+;;;   a[4]    the left edge's mask (with the right's when last is 0)
+;;;   a[5]    the right edge's mask
+;;;   a[6]    the first row's pattern index (y & 15); a[7] the index mask,
+;;;           15 for a pattern, 0 for solid
+;;;   a[8-9]  32 bytes: [i] the value of row i's EVEN offsets from the
+;;;           first byte, [16 + i] its odd ones'
+;;;
+;;; An edge byte is (d & ~m) | (v & m); the middle is v.  Per row in C it
+;;; was ~30 cycles of setup before the middle (docs/6502.md, "Speed").
+;;; Working state: the arguments at _Zp2-11, v even 12, v odd 13, scratch
+;;; 14, ~lm 15, ~rm 16.
+an_rect6:     ldy     #9
+1$:           lda     (_Zp),y
+              sta     _Zp+2,y
+              dey
+              bpl     1$
+              lda     zp:_Zp+6
+              eor     #0xff
+              sta     zp:_Zp+15
+              lda     zp:_Zp+7
+              eor     #0xff
+              sta     zp:_Zp+16
+              ldx     zp:_Zp+4        ; rows
+              bne     10$
+              rts
+10$:          lda     zp:_Zp+8        ; this row's two values
+              and     zp:_Zp+9
+              tay
+              lda     (_Zp+10),y
+              sta     zp:_Zp+12
+              tya
+              ora     #16
+              tay
+              lda     (_Zp+10),y
+              sta     zp:_Zp+13
+              ldy     #0              ; the left edge
+              lda     (_Zp+2),y
+              and     zp:_Zp+15
+              sta     zp:_Zp+14
+              lda     zp:_Zp+12
+              and     zp:_Zp+6
+              ora     zp:_Zp+14
+              sta     (_Zp+2),y
+              ldy     zp:_Zp+5        ; last
+              beq     30$
+              lda     (_Zp+2),y       ; the right edge
+              and     zp:_Zp+16
+              sta     zp:_Zp+14
+              tya
+              lsr     a
+              lda     zp:_Zp+12
+              bcc     11$
+              lda     zp:_Zp+13
+11$:          and     zp:_Zp+7
+              ora     zp:_Zp+14
+              sta     (_Zp+2),y
+              dey                     ; the middle, last - 1 down to 1
+              beq     30$
+              tya
+              lsr     a
+              bcc     22$
+21$:          lda     zp:_Zp+13       ; an odd offset
+              sta     (_Zp+2),y
+              dey
+              beq     30$
+22$:          lda     zp:_Zp+12       ; an even one
+              sta     (_Zp+2),y
+              dey
+              bne     21$
+30$:          clc                     ; the next row
+              lda     zp:_Zp+2
+              adc     #40
+              sta     zp:_Zp+2
+              bcc     31$
+              inc     zp:_Zp+3
+31$:          inc     zp:_Zp+8
+              dex
+              bne     10$
+              rts
 
 ;;; ---- an_cblk6 ---------------------------------------------------------
 ;;;   void an_cblk6(volatile uint8_t *scr, uint8_t *buf, uint8_t nb,

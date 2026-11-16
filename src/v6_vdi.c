@@ -138,6 +138,26 @@ int main(void)
     ptsin[0] = 0; ptsin[1] = 0;
     call(VST_HEIGHT, 1, 0);
 
+    /* a user pattern whose two bytes differ on every row, from an odd
+     * byte, and two narrow ones (one byte, two): which half lands on
+     * which byte, and the edges, in the 6502's rectangle (an_rect6) */
+    {
+        static const WORD pat[16] = {
+            0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
+            0x1248, 0x8421, 0xAA55, 0x55AA, 0xE007, 0x07E0, 0x9009, 0x6FF6,
+        };
+        WORD k;
+
+        for (k = 0; k < 16; k++)
+            intin[k] = pat[k];
+        call(VSF_UDPAT, 0, 16);
+        set1(VSF_INTERIOR, FIS_USER);
+        rect(VR_RECFL, 9, 156, 197, 175);
+        rect(VR_RECFL, 203, 156, 206, 165);
+        rect(VR_RECFL, 212, 156, 219, 165);
+        set1(VSF_INTERIOR, FIS_SOLID);
+    }
+
     {
         volatile unsigned char *nm = (volatile unsigned char *)0x0630;
         WORD k;

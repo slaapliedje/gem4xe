@@ -38,9 +38,11 @@ import m25_antic_vdi                        # noqa: E402  test-m25's tree
 from anticref import AN_W, AN_H              # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
-                    VS_CLIP, VRO_CPYFM, VST_HEIGHT)
+                    VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT)
 
-FIS_SOLID, MD_REPLACE, MD_XOR = 1, 1, 3
+FIS_SOLID, FIS_USER, MD_REPLACE, MD_XOR = 1, 4, 1, 3
+PAT = (0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
+       0x1248, 0x8421, 0xAA55, 0x55AA, 0xE007, 0x07E0, 0x9009, 0x6FF6)
 BANKS_NEEDED = 10
 
 # src/v6_vdi.c's calls, in its order
@@ -64,6 +66,12 @@ SCRIPT = [
     (VST_HEIGHT, (0, 8), ()),
     (V_GTEXT, (230, 180), tuple(b"BIG")),
     (VST_HEIGHT, (0, 0), ()),
+    (VSF_UDPAT, (), PAT),               # halves that differ, an odd byte
+    (VSF_INTERIOR, (), (FIS_USER,)),
+    (VR_RECFL, (9, 156, 197, 175), ()),
+    (VR_RECFL, (203, 156, 206, 165), ()),
+    (VR_RECFL, (212, 156, 219, 165), ()),
+    (VSF_INTERIOR, (), (FIS_SOLID,)),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]

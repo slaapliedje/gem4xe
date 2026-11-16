@@ -53,6 +53,11 @@ def main():
     emu = launch(tag="vbxefeat", memsize="1088K", extra_args=["--disk", DISK])
     b = emu.bridge
     try:
+        # From a cold reset, under the bridge: until it connects the
+        # emulator runs in real time, and on a loaded machine the desktop
+        # was up -- FEATURE_CONTROL already saved and cleared -- before the
+        # poke below, which it then "gave back" as $00 (a suite-only FAIL).
+        b.ok("COLD_RESET")
         b.frames(5)
         core = (b.peek(0xD640) >> 4, b.peek(0xD641))
         print(f"  VBXE core {core[0]}.{core[1]:02X}")

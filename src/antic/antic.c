@@ -439,6 +439,7 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
  * the screen's 16-pixel grid as antic_patt_span takes it; NULL is solid. */
 #ifdef __CALYPSI_TARGET_6502__
 void an_fill6(volatile uint8_t *q, uint8_t n, uint8_t f, uint8_t g);
+void an_rect6(const uint8_t *a);
 #endif
 void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
                      const uint16_t *rows, int16_t mode, uint8_t pen)
@@ -486,6 +487,47 @@ void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
     p = SCREEN + (uint16_t)y1 * AN_STRIDE + b1;
     ev = 0xFF;
     od = 0xFF;
+#ifdef __CALYPSI_TARGET_6502__
+    if (how == 0) {
+        /* ON THE 6502 the whole rectangle in assembly (an_rect6,
+         * src/sys6502/antic6502.s): each pattern row's two values worked
+         * out here once, by the parity of the offset from b1, not of the
+         * screen byte, so the assembly need not know b1. */
+        uint8_t a[10], vt[32];
+        uint16_t i, n = rows ? 16 : 1, pu;
+
+        for (i = 0; i < n; i++) {
+            if (rows) {
+                pr = rows[i];
+                ev = (uint8_t)(pr >> 8);
+                od = (uint8_t)pr;
+            }
+            ve = AN_MIX(o, 0, ev, 0xFF);
+            vo = AN_MIX(o, 0, od, 0xFF);
+            if (b1 & 1) {
+                vt[i] = vo;
+                vt[i + 16] = ve;
+            } else {
+                vt[i] = ve;
+                vt[i + 16] = vo;
+            }
+        }
+        pu = (uint16_t)p;
+        a[0] = (uint8_t)pu;
+        a[1] = (uint8_t)(pu >> 8);
+        a[2] = (uint8_t)(y2 - y1 + 1);
+        a[3] = (uint8_t)last;
+        a[4] = lm;
+        a[5] = rm;
+        a[6] = (uint8_t)(y1 & 15);
+        a[7] = rows ? 15 : 0;
+        pu = (uint16_t)vt;
+        a[8] = (uint8_t)pu;
+        a[9] = (uint8_t)(pu >> 8);
+        an_rect6(a);
+        return;
+    }
+#endif
 
     for (y = (uint16_t)y1; y <= (uint16_t)y2; y++) {
         if (rows) {

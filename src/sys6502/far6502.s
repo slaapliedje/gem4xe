@@ -40,12 +40,29 @@ PORTB:        .equ    0xd301
 
               .section zdata, bss
 fbuf:         .space  4               ; a field that straddles two pieces
+fm_k:         .space  1               ; fmap's last piece: its far bank,
+fm_p:         .space  1               ; its offset's top two bits
+fm_y:         .space  1               ; and its b6_portb index
 
               .section code
 ;;; fmap -- the far address at _Zp+X.. (bank >= 1) mapped, its window
 ;;; address in FW.  Keeps X; destroys A, Y.  An address in no bank there
 ;;; is goes to b6_far_bad, which stops (farmem6502.c).
+;;;
+;;; The last piece mapped is remembered -- its far bank, its offset's top
+;;; two bits and its b6_portb index -- so the fields of one tree, which
+;;; are nearly always in one piece, skip the arithmetic.  The cache is in
+;;; zdata, cleared at start: bank 0 never comes here, so it never matches.
 fmap:         lda     zp:_Zp+2,x      ; the far bank, k
+              cmp     fm_k
+              bne     5$
+              lda     zp:_Zp+1,x
+              and     #0xc0
+              cmp     fm_p
+              bne     5$
+              ldy     fm_y            ; the piece mapped last time
+              jmp     11$
+5$:           lda     zp:_Zp+2,x
               cmp     #16
               bcs     90$             ; past 15 the index would wrap
               sbc     #0              ; carry clear: k - 1
@@ -65,7 +82,13 @@ fmap:         lda     zp:_Zp+2,x      ; the far bank, k
               beq     10$
               bcs     90$             ; past the last bank found
 10$:          tay
-              lda     b6_portb,y
+              sty     fm_y            ; remembered
+              lda     zp:_Zp+2,x
+              sta     fm_k
+              lda     zp:_Zp+1,x
+              and     #0xc0
+              sta     fm_p
+11$:          lda     b6_portb,y
               sta     PORTB
               lda     zp:_Zp+0,x
               sta     zp:_Zp+12
@@ -285,7 +308,37 @@ far_wr32:     lda     zp:_Zp+2        ; value in _Zp4-7
 ;;; t in _Zp0-3, i in _Zp4-5, the offset in A; the field's far address
 ;;; left in _Zp0-3: t + (uint16_t)(i * 24) + offset, as farmem6502.c had.
 obaddr:       sta     zp:_Zp+21
-              lda     zp:_Zp+4        ; i * 8
+              lda     zp:_Zp+5        ; i in 0-255, nearly always: i * 24
+              bne     50$             ; + the offset in 16 bits, as i * 3 * 8
+              sta     zp:_Zp+19
+              lda     zp:_Zp+4
+              asl     a               ; 2i (the carry out into 19 leaves
+              rol     zp:_Zp+19       ; the carry clear: 19 was 0)
+              adc     zp:_Zp+4        ; 3i
+              bcc     1$
+              inc     zp:_Zp+19
+1$:           asl     a               ; 24i, at most 6,120
+              rol     zp:_Zp+19
+              asl     a
+              rol     zp:_Zp+19
+              asl     a
+              rol     zp:_Zp+19
+              clc                     ; + the offset, < 24: no carry out
+              adc     zp:_Zp+21
+              bcc     2$
+              inc     zp:_Zp+19
+2$:           clc                     ; t + that, 32 bits
+              adc     zp:_Zp+0
+              sta     zp:_Zp+0
+              lda     zp:_Zp+19
+              adc     zp:_Zp+1
+              sta     zp:_Zp+1
+              bcc     3$
+              inc     zp:_Zp+2
+              bne     3$
+              inc     zp:_Zp+3
+3$:           rts
+50$:          lda     zp:_Zp+4        ; any other i: i * 8
               asl     a
               sta     zp:_Zp+18
               lda     zp:_Zp+5
