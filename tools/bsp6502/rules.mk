@@ -220,12 +220,17 @@ test-a6: build/a6-boot.atr
 test-e6: build/a6-boot.atr
 	python3 tests/emu/a6_evt.py
 
+# ...and on an NTSC machine: the frame, and so the AES's tick, is 17 ms
+# there, and the gate holds the tick and the double-click window to it.
+test-e6n: build/a6-boot.atr
+	python3 tests/emu/a6_evt.py --ntsc
+
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 b6asm
+.PHONY: test-a6 test-e6 test-e6n b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;

@@ -41,7 +41,12 @@ From the trak-ball on the pointer is the harness's (PTR_NONE in
 ptr_state, positions and buttons written between frames), as the 65C816
 gates drive it: JOY can only pulse a line once a frame.
 
-    python3 tests/emu/a6_evt.py
+  the tick       the AES's tick length the frame's: 20 ms on PAL, 17 on
+                 NTSC (--ntsc, make test-e6n), and the double-click
+                 window 220 ms of it -- the handlers, which find the
+                 standard, go in before ev_init
+
+    python3 tests/emu/a6_evt.py [--ntsc]
 """
 import os
 import re
@@ -82,6 +87,7 @@ def symbols():
 
 def main():
     fails = []
+    pal = "--ntsc" not in sys.argv
 
     def check(cond, msg):
         print(f"  {'ok' if cond else 'FAIL'}: {msg}")
@@ -89,9 +95,10 @@ def main():
             fails.append(msg)
         return cond
 
-    print("gem4xe-e6: the input poll, the event loop and a second process, on a stock 6502")
+    std = "PAL" if pal else "NTSC"
+    print(f"gem4xe-e6: the input poll, the event loop and a second process, on a stock 6502 ({std})")
     sym = symbols()
-    emu = launch(tag="e6", memsize="1088K", vbxe=False, rapidus=False,
+    emu = launch(tag="e6" if pal else "e6n", memsize="1088K", vbxe=False, rapidus=False, pal=pal,
                  extra_args=["--disk", DISK])
     b = emu.bridge
 
@@ -112,10 +119,11 @@ def main():
     def still():
         """The pointer once it has stopped: the poll turns the handler's
         counts into pixels on the application's turns, and with a second
-        process those come a little further apart."""
+        process those come a little further apart -- a switch there and back
+        is ~40 ms, more than 4 of NTSC's frames: still means still for 10."""
         last = here()
         for _ in range(30):
-            b.frames(4)
+            b.frames(10)
             now = here()
             if now == last:
                 return now
@@ -211,6 +219,11 @@ def main():
         b.frames(50)
         f1 = word(sym["irq_frames"]) & 0xFFFF
         check(((f1 - f0) & 0xFFFF) == 50, f"irq_frames counts beside the AES ({(f1 - f0) & 0xFFFF} in 50)")
+        tick, dc = word(sym["gl_ticktime"]), word(sym["gl_dclick"])
+        want = 20 if pal else 17
+        check(tick == want and dc == 220 // want,
+              f"the AES's tick is the {std} frame: {tick} ms (want {want}), the double-click "
+              f"window {dc} ticks (want {220 // want})")
 
         # -- the trak-ball ----------------------------------------------------
         b.joy(1, "centre")
@@ -354,7 +367,7 @@ def main():
     finally:
         emu.stop()
     print(f"gem4xe-e6: {'PASS' if not fails else 'FAIL'} -- the input poll, the event "
-          f"loop and a second process, on a stock 6502, {len(fails)} problem(s)")
+          f"loop and a second process, on a stock 6502 ({std}), {len(fails)} problem(s)")
     return 1 if fails else 0
 
 

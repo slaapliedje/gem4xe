@@ -19,6 +19,7 @@
 #include "aes/proc.h"
 #include "sys/farmem.h"
 #include "sys/hiprobe.h"           /* farmem_probe */
+#include "sys/irq.h"
 #include <string.h>
 
 void a6_tree(void);
@@ -203,6 +204,12 @@ void a6_aes_up(void)
 {
     STATUS[3] = '3';
     gsx_start();
+    /* The handlers BEFORE ev_init, as src/gem.c has them: irq_install
+     * finds the video standard, and ev_init takes its tick length from
+     * the VDI, which answers from irq.pal -- after, a PAL machine's 20 ms
+     * tick was taken for NTSC's 17 and every timer and the double-click
+     * window ran 18% long (test-e6, step 4f). */
+    irq_install();
     STATUS[3] = '4';
     ev_init();
     STATUS[3] = '5';

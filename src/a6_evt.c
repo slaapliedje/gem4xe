@@ -2,8 +2,8 @@
  * on a stock 6502, on one process.  Called by src/a6_aes.c once the
  * screen step 4c draws is up and the gate says go; banked.
  *
- * The interrupt handlers go in (src/sys6502/irq6502.s and .c, step 4d),
- * the pointer is the CX80 trak-ball through the VDI's pointer layer, and
+ * The interrupt handlers are in (src/sys6502/irq6502.s and .c, step 4d;
+ * src/a6_tree.c's a6_aes_up installs them before ev_init), the pointer is the CX80 trak-ball through the VDI's pointer layer, and
  * then an application's loop: evnt_multi for a key, a click and a
  * message, every event it answers filed in a6_log, and the two messages
  * an application must act on acted on -- MN_SELECTED (the title put back,
@@ -141,8 +141,7 @@ void a6_events(void)
     WORD which, *r, i;
     GRECT area;
 
-    irq_install();
-    ptr_init(PTR_TRAKBALL, 160, 96);
+    ptr_init(PTR_TRAKBALL, 160, 96);    /* the handlers are in: a6_aes_up */
     ratinit();                          /* the pointer on, and an arrow */
     gr_mouse(ARROW, 0);
     acc_start();
