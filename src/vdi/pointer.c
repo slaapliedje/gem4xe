@@ -11,6 +11,7 @@ PTR_STATE ptr_seen;
 #define TRIG(n) (*(volatile uint8_t *)(0xD010 + (n)))
 #define ALLPOT (*(volatile uint8_t *)0xD208)
 #define POTGO  (*(volatile uint8_t *)0xD20B)
+#define PADDL(n) (*(volatile uint8_t *)(0x0270 + (n)))  /* the OS's copies */
 
 #define POT_MAX 228     /* POKEY's pot counter tops out here on a real Atari */
 /* A quadrature mouse's right button grounds its paddle line: the counter
@@ -38,8 +39,24 @@ static TINY uint16_t pot_frame;
  * tablet is read 25-30 times a second, the right button as often.
  * Without the interrupts there is no frame count, and ALLPOT is all
  * there is. */
+/* UNDER THE OS'S OWN INTERRUPTS (a stock 6502, IRQ_OS_CHAINED) the scan
+ * is the OS's: its VBI copies every finished count to PADDL0-7 and then
+ * restarts the scan, once a frame, whatever this does.  So a POT read here
+ * lands mid-scan as often as not and reads low -- a right button held,
+ * and every menu waiting for its release (test-e6 found it) -- and a
+ * POTGO of this layer's only restarts a scan early.  The copies are the
+ * last whole scan's, and there is nothing to wait for. */
+static uint8_t pot_read(uint8_t n)
+{
+    if (irq.how == IRQ_OS_CHAINED)
+        return PADDL(n);
+    return POT(n);
+}
+
 static WORD pot_busy(uint8_t lines)
 {
+    if (irq.how == IRQ_OS_CHAINED)
+        return 0;
     if (!pot_pending)
         return 0;
     if (irq.how != IRQ_OFF)
@@ -49,6 +66,8 @@ static WORD pot_busy(uint8_t lines)
 
 static void pot_start(void)
 {
+    if (irq.how == IRQ_OS_CHAINED)
+        return;                     /* the OS's VBI starts every scan */
     POTGO = 0;
     pot_frame = irq_frames;
     pot_pending = 1;
@@ -277,7 +296,7 @@ static void poll_relative(void)
     if (pot_busy((uint8_t)(1 << (ptr_port * 2))))
         return;                     /* still counting: last answer stands */
     {
-        WORD held = (WORD)(POT(ptr_port * 2) < PTR_RMB_MAX);
+        WORD held = (WORD)(pot_read(ptr_port * 2) < PTR_RMB_MAX);
         if (!held)
             rmb_seen_free = 1;
         ptr_state.buttons = (WORD)((ptr_state.buttons & ~2)
@@ -336,7 +355,7 @@ static void poll_absolute(void)
     ptr_state.buttons = ptr_tablet_buttons(nib);
     if (pot_busy((uint8_t)(3 << first)))
         return;                     /* scan still running; keep the old value */
-    if (ptr_decode_tablet(ptr_state.kind, POT(first), POT(first + 1), &x, &y)) {
+    if (ptr_decode_tablet(ptr_state.kind, pot_read(first), pot_read(first + 1), &x, &y)) {
         ptr_state.x = x;
         ptr_state.y = y;
         clamp();
@@ -379,8 +398,8 @@ static void poll_xem1(void)
         return;                     /* scan still running; keep the old value */
     if (!xem_found) {
         for (q = 0; q < 2; q++) {
-            px = POT(q * 2);
-            py = POT(q * 2 + 1);
+            px = pot_read(q * 2);
+            py = pot_read(q * 2 + 1);
             if (ptr_xem1_valid(px) && ptr_xem1_valid(py)) {
                 xem_port = q;
                 xem_rx = px;
@@ -390,8 +409,8 @@ static void poll_xem1(void)
             }
         }
     } else {
-        px = POT(xem_port * 2);
-        py = POT(xem_port * 2 + 1);
+        px = pot_read(xem_port * 2);
+        py = pot_read(xem_port * 2 + 1);
         if (ptr_xem1_valid(px) && ptr_xem1_valid(py)) {
             d = ptr_decode_xem1(xem_rx, px);
             if (d) {

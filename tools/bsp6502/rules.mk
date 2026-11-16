@@ -47,10 +47,10 @@ HDRS6      = src/portab.h $(wildcard src/vdi/*.h src/sys/*.h src/antic/*.h src/a
 # gem6502.scm's
 BANKS6     = --bank vdi_a=1 --bank vdi_b=2 --bank vdi_c=3 --bank dev=4 --bank antic=5 --bank far=6 --bank objc=7 --bank objc_b=8 --bank objc_c=9 --bank graf=10
 
-V6_RES     = $(B6)/res/v6_vdi.o $(B6)/res/stub6502.o $(B6)/res/v6stub.o $(B6)/res/anpack6502.o \
+V6_RES     = $(B6)/res/v6_vdi.o $(B6)/res/stub6502.o $(B6)/res/irqstub6502.o $(B6)/res/v6stub.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/v6farmem6502.o $(B6)/res/gemdata.o
+             $(B6)/res/v6farmem6502.o $(B6)/res/gemdata.o $(B6)/res/mul6502s.o
 V6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf v6tree
 V6_PRE     = $(V6_UNITS:%=$(B6)/pre/%.o)
 V6_BANK    = $(V6_UNITS:%=$(B6)/bank/%.o)
@@ -143,8 +143,9 @@ A6_BANKS6  = $(BANKS6) --bank wind=11 --bank wind_b=12 --bank menu=13 --bank men
 A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/a6farmem6502.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o
-A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx
+             $(B6)/res/a6farmem6502.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
+             $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o
+A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
 
@@ -164,6 +165,8 @@ $(B6)/w/ctrl.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="ctl
 $(B6)/w/grlib.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="ctl"\n#include "../../../src/aes/grlib.c"\n' > $@
 $(B6)/w/form.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="ctl"\n#include "../../../src/aes/form.c"\n' > $@
 $(B6)/w/a6ctx.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="evt"\n#include "../../../src/sys6502/ctx6502.c"\n' > $@
+$(B6)/w/a6irq.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="evt"\n#include "../../../src/sys6502/irq6502.c"\n' > $@
+$(B6)/w/a6evt.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/a6_evt.c"\n' > $@
 $(B6)/w/a6tree.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/a6_tree.c"\n' > $@
 $(B6)/pre/wind.o:   $(B6)/w/wind.c src/aes/wind.c build/gemdata.h $(HDRS6)
 $(B6)/pre/menu.o:   $(B6)/w/menu.c src/aes/menu.c build/gemdata.h $(HDRS6)
@@ -175,10 +178,12 @@ $(B6)/pre/grlib.o:  $(B6)/w/grlib.c src/aes/grlib.c build/gemdata.h $(HDRS6)
 $(B6)/pre/form.o:   $(B6)/w/form.c src/aes/form.c build/gemdata.h $(HDRS6)
 $(B6)/pre/a6tree.o: $(B6)/w/a6tree.c src/a6_tree.c $(HDRS6)
 $(B6)/pre/a6ctx.o:  $(B6)/w/a6ctx.c src/sys6502/ctx6502.c $(HDRS6)
+$(B6)/pre/a6irq.o:  $(B6)/w/a6irq.c src/sys6502/irq6502.c $(HDRS6)
+$(B6)/pre/a6evt.o:  $(B6)/w/a6evt.c src/a6_evt.c $(HDRS6)
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o: EXTRA6 = -I src/aes -I build -I src/sys
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o: EXTRA6 = -I src/aes -I build -I src/sys
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o:
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o:
 	@mkdir -p $(dir $@) $(B6)/asm
 	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \
 	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
@@ -208,7 +213,19 @@ build/a6-boot.atr: build/a6.xex
 test-a6: build/a6-boot.atr
 	python3 tests/emu/a6_aes.py
 
-.PHONY: test-a6
+# ---- step 4e: the input poll and the event loop (tests/emu/a6_evt.py) ------
+# The same program, told to go on: src/a6_evt.c (banked, `far`) installs
+# the interrupt handlers (src/sys6502/irq6502.c banked in `evt`, its .s
+# resident) and runs an application's loop.
+test-e6: build/a6-boot.atr
+	python3 tests/emu/a6_evt.py
+
+# cc6502's generated assembly, for a call made with a scratch argument
+# (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.
+b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf
+	python3 tools/bsp6502/b6asm.py
+
+.PHONY: test-a6 test-e6 b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;
@@ -336,6 +353,9 @@ I6_BANK    = $(I6_UNITS:%=$(B6)/i6bank/%.o)
 $(B6)/res/i6_irq.o: src/i6_irq.c $(HDRS6)
 	@mkdir -p $(dir $@)
 	$(CC6) $(CFLAGS6) -I src/sys -c $< -o $@
+$(B6)/res/mul6502s.o: src/sys6502/mul6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
 $(B6)/res/irq6502s.o: src/sys6502/irq6502.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@

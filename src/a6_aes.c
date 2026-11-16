@@ -9,9 +9,16 @@
  * and never switched away from: there is one process.  Then
  * src/a6_tree.c (banked) makes the calls the gate holds to the model.
  *
+ * main is only what must be resident: the context made in the frame
+ * every later switch parks from below (ctx_init takes the caller's
+ * stack), and the wait.  The rest of the start is in a6_tree.c's bank,
+ * because resident memory had not the room for cc6502's corrected
+ * multiply (src/sys6502/mul6502.s, step 4e).
+ *
  * STATUS at $0600: 'A' '6' as it starts, 'K' at $0602 when done, how far
  * it got at $0603; the banks found at $0608, the far banks at $0609;
- * a6_tree's at $065C-$0661 (src/a6_tree.c).
+ * a6_tree's at $065C-$0661 (src/a6_tree.c).  1 at $0606 starts the
+ * event loop (src/a6_evt.c, step 4e), which says so at $0607.
  */
 #include "portab.h"
 #include "vdi/vdi.h"
@@ -22,7 +29,9 @@
 #include "aes/aes.h"
 #include "aes/proc.h"
 
-void a6_tree(void);                     /* src/a6_tree.c, banked */
+void a6_boot(void);                     /* src/a6_tree.c, banked: */
+void a6_aes_up(void);                   /* ...the start, in two halves */
+void a6_events(void);                   /* src/a6_evt.c, banked */
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -30,38 +39,16 @@ extern unsigned char b6_count;
 
 int main(void)
 {
-    /* the records with the AES's other window-safe state (zwin, LowRam
-     * in tools/bsp6502/a6.scm): HiRam has not the room */
-    static SECTION("zwin") char proc_store[PROC_STORE];
-
-    STATUS[0] = 'A';
-    STATUS[1] = '6';
-    STATUS[2] = 0;
-    STATUS[8] = b6_count;
-
-    farmem_probe();
-    STATUS[9] = (unsigned char)farmem.banks;
-    vdev = &vdev_antic;
-    STATUS[3] = '1';
-    vdi_font_default();
-    vdi_init();
-    STATUS[3] = '2';
-
-    proc_init(proc_store);
-    ctx_make(&proc_app->p_ctx, 0);
+    a6_boot();                          /* the VDI up, the records made */
     ctx_init(&proc_app->p_ctx);
-    STATUS[3] = '3';
-    gsx_start();
-    STATUS[3] = '4';
-    ev_init();
-    STATUS[3] = '5';
-    wm_init();
-    STATUS[3] = '6';
-    mn_init();
-    STATUS[3] = '7';
-    a6_tree();
+    a6_aes_up();                        /* the AES started, its screen drawn */
 
     STATUS[2] = 'K';
+    /* test-a6 compares the screen as it is now; test-e6 says go, and
+     * the handlers, the pointer and the event loop start (step 4e) */
+    while (STATUS[6] != 1)
+        ;
+    a6_events();                        /* never returns */
     for (;;)
         ;
 }

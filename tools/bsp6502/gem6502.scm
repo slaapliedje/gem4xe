@@ -44,7 +44,7 @@
     (memory Bank9 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store9)
             (section objc_c))
     (memory Bank10 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store10)
-            (section graf))
+            (section graf graf__bank))
     (memory Store1 (address (#x10000 . #x13fff)) (section Store1))
     (memory Store2 (address (#x14000 . #x17fff)) (section Store2))
     (memory Store3 (address (#x18000 . #x1bfff)) (section Store3))

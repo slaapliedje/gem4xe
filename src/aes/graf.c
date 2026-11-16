@@ -305,8 +305,13 @@ void gsx_mfform(WORD which, WORD *out)
 {
     if (which < 0 || which >= GEM_MFORMS)
         which = 0;
+#ifdef __CALYPSI_TARGET_6502__
+    /* this bank's own (BANK_DATA, build/gemdata.c), in the window now */
+    memcpy(out, gem_mforms[which], GEM_MFORM_WORDS * 2);
+#else
     far_get((uint8_t *)out, (uint32_t)(const WORD FAR *)gem_mforms[which],
             GEM_MFORM_WORDS * 2);
+#endif
 }
 
 /* A remembered form: MF_CURR, MF_PREV or MF_SAVED.  FALSE when there is

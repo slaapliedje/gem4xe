@@ -40,9 +40,18 @@ void v6_tree(void)
     if (far) {
         t = (OBTREE)far;
         spec[0] = 0x00021100UL;     /* no char, 2px border, $1100 */
-        spec[1] = far + 4 * sizeof(OBJECT);
-        spec[2] = 0x00011100UL;     /* one pixel of border */
-        spec[3] = spec[1] + sizeof title;
+        /* both strings' addresses from a local: cc6502 5.18 compiles
+         * `spec[3] = spec[1] + sizeof title` as spec[3] += 13, reading
+         * the slot it writes -- whatever the C stack left there.  It
+         * passed for as long as the leftover happened to be spec[1]
+         * (docs/6502.md, step 4e). */
+        {
+            uint32_t s1 = far + 4 * sizeof(OBJECT);
+
+            spec[1] = s1;
+            spec[2] = 0x00011100UL; /* one pixel of border */
+            spec[3] = s1 + sizeof title;
+        }
         far_put(spec[1], (const uint8_t *)title, sizeof title);
         far_put(spec[3], (const uint8_t *)okstr, sizeof okstr);
         for (i = 0; i < 4; i++) {

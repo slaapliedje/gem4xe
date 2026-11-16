@@ -2,8 +2,9 @@
  *
  * Step 1 of docs/6502.md is the VDI and its ANTIC device, banked, drawing
  * on a stock 6502.  The VDI also reaches for things the steps after it
- * bring: far memory (step 3), CIO for a loaded face, the interrupt
- * handler's keyboard queue, the printer device, the process context.
+ * bring: far memory (step 3), CIO for a loaded face, the printer
+ * device, the process context.  (The interrupt handlers' state, quiet:
+ * src/sys6502/irqstub6502.c, for a program without the handlers.)
  * (Far memory is real since step 3b: src/sys6502/farmem6502.c.)  Each
  * is answered here the way the VDI already copes with its absence: no
  * keyboard is an empty queue; no printer is a workstation that will not
@@ -59,10 +60,6 @@ uint8_t  cio_read(int16_t iocb, void *buf, uint16_t len, uint16_t *got)
 }
 uint8_t  cio_close(int16_t iocb) { (void)iocb; return 1; }
 
-/* ---- the interrupt handler's state: quiet ----------------------------- */
-IRQ_INFO irq;
-volatile uint8_t irq_kb_head, irq_kb_tail, irq_kb_count;
-
 /* The running context (src/sys/ctx.h): here, because the VDI reads it to
  * know whose a workstation is, and V6 has no context switch; the switch
  * is src/sys6502/ctx6502.c and .s, where a program has one. */
@@ -73,19 +70,7 @@ uint8_t FAR *pr_page;
 int16_t pr_page_open(void) { return 0; }
 void    pr_page_close(void) {}
 WORD pr_emit(void) { return 0; }
-volatile uint8_t irq_kb[8];
 
 /* The printer's table: a printer workstation is never opened here, and
  * vdi.c only compares against this one's address before it would be. */
 const VDIDEV FAR_816 vdev_print = { 0 };     /* initialised: with the code, not in RAM */
-
-/* ...and the rest of the handler's variables, which the VDI's timer and
- * pointer code read and pointer.c's tables fill: there, unread, until the
- * 6502 has an interrupt handler of its own. */
-volatile uint16_t irq_frames;
-volatile uint16_t irq_qlo, irq_qhi;
-volatile uint8_t irq_tq[4], irq_tq_head, irq_tq_tail;
-uint8_t irq_ptr_on;
-uint8_t irq_plo[16], irq_phi[16];
-signed char irq_qtab[16];
-uint8_t irq_prev_lo, irq_prev_hi;

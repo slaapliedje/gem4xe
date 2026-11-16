@@ -41,6 +41,20 @@
 
 extern uint8_t b6_cur, b6_count, b6_portb[];
 
+/* A FAR ADDRESS IN NO BANK THERE IS stops here.  Mapped, it would index
+ * past b6_portb into whatever follows it; a zero there switches the OS
+ * ROM out, and the next interrupt runs the RAM under it (step 4e found
+ * one, from a garbage object spec).  The address goes to $0670-$0673,
+ * 'F' to $0604 -- src/sys6502/stub6502.c's place for a stop -- and the
+ * stack is left as it is, for whoever reads the call chain off page 1. */
+static void far_bad(uint32_t a)
+{
+    *(volatile uint32_t *)0x0670 = a;
+    *(volatile char *)0x0604 = 'F';
+    for (;;)
+        ;
+}
+
 /* Bank in the window for `a` (a far address, bank >= 1); the window
  * address in *w; the bytes from there to the end of the 16 KB piece. */
 static uint16_t map(uint32_t a, uint8_t **w)
@@ -49,6 +63,8 @@ static uint16_t map(uint32_t a, uint8_t **w)
     uint8_t k = (uint8_t)(a >> 16);
     uint8_t b = (uint8_t)(B6_CODE_BANKS + 1 + (uint8_t)((k - 1) * 4) + (off >> 14));
 
+    if (b > b6_count || k > 15)     /* k: past 15 the index wraps */
+        far_bad(a);
     PORTB = b6_portb[b];
     *w = (uint8_t *)(WINDOW + (off & (PIECE - 1)));
     return (uint16_t)(PIECE - (off & (PIECE - 1)));

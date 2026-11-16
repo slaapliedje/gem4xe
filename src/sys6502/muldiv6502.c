@@ -9,9 +9,14 @@
 
 #define MAX_INTERSECT 32                /* src/vdi/vdi.c's */
 
+/* cc6502's own 16 x 16 -> 32 multiply swaps the product's low bytes
+ * (src/sys6502/mul6502.s); this file is resident, which bankasm does not
+ * rewrite, so it names the right one itself. */
+uint32_t b6_mul16to32(uint16_t a, uint16_t b);
+
 uint16_t umuldiv(uint16_t a, uint16_t b, uint16_t c)
 {
-    return (uint16_t)(((uint32_t)a * b) / c);
+    return (uint16_t)(b6_mul16to32(a, b) / c);
 }
 
 static uint16_t uabs(int16_t v)

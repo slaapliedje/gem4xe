@@ -72,6 +72,10 @@ static WORD str_cpy(char *dst, const char *src)
 #define SPEC_RD32(spec) (*(const uint32_t FAR *)SPEC_PTR(spec))
 #endif
 
+#ifdef __CALYPSI_TARGET_6502__
+static volatile uint8_t ob_zero;        /* 0: see ob_change */
+#endif
+
 static uint32_t ob_getspec(OBCTREE tree, WORD obj)
 {
     uint32_t spec = OB_GET(tree, obj, ob_spec);
@@ -1135,8 +1139,22 @@ void ob_change(OBTREE tree, WORD obj, UWORD new_state, WORD redraw)
     WORD flags, type, th, curr_state, mx, sc;
     uint32_t spec;
     GRECT t;
-
+#ifdef __CALYPSI_TARGET_6502__
+    /* cc6502 5.18 MISCOMPILES THE PLAIN CALL (6502 step 4e): tree and obj
+     * are this function's own first two parameters, forwarded in the same
+     * places, so the compiler takes them to be in _Zp still -- after it
+     * has used _Zp as scratch to put &curr_state and the rest on the C
+     * stack.  ob_sst got the last scratch address as its tree, read a
+     * junk object, and now and then followed a junk INDIRECT spec into a
+     * bank that does not exist.  A volatile local is optimised away and
+     * the scratch moves to obj's register instead; a tree the compiler
+     * must compute -- OR'd with a zero it has to read -- is built in
+     * place at the call.  tools/bsp6502/b6scan.py looks for the shape. */
+    ob_sst((OBTREE)((uint32_t)tree | ob_zero), obj, &spec, &curr_state,
+           &type, &flags, &t, &th);
+#else
     ob_sst(tree, obj, &spec, &curr_state, &type, &flags, &t, &th);
+#endif
     if ((UWORD)curr_state == new_state || spec == 0xFFFFFFFFUL)
         return;
     OB_SET(tree, obj, ob_state, new_state);

@@ -162,6 +162,20 @@ def read_source(path):
     return [ln for ln in open(path).read().splitlines() if not ln.lstrip().startswith(";")]
 
 
+# THE RUNTIME'S HELPERS THAT ARE WRONG, and gem4xe's own in their place
+# (src/sys6502/mul6502.s).  The library's _Mul16to32 returns the product
+# with its two low bytes swapped (Calypsi 5.18: 9 * 40 is $6801); it
+# cannot be overridden at the link, because integer.o comes in for _Mul32
+# anyway and brings its own, so every call is sent to the other name here.
+# tools/bsp6502/b6asm.py refuses any call to the runtime's left in a build.
+RUNTIME_FIX = {"_Mul16to32": "b6_mul16to32"}
+FIX_TOKEN = re.compile(r"(?<![\w`])(" + "|".join(RUNTIME_FIX) + r")(?![\w`])")
+
+
+def runtime_fixes(lines):
+    return [FIX_TOKEN.sub(lambda m: RUNTIME_FIX[m.group(1)], ln) for ln in lines]
+
+
 def parse_banks(argv):
     banks, rest, i = {}, [], 0
     while i < len(argv):
@@ -215,7 +229,7 @@ def main(argv):
     tu = argv[argv.index("--tu") + 1]
     banks, _ = parse_banks(argv[3:])
     ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
-    lines = localise_tails(bank_data(read_source(src), banks), banks)
+    lines = localise_tails(bank_data(runtime_fixes(read_source(src)), banks), banks)
     sect_of_line, func_sect, publics = scan(lines, banks)
 
     banked = {f: s for f, s in func_sect.items() if s in banks}

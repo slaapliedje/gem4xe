@@ -12,9 +12,17 @@
  * menu_bar.  The handles wm_create answers go to $0660.
  */
 #include "portab.h"
+#include "vdi/vdi.h"
+#include "vdi/font.h"
+#include "vdi/vdidev.h"
 #include "aes/aes.h"
+#include "aes/proc.h"
 #include "sys/farmem.h"
+#include "sys/hiprobe.h"           /* farmem_probe */
 #include <string.h>
+
+void a6_tree(void);
+extern unsigned char b6_count;
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -66,8 +74,13 @@ static OBTREE tree_put(const OBDEF *d, WORD n, const char *const *str)
     return (OBTREE)far;
 }
 
-/* The desk: the box test-m7's desk() is, the size of this screen. */
-static const OBDEF desk[1] = {
+/* The tables are this bank's own (BANK_DATA): only tree_put, here, reads
+ * them, and resident memory has not the room since the interrupt
+ * handlers came in (step 4e).  The strings stay resident: far_put reads
+ * its source with the far bank in the window, not this one.
+ *
+ * The desk: the box test-m7's desk() is, the size of this screen. */
+static const OBDEF desk[1] BANK_DATA("far") = {
     { -1, -1, -1, G_BOX, LASTOB, NORMAL, 0x00001148UL, 0, 0, 320, 192 },
 };
 static const char *const desk_str[1] = { 0 };
@@ -76,7 +89,7 @@ static const char *const desk_str[1] = { 0 };
  * fixed positions (the screen, the bar, the titles' box, the titles, the
  * drop-downs' box); the Desk box has its eight children. */
 #define MW 120                          /* the Desk box: 20 cells */
-static const OBDEF menu[21] = {
+static const OBDEF menu[21] BANK_DATA("far") = {
     /* next head tail  type      flags   state     spec           x   y    w    h */
     { -1,   1,   6, G_IBOX,   NONE,   NORMAL,   0,            0,  0, 320, 192 },  /* 0 */
     {  6,   2,   2, G_BOX,    NONE,   NORMAL,   0x00001100UL, 0,  0, 320,   8 },  /* 1 bar */
@@ -157,4 +170,45 @@ void a6_tree(void)
     STATUS[3] = 'e';
     mn_bar(m, TRUE);
     STATUS[3] = 'f';
+}
+
+/* src/a6_aes.c's start, but for ctx_init, which main makes in its own
+ * frame.  First the VDI and the process records ... */
+void a6_boot(void)
+{
+    /* the records with the AES's other window-safe state (zwin, LowRam
+     * in tools/bsp6502/a6.scm): HiRam has not the room */
+    static SECTION("zwin") char proc_store[PROC_STORE];
+
+    STATUS[0] = 'A';
+    STATUS[1] = '6';
+    STATUS[2] = 0;
+    STATUS[8] = b6_count;
+
+    farmem_probe();
+    STATUS[9] = (unsigned char)farmem.banks;
+    vdev = &vdev_antic;
+    STATUS[3] = '1';
+    vdi_font_default();
+    vdi_init();
+    STATUS[3] = '2';
+
+    proc_init(proc_store);
+    ctx_make(&proc_app->p_ctx, 0);
+}
+
+/* ... then, the context made, the AES as src/gem.c starts it, and the
+ * screen test-a6 holds to the model. */
+void a6_aes_up(void)
+{
+    STATUS[3] = '3';
+    gsx_start();
+    STATUS[3] = '4';
+    ev_init();
+    STATUS[3] = '5';
+    wm_init();
+    STATUS[3] = '6';
+    mn_init();
+    STATUS[3] = '7';
+    a6_tree();
 }
