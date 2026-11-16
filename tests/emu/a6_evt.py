@@ -25,6 +25,13 @@ filed in a6_log.
                  redraw and does: not a pixel of the closed one left in it
   the desk       a click: MU_BUTTON where it was, one click; two quick
                  ones: two
+  a second       src/a6_evt.c's a6_acc, an accessory built in, with its
+  process        own record, queue and context (step 4f): it parked, it
+                 is given turns while the application waits (its timer
+                 counts), and a key P makes the application send it
+                 A6_PING, which it answers with A6_PONG -- the ping's
+                 number, and the running pid the AES gave it, its own;
+                 everything above runs with it there
   nothing else   nothing stopped: no stub that must not run, no far
                  address in a bank that is not there (the cc6502 fault
                  step 4e found in ob_change sent one); and no context
@@ -51,6 +58,7 @@ VIMIRQ, VVBLKI = 0x0216, 0x0222
 IRQ_OS_CHAINED, PTR_NONE = 3, 0
 MU_KEYBD, MU_BUTTON, MU_MESAG = 0x01, 0x02, 0x10
 MN_SELECTED, WM_REDRAW, WM_CLOSED = 10, 20, 22
+A6_PING, A6_PONG = 0x4136, 0x4137       # src/a6_evt.c
 A6_LOG, A6_REC = 8, 10                  # src/a6_evt.c
 TITLE_FILE, ITEM_OPEN = 4, 17           # src/a6_tree.c's menu
 FILE_AT, OPEN_AT = (60, 4), (66, 12)    # File's title; Open, in its box
@@ -81,7 +89,7 @@ def main():
             fails.append(msg)
         return cond
 
-    print("gem4xe-e6: the input poll and the event loop, on a stock 6502")
+    print("gem4xe-e6: the input poll, the event loop and a second process, on a stock 6502")
     sym = symbols()
     emu = launch(tag="e6", memsize="1088K", vbxe=False, rapidus=False,
                  extra_args=["--disk", DISK])
@@ -100,6 +108,19 @@ def main():
 
     def here():
         return word(sym["xrat"]), word(sym["yrat"])
+
+    def still():
+        """The pointer once it has stopped: the poll turns the handler's
+        counts into pixels on the application's turns, and with a second
+        process those come a little further apart."""
+        last = here()
+        for _ in range(30):
+            b.frames(4)
+            now = here()
+            if now == last:
+                return now
+            last = now
+        return last
 
     def move(xy):
         poke16(ptr, xy[0])
@@ -170,6 +191,9 @@ def main():
                 break
         if not check(b.peek(STATUS + 7) == ord("L"), "the event loop runs"):
             return 1
+        check(b.peek(STATUS + 11) == ord("P") and word(sym["proc_n"]) == 2,
+              f"a second process started and parked ($060B {b.peek(STATUS + 11):02X}, "
+              f"proc_n {word(sym['proc_n'])})")
         b.frames(20)
         settle()
         # the pointer: on, an arrow, at the trak-ball's start, over window 2's
@@ -190,18 +214,15 @@ def main():
 
         # -- the trak-ball ----------------------------------------------------
         b.joy(1, "centre")
-        b.frames(4)
-        x0, y0 = here()
+        x0, y0 = still()
         for i in range(30):
             b.joy(1, "down" if i % 2 == 0 else "centre")
             b.frames(1)
-        b.frames(4)
-        x1, y1 = here()
+        x1, y1 = still()
         for i in range(30):
             b.joy(1, "right" if i % 2 == 0 else "centre")
             b.frames(1)
-        b.frames(4)
-        x2, y2 = here()
+        x2, y2 = still()
         b.joy(1, "centre")
         check(x1 != x0 and y1 == y0, f"trak-ball pulses on one line move the AES's x: "
               f"({x0},{y0}) -> ({x1},{y1})")
@@ -234,6 +255,31 @@ def main():
               f"KEY A: MU_KEYBD, key $1E61 ({[hex(r[5] & 0xFFFF) for r in keys]})")
         check(len(keys) == 2 and keys[1][5] & 0xFFFF == 0x1E41 and keys[1][4] & 3,
               "SHIFT A: $1E41, with a shift in the state")
+
+        # -- the second process -----------------------------------------------
+        missing = [n for n in ("a6_acc_ticks", "a6_acc_pings", "a6_acc_got") if n not in sym]
+        if check(not missing, f"the second process is in the program (missing: {missing})"):
+            t0, n0 = word(sym["a6_acc_ticks"]) & 0xFFFF, word(sym["proc_turns"]) & 0xFFFF
+            b.frames(100)                   # two seconds: twenty of its ticks
+            t1, n1 = word(sym["a6_acc_ticks"]) & 0xFFFF, word(sym["proc_turns"]) & 0xFFFF
+            check(10 <= (t1 - t0) & 0xFFFF <= 30,
+                  f"it has turns while the application waits: its 100 ms timer "
+                  f"{(t1 - t0) & 0xFFFF} times in 2 s, {(n1 - n0) & 0xFFFF} turns handed over")
+            b.key("P")
+            b.frames(30)
+            b.key("P")
+            b.frames(30)
+            mark, got = log_since(mark)
+            for r in got:
+                print("    " + show(r))
+            pong = [r for r in got if r[0] & MU_MESAG and r[7] == A6_PONG]
+            acc = [word(sym["a6_acc_got"] + 2 * i) for i in range(4)]
+            check(word(sym["a6_acc_pings"]) == 2 and acc == [A6_PING, 0, 2, 1],
+                  f"key P twice: two A6_PINGs reached it, the last from pid 0, number 2, "
+                  f"and it ran as pid 1 ({word(sym['a6_acc_pings'])}, {acc})")
+            check([(r[8], r[9]) for r in pong] == [(1, 1), (2, 1)],
+                  f"...and its A6_PONGs came back, numbered 1 and 2, from pid 1 "
+                  f"({[(r[8], r[9]) for r in pong]})")
 
         # -- the menu ---------------------------------------------------------
         under = area(*FILE_BOX)
@@ -307,8 +353,8 @@ def main():
         check(over == 0, f"no context switch refused ({over})")
     finally:
         emu.stop()
-    print(f"gem4xe-e6: {'PASS' if not fails else 'FAIL'} -- the input poll and the event "
-          f"loop, on a stock 6502, {len(fails)} problem(s)")
+    print(f"gem4xe-e6: {'PASS' if not fails else 'FAIL'} -- the input poll, the event "
+          f"loop and a second process, on a stock 6502, {len(fails)} problem(s)")
     return 1 if fails else 0
 
 
