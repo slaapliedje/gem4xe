@@ -33,6 +33,11 @@ ALLOWED = {
     ("src/shell/shstart.s", "sh_call"): "emulation mode, after the OS call",
 }
 
+# The 6502 build's own assembly (docs/6502.md): a 6502 has no native mode,
+# and the IRQ the emulator lets through is a 65C816 native-mode fault, so
+# an SEI there is the ordinary way to hold interrupts.
+NO_NATIVE = "src/sys6502/"
+
 SEI = re.compile(r"^\s*(?:[A-Za-z_.$0-9]+:)?\s*(sei|sep\s+#(0x)?([0-9a-fA-F]+))\b",
                  re.IGNORECASE)
 LABEL = re.compile(r"^([A-Za-z_.][A-Za-z_.$0-9]*):")
@@ -67,6 +72,8 @@ class NoNativeSei(unittest.TestCase):
     def test_every_sei_is_accounted_for(self):
         seen = set()
         for path in sources((".s",)):
+            if path.startswith(NO_NATIVE):
+                continue
             with open(os.path.join(ROOT, path), errors="ignore") as f:
                 for p, label, n in sei_sites(path, f.read()):
                     self.assertIn((p, label), ALLOWED,

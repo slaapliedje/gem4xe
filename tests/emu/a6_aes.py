@@ -17,8 +17,9 @@ The machine: an 800XL's 6502, no accelerator, no VBXE, 1088K of PORTB
 memory, BASIC off.  The gate checks:
 
   - the program ran to its end ('A6' 'K' at $0600), on the 6502, and
-    reached no stub that must not run (a letter at $0604: 'S' a context
-    switch, 'R' a shell request -- step 4d's and later);
+    reached no stub that must not run (a letter at $0604: 'R' a shell
+    request); the context switch is real since step 4d, and never asked
+    for on one process;
   - both trees went into far memory, and wm_create answered handles 1
     and 2, as the model does;
   - every one of the 61,440 pixels is what tools/aesref.py draws for the

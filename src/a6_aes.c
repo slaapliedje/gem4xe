@@ -4,9 +4,9 @@
  * The VDI and its ANTIC device start as in src/v6_vdi.c.  Then the AES as
  * src/gem.c starts it, less what a single process with no input needs:
  * the process records (src/aes/proc.c, a static store here, as test-m25's
- * runner has them), gsx_start, ev_init, wm_init, mn_init.  No context is
- * ever switched to and no interrupt handler is installed -- those are
- * step 4d -- so the ctx_* calls are src/sys6502/stub6502.c's.  Then
+ * runner has them), gsx_start, ev_init, wm_init, mn_init.  The context
+ * is made and marked as src/gem.c does (src/sys6502/ctx6502.c, step 4d),
+ * and never switched away from: there is one process.  Then
  * src/a6_tree.c (banked) makes the calls the gate holds to the model.
  *
  * STATUS at $0600: 'A' '6' as it starts, 'K' at $0602 when done, how far

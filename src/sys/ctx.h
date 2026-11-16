@@ -86,6 +86,15 @@ typedef struct {
      * program that runs its stack past this has been writing over the
      * system (docs/phase114.md).  0: nothing to check. */
     uint16_t floor;
+#if defined(__CALYPSI_TARGET_6502__) || defined(GEM4XE_CTX6502)
+    /* The 6502 has two stacks, and a context parks both (src/sys6502/
+     * ctx6502.c): the 6502's own page 1 -- `sp` and `len` above, S being
+     * a byte -- and the compiler's C stack, a software stack under _Vsp.
+     * Its extent goes into `save` after page 1's.  (GEM4XE_CTX6502: a host's
+     * parse of src/sys6502/ctx6502.c, make qscan.) */
+    uint16_t vsp;       /* _Vsp while parked */
+    uint16_t vlen;      /* C-stack bytes parked */
+#endif
 } CTX;
 #define CTX_FLOOR 0x40
 

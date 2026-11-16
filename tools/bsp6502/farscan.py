@@ -52,7 +52,8 @@ CAL = os.environ.get("CALYPSI6502", os.path.expanduser("~/dev/toolchains/calypsi
 # the files the 6502 build compiles, and what the Makefile gives one of them
 FILES = ["src/vdi/vdi.c", "src/vdi/dev_antic.c", "src/antic/antic.c", "src/vdi/font.c",
          "src/vdi/pointer.c", "src/vdi/fillpat.c", "src/vdi/sintbl.c", "src/sys/farmem.c",
-         "src/sys6502/*.c", "src/v6_*.c", "src/f6_*.c", "src/aes/*.c"]
+         "src/sys6502/*.c", "src/v6_*.c", "src/f6_*.c", "src/a6_*.c", "src/c6_*.c", "src/i6_*.c",
+         "src/aes/*.c"]
 PER_FILE = {
     "src/vdi/dev_antic.c": ["-DGEM4XE_DEV_IMPL", "-DGEM4XE_DEV_PREFIX=and_",
                             "-DGEM4XE_DEV_ANTIC"],

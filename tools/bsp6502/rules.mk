@@ -143,8 +143,8 @@ A6_BANKS6  = $(BANKS6) --bank wind=11 --bank wind_b=12 --bank menu=13 --bank men
 A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/a6farmem6502.o $(B6)/res/gemdata.o
-A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree
+             $(B6)/res/a6farmem6502.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o
+A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
 
@@ -163,6 +163,7 @@ $(B6)/w/appl.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="evt
 $(B6)/w/ctrl.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="ctl"\n#include "../../../src/aes/ctrl.c"\n' > $@
 $(B6)/w/grlib.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="ctl"\n#include "../../../src/aes/grlib.c"\n' > $@
 $(B6)/w/form.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="ctl"\n#include "../../../src/aes/form.c"\n' > $@
+$(B6)/w/a6ctx.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="evt"\n#include "../../../src/sys6502/ctx6502.c"\n' > $@
 $(B6)/w/a6tree.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/a6_tree.c"\n' > $@
 $(B6)/pre/wind.o:   $(B6)/w/wind.c src/aes/wind.c build/gemdata.h $(HDRS6)
 $(B6)/pre/menu.o:   $(B6)/w/menu.c src/aes/menu.c build/gemdata.h $(HDRS6)
@@ -173,10 +174,11 @@ $(B6)/pre/ctrl.o:   $(B6)/w/ctrl.c src/aes/ctrl.c build/gemdata.h $(HDRS6)
 $(B6)/pre/grlib.o:  $(B6)/w/grlib.c src/aes/grlib.c build/gemdata.h $(HDRS6)
 $(B6)/pre/form.o:   $(B6)/w/form.c src/aes/form.c build/gemdata.h $(HDRS6)
 $(B6)/pre/a6tree.o: $(B6)/w/a6tree.c src/a6_tree.c $(HDRS6)
+$(B6)/pre/a6ctx.o:  $(B6)/w/a6ctx.c src/sys6502/ctx6502.c $(HDRS6)
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o: EXTRA6 = -I src/aes -I build -I src/sys
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o: EXTRA6 = -I src/aes -I build -I src/sys
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o:
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o:
 	@mkdir -p $(dir $@) $(B6)/asm
 	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \
 	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
@@ -261,3 +263,106 @@ test-f6: build/f6-boot.atr
 	python3 tests/emu/f6_far.py
 
 .PHONY: test-f6
+
+# ---- step 4d: the context switch (tests/emu/c6_ctx.py) ---------------------
+# test-m27's runner on the 6502: two contexts in banks of their own (cxa,
+# cxb), the far heap's allocator in a third, the switch resident
+# (src/sys6502/ctx6502.s; its C half, ctx6502.c, in a bank: far here, evt
+# in A6).
+C6_BANKS6  = --bank far=1 --bank cxa=2 --bank cxb=3
+C6_RES     = $(B6)/res/c6_ctx.o $(B6)/res/ctx6502s.o \
+             $(B6)/res/stub6502.o $(B6)/res/bank6502.o $(B6)/res/c6farmem6502.o
+C6_UNITS   = v6farmem c6procs c6ctx
+C6_PRE     = $(C6_UNITS:%=$(B6)/pre/%.o)
+C6_BANK    = $(C6_UNITS:%=$(B6)/c6bank/%.o)
+
+$(B6)/res/c6_ctx.o: src/c6_ctx.c $(HDRS6)
+	@mkdir -p $(dir $@)
+	$(CC6) $(CFLAGS6) -I src/sys -c $< -o $@
+$(B6)/res/ctx6502s.o: src/sys6502/ctx6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+$(B6)/res/c6farmem6502.o: src/sys6502/farmem6502.c $(HDRS6)
+	@mkdir -p $(dir $@)
+	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=3 -c $< -o $@
+
+$(B6)/w/c6procs.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="cxa"\n#include "../../../src/c6_procs.c"\n' > $@
+$(B6)/w/c6ctx.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/sys6502/ctx6502.c"\n' > $@
+$(B6)/pre/c6procs.o: $(B6)/w/c6procs.c src/c6_procs.c $(HDRS6)
+$(B6)/pre/c6ctx.o:   $(B6)/w/c6ctx.c src/sys6502/ctx6502.c $(HDRS6)
+$(B6)/pre/c6procs.o $(B6)/pre/c6ctx.o:
+	@mkdir -p $(dir $@) $(B6)/asm
+	$(CC6) $(CFLAGS6) --no-cross-call -I src/sys -c $< -o $@ \
+	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
+
+$(B6)/c6.idx: $(C6_PRE) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(C6_BANKS6) $(C6_UNITS:%=$(B6)/asm/%.s)
+
+$(B6)/c6bank/%.o: $(B6)/pre/%.o $(B6)/c6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
+	@mkdir -p $(dir $@) $(B6)/c6asm
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/c6asm/$*.b.s --tu $* $(C6_BANKS6) --index $(B6)/c6.idx
+	python3 tools/bsp6502/bankcheck.py --asm $(B6)/c6asm/$*.b.s $(C6_BANKS6) --index $(B6)/c6.idx
+	$(AS6) --core 6502 $(B6)/c6asm/$*.b.s -o $@
+
+build/c6.elf: $(C6_RES) $(C6_BANK) tools/bsp6502/c6.scm tools/bsp6502/bankcheck.py
+	$(LN6) tools/bsp6502/c6.scm $(C6_RES) $(C6_BANK) \
+	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/c6.map > /dev/null
+	python3 tools/bsp6502/bankcheck.py build/c6.map --elf $@ || { rm -f $@; exit 1; }
+
+build/c6.xex: build/c6.elf tools/bsp6502/mkxex6502.py tools/bsp6502/elfsym.py
+	python3 tools/bsp6502/mkxex6502.py $< $@
+
+build/c6-boot.atr: build/c6.xex
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep
+
+test-c6: build/c6-boot.atr
+	python3 tests/emu/c6_ctx.py
+
+.PHONY: test-c6
+
+# ---- step 4d: the interrupt handlers (tests/emu/i6_irq.py) -----------------
+# src/i6_irq.c resident with the handlers (src/sys6502/irq6502.s and .c);
+# the VDI's pointer layer, src/vdi/pointer.c, in one bank (dev) to select
+# the trak-ball through.
+I6_BANKS6  = --bank dev=1
+I6_RES     = $(B6)/res/i6_irq.o $(B6)/res/irq6502.o $(B6)/res/irq6502s.o \
+             $(B6)/res/bank6502.o
+I6_UNITS   = pointer
+I6_PRE     = $(I6_UNITS:%=$(B6)/pre/%.o)
+I6_BANK    = $(I6_UNITS:%=$(B6)/i6bank/%.o)
+
+$(B6)/res/i6_irq.o: src/i6_irq.c $(HDRS6)
+	@mkdir -p $(dir $@)
+	$(CC6) $(CFLAGS6) -I src/sys -c $< -o $@
+$(B6)/res/irq6502s.o: src/sys6502/irq6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+
+$(B6)/i6.idx: $(I6_PRE) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(I6_BANKS6) $(I6_UNITS:%=$(B6)/asm/%.s)
+
+$(B6)/i6bank/%.o: $(B6)/pre/%.o $(B6)/i6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
+	@mkdir -p $(dir $@) $(B6)/i6asm
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/i6asm/$*.b.s --tu $* $(I6_BANKS6) --index $(B6)/i6.idx
+	python3 tools/bsp6502/bankcheck.py --asm $(B6)/i6asm/$*.b.s $(I6_BANKS6) --index $(B6)/i6.idx
+	$(AS6) --core 6502 $(B6)/i6asm/$*.b.s -o $@
+
+build/i6.elf: $(I6_RES) $(I6_BANK) tools/bsp6502/i6.scm tools/bsp6502/bankcheck.py
+	$(LN6) tools/bsp6502/i6.scm $(I6_RES) $(I6_BANK) \
+	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/i6.map > /dev/null
+	python3 tools/bsp6502/bankcheck.py build/i6.map --elf $@ || { rm -f $@; exit 1; }
+
+build/i6.xex: build/i6.elf tools/bsp6502/mkxex6502.py tools/bsp6502/elfsym.py
+	python3 tools/bsp6502/mkxex6502.py $< $@
+
+build/i6-boot.atr: build/i6.xex
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep
+
+test-i6: build/i6-boot.atr
+	python3 tests/emu/i6_irq.py
+
+.PHONY: test-i6

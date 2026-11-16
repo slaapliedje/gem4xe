@@ -84,6 +84,8 @@
 #define IRQ_OFF        0    /* polled regime: nothing installed            */
 #define IRQ_ROM_COPIED 1    /* the OS ROM copied under itself, then patched */
 #define IRQ_RAM_FOUND  2    /* $C000-$FFFF was RAM already: patched in place */
+#define IRQ_OS_CHAINED 3    /* a 6502: the OS's own RAM vectors chained
+                               (src/sys6502/irq6502.c), nothing copied      */
 
 /* Why not -- irq.fail */
 #define IRQ_FAIL_NONE  0

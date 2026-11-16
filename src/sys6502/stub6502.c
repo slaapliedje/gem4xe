@@ -37,13 +37,6 @@ static void b6_unreached(char what)
         ;
 }
 
-/* ---- the context switch: step 4d (src/sys/ctx.s on the 65C816) --------
- * Step 4c runs one process and never parks it, so a context is made and
- * marked running, and a switch is never asked for. */
-int16_t ctx_make(CTX *c, uint32_t entry) { (void)c; (void)entry; return 1; }
-void    ctx_init(CTX *first) { ctx_cur = first; }
-void    ctx_switch(CTX *to) { (void)to; b6_unreached('S'); }
-
 /* ---- the shell (src/aes/shel.c): not on the 6502 yet ------------------
  * The Desk menu's list of programs and the switch key: one program, and
  * nothing to switch to.  A request to switch must not come. */
@@ -69,6 +62,10 @@ uint8_t  cio_close(int16_t iocb) { (void)iocb; return 1; }
 /* ---- the interrupt handler's state: quiet ----------------------------- */
 IRQ_INFO irq;
 volatile uint8_t irq_kb_head, irq_kb_tail, irq_kb_count;
+
+/* The running context (src/sys/ctx.h): here, because the VDI reads it to
+ * know whose a workstation is, and V6 has no context switch; the switch
+ * is src/sys6502/ctx6502.c and .s, where a program has one. */
 CTX *ctx_cur;
 
 /* ---- the printer: none ------------------------------------------------ */
