@@ -50,7 +50,7 @@ BANKS6     = --bank vdi_a=1 --bank vdi_b=2 --bank vdi_c=3 --bank dev=4 --bank an
 V6_RES     = $(B6)/res/v6_vdi.o $(B6)/res/stub6502.o $(B6)/res/irqstub6502.o $(B6)/res/v6stub.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/v6farmem6502.o $(B6)/res/gemdata.o $(B6)/res/mul6502s.o
+             $(B6)/res/v6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/mul6502s.o
 V6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf v6tree
 V6_PRE     = $(V6_UNITS:%=$(B6)/pre/%.o)
 V6_BANK    = $(V6_UNITS:%=$(B6)/bank/%.o)
@@ -143,7 +143,7 @@ A6_BANKS6  = $(BANKS6) --bank wind=11 --bank wind_b=12 --bank menu=13 --bank men
 A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/a6farmem6502.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
+             $(B6)/res/a6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
              $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o
 A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
@@ -238,7 +238,7 @@ b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf
 # and the trampoline resident.  One code bank: the helpers' far banks
 # start after it (B6_CODE_BANKS).
 F6_BANKS6  = --bank far=1
-F6_RES     = $(B6)/res/f6_far.o $(B6)/res/f6farmem6502.o $(B6)/res/bank6502.o \
+F6_RES     = $(B6)/res/f6_far.o $(B6)/res/f6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/bank6502.o \
              $(B6)/res/eput6502.o
 F6_UNITS   = farmem f6_bank
 F6_BANK    = $(F6_UNITS:%=$(B6)/bank/%.o)
@@ -293,7 +293,7 @@ test-f6: build/f6-boot.atr
 # in A6).
 C6_BANKS6  = --bank far=1 --bank cxa=2 --bank cxb=3
 C6_RES     = $(B6)/res/c6_ctx.o $(B6)/res/ctx6502s.o \
-             $(B6)/res/stub6502.o $(B6)/res/bank6502.o $(B6)/res/c6farmem6502.o
+             $(B6)/res/stub6502.o $(B6)/res/bank6502.o $(B6)/res/c6farmem6502.o $(B6)/res/far6502s.o
 C6_UNITS   = v6farmem c6procs c6ctx
 C6_PRE     = $(C6_UNITS:%=$(B6)/pre/%.o)
 C6_BANK    = $(C6_UNITS:%=$(B6)/c6bank/%.o)
@@ -358,6 +358,14 @@ I6_BANK    = $(I6_UNITS:%=$(B6)/i6bank/%.o)
 $(B6)/res/i6_irq.o: src/i6_irq.c $(HDRS6)
 	@mkdir -p $(dir $@)
 	$(CC6) $(CFLAGS6) -I src/sys -c $< -o $@
+# a filled row's middle, in the ANTIC bank (src/sys6502/antic6502.s)
+$(B6)/res/antic6502s.o: src/sys6502/antic6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+# the far_* helpers' hot half (src/sys6502/far6502.s)
+$(B6)/res/far6502s.o: src/sys6502/far6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
 $(B6)/res/mul6502s.o: src/sys6502/mul6502.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@

@@ -47,7 +47,7 @@ extern uint8_t b6_cur, b6_count, b6_portb[];
  * one, from a garbage object spec).  The address goes to $0670-$0673,
  * 'F' to $0604 -- src/sys6502/stub6502.c's place for a stop -- and the
  * stack is left as it is, for whoever reads the call chain off page 1. */
-static void far_bad(uint32_t a)
+void b6_far_bad(uint32_t a)
 {
     *(volatile uint32_t *)0x0670 = a;
     *(volatile char *)0x0604 = 'F';
@@ -55,143 +55,21 @@ static void far_bad(uint32_t a)
         ;
 }
 
-/* Bank in the window for `a` (a far address, bank >= 1); the window
- * address in *w; the bytes from there to the end of the 16 KB piece. */
-static uint16_t map(uint32_t a, uint8_t **w)
-{
-    uint16_t off = (uint16_t)a;
-    uint8_t k = (uint8_t)(a >> 16);
-    uint8_t b = (uint8_t)(B6_CODE_BANKS + 1 + (uint8_t)((k - 1) * 4) + (off >> 14));
+/* THE HOT HALF IS IN ASSEMBLY: src/sys6502/far6502.s has far_read8,
+ * far_write8, far_rd16/32, far_wr16/32, far_get, far_put, far_fill,
+ * far_strget and ob_rd16/32, ob_wr16, and reads these two: the PORTB
+ * bank of far bank 1's first piece, and the stop above. */
+const uint8_t b6_far_base = B6_CODE_BANKS + 1;
 
-    if (b > b6_count || k > 15)     /* k: past 15 the index wraps */
-        far_bad(a);
-    PORTB = b6_portb[b];
-    *w = (uint8_t *)(WINDOW + (off & (PIECE - 1)));
-    return (uint16_t)(PIECE - (off & (PIECE - 1)));
-}
-
-static void unmap(void)
-{
-    PORTB = b6_portb[b6_cur];
-}
-
-static uint8_t is_near(uint32_t a)
-{
-    /* the bank byte, stored first: cc6502 compares (uint8_t)(a >> 16)
-     * as bits 16-31 (tools/bsp6502/b6scan.py) */
-    uint8_t bank = (uint8_t)(a >> 16);
-
-    return bank == 0;
-}
-
-void far_write8(uint32_t addr, uint8_t v)
-{
-    uint8_t *w;
-
-    if (is_near(addr)) {
-        *(uint8_t *)(uint16_t)addr = v;
-        return;
-    }
-    map(addr, &w);
-    *w = v;
-    unmap();
-}
-
-uint8_t far_read8(uint32_t addr)
-{
-    uint8_t *w, v;
-
-    if (is_near(addr))
-        return *(const uint8_t *)(uint16_t)addr;
-    map(addr, &w);
-    v = *w;
-    unmap();
-    return v;
-}
-
-void far_put(uint32_t dst, const uint8_t *src, uint16_t len)
-{
-    uint8_t *w;
-    uint16_t k;
-
-    if (is_near(dst)) {
-        memcpy((void *)(uint16_t)dst, src, len);
-        return;
-    }
-    while (len) {
-        k = map(dst, &w);
-        if (k > len)
-            k = len;
-        memcpy(w, src, k);
-        unmap();
-        dst += k;
-        src += k;
-        len = (uint16_t)(len - k);
-    }
-}
-
-void far_get(uint8_t *dst, uint32_t src, uint16_t len)
-{
-    uint8_t *w;
-    uint16_t k;
-
-    if (is_near(src)) {
-        memcpy(dst, (const void *)(uint16_t)src, len);
-        return;
-    }
-    while (len) {
-        k = map(src, &w);
-        if (k > len)
-            k = len;
-        memcpy(dst, w, k);
-        unmap();
-        dst += k;
-        src += k;
-        len = (uint16_t)(len - k);
-    }
-}
-
-/* A field's two or four bytes (FAR_GETF, src/sys/farmem.h), through
- * far_get, which maps once for both unless they straddle a piece. */
-uint16_t far_rd16(uint32_t addr)
-{
-    uint16_t v;
-
-    far_get((uint8_t *)&v, addr, 2);
-    return v;
-}
-
-uint32_t far_rd32(uint32_t addr)
-{
-    uint32_t v;
-
-    far_get((uint8_t *)&v, addr, 4);
-    return v;
-}
-
-void far_wr16(uint32_t addr, uint16_t v)
-{
-    far_put(addr, (const uint8_t *)&v, 2);
-}
-
-void far_wr32(uint32_t addr, uint32_t v)
-{
-    far_put(addr, (const uint8_t *)&v, 4);
-}
-
-/* An object's field: tree t, object i, the field's offset (OB_GET,
- * src/aes/aes.h).  24 bytes an object. */
-static uint32_t ob_at(uint32_t t, WORD i, uint8_t off)
+/* ob_wr32's four arguments do not fit the registers (the value would go
+ * on the C stack), so it stays here, in terms of the assembly's. */
+uint32_t ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v)
 {
     uint16_t k = (uint16_t)i;
 
-    return t + (uint32_t)(uint16_t)((k << 4) + (k << 3)) + off;
+    far_wr32(t + (uint32_t)(uint16_t)((k << 4) + (k << 3)) + off, v);
+    return v;
 }
-
-uint16_t ob_rd16(uint32_t t, WORD i, uint8_t off) { return far_rd16(ob_at(t, i, off)); }
-uint32_t ob_rd32(uint32_t t, WORD i, uint8_t off) { return far_rd32(ob_at(t, i, off)); }
-uint16_t ob_wr16(uint32_t t, WORD i, uint8_t off, uint16_t v) { far_wr16(ob_at(t, i, off), v); return v; }
-uint32_t ob_wr32(uint32_t t, WORD i, uint8_t off, uint32_t v) { far_wr32(ob_at(t, i, off), v); return v; }
 
 /* Far to far goes through a near buffer: the window holds one bank. */
 static uint8_t bounce[64];
@@ -208,40 +86,6 @@ void far_copy(uint32_t dst, uint32_t src, uint16_t len)
         src += k;
         len = (uint16_t)(len - k);
     }
-}
-
-void far_fill(uint32_t dst, uint8_t v, uint16_t len)
-{
-    uint8_t *w;
-    uint16_t k;
-
-    if (is_near(dst)) {
-        memset((void *)(uint16_t)dst, v, len);
-        return;
-    }
-    while (len) {
-        k = map(dst, &w);
-        if (k > len)
-            k = len;
-        memset(w, v, k);
-        unmap();
-        dst += k;
-        len = (uint16_t)(len - k);
-    }
-}
-
-void far_strget(char *dst, uint32_t src, uint16_t max)
-{
-    uint16_t k;
-    char c;
-
-    for (k = 0; k + 1 < max; k++) {
-        c = (char)far_read8(src + k);
-        if (!c)
-            break;
-        dst[k] = c;
-    }
-    dst[k] = 0;
 }
 
 void far_strput(uint32_t dst, const char *src, uint16_t max)

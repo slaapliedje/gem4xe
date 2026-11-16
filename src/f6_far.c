@@ -21,12 +21,27 @@
  *          every piece of a far bank in the same PORTB bank passed, its
  *          writes reading back through the same alias
  *
+ * and in $0605, the field and string helpers (src/sys6502/far6502.s):
+ *
+ *   bit 0  far_wr16/far_rd16 at each offset from 3 before a 16 KB piece's
+ *          end to 1 after, read back a byte at a time too
+ *   bit 1  ...far_wr32/far_rd32 the same
+ *   bit 2  far_strget across a piece's end, and cut short by its max
+ *   bit 3  ob_wr16/ob_rd16/ob_rd32 at object 3, and at object 2 of a tree
+ *          30 bytes below a 64 KB far bank's end: the carry into the bank
+ *   bit 4  all of them on near memory (bank 0)
+ *
  * STATUS $0600: 'F' '6' as it starts, 'K' at $0602 at the end; the far
  * banks the probe made at $0603.
  */
 #include "portab.h"
 #include "sys/farmem.h"
 #include "sys/hiprobe.h"
+/* the object helpers, as src/aes/aes.h declares them for the 6502 (here
+ * too, so a host's parse -- make qscan -- sees them) */
+uint16_t ob_rd16(uint32_t t, int16_t i, uint8_t off);
+uint32_t ob_rd32(uint32_t t, int16_t i, uint8_t off);
+uint16_t ob_wr16(uint32_t t, int16_t i, uint8_t off, uint16_t v);
 
 #define STATUS ((volatile uint8_t *)0x0600)
 #define ADDRS  ((volatile uint8_t *)0x0640)
@@ -71,6 +86,80 @@ static uint8_t same(const uint8_t *a, const uint8_t *b, uint16_t n)
         if (a[i] != b[i])
             return 0;
     return 1;
+}
+
+/* $0605's bits (the head of the file) */
+static uint8_t fields(uint32_t a2, uint32_t a5)
+{
+    uint8_t ok = 0x1F, d, i;         /* each failure clears its bit: with
+                                     * plain constants, as a (uint8_t)~bit
+                                     * sign-extends in cc6502 (b6scan) */
+    uint32_t end, at;
+    char s[24];
+
+    /* the end of a2's first 16 KB piece: a2's offset rounded up */
+    end = (a2 & 0xFFFFC000UL) + 0x4000UL;
+    for (d = 0; d < 5; d++) {
+        at = end - 3 + d;
+        far_wr16(at, (uint16_t)(0xA100U + d));
+        if (far_rd16(at) != (uint16_t)(0xA100U + d)
+            || far_read8(at) != d || far_read8(at + 1) != 0xA1)
+            ok &= 0xFE;
+        far_wr32(at, 0xB2C3D400UL + d);
+        if (far_rd32(at) != 0xB2C3D400UL + d
+            || far_read8(at) != d || far_read8(at + 3) != 0xB2)
+            ok &= 0xFD;
+    }
+
+    far_put(end - 5, (const uint8_t *)"PIECE-ENDS", 11);
+    far_strget(s, end - 5, sizeof s);
+    for (i = 0; i < 11; i++)
+        if (s[i] != "PIECE-ENDS"[i])
+            ok &= 0xFB;
+    far_strget(s, end - 5, 5);
+    if (s[3] != 'C' || s[4] != 0)
+        ok &= 0xFB;
+    s[0] = 'x';
+    far_strget(s, end - 5, 0);
+    if (s[0] != 0)
+        ok &= 0xFB;
+
+    /* object 3, field 10: 3 * 24 + 10 = 82 bytes on */
+    if (ob_wr16(a2, 3, 10, 0x5E6FU) != 0x5E6FU || far_rd16(a2 + 82) != 0x5E6FU
+        || ob_rd16(a2, 3, 10) != 0x5E6FU)
+        ok &= 0xF7;
+    far_wr32(a2 + 90, 0x01020304UL);
+    if (ob_rd32(a2, 3, 18) != 0x01020304UL)
+        ok &= 0xF7;
+    /* a tree 30 bytes below a far bank's end: object 2's field 4 is 52
+     * bytes on, 22 into the next bank -- if a5's span reaches it */
+    at = (a5 & 0xFFFF0000UL) + 0x10000UL - 30;
+    if (at < a5)
+        at += 0x10000UL;
+    if (at + 60 <= a5 + 70000UL) {
+        ob_wr16(at, 2, 4, 0x7A7BU);
+        if (far_rd16(at + 52) != 0x7A7BU || ob_rd16(at, 2, 4) != 0x7A7BU)
+            ok &= 0xF7;
+    } else
+        ok &= 0xF7;
+
+    /* bank 0: near memory, through the same calls */
+    {
+        static uint8_t box[32];
+        uint32_t n = (uint32_t)(uint16_t)box;
+
+        far_wr16(n + 1, 0x1357U);
+        far_wr32(n + 4, 0x2468ACE0UL);
+        far_put(n + 10, (const uint8_t *)"NEAR", 5);
+        far_strget(s, n + 10, sizeof s);
+        if (far_rd16(n + 1) != 0x1357U || box[1] != 0x57
+            || far_rd32(n + 4) != 0x2468ACE0UL || box[7] != 0x24
+            || s[0] != 'N' || s[3] != 'R' || s[4] != 0
+            || ob_wr16(n, 0, 20, 0x99AAU) != 0x99AAU || box[21] != 0x99
+            || ob_rd16(n, 0, 20) != 0x99AAU)
+            ok &= 0xEF;
+    }
+    return ok;
 }
 
 int main(void)
@@ -186,6 +275,7 @@ int main(void)
     }
 
     STATUS[4] = ok;
+    STATUS[5] = fields(a2, a5);
     /* ...and on the screen, for a machine whose memory a gate cannot read
      * (the MiSTer): the bits, the far banks, then the eight addresses */
     put_s("F6 BITS "); put_hex(ok, 2);

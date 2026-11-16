@@ -61,7 +61,7 @@ typedef uint32_t OBCTREE;
 #define OB_A_(t)            (t)
 #endif
 /* A call each, the address worked out in the helper
- * (src/sys6502/farmem6502.c): worked out at every access it was 33 KB
+ * (src/sys6502/far6502.s; ob_wr32 in farmem6502.c): worked out at every access it was 33 KB
  * of objc.c, two banks. */
 uint16_t ob_rd16(uint32_t t, WORD i, uint8_t off);
 uint32_t ob_rd32(uint32_t t, WORD i, uint8_t off);

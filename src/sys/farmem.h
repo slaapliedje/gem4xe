@@ -100,12 +100,14 @@ void     far_strput(uint32_t dst, const char *src, uint16_t max); /* NUL always 
  * always wrote it; on the 6502 the field's bytes read or written through
  * the far_* helpers, at its offset, as the field's own type.  The address
  * is a uint32_t on both. */
-#ifdef __CALYPSI_TARGET_6502__
-#include <stddef.h>
+/* (declared for every target, so a host's parse -- make qscan -- of the
+ * 6502's own files sees them; only the 6502 has them) */
 uint16_t far_rd16(uint32_t addr);
 uint32_t far_rd32(uint32_t addr);
 void     far_wr16(uint32_t addr, uint16_t v);
 void     far_wr32(uint32_t addr, uint32_t v);
+#ifdef __CALYPSI_TARGET_6502__
+#include <stddef.h>
 #define FAR_RD32(a)         far_rd32(a)
 #define FAR_FLD_(type, f)   (((type *)0)->f)
 #define FAR_AT_(type, a, f) ((uint32_t)(a) + offsetof(type, f))

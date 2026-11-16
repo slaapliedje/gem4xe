@@ -36,6 +36,10 @@ STATUS, ADDRS = 0x0600, 0x0640
 CODE_BANKS = 1                          # F6.COM's: tools/bsp6502/rules.mk
 BITS = ["16 KB boundary", "far to far", "fill", "string", "64 KB far bank",
         "a bank's code goes on", "bank 0 is near", "16 KB pieces distinct"]
+# $0605: the field and string helpers, src/sys6502/far6502.s
+FIELDS = ["16-bit field across a piece's end", "32-bit field across a piece's end",
+          "string across a piece's end, and its max", "object fields, and the carry into a bank",
+          "all of them on near memory"]
 
 
 def model(banks):
@@ -89,6 +93,9 @@ def main():
         ok = b.peek(STATUS + 4)
         for i, name in enumerate(BITS):
             check(ok & (1 << i), f"bytes: {name}")
+        ok = b.peek(STATUS + 5)
+        for i, name in enumerate(FIELDS):
+            check(ok & (1 << i), f"fields: {name}")
     finally:
         emu.stop()
     print(f"gem4xe-f6: {'PASS' if not fails else 'FAIL'} -- the far heap on a stock 6502, "

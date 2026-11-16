@@ -437,6 +437,9 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
  * `rows` is the pattern, sixteen rows indexed by y & 15 -- every GEM fill
  * pattern repeats within sixteen (vdi.c, pat_bits) -- each row anchored to
  * the screen's 16-pixel grid as antic_patt_span takes it; NULL is solid. */
+#ifdef __CALYPSI_TARGET_6502__
+void an_fill6(volatile uint8_t *q, uint8_t n, uint8_t f, uint8_t g);
+#endif
 void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
                      const uint16_t *rows, int16_t mode, uint8_t pen)
 {
@@ -506,6 +509,15 @@ void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
         }
         if (last != 0) {
             if (how == 0) {
+#ifdef __CALYPSI_TARGET_6502__
+                /* ON THE 6502, bytes 1 to last - 1 in assembly
+                 * (src/sys6502/antic6502.s): the 65C816's word stores are
+                 * 16-bit pointer arithmetic in cc6502, 50 cycles a pair,
+                 * the most of a window's redraw (docs/6502.md, "Speed"). */
+                an_fill6(p + 1, (uint8_t)(last - 1),
+                         (b1 & 1) ? ve : vo,    /* byte 1: b1 + 1's parity */
+                         (b1 & 1) ? vo : ve);
+#else
                 /* TWO BYTES A STORE: an odd byte first if there is one,
                  * so the rest start on an even byte -- whose value is ve,
                  * and the 65816 is little-endian -- then the pair as a
@@ -530,6 +542,7 @@ void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
                     if (k < last)
                         p[k] = ve;
                 }
+#endif
             } else if (how == 1) {
                 for (k = 1; k < last; k++) {
                     t = p[k];
@@ -976,6 +989,15 @@ void antic_copy(int16_t sx, int16_t sy, int16_t dx, int16_t dy,
 #define AN_CUR_NB 3                     /* 16 pixels at any shift: 3 bytes */
 
 static uint8_t an_cur_buf[AN_CUR_NB * AN_CUR_W];
+#ifdef __CALYPSI_TARGET_6502__
+/* the loops in assembly, in this bank (src/sys6502/antic6502.s): cc6502
+ * made each row's address a multiply and the form's shift a 32-bit
+ * shift by a variable, a runtime loop -- a pointer's hide and show were
+ * a tenth of a window's close (docs/6502.md, "Speed") */
+void an_cblk6(volatile uint8_t *scr, uint8_t *buf, uint8_t nb, uint8_t nr,
+              uint8_t dir);
+void an_cpaint6(const uint8_t *a);
+#endif
 static int16_t an_cur_bx, an_cur_y, an_cur_nb, an_cur_nr;
 static uint8_t an_cur_valid;
 
@@ -1001,6 +1023,11 @@ void antic_cursor_save(int16_t x, int16_t y)
     an_cur_y = y0;
     an_cur_nb = (int16_t)(bx1 - bx0 + 1);
     an_cur_nr = (int16_t)(y1 - y0 + 1);
+#ifdef __CALYPSI_TARGET_6502__
+    an_cblk6(SCREEN + (uint16_t)y0 * AN_STRIDE + (uint16_t)bx0, an_cur_buf,
+             (uint8_t)an_cur_nb, (uint8_t)an_cur_nr, 0);
+    (void)r; (void)c;
+#else
     for (r = 0; r < an_cur_nr; r++) {
         volatile uint8_t *p = SCREEN + (uint16_t)(y0 + r) * AN_STRIDE
                               + (uint16_t)bx0;
@@ -1010,6 +1037,7 @@ void antic_cursor_save(int16_t x, int16_t y)
             p++;
         }
     }
+#endif
     an_cur_valid = 1;
 }
 
@@ -1019,6 +1047,11 @@ void antic_cursor_restore(void)
 
     if (!an_cur_valid)
         return;
+#ifdef __CALYPSI_TARGET_6502__
+    an_cblk6(SCREEN + (uint16_t)an_cur_y * AN_STRIDE + (uint16_t)an_cur_bx,
+             an_cur_buf, (uint8_t)an_cur_nb, (uint8_t)an_cur_nr, 1);
+    (void)r; (void)c;
+#else
     for (r = 0; r < an_cur_nr; r++) {
         volatile uint8_t *p = SCREEN + (uint16_t)(an_cur_y + r) * AN_STRIDE
                               + (uint16_t)an_cur_bx;
@@ -1028,6 +1061,7 @@ void antic_cursor_restore(void)
             p++;
         }
     }
+#endif
     an_cur_valid = 0;
 }
 
@@ -1054,6 +1088,44 @@ void antic_cursor_paint(int16_t x, int16_t y, const uint16_t *mask,
     bx0 = (int16_t)(x >= 0 ? (int16_t)((uint16_t)x >> 3)
                            : (int16_t)(-1 - (int16_t)((uint16_t)(-1 - x) >> 3)));
     sh = (uint8_t)(x - bx0 * 8);
+#ifdef __CALYPSI_TARGET_6502__
+    {
+        /* the rows on the screen, r0 to r1 - 1; the columns, a bit each;
+         * then the eleven bytes an_cpaint6 takes */
+        uint8_t a[11], cols = 0;
+        uint16_t r0 = y < 0 ? (uint16_t)-y : 0U, r1 = AN_CUR_W, pu;
+        uint8_t k;
+
+        if (y >= AN_H || y + AN_CUR_W <= 0)
+            return;
+        if (y + AN_CUR_W > AN_H)
+            r1 = (uint16_t)(AN_H - y);
+        for (k = 0; k < AN_CUR_NB; k++) {
+            int16_t bx = (int16_t)(bx0 + k);
+
+            if (bx >= 0 && bx < AN_STRIDE)
+                cols = (uint8_t)(cols | (1U << k));
+        }
+        pu = (uint16_t)(AN_SCREEN + (uint16_t)(y + (int16_t)r0) * AN_STRIDE
+                        + (uint16_t)bx0);
+        a[0] = (uint8_t)pu;
+        a[1] = (uint8_t)(pu >> 8);
+        pu = (uint16_t)(mask + r0);
+        a[2] = (uint8_t)pu;
+        a[3] = (uint8_t)(pu >> 8);
+        pu = (uint16_t)(data + r0);
+        a[4] = (uint8_t)pu;
+        a[5] = (uint8_t)(pu >> 8);
+        a[6] = (uint8_t)(r1 - r0);
+        a[7] = sh;
+        a[8] = cols;
+        a[9] = fgb;
+        a[10] = bgb;
+        an_cpaint6(a);
+        (void)r; (void)c;
+        return;
+    }
+#endif
     for (r = 0; r < AN_CUR_W; r++) {
         int16_t yy = (int16_t)(y + r);
         uint32_t d24, m24;
