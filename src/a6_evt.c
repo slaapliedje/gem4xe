@@ -69,7 +69,7 @@ static SECTION("zwin") WORD acc_queue[ACC_MSGS * 8];
 static WORD a6_pings;                   /* pings the application sent */
 static WORD prog_queue[ACC_MSGS * 8];   /* the program's (step 5a) */
 extern uint8_t p6_ven[];                /* src/sys6502/gate6502.s */
-extern const uint8_t b6_prog_bank;      /* src/sys6502/farmem6502.c */
+uint32_t p6_slot;                       /* its bank's far address: gates */
 
 /* The message, with msg[1] the sender's pid as appl_write fills it. */
 static void send(PROC *to, WORD type, WORD w3, WORD w4)
@@ -125,17 +125,22 @@ static void acc_start(void)
     STATUS[11] = 'P';
 }
 
-/* The program read into the first slot: a .G6A is the bank's bytes from
- * $4000, header first (tools/bsp6502/mkxex6502.py --g6a), a piece at a
- * time through a buffer outside the window -- where CIO and a DOS that
- * banks may write it (src/sys6502/cio6502.s) -- and on into the slot.
- * CIO_OK when the whole file came and fitted. */
-#define P6_SLOT 0x10000UL               /* far bank 1, piece 0 */
+/* The program read into a bank of its own: a .G6A is the bank's bytes
+ * from $4000, header first (tools/bsp6502/mkxex6502.py --g6a).  The bank
+ * is a far_alloc_piece block, the program's owner's -- taken from the
+ * heap as the 65C816 takes a program's memory, so a machine with more
+ * banks runs more programs and none is set aside.  The file goes a piece
+ * at a time through a buffer outside the window -- where CIO and a DOS
+ * that banks may write it (src/sys6502/cio6502.s) -- and on into the
+ * bank.  CIO_OK when the whole file came and fitted; the block is given
+ * back if not. */
 #define P6_FILE "D1:P6PROG.G6A"
 #define P6_MAX  0x4000u                 /* one bank */
+#define P6_NOMEM 0xC8                   /* no bank free: a6's own status */
+#define P6_BADF  0xC9                   /* not a .G6A */
 static SECTION("bounce") uint8_t p6_buf[256];
 
-static uint8_t prog_load(void)
+static uint8_t prog_read(uint32_t slot)
 {
     int16_t io = cio_open(P6_FILE, CIO_A_READ, 0);
     uint16_t at = 0, got;
@@ -153,7 +158,7 @@ static uint8_t prog_load(void)
             st = CIO_E_TRUNC;           /* more than a bank */
             break;
         }
-        far_put(P6_SLOT + at, p6_buf, got);
+        far_put(slot + at, p6_buf, got);
         at += got;
     } while (st == CIO_OK);
     cio_close(io);
@@ -162,19 +167,41 @@ static uint8_t prog_load(void)
     return st == CIO_E_EOF ? CIO_OK : st;
 }
 
-/* The program in the first slot, if there is one: a process of its own,
- * whose first turn runs it to its first wait. */
+static uint8_t prog_load(uint8_t own)
+{
+    uint8_t keep = far_owner, st;
+    uint32_t slot;
+
+    far_owner = own;
+    slot = far_alloc_piece();
+    far_owner = keep;
+    p6_slot = slot;
+    if (!slot)
+        return P6_NOMEM;
+    st = prog_read(slot);
+    if (st == CIO_OK && (far_rd16(slot) != 0x3647 || far_read8(slot + 2) != 1))
+        st = P6_BADF;                   /* not "G6", format 1 */
+    if (st != CIO_OK) {
+        far_free_owner(own);
+        p6_slot = 0;
+    }
+    return st;
+}
+
+/* The program, if there is one: a process of its own, whose first turn
+ * runs it to its first wait. */
 static void prog_start(void)
 {
     PROC *p;
-    uint8_t st = prog_load();
+    uint8_t own = far_new_owner();
+    uint8_t st = prog_load(own);
 
     STATUS[13] = st;
-    if (st != CIO_OK || far_rd16(P6_SLOT) != 0x3647 || far_read8(P6_SLOT + 2) != 1) {
-        STATUS[12] = 'H';               /* "G6", format 1: none */
+    if (st != CIO_OK) {
+        STATUS[12] = 'H';               /* none */
         return;
     }
-    p6_ven[5] = b6_prog_bank;           /* its veneer's bank byte */
+    p6_ven[5] = far_piece(p6_slot);     /* its veneer's bank byte */
     p = proc_new(prog_queue, ACC_MSGS);
     if (!p)
         return;

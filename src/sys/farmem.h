@@ -58,6 +58,10 @@ uint32_t far_alloc_span(uint32_t bytes);
 uint32_t far_alloc_top(uint32_t bytes);
 /* Page-aligned, and ending at or below `limit` within its bank. */
 uint32_t far_alloc_page(uint32_t bytes, uint32_t limit);
+/* The 6502's only: 16 KB on a 16 KB boundary, one PORTB bank whole, and
+ * which bank that is -- b6_portb's index (src/sys6502/farmem6502.c). */
+uint32_t far_alloc_piece(void);
+uint8_t  far_piece(uint32_t addr);
 uint32_t far_alloc_inner(uint32_t bytes, uint32_t off, uint32_t inner,
                          uint32_t limit);
 /* Exactly at..at+bytes, all of it free heap, or 0: Mclaim's. */

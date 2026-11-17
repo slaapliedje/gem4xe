@@ -154,7 +154,7 @@ $(B6)/res/a6_aes.o: src/a6_aes.c $(HDRS6)
 	$(CC6) $(CFLAGS6) -I src/aes -I src/sys -c $< -o $@
 $(B6)/res/a6farmem6502.o: src/sys6502/farmem6502.c $(HDRS6)
 	@mkdir -p $(dir $@)
-	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=17 -DB6_PROG_BANKS=4 -c $< -o $@
+	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=17 -c $< -o $@
 
 $(B6)/w/wind.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="wind"\n#include "../../../src/aes/wind.c"\n' > $@
 $(B6)/w/menu.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="menu"\n#include "../../../src/aes/menu.c"\n' > $@
@@ -212,8 +212,8 @@ build/a6.elf: $(A6_RES) $(A6_BANK) tools/bsp6502/a6.scm tools/bsp6502/bankcheck.
 # Built as a kit program is: src/app/gem.h and gemlib.c, the 6502's gates
 # and start-up, linked whole into one bank by src/app/gemapp6502.scm, and
 # (step 5b) written as P6PROG.G6A onto A6's boot disk, which A6 reads
-# into the first program slot -- the bank after the code's 17
-# (src/sys6502/farmem6502.c, B6_PROG_BANKS).
+# into a 16 KB bank taken from the far heap (src/a6_evt.c,
+# far_alloc_piece).
 P6_OBJ     = $(B6)/p6/crt6502.o $(B6)/p6/gemabi6502.o $(B6)/p6/p6_prog.o $(B6)/p6/gemlib.o
 KITFLAGS6  = -O2 --core 6502 -I src/app -I src -Werror=int-conversion
 $(B6)/p6/p6_prog.o: src/p6_prog.c src/app/gem.h src/portab.h

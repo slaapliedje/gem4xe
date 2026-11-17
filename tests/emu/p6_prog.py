@@ -6,7 +6,7 @@ src/p6_prog.c is built with the application kit alone -- src/app/gem.h,
 gemlib.c, the 6502's gates and start-up -- and linked whole into one 16 KB
 bank (src/app/gemapp6502.scm) and written to A6's boot disk as
 P6PROG.G6A (tools/bsp6502/mkxex6502.py --g6a); when $060C is 1 at the go
-A6 (src/a6_evt.c) reads it through CIO into the first program slot
+A6 (src/a6_evt.c) reads it through CIO into a bank from the far heap
 (step 5b) and starts it as a process of its own.  It knows one address of the
 system's, the gate's at $2000 (src/sys6502/gate6502.s), and every call
 goes through src/sys/abi.c, which turns its window addresses into its
@@ -214,6 +214,19 @@ def main(argv):
         slot = b.peek(STATUS + 12)
         check(slot == ord("R"), f"the slot held a program and its first turn ended "
                                 f"($060C {chr(slot) if slot > 31 else slot!r})")
+        # its bank: 16 KB from the far heap, on a 16 KB boundary, and the
+        # veneer's bank byte the PORTB bank that maps it (far bank k,
+        # piece p is b6_far_base + (k-1)*4 + p, src/sys6502/farmem6502.c)
+        at = sym("p6_slot")
+        ps = w16(at) | (w16(at + 2) << 16)
+        k, p = ps >> 16, (ps >> 14) & 3
+        want_b = b.peek(sym("b6_far_base")) + (k - 1) * 4 + p
+        vb = b.peek(sym("p6_ven") + 5)
+        check(ps and not ps & 0x3FFF and 1 <= k,
+              f"its bank came from the far heap at ${ps:06X}, 16 KB-aligned")
+        check(vb == want_b and want_b < count,
+              f"its veneer maps bank {vb}; far bank {k} piece {p} is {want_b} "
+              f"of {count}")
         stage = b.peek(STATUS + 0x40)
         if not check(stage == ord("E"), f"the program ran to its end "
                                         f"(stage {chr(stage) if stage > 31 else stage!r})"):

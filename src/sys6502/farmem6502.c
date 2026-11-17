@@ -61,16 +61,19 @@ void b6_far_bad(uint32_t a)
  * bank of far bank 1's first piece, and the stop above. */
 const uint8_t b6_far_base = B6_CODE_BANKS + 1;
 
-/* PROGRAMS' BANKS (docs/6502.md, step 5): with B6_PROG_BANKS, far bank 1
- * -- the four PORTB banks just after the code's -- is not the heap's but
- * the programs', a 16 KB slot each, so that a program's window addresses
- * have a far address (src/sys/abi.c) the heap never hands out.  The first
- * slot's PORTB bank is b6_prog_bank. */
-#ifndef B6_PROG_BANKS
-#define B6_PROG_BANKS 0
-#endif
-const uint8_t b6_prog_bank = B6_CODE_BANKS + 1;
-const uint8_t b6_prog_banks = B6_PROG_BANKS;
+/* A PROGRAM'S BANK (docs/6502.md, step 5) is a far_alloc_piece block,
+ * 16 KB on a 16 KB boundary: one PORTB bank whole, which this names --
+ * the index into b6_portb that maps it into the window.  The address
+ * must be one far_alloc_piece gave. */
+uint8_t far_piece(uint32_t a)
+{
+    uint8_t k = (uint8_t)(a >> 16), p = (uint8_t)((uint16_t)a >> 14);
+
+    k--;
+    k = (uint8_t)(k << 2);
+    p &= 3;
+    return (uint8_t)(b6_far_base + k + p);
+}
 
 /* ob_wr32's four arguments do not fit the registers (the value would go
  * on the C stack), so it stays here, in terms of the assembly's. */
@@ -134,10 +137,8 @@ void farmem_probe(void)
 {
     uint8_t data = b6_count > B6_CODE_BANKS ? (uint8_t)(b6_count - B6_CODE_BANKS) : 0;
     uint8_t k = (uint8_t)(data / 4);
-    uint8_t lo = B6_PROG_BANKS ? 2 : 1;     /* far bank 1 the programs' */
+    uint8_t lo = 1;
 
-    if (k < lo)
-        k = 0;
     far_heap_clear();
     farmem.kind = k ? FARMEM_UNKNOWN : FARMEM_NONE;
     farmem.first_bank = k ? lo : 0;

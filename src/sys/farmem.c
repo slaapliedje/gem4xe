@@ -384,7 +384,8 @@ void far_heap_init(void)
  *   how 1: 4-aligned, may cross banks          in its bank
  *   how 3: may cross banks, with a run inside it page-aligned and below
  *          `limit` in ITS bank: `run` is the run's offset in the block
- *          << 16 | its length (far_alloc_inner).  A parameter rather than
+ *          << 16 | its length (far_alloc_inner).
+ *   how 4: the 6502's, 16 KB-aligned (far_alloc_piece).  A parameter rather than
  *          a static: LoRAM, where this file's statics live, is at its
  *          floor. */
 static uint32_t fit(uint32_t lo, uint32_t hi, uint32_t bytes, uint16_t how,
@@ -407,6 +408,10 @@ static uint32_t fit(uint32_t lo, uint32_t hi, uint32_t bytes, uint16_t how,
         if ((in & 0xFFFFUL) + inner > limit)
             return 0;
         a = in - off;
+#ifdef __CALYPSI_TARGET_6502__
+    } else if (how == 4) {
+        a = (lo + 0x3FFFUL) & ~0x3FFFUL;    /* a window's piece, whole */
+#endif
     } else {
         a = (lo + 3) & ~3UL;
         if (how == 0 && (a & 0xFFFFUL) + bytes > 0x10000UL)
@@ -538,6 +543,17 @@ uint32_t far_alloc_page(uint32_t bytes, uint32_t limit)
 {
     return take(bytes, 2, limit, 0);
 }
+
+#ifdef __CALYPSI_TARGET_6502__
+/* 16 KB at a multiple of 16 KB: one of the 6502's PORTB banks whole, so
+ * that it can be mapped into the window and run -- a program's bank
+ * (docs/6502.md, step 5).  src/sys6502/farmem6502.c's far_piece names
+ * the bank. */
+uint32_t far_alloc_piece(void)
+{
+    return take(0x4000UL, 4, 0, 0);
+}
+#endif
 
 /* A block of `bytes` that may cross banks, placed so that the `inner`
  * bytes from `off` into it are page-aligned and end at or below `limit`
