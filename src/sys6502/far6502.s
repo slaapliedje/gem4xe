@@ -33,6 +33,7 @@
               .rtmodel cpu, "*"
               .extern _Zp, b6_cur, b6_count, b6_portb, b6_far_base, b6_far_bad
               .public far_read8, far_write8, far_rd16, far_rd32, far_wr16, far_wr32
+              .public b6sw_fmap, b6sw_unmap            ; bank switches: bank6502.s's patch
               .public far_get, far_put, far_fill, far_strget
               .public ob_rd16, ob_rd32, ob_wr16
 
@@ -61,15 +62,16 @@ fmap:         lda     zp:_Zp+2,x      ; the far bank, k
               cmp     fm_p
               bne     5$
               ldy     fm_y            ; the piece mapped last time
-              jmp     11$
+              jmp     b6sw_fmap
 5$:           lda     zp:_Zp+2,x
-              cmp     #16
-              bcs     90$             ; past 15 the index would wrap
+              cmp     #65
+              bcs     fm_bad          ; (k - 1) * 4 would not fit a byte
               sbc     #0              ; carry clear: k - 1
               asl     a
               asl     a
               clc
               adc     b6_far_base     ; B6_CODE_BANKS + 1
+              bcs     fm_bad          ; past index 255
               sta     zp:_Zp+20
               lda     zp:_Zp+1,x      ; + offset >> 14
               asl     a
@@ -78,9 +80,10 @@ fmap:         lda     zp:_Zp+2,x      ; the far bank, k
               and     #3
               clc
               adc     zp:_Zp+20
+              bcs     fm_bad
               cmp     b6_count
               beq     10$
-              bcs     90$             ; past the last bank found
+              bcs     fm_bad          ; past the last bank found
 10$:          tay
               sty     fm_y            ; remembered
               lda     zp:_Zp+2,x
@@ -88,7 +91,7 @@ fmap:         lda     zp:_Zp+2,x      ; the far bank, k
               lda     zp:_Zp+1,x
               and     #0xc0
               sta     fm_p
-11$:          lda     b6_portb,y
+b6sw_fmap:       lda     b6_portb,y
               sta     PORTB
               lda     zp:_Zp+0,x
               sta     zp:_Zp+12
@@ -97,7 +100,7 @@ fmap:         lda     zp:_Zp+2,x      ; the far bank, k
               ora     #0x40
               sta     zp:_Zp+13
               rts
-90$:          lda     zp:_Zp+0,x      ; the address to _Zp0-3, for the stop
+fm_bad:       lda     zp:_Zp+0,x      ; the address to _Zp0-3, for the stop
               sta     zp:_Zp+0
               lda     zp:_Zp+1,x
               sta     zp:_Zp+1
@@ -110,7 +113,7 @@ fmap:         lda     zp:_Zp+2,x      ; the far bank, k
 ;;; unmap -- the caller's bank back in the window.  Keeps A and X.
 unmap:        ldy     b6_cur
               pha
-              lda     b6_portb,y
+b6sw_unmap:      lda     b6_portb,y
               sta     PORTB
               pla
               rts

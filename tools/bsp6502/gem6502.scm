@@ -18,7 +18,7 @@
 ;; the top of Low as RAM: what the AES keeps in zwin (src/sys/zwin.h)
     (memory LowRam (address (#x3cc0 . #x3fff)) (type ram) (section zwin))
     (memory Low (address (#x2000 . #x3cbf)) (type rom)
-            (section veneer code switch cdata data_init_table idata reset))
+            (section veneer b6init code switch cdata data_init_table idata reset))
     (memory HiText (address (#xa000 . #xb3ff)) (type rom)
             (section (hicdata #xa000) code switch cdata))
     (memory HiRam (address (#xb400 . #xbfff)) (type ram)

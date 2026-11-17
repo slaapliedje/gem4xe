@@ -35,16 +35,23 @@
               .rtmodel cpu, "*"
 
               .public b6_probe, b6_sel, b6_main, b6_next, _bcall, b6_report
-              .public b6_cur, b6_count, b6_portb, bc_t
+              .public b6_cur, b6_count, b6_portb, bc_t, b6_kind, b6_sites
+              .public b6sw_call, b6sw_ret, b6sw_sel, b6sw_main
 
 PORTB:        .equ    0xd301
-BANKMAX:      .equ    64
+AXLON:        .equ    0xcfff          ; an Axlon's bank register (write only)
+BANKMAX:      .equ    64              ; PORTB values tried, and its table
 DOSVEC:       .equ    0x000a
 
               .section zpage, bss
 bc_t:         .space  2               ; the callee, for JMP (bc_t)
 bc_p:         .space  2               ; the veneer's data
 bc_a:         .space  1               ; A across the switch
+;;; the probe's own, while a PORTB value it tries is in: that value may
+;;; map ROM over $A000-$BFFF, b6keep with it, so nothing there is read
+;;; until main is back (a 130XE's BASIC; 1088K never showed it)
+pr_m:         .space  1               ; main's PORTB
+pr_n:         .space  1               ; banks kept so far
 
 ;;; NOINIT, not bss: b6_probe fills these during the load, before the C
 ;;; startup runs -- which zeroes bss, and with it the PORTB table, after
@@ -52,6 +59,7 @@ bc_a:         .space  1               ; A across the switch
               .section b6keep, noinit
 b6_cur:       .space  1               ; the bank mapped now: 0 is main
 b6_count:     .space  1               ; banks found, main not counted
+b6_kind:      .space  1               ; 'P' PORTB's banks, 'A' an Axlon's
 b6_next:      .space  1               ; for b6_sel, written by the loader
 b6_portb:     .space  BANKMAX + 1     ; PORTB for each bank, [0] main
 pr_v:         .space  1
@@ -83,20 +91,25 @@ _bcall:       sta     bc_a
               lda     b6_cur          ; the caller's, on the 6502 stack under
               pha                     ; the return into the caller
               stx     b6_cur
-              lda     b6_portb,x
+b6sw_call:       lda     b6_portb,x
               sta     PORTB
               lda     bc_a
-              jsr     10$             ; the call
+              jsr     bc_jmp          ; the call
               sta     bc_a
               pla
               tax
               stx     b6_cur
-              lda     b6_portb,x
+b6sw_ret:        lda     b6_portb,x
               sta     PORTB
               lda     bc_a
               rts                     ; to the veneer's caller
-10$:          jmp     (bc_t)
+bc_jmp:       jmp     (bc_t)
 
+;;; THE LOAD-TIME CODE -- the probe and the patch -- is in section b6init,
+;;; which every link file puts in Low, below the window: a PORTB value tried
+;;; may map ROM over $A000-$BFFF (the sentinel's check is for that), and
+;;; code running there would vanish under it.
+              .section b6init, root
 ;;; ---------------------------------------------------------------------------
 ;;; b6_probe -- INITAD, before any bank's segment.  Fills b6_portb and
 ;;; b6_count.  Uses nothing of the C runtime: none of it is set up yet.
@@ -111,10 +124,15 @@ _bcall:       sta     bc_a
 b6_probe:     lda     PORTB
               ora     #0x10           ; main: CPU sees main RAM
               sta     b6_portb
+              sta     pr_m
               sta     PORTB
               lda     #0
+              sta     AXLON           ; and an Axlon's bank 0, which is main
               sta     b6_count
+              sta     pr_n
               sta     b6_cur
+              lda     #'P'
+              sta     b6_kind
               lda     #0xa5           ; main's marker
               sta     0x4000
               lda     #0              ; candidate counter k = 0..63
@@ -122,7 +140,7 @@ b6_probe:     lda     PORTB
 20$:          jsr     cand            ; A = the PORTB value for k
               sta     pr_v
               sta     PORTB
-              ldx     b6_count        ; the index this one would get
+              ldx     pr_n            ; the index this one would get
               inx
               stx     0x4000
               lda     #0x5a
@@ -143,24 +161,135 @@ b6_probe:     lda     PORTB
               lda     sentinel+3
               cmp     #0x45
               bne     40$
-              lda     b6_portb        ; main untouched?
+              lda     pr_m            ; main untouched?
               sta     PORTB
               lda     0x4000
               cmp     #0xa5
               bne     40$
-              ldx     b6_count        ; keep it
+              ldx     pr_n            ; keep it
               inx
               stx     b6_count
               lda     pr_v
               sta     b6_portb,x
               jsr     dedup           ; earlier keepers it overwrote go
-40$:          lda     b6_portb
+              lda     b6_count
+              sta     pr_n
+40$:          lda     pr_m
               sta     PORTB
               inc     pr_k
               lda     pr_k
               cmp     #BANKMAX
               bne     20$
-              rts
+              jsr     axprobe         ; X = an Axlon's banks, 0 for none
+              cpx     b6_count
+              beq     50$
+              bcc     50$             ; PORTB's are as many: PORTB
+              stx     b6_count
+              lda     #'A'
+              sta     b6_kind
+              jmp     patch
+50$:          rts
+
+;;; axprobe -- an Axlon's banks, in X.  Its bank n is register value n,
+;;; bank 0 main memory, and a value past its size aliases a smaller one.
+;;; So 255 down to 1 each write their number at $4000 -- every alias
+;;; first, the bank itself last -- and then 1 up are read back: the first
+;;; that does not hold its own number, or whose $7FFF is not RAM, ends
+;;; them.  Main's marker is written again (an alias of main took it), and
+;;; must still be there when all is done.  With no Axlon the register is
+;;; ROM, every write lands in main, and bank 1 reads main's marker: none.
+axprobe:      ldx     #255
+10$:          stx     AXLON
+              stx     0x4000
+              dex
+              bne     10$
+              stx     AXLON           ; 0: main
+              lda     #0xa5
+              sta     0x4000
+              ldx     #1
+20$:          stx     AXLON
+              cpx     0x4000
+              bne     30$
+              lda     #0x3c
+              sta     0x7fff
+              cmp     0x7fff
+              bne     30$
+              inx
+              bne     20$             ; past 255: all of them
+30$:          dex                     ; the last that held
+              lda     #0
+              sta     AXLON
+              lda     0x4000
+              cmp     #0xa5
+              beq     40$
+              ldx     #0              ; main overwritten: not an Axlon
+40$:          rts
+
+;;; patch -- the machine is an Axlon's: every bank switch made one.  Each
+;;; site (b6_sites, at the end of this file) is
+;;;     lda b6_portb,x   (or ,y)     BD/B9 lo hi
+;;;     sta PORTB                    8D 01 D3
+;;; and becomes TXA (or TYA), NOP, NOP, STA AXLON: the bank's number IS
+;;; the register's value, and PORTB stays main's.  A site that is not that
+;;; stops the load with a word on the screen, as a missing bank does.
+patch:        lda     #.byte0 b6_sites
+              sta     bc_p
+              lda     #.byte1 b6_sites
+              sta     bc_p+1
+10$:          ldy     #0
+              lda     (bc_p),y
+              sta     bc_t
+              iny
+              lda     (bc_p),y
+              sta     bc_t+1
+              bne     25$
+              rts                     ; the zero after the last
+25$:          dey
+              lda     (bc_t),y
+              ldx     #0x8a           ; TXA
+              cmp     #0xbd
+              beq     30$
+              ldx     #0x98           ; TYA
+              cmp     #0xb9
+              bne     badsite
+30$:          ldy     #3
+              lda     (bc_t),y
+              cmp     #0x8d
+              bne     badsite
+              iny
+              lda     (bc_t),y
+              cmp     #.byte0 PORTB
+              bne     badsite
+              iny
+              lda     (bc_t),y
+              cmp     #.byte1 PORTB
+              bne     badsite
+              ldy     #0
+              txa
+              sta     (bc_t),y
+              lda     #0xea           ; NOP
+              iny
+              sta     (bc_t),y
+              iny
+              sta     (bc_t),y
+              ldy     #4
+              lda     #.byte0 AXLON
+              sta     (bc_t),y
+              iny
+              lda     #.byte1 AXLON
+              sta     (bc_t),y
+              lda     bc_p
+              clc
+              adc     #2
+              sta     bc_p
+              bcc     10$
+              inc     bc_p+1
+              jmp     10$
+
+badsite:      lda     #.byte0 sitemsg
+              ldx     #.byte1 sitemsg
+              ldy     #sitemsg_len
+              jmp     stop
 
 ;;; cand -- the k-th candidate.  Bit 4 clear, bit 0 set (the OS stays);
 ;;; k's six bits spread over 1, 2, 3, 5, 6, 7, with 1 and 7 INVERTED so
@@ -236,6 +365,7 @@ dedup:        ldx     #1
               sta     PORTB
               rts
 
+              .section code
 ;;; ---------------------------------------------------------------------------
 ;;; b6_sel -- INITAD: bank b6_next in the window, for the segment that the
 ;;; loader puts after this.  A bank the machine does not have stops the load
@@ -246,26 +376,27 @@ b6_sel:       ldx     b6_next
               beq     10$
               bcs     nobank
 10$:          stx     b6_cur
-              lda     b6_portb,x
+b6sw_sel:        lda     b6_portb,x
               sta     PORTB
               rts
 
 b6_main:      ldx     #0
               stx     b6_cur
-              lda     b6_portb
+b6sw_main:       lda     b6_portb,x
               sta     PORTB
               rts
 
-nobank:       jsr     b6_main
+nobank:       lda     #.byte0 nomsg
+              ldx     #.byte1 nomsg
+              ldy     #nomsg_len
+;;; stop -- the message at X:A, Y bytes, on E:, and back to DOS
+stop:         sta     0x344
+              stx     0x345
+              sty     0x348
+              jsr     b6_main
               ldx     #0              ; PUT RECORD on E:
               lda     #9
               sta     0x342
-              lda     #.byte0 nomsg
-              sta     0x344
-              lda     #.byte1 nomsg
-              sta     0x345
-              lda     #nomsg_len
-              sta     0x348
               lda     #0
               sta     0x349
               jsr     0xe456
@@ -342,3 +473,14 @@ repmsg_len:   .equ    . - repmsg
               .section cdata, rodata
 nomsg:        .byte   "NOT ENOUGH EXTENDED MEMORY", 0x9b
 nomsg_len:    .equ    . - nomsg
+sitemsg:      .byte   "AXLON: A BANK SWITCH NOT AS EXPECTED", 0x9b
+sitemsg_len:  .equ    . - sitemsg
+
+;;; EVERY BANK SWITCH there is, for patch (an Axlon's machine): each is a
+;;; public label b6sw_* on a LDA b6_portb,X/Y then STA PORTB, in this file
+;;; and in src/sys6502/cio6502.s, ctx6502.s and far6502.s.
+;;; tools/bsp6502/mkxex6502.py writes each one's address here, in the
+;;; image it loads, and a zero after -- having checked the bytes at each.
+B6_SITES:     .equ    15
+              .section cdata, rodata
+b6_sites:     .space  2 * B6_SITES + 2

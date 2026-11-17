@@ -29,7 +29,7 @@
     (memory ScreenTail (address (#x9f00 . #x9fff)) (type ram) (section zwin bounce))
     (memory LowRam (address (#x3500 . #x3fff)) (type ram) (section zwin cstack))
     (memory Low (address (#x2000 . #x34ff)) (type rom)
-            (section (gate #x2000) veneer code switch cdata data_init_table idata reset))
+            (section (gate #x2000) veneer b6init code switch cdata data_init_table idata reset))
     (memory HiText (address (#xa000 . #xb3ff)) (type rom)
             (section (hicdata #xa000) code switch cdata))
     (memory HiRam (address (#xb400 . #xbfff)) (type ram)

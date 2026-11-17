@@ -276,6 +276,19 @@ int main(void)
 
     STATUS[4] = ok;
     STATUS[5] = fields(a2, a5);
+    /* $0606: the heap's last far bank, its last 16 bytes, written and read
+     * back -- 1 when they come back.  The allocator stays under the first
+     * megabyte while it can, so this is the one access above it: far bank
+     * 31 on a 2 MB Axlon, past the 15 far banks src/sys6502/far6502.s's
+     * fmap took until the Axlon came.  Nothing has it: it is past every
+     * block above. */
+    {
+        uint32_t top = ((uint32_t)farmem.last_bank << 16) | 0xFFF0UL;
+
+        far_put(top, buf, 16);
+        far_get(back, top, 16);
+        STATUS[6] = same(buf, back, 16) ? 1 : 2;
+    }
     /* ...and on the screen, for a machine whose memory a gate cannot read
      * (the MiSTer): the bits, the far banks, then the eight addresses */
     put_s("F6 BITS "); put_hex(ok, 2);

@@ -48,6 +48,7 @@
               .extern ctx_cur, ctx_park, ctx_unpark, ctx_boot, ctx_start0
               .extern b6_cur, b6_portb
               .public ctx_switch, ctx_init
+              .public b6sw_ctx            ; bank switches: bank6502.s's patch
               .public ctx_sp_in, ctx_vsp_in, ctx_sp_out, ctx_vsp_out
               .public ctx_hbase, ctx_vbase, ctx_reg_lo, ctx_reg_hi, ctx_s_now
 
@@ -119,7 +120,7 @@ ctx_switch:   lda     zp:_Zp
 ctx_back:     pla                     ; the bank this context was in
               tax
               stx     b6_cur
-              lda     b6_portb,x
+b6sw_ctx:        lda     b6_portb,x
               sta     PORTB
               ldx     #0
 20$:          pla

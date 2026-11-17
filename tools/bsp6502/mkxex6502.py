@@ -35,6 +35,10 @@ is in (src/sys6502/bank6502.s):
 Checks what would fail silently: a segment in the window that is not a
 bank's, a bank stored where no bank number goes, and the trampoline's
 JMP (bc_t) on a page's last byte, which the 6502 reads wrongly.
+
+And writes b6_sites: the address of every bank switch (each public
+label b6sw_*, checked to be LDA b6_portb,X/Y then STA PORTB), which
+src/sys6502/bank6502.s rewrites to STA $CFFF on an Axlon's machine.
 """
 import struct
 import sys
@@ -85,6 +89,39 @@ def g6a(elf, out):
     return 0
 
 
+SITES = 15                              # src/sys6502/bank6502.s's B6_SITES
+
+
+def sites(segs, syms, addr, elf):
+    """Every bank switch, b6sw_*, into b6_sites, then a zero: what
+    bank6502.s's patch makes write an Axlon's register instead of PORTB.
+    Each is checked to be LDA b6_portb,X/Y and STA PORTB, as patch will
+    check it again on the machine."""
+    if "b6_sites" not in syms:
+        return segs
+    names = sorted(n for n in syms if n.startswith("b6sw_"))
+    if len(names) > SITES:
+        raise SystemExit(f"mkxex6502: {len(names)} bank switches, room for {SITES} in b6_sites")
+    segs = [(a, bytearray(b)) for a, b in segs]
+
+    def at(x, n):
+        for a, b in segs:
+            if a <= x and x + n <= a + len(b) and not (WIN_LO <= a <= WIN_HI):
+                return b, x - a
+        raise SystemExit(f"mkxex6502: ${x:04X} is in no resident segment of {elf}")
+    portb = addr("b6_portb")
+    for n in names:
+        b, o = at(addr(n), 6)
+        if (b[o] not in (0xBD, 0xB9) or b[o + 1] | b[o + 2] << 8 != portb
+                or b[o + 3:o + 6] != b"\x8d\x01\xd3"):
+            raise SystemExit(f"mkxex6502: {n} at ${addr(n):04X} is not LDA b6_portb,X/Y "
+                             f"then STA PORTB: {bytes(b[o:o + 6]).hex(' ')}")
+    b, o = at(addr("b6_sites"), 2 * SITES + 2)
+    table = b"".join(struct.pack("<H", addr(n)) for n in names) + b"\0\0"
+    b[o:o + len(table)] = table
+    return [(a, bytes(b)) for a, b in segs]
+
+
 def main(argv):
     if len(argv) == 4 and argv[1] == "--g6a":
         return g6a(argv[2], argv[3])
@@ -111,6 +148,7 @@ def main(argv):
     if bct & 0xFF == 0xFF:
         raise SystemExit(f"mkxex6502: bc_t at ${bct:04X}: JMP (bc_t) would read its high "
                          f"byte from ${bct & 0xFF00:04X}")
+    segs = sites(segs, syms, addr, argv[1])
     resident, banks = [], {}
     for a, body in segs:
         if a >= STORE:

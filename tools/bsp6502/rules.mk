@@ -262,12 +262,18 @@ test-e6n: build/a6-boot.atr
 test-p6: build/a6-boot.atr
 	python3 tests/emu/p6_prog.py
 
+# ...and on an Axlon's banks, switched by $CFFF: a 2 MB one on a 130XE,
+# whose banks src/sys6502/bank6502.s takes over PORTB's and patches every
+# bank switch to reach
+test-p6a: build/a6-boot.atr
+	python3 tests/emu/p6_prog.py --axlon 2048K
+
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 test-e6n b6asm
+.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;
@@ -320,6 +326,10 @@ build/f6-boot.atr: build/f6.xex
 
 test-f6: build/f6-boot.atr
 	python3 tests/emu/f6_far.py
+
+# ...on a 2 MB Axlon: 31 far banks, the last one written (far bank 31)
+test-f6a: build/f6-boot.atr
+	python3 tests/emu/f6_far.py --axlon 2048K
 
 .PHONY: test-f6
 

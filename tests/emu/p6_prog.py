@@ -39,7 +39,13 @@ Broken on purpose (each fails): window addresses not made far; the
 title's pair left as it came; the gate not recording the caller's bank;
 the file not on the disk; the read not put into the slot.
 
-    python3 tests/emu/p6_prog.py [--shot]
+And with --axlon SIZE (an Axlon of SIZE on a 130XE, whose 4 PORTB banks
+are fewer): the same, on banks switched by $CFFF -- src/sys6502/
+bank6502.s finds the Axlon's banks and rewrites every bank switch to
+write its register.  Either way the probe's answer is checked: which
+kind of bank, and how many.
+
+    python3 tests/emu/p6_prog.py [--shot] [--axlon 2048K]
 """
 import copy
 import os
@@ -127,8 +133,17 @@ def model():
     return v.dev, wh, (x, y, w, h)
 
 
+# what the probe should find: (b6_kind, b6_count)
+PORTB_1088K = ("P", 64)
+AXLON_BASE = "128K"                         # a 130XE's 4 PORTB banks beside it: the
+                                            # probe must take the Axlon's, which are more
+AXLON_BANKS = {"64K": 3, "128K": 7, "256K": 15, "512K": 31, "1024K": 63,
+               "2048K": 127}               # its bank 0 is main memory
+
+
 def main(argv):
     keep = "--shot" in argv
+    axlon = argv[argv.index("--axlon") + 1] if "--axlon" in argv else None
     fails = []
 
     def check(cond, msg):
@@ -137,7 +152,8 @@ def main(argv):
             fails.append(msg)
         return cond
 
-    print("gem4xe-p6: a program in a bank of its own, read from the disk, on a stock 6502")
+    print("gem4xe-p6: a program in a bank of its own, read from the disk, on a stock 6502"
+          + (f" with an Axlon of {axlon}" if axlon else ""))
     dev, want_wh, want_work = model()
     text = open(MAP).read()
 
@@ -151,8 +167,18 @@ def main(argv):
               f"{n} is at ${a.group(1) if a else '?'} in the system and "
               f"${p.group(1) if p else '?'} in the program")
 
-    emu = launch(tag="p6", memsize="1088K", vbxe=False, rapidus=False,
-                 extra_args=["--disk", DISK])
+    if axlon:
+        want_banks = ("A", AXLON_BANKS[axlon])
+        # booted through the bridge: a --disk given with a memory size
+        # other than the emulator's 1088K is not booted (it starts the
+        # Memo Pad)
+        emu = launch(tag="p6", memsize=AXLON_BASE, vbxe=False, rapidus=False,
+                     extra_args=["--axlonmemsize", axlon])
+        emu.bridge.boot(DISK)
+    else:
+        want_banks = PORTB_1088K
+        emu = launch(tag="p6", memsize="1088K", vbxe=False, rapidus=False,
+                     extra_args=["--disk", DISK])
     b = emu.bridge
 
     def w16(at):
@@ -174,6 +200,10 @@ def main(argv):
             if b.peek(STATUS + 0x40) == ord("E") or b.peek(STATUS + 4):
                 break
         b.frames(60)
+        kind, count = chr(b.peek(sym("b6_kind"))), b.peek(sym("b6_count"))
+        check((kind, count) == want_banks,
+              f"the probe found {count} banks of kind {kind!r}; want {want_banks[1]} "
+              f"of {want_banks[0]!r} ({'an Axlon of ' + axlon if axlon else 'PORTB, 1088K'})")
         stuck = b.peek(STATUS + 4)
         check(not stuck, f"no stub that must not run was reached "
                          f"({chr(stuck) if stuck else 'none'} at $0604)")

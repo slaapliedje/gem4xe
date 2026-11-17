@@ -17,7 +17,7 @@
             (section (registers #x80) zzpage zpage))
     (memory StackPage (address (#x100 . #x1ff)) (type ram) (section stack))
     (memory Low (address (#x2000 . #x3fff)) (type rom)
-            (section veneer code switch cdata data_init_table idata reset))
+            (section veneer b6init code switch cdata data_init_table idata reset))
     (memory HiText (address (#xa000 . #xb3ff)) (type rom)
             (section (hicdata #xa000) code switch cdata))
     (memory HiRam (address (#xb400 . #xbfff)) (type ram)

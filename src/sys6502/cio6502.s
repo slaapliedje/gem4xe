@@ -23,6 +23,7 @@
               .rtmodel cpu, "*"
 
               .public cio_call, dsk_call
+              .public b6sw_cio            ; bank switches: bank6502.s's patch
               .extern _Zp, b6_cur, b6_portb
 
 CIOV:         .equ    0xe456
@@ -44,6 +45,6 @@ back:         sty     zp:_Zp+0
               lda     #0
               sta     zp:_Zp+1
               ldx     b6_cur
-              lda     b6_portb,x
+b6sw_cio:        lda     b6_portb,x
               sta     PORTB
               rts
