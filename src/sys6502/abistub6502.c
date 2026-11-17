@@ -1,7 +1,7 @@
 /* abistub6502.c -- what src/sys/abi.c reaches for that the 6502 has not
  * got yet (docs/6502.md, step 5a), in bank abi beside it.
  *
- * The shell, resources, the file selector, the scrap directory and the
+ * The shell, the file selector, the scrap directory and the
  * language file all need GEMDOS's file calls, which are step 5b; alerts
  * need the AES's pool, a near arena the 65C816 carves from its bank-$00
  * application pool and the 6502 has nowhere to put yet.  So each call
@@ -43,15 +43,47 @@ void    *pool_alloc(uint16_t size, uint16_t align) { (void)size; (void)align; re
 uint16_t pool_mark(void) { return 0; }
 void     pool_release(uint16_t mark) { (void)mark; }
 
-/* resources (src/aes/rsrc.c) */
-WORD     rs_free(void) { return refused(); }
-WORD     rs_gaddr(UWORD rtype, UWORD rindex, uint32_t *paddr) { (void)rtype; (void)rindex; *paddr = 0; return refused(); }
-void     rs_header(RSHDR *h) { uint16_t i; for (i = 0; i < sizeof *h; i++) ((uint8_t *)h)[i] = 0; }
-WORD     rs_load(const char *name, WORD wants_far) { (void)name; (void)wants_far; return refused(); }
-uint32_t rs_loaded(void) { return 0; }
-void     rs_obfix(OBTREE tree, WORD obj) { (void)tree; (void)obj; refused(); }
-WORD     rs_rcfix(uint32_t base) { (void)base; return refused(); }
-WORD     rs_saddr(UWORD rtype, UWORD rindex, uint32_t addr) { (void)rtype; (void)rindex; (void)addr; return refused(); }
+/* what src/aes/rsrc.c reaches for (step 5b-3), resources being real now:
+ *
+ * A NAME, without GEMDOS.  On the 65C816 sh_cioname goes through GEMDOS
+ * (src/sys/gemdos.c, gd_cioname), which knows the current directory and
+ * the DOS's separator; the 6502 has neither yet.  So this is the flat
+ * DOS's rule from src/sys/dos.c, dos_cioname with no separator: a drive
+ * letter A-H becomes D1:-D8:, only the last component is kept, and it is
+ * upper-cased.  "A:\X.RSC" and "X.RSC" both open D1:X.RSC (a bare name is
+ * CIO's default drive).  GEMDOS replaces it. */
+void sh_cioname(const char *gem, char *cio)
+{
+    const char *p = gem, *q;
+    uint8_t k = 0;
+
+    if (gem[0] && gem[1] == ':') {
+        int d = (uint8_t)gem[0] | 0x20;     /* not a byte: B8, tools/ccbug */
+        if (d >= 'a' && d <= 'h') {
+            cio[k++] = 'D';
+            cio[k++] = (char)('1' + (d - 'a'));
+            cio[k++] = ':';
+        }
+        p = gem + 2;
+    }
+    for (q = p; *q; q++)
+        if (*q == '\\')
+            p = q + 1;
+    if (!k) {
+        cio[k++] = 'D';
+        cio[k++] = ':';
+    }
+    for (; *p && k < CIO_NAME_MAX; p++) {
+        int c = (uint8_t)*p;
+        if (c >= 'a' && c <= 'z')
+            c -= 0x20;
+        cio[k++] = (char)c;
+    }
+    cio[k] = 0;
+}
+
+/* The pool has nothing above its top: there is no pool. */
+uint16_t pool_room(void) { return 0; }
 
 /* the scrap directory (src/aes/scrap.c) */
 WORD sc_clear(void) { return refused(); }

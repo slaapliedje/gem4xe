@@ -185,6 +185,29 @@ typedef struct {
     WORD   ob_x, ob_y, ob_width, ob_height;
 } OBJECT;
 
+/* A TREE AS THE CALLS TAKE IT.  On the 65C816 it is a pointer to the first
+ * OBJECT, near or far as the data model makes pointers, and a program
+ * indexes it.  On the 6502 every pointer is 16 bits and a program sees
+ * only its own 16 KB bank, while rsrc_load puts a resource in the far
+ * heap, as the 65C816's large-data programs have it (docs/6502.md, step
+ * 5b-3).  So there a tree is its 32-bit far address: rsrc_gaddr answers
+ * one, every call taking a tree takes one, and the program reads and
+ * writes what is in it with far_fetch and far_store, a copy at a time.
+ * TREE_OF makes a tree of an OBJECT array in the program's own memory,
+ * and OB_ADDR is object i of a tree. */
+#ifdef __CALYPSI_TARGET_6502__
+typedef uint32_t GEMTREE;
+typedef uint32_t GEMADDR;               /* what rsrc_gaddr answers */
+#define TREE_OF(p)    ((GEMTREE)(uint16_t)(p))
+#define OB_ADDR(t, i) ((uint32_t)(t) + (uint32_t)(UWORD)(i) * 24u)
+void far_fetch(void *dst, uint32_t src, UWORD len);       /* far to near */
+void far_store(uint32_t dst, const void *src, UWORD len); /* near to far */
+#else
+typedef OBJECT *GEMTREE;
+typedef void   *GEMADDR;
+#define TREE_OF(p)    (p)
+#endif
+
 #define G_BOX      20
 #define G_TEXT     21
 #define G_BOXTEXT  22
@@ -782,36 +805,36 @@ WORD evnt_multi_moblk(UWORD flags, WORD bclk, UWORD bmsk, UWORD bst,
                       UWORD tlo, UWORD thi,
                       WORD *mx, WORD *my, WORD *mb, WORD *ks, WORD *kr, WORD *br);
 
-WORD menu_bar(OBJECT *tree, WORD showit);
+WORD menu_bar(GEMTREE tree, WORD showit);
 #define MENU_INQUIRE  (-1)      /* menu_bar(0, -1): whose bar it is, or -1 */
-WORD menu_icheck(OBJECT *tree, WORD item, WORD check);
-WORD menu_ienable(OBJECT *tree, WORD item, WORD enable);
-WORD menu_tnormal(OBJECT *tree, WORD title, WORD normal);
+WORD menu_icheck(GEMTREE tree, WORD item, WORD check);
+WORD menu_ienable(GEMTREE tree, WORD item, WORD enable);
+WORD menu_tnormal(GEMTREE tree, WORD title, WORD normal);
 
 /* Tree surgery at run time: objc_add links child as parent's last child,
  * objc_delete unlinks an object from its parent's chain and leaves the
  * object itself alone.  Neither touches the screen -- redraw what you
  * changed.  objc_delete answers 0 for the root, or for an object that is
  * not in its parent's chain. */
-WORD objc_add(OBJECT *tree, WORD parent, WORD child);
-WORD objc_delete(OBJECT *tree, WORD obj);
-WORD objc_draw(OBJECT *tree, WORD start, WORD depth, WORD x, WORD y, WORD w, WORD h);
-WORD objc_find(OBJECT *tree, WORD start, WORD depth, WORD mx, WORD my);
-WORD objc_offset(OBJECT *tree, WORD obj, WORD *x, WORD *y);
-WORD objc_change(OBJECT *tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WORD h,
+WORD objc_add(GEMTREE tree, WORD parent, WORD child);
+WORD objc_delete(GEMTREE tree, WORD obj);
+WORD objc_draw(GEMTREE tree, WORD start, WORD depth, WORD x, WORD y, WORD w, WORD h);
+WORD objc_find(GEMTREE tree, WORD start, WORD depth, WORD mx, WORD my);
+WORD objc_offset(GEMTREE tree, WORD obj, WORD *x, WORD *y);
+WORD objc_change(GEMTREE tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WORD h,
                  WORD state, WORD redraw);
 WORD objc_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
                  WORD *out1, WORD *out2);
 /* newpos: 0 puts the object first among its siblings (the bottom of the
  * stack), NIL last (the top), n after the nth. */
-WORD objc_order(OBJECT *tree, WORD obj, WORD newpos);
+WORD objc_order(GEMTREE tree, WORD obj, WORD newpos);
 
-WORD form_do(OBJECT *tree, WORD start);
+WORD form_do(GEMTREE tree, WORD start);
 WORD form_dial(WORD type, WORD x1, WORD y1, WORD w1, WORD h1,
                WORD x2, WORD y2, WORD w2, WORD h2);
 WORD form_alert(WORD defbut, const char *s);  /* s: near, or far up to 511 bytes */
 WORD form_error(WORD n);
-WORD form_center(OBJECT *tree, WORD *x, WORD *y, WORD *w, WORD *h);
+WORD form_center(GEMTREE tree, WORD *x, WORD *y, WORD *w, WORD *h);
 
 WORD graf_handle(WORD *wchar, WORD *hchar, WORD *wbox, WORD *hbox);
 WORD graf_mouse(WORD mode, const WORD *form);  /* form only for USER_DEF */
@@ -849,11 +872,17 @@ WORD wind_calc(WORD type, WORD kind, WORD x, WORD y, WORD w, WORD h,
  * near address with no error (the trap docs/far-trees.md records).  A
  * small-data program still passes 0 in the high word, so nothing about
  * it changes. */
+#ifdef __CALYPSI_TARGET_6502__
+#define wind_newdesk(tree, root)        /* a GEMTREE: already 32 bits */ \
+    wind_set(0, WF_NEWDESK, (WORD)((uint32_t)(tree) >> 16),             \
+             (WORD)(uint16_t)(uint32_t)(tree), (root), 0)
+#else
 #define wind_newdesk(tree, root)                                        \
     wind_set(0, WF_NEWDESK,                                             \
              (WORD)((uint32_t)(const OBJECT FAR *)(tree) >> 16),        \
              (WORD)(uint16_t)(uint32_t)(const OBJECT FAR *)(tree),      \
              (root), 0)
+#endif
 
 /* rsrc_load PREFERS far memory for a program compiled --data-model=large,
  * whose binding says it can hold a 24-bit address -- whatever the size of
@@ -870,7 +899,7 @@ WORD wind_calc(WORD type, WORD kind, WORD x, WORD y, WORD w, WORD h,
  * all such a program can hold, and a 24-bit one to a large-data program. */
 WORD rsrc_load(const char *name);
 WORD rsrc_free(void);
-WORD rsrc_gaddr(WORD type, WORD index, void **addr);
+WORD rsrc_gaddr(WORD type, WORD index, GEMADDR *addr);
 
 /* shel_write's doex: what the shell does once this program returns.  The
  * tail is the ST's: a length byte, then the characters. */
@@ -953,7 +982,7 @@ WORD appl_write(WORD id, WORD length, const WORD *msg);
 WORD evnt_mouse(WORD flags, WORD x, WORD y, WORD w, WORD h,
                 WORD *mx, WORD *my, WORD *button, WORD *kstate);
 WORD evnt_dclick(WORD rate, WORD setit);
-WORD menu_text(OBJECT *tree, WORD item, const char *text);
+WORD menu_text(GEMTREE tree, WORD item, const char *text);
 WORD menu_register(WORD pid, const char *str);
 /* AES 4 (phase 124): an APPLICATION's title is the name a switcher lists
  * it by, and takes no Desk menu slot; REG_NEWNAME as the pid renames the
@@ -1014,8 +1043,8 @@ WORD menu_settings(WORD flag, MN_SET *set);
 #define MNS_GET     0
 #define MNS_SET     1
 
-WORD menu_attach(WORD flag, OBJECT *tree, WORD item, MENU *mdata);
-WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item);
+WORD menu_attach(WORD flag, GEMTREE tree, WORD item, MENU *mdata);
+WORD menu_istart(WORD flag, GEMTREE tree, WORD imenu, WORD item);
 #define ME_INQUIRE  0
 #define ME_ATTACH   1
 #define ME_REMOVE   2
@@ -1100,10 +1129,10 @@ WORD appl_getinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
  * -- so it forwards, and a port needs no shim of its own. */
 WORD appl_xgetinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
                    WORD *ap_gout3, WORD *ap_gout4);
-WORD objc_edit(OBJECT *tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
-WORD form_keybd(OBJECT *tree, WORD obj, WORD nxt_obj, WORD thechar,
+WORD objc_edit(GEMTREE tree, WORD obj, WORD in_char, WORD *idx, WORD kind);
+WORD form_keybd(GEMTREE tree, WORD obj, WORD nxt_obj, WORD thechar,
                 WORD *pnxt_obj, WORD *pchar);
-WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj);
+WORD form_button(GEMTREE tree, WORD obj, WORD clks, WORD *pnxt_obj);
 /* graf_mbox / graf_movebox (72): the same call under both spellings --
  * the Compendium renamed it and an ST source may carry either.  A ghost
  * box walked from (sx,sy) to (ex,ey), for a visual clue.
@@ -1118,9 +1147,9 @@ WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj);
 WORD wind_new(void);
 WORD graf_mbox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey);
 WORD graf_movebox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey);
-WORD graf_slidebox(OBJECT *tree, WORD parent, WORD obj, WORD orient);
+WORD graf_slidebox(GEMTREE tree, WORD parent, WORD obj, WORD orient);
 WORD graf_rubbox(WORD x, WORD y, WORD w, WORD h, WORD *pw, WORD *ph);
-WORD graf_watchbox(OBJECT *tree, WORD obj, WORD instate, WORD outstate);
+WORD graf_watchbox(GEMTREE tree, WORD obj, WORD instate, WORD outstate);
 /* fsel_input / fsel_exinput answer their `button` with one of these.  The
  * Compendium names both (fsel_exinput: "FSEL_CANCEL (0) ... FSEL_OK (1)"),
  * and an application that tests the value by its name rather than by 1 is
@@ -1130,7 +1159,7 @@ WORD graf_watchbox(OBJECT *tree, WORD obj, WORD instate, WORD outstate);
 WORD fsel_input(char *path, char *sel, WORD *button);
 WORD fsel_exinput(char *path, char *sel, WORD *button, const char *label);
 WORD rsrc_saddr(WORD type, WORD index, void *addr);
-WORD rsrc_obfix(OBJECT *tree, WORD obj);
+WORD rsrc_obfix(GEMTREE tree, WORD obj);
 /* AES 4: a resource already in memory -- the .RSC file's bytes, as the
  * program carries them -- fixed up and made the program's, as rsrc_load
  * would have.  1 done, 0 refused: another one is loaded, or the file has
@@ -1188,9 +1217,9 @@ WORD wind_calc_grect(WORD type, WORD kind, const GRECT *in, GRECT *out);
  * and is the silent half of the truncation class tools/nearcast.py
  * guards -- see docs/phase47.md. */
 WORD wind_set_str(WORD handle, WORD field, const char *str);
-WORD form_center_grect(OBJECT *tree, GRECT *r);
+WORD form_center_grect(GEMTREE tree, GRECT *r);
 WORD form_dial_grect(WORD flag, const GRECT *little, const GRECT *big);
-WORD objc_draw_grect(OBJECT *tree, WORD start, WORD depth, const GRECT *r);
+WORD objc_draw_grect(GEMTREE tree, WORD start, WORD depth, const GRECT *r);
 
 /* -- GEMDOS, the ST's osbind names.  Pointers are far so that a buffer
  * Malloc gave out -- which is far memory -- can be read into directly;

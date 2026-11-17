@@ -371,7 +371,11 @@ def decl_names(text):
                          r'(?:WORD|UWORD|LONG|void|char|DTA FAR \*)\s*\**'
                          r'(\w+)\s*\(', text, re.M):
         out.add(m.group(1))
-    return out - {"vdi_call", "aes_call", "dos_call"}
+    # far_fetch/far_store are the 6502 kit's copies through gate 'F'
+    # (gem.h, __CALYPSI_TARGET_6502__ only), not bindings of any opcode;
+    # tests/emu/p6_prog.py exercises them on the machine.
+    return out - {"vdi_call", "aes_call", "dos_call",
+                  "far_fetch", "far_store"}
 
 
 def called_names(text):

@@ -708,9 +708,16 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
                 int16_t x, int16_t y, int16_t mode, uint8_t pen,
                 int16_t w, int16_t h, int16_t thick)
 {
+#ifdef __CALYPSI_TARGET_6502__
+    /* ...and on the 6502 in this bank, which only the resident packers
+     * read and write while it is mapped: the C stack every system call
+     * shares had not the 41 bytes (docs/6502.md, step 5b-3) */
+    BANK_DATA("antic") static uint8_t buf[AN_STRIDE + 1];
+#else
     uint8_t buf[AN_STRIDE + 1];         /* on the stack, as antic_copy's:
                                          * bank $00 has no 41 bytes to
                                          * keep (tests/host/test_memory) */
+#endif
     far_src8 sr = (far_src8)face;
     volatile uint8_t *p;
     AN_OP o;

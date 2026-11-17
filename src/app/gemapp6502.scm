@@ -10,11 +10,13 @@
 ;;; ZERO PAGE IS THE SYSTEM'S except the pseudo-registers at $80, which
 ;;; the calling convention shares and which must sit where the system's
 ;;; do: a program that asks for zero page of its own does not link here.
-;;; Nor has it a stack of its own: it runs on the system's (crt6502.s).
+;;; ITS C STACK IS ITS OWN, the top of the bank (crt6502.s says why);
+;;; page 1 is the system's.
 (define memories
   '((memory ZeroPage (address (#x80 . #xff)) (type ram) (qualifier zpage)
             (section (registers #x80)))
     (memory Program (address (#x4000 . #x6fff)) (type rom)
             (section (header #x4000) code switch cdata data_init_table idata))
     (memory ProgramRam (address (#x7000 . #x7fff)) (type ram)
-            (section data zdata heap))))
+            (section data zdata heap cstack))
+    (block cstack (size #x600))))

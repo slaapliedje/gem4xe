@@ -956,7 +956,13 @@ static WORD crysbind(WORD opcode, ABI_WP global, const WORD *int_in,
          * zeroes int_in and copies only control[1] of them, so a kit that
          * passes none -- the small-data one -- can never set this by
          * accident (docs/far-trees.md). */
+#ifdef __CALYPSI_TARGET_6502__
+        /* far, always: a 6502 program's tree is a far address (gem.h,
+         * GEMTREE), and there is no pool for it to be near in */
+        ret = name ? rs_load(name, 1) : 0;
+#else
         ret = name ? rs_load(name, (WORD)(int_in[0] & 1)) : 0;
+#endif
         if (ret) {
             RSHDR h;
             uint32_t b = rs_loaded(), tr;
@@ -1145,6 +1151,30 @@ static void aes_core(const WORD *control, ABI_WP global, const WORD *int_in,
         gem_badop = (uint16_t)control[0];
 }
 
+/* 'F', the 6502's far memory (src/app/gemlib.c, far_fetch and far_store):
+ * a program sees only its own bank, and its resource is in the far heap
+ * (rsrc_load, below), so it reaches its trees and their strings through
+ * here.  The block is five words -- 0 fetch or 1 store, the far address
+ * low word first, the near address, the length -- and the near side is
+ * made far as any address a program passes is (win_far): its own bank,
+ * or the shared C stack.  Then it is a far-to-far copy, which goes
+ * through a buffer outside the window (src/sys6502/farmem6502.c). */
+static void far_entry6(uint16_t pba, uint8_t bank)
+{
+    uint16_t b[5];
+    uint32_t far, near;
+
+    far_get((uint8_t *)b, win_far(pba, bank), sizeof b);
+    far = ((uint32_t)b[2] << 16) | b[1];
+    near = win_far(b[3], bank);
+    if (b[0] == 0)
+        far_copy(near, far, b[4]);
+    else if (b[0] == 1)
+        far_copy(far, near, b[4]);
+    else
+        gem_bad++;
+}
+
 /* The 6502's: six window addresses in the block, every one turned into a
  * far address, and so is each address in addr_in -- a tree, a string, a
  * message buffer -- before crysbind sees it. */
@@ -1244,6 +1274,14 @@ void gem_entry(void)
      * can leave it set, and it must not end the next program's first
      * call. */
     gem_term = 0;
+#ifdef __CALYPSI_TARGET_6502__
+    /* not a GEM call, and not counted as one: a program's way to its own
+     * resource, as an indexed pointer is on the 65C816 */
+    if (gem_which == ABI_FAR) {
+        far_entry6((uint16_t)gem_pb, gem_bank6);
+        return;
+    }
+#endif
     /* A COP that is nobody's here -- not one of the three, and no OS to
      * pass it to (abi.s) -- is refused and is not a call: counting it
      * would number an application's calls differently on a machine whose

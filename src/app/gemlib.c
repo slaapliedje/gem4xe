@@ -99,6 +99,48 @@ void v_gtext(WORD handle, WORD x, WORD y, const char *s)
     vdi(8, 1, n, handle);
 }
 
+/* A tree as addr_in[0] carries it: its far address, which on the 6502
+ * it already is (gem.h, GEMTREE) and on the 65C816 its pointer widened. */
+static LONG tree_addr(GEMTREE tree)
+{
+#ifdef __CALYPSI_TARGET_6502__
+    return (LONG)tree;
+#else
+    return (LONG)(uint32_t)(OBJECT FAR *)tree;
+#endif
+}
+
+#ifdef __CALYPSI_TARGET_6502__
+/* FAR MEMORY FROM A 6502 PROGRAM (gem.h, GEMTREE): through the gate, as
+ * 'F' (src/sys/abi.c, far_entry6), with a block of five words -- 0 to
+ * fetch or 1 to store, the far address low word first, the near one, the
+ * length.  The block is a local, on the C stack the system shares; `dst`
+ * or `src` may be anywhere in the program's bank. */
+void far_call(UWORD *pb);               /* src/app/gemabi6502.s */
+
+static void far_op(UWORD op, uint32_t far, UWORD near, UWORD len)
+{
+    UWORD b[5];
+
+    b[0] = op;
+    b[1] = (UWORD)far;
+    b[2] = (UWORD)(far >> 16);
+    b[3] = near;
+    b[4] = len;
+    far_call(b);
+}
+
+void far_fetch(void *dst, uint32_t src, UWORD len)
+{
+    far_op(0, src, (UWORD)dst, len);
+}
+
+void far_store(uint32_t dst, const void *src, UWORD len)
+{
+    far_op(1, dst, (UWORD)src, len);
+}
+#endif
+
 static WORD attr1(WORD op, WORD handle, WORD v)
 {
     intin[0] = v;
@@ -693,7 +735,7 @@ WORD graf_handle(WORD *wchar, WORD *hchar, WORD *wbox, WORD *hbox)
     return h;
 }
 
-WORD objc_draw(OBJECT *tree, WORD start, WORD depth, WORD x, WORD y, WORD w, WORD h)
+WORD objc_draw(GEMTREE tree, WORD start, WORD depth, WORD x, WORD y, WORD w, WORD h)
 {
     int_in[0] = start;
     int_in[1] = depth;
@@ -701,7 +743,7 @@ WORD objc_draw(OBJECT *tree, WORD start, WORD depth, WORD x, WORD y, WORD w, WOR
     int_in[3] = y;
     int_in[4] = w;
     int_in[5] = h;
-    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    addr_in[0] = tree_addr(tree);
     return aes(42, 6, 1, 1, 0);
 }
 
@@ -886,19 +928,15 @@ WORD evnt_multi(WORD flags, WORD bclk, WORD bmsk, WORD bst,
 /* -- the menu, object, form, graphics and resource libraries: a tree in
  * addr_in[0] and words after it. */
 
-static LONG tree_addr(OBJECT *tree)
-{
-    return (LONG)(uint32_t)(OBJECT FAR *)tree;
-}
 
-WORD menu_bar(OBJECT *tree, WORD showit)
+WORD menu_bar(GEMTREE tree, WORD showit)
 {
     int_in[0] = showit;
     addr_in[0] = tree_addr(tree);
     return aes(30, 1, 1, 1, 0);
 }
 
-WORD menu_icheck(OBJECT *tree, WORD item, WORD check)
+WORD menu_icheck(GEMTREE tree, WORD item, WORD check)
 {
     int_in[0] = item;
     int_in[1] = check;
@@ -906,7 +944,7 @@ WORD menu_icheck(OBJECT *tree, WORD item, WORD check)
     return aes(31, 2, 1, 1, 0);
 }
 
-WORD menu_ienable(OBJECT *tree, WORD item, WORD enable)
+WORD menu_ienable(GEMTREE tree, WORD item, WORD enable)
 {
     int_in[0] = item;
     int_in[1] = enable;
@@ -914,7 +952,7 @@ WORD menu_ienable(OBJECT *tree, WORD item, WORD enable)
     return aes(32, 2, 1, 1, 0);
 }
 
-WORD menu_tnormal(OBJECT *tree, WORD title, WORD normal)
+WORD menu_tnormal(GEMTREE tree, WORD title, WORD normal)
 {
     int_in[0] = title;
     int_in[1] = normal;
@@ -922,7 +960,7 @@ WORD menu_tnormal(OBJECT *tree, WORD title, WORD normal)
     return aes(33, 2, 1, 1, 0);
 }
 
-WORD objc_add(OBJECT *tree, WORD parent, WORD child)
+WORD objc_add(GEMTREE tree, WORD parent, WORD child)
 {
     int_in[0] = parent;
     int_in[1] = child;
@@ -930,14 +968,14 @@ WORD objc_add(OBJECT *tree, WORD parent, WORD child)
     return aes(40, 2, 1, 1, 0);
 }
 
-WORD objc_delete(OBJECT *tree, WORD obj)
+WORD objc_delete(GEMTREE tree, WORD obj)
 {
     int_in[0] = obj;
     addr_in[0] = tree_addr(tree);
     return aes(41, 1, 1, 1, 0);
 }
 
-WORD objc_find(OBJECT *tree, WORD start, WORD depth, WORD mx, WORD my)
+WORD objc_find(GEMTREE tree, WORD start, WORD depth, WORD mx, WORD my)
 {
     int_in[0] = start;
     int_in[1] = depth;
@@ -947,7 +985,7 @@ WORD objc_find(OBJECT *tree, WORD start, WORD depth, WORD mx, WORD my)
     return aes(43, 4, 1, 1, 0);
 }
 
-WORD objc_offset(OBJECT *tree, WORD obj, WORD *x, WORD *y)
+WORD objc_offset(GEMTREE tree, WORD obj, WORD *x, WORD *y)
 {
     WORD r;
     int_in[0] = obj;
@@ -958,7 +996,7 @@ WORD objc_offset(OBJECT *tree, WORD obj, WORD *x, WORD *y)
     return r;
 }
 
-WORD objc_change(OBJECT *tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WORD h,
+WORD objc_change(GEMTREE tree, WORD obj, WORD resvd, WORD x, WORD y, WORD w, WORD h,
                  WORD state, WORD redraw)
 {
     int_in[0] = obj;
@@ -1000,7 +1038,7 @@ WORD objc_sysvar(WORD mode, WORD which, WORD in1, WORD in2,
 }
 
 
-WORD objc_order(OBJECT *tree, WORD obj, WORD newpos)
+WORD objc_order(GEMTREE tree, WORD obj, WORD newpos)
 {
     int_in[0] = obj;
     int_in[1] = newpos;
@@ -1008,7 +1046,7 @@ WORD objc_order(OBJECT *tree, WORD obj, WORD newpos)
     return aes(45, 2, 1, 1, 0);
 }
 
-WORD form_do(OBJECT *tree, WORD start)
+WORD form_do(GEMTREE tree, WORD start)
 {
     int_in[0] = start;
     addr_in[0] = tree_addr(tree);
@@ -1043,7 +1081,7 @@ WORD form_error(WORD n)
     return aes(53, 1, 1, 0, 0);
 }
 
-WORD form_center(OBJECT *tree, WORD *x, WORD *y, WORD *w, WORD *h)
+WORD form_center(GEMTREE tree, WORD *x, WORD *y, WORD *w, WORD *h)
 {
     WORD r;
     addr_in[0] = tree_addr(tree);
@@ -1121,8 +1159,9 @@ WORD graf_mkstate(WORD *mx, WORD *my, WORD *mb, WORD *ks)
 WORD rsrc_load(const char *name)
 {
     addr_in[0] = (LONG)(uint32_t)(const char FAR *)name;
-#ifdef __CALYPSI_DATA_MODEL_LARGE__
-    /* This program holds 32-bit pointers, so it can take a resource in far
+#if defined(__CALYPSI_DATA_MODEL_LARGE__) || defined(__CALYPSI_TARGET_6502__)
+    /* (A 6502 program holds its trees as far addresses: gem.h, GEMTREE.)
+     * This program holds 32-bit pointers, so it can take a resource in far
      * memory: int_in[0] bit 0 says so, and the AES then puts the resource
      * far whatever its size (src/aes/rsrc.c rs_load; docs/far-trees.md,
      * phase 87 for colour icons).  The
@@ -1141,13 +1180,15 @@ WORD rsrc_free(void)
     return aes(111, 0, 1, 0, 0);
 }
 
-WORD rsrc_gaddr(WORD type, WORD index, void **addr)
+WORD rsrc_gaddr(WORD type, WORD index, GEMADDR *addr)
 {
     WORD r;
     int_in[0] = type;
     int_in[1] = index;
     r = aes(112, 2, 1, 0, 1);
-#ifdef __CALYPSI_DATA_MODEL_LARGE__
+#if defined(__CALYPSI_TARGET_6502__)
+    *addr = (GEMADDR)addr_out[0];           /* far: the resource is */
+#elif defined(__CALYPSI_DATA_MODEL_LARGE__)
     *addr = (void *)(uint32_t)addr_out[0];  /* all 24 bits: it may be far */
 #else
     *addr = (void *)(uint16_t)addr_out[0];  /* a pool resource: bank $00 */
@@ -1243,7 +1284,7 @@ WORD evnt_dclick(WORD rate, WORD setit)
     return aes(26, 2, 1, 0, 0);
 }
 
-WORD menu_text(OBJECT *tree, WORD item, const char *text)
+WORD menu_text(GEMTREE tree, WORD item, const char *text)
 {
     int_in[0] = item;
     addr_in[0] = tree_addr(tree);
@@ -1269,11 +1310,11 @@ WORD menu_popup(const MENU *me, WORD xpos, WORD ypos, MENU *mdata)
     return aes(36, 2, 1, 2, 0);
 }
 
-WORD menu_attach(WORD flag, OBJECT *tree, WORD item, MENU *mdata)
+WORD menu_attach(WORD flag, GEMTREE tree, WORD item, MENU *mdata)
 {
     int_in[0] = flag;
     int_in[1] = item;
-    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    addr_in[0] = tree_addr(tree);
     addr_in[1] = (LONG)(uint32_t)(MENU FAR *)mdata;
     return aes(37, 2, 1, 2, 0);
 }
@@ -1285,12 +1326,12 @@ WORD menu_settings(WORD flag, MN_SET *set)
     return aes(39, 1, 1, 1, 0);
 }
 
-WORD menu_istart(WORD flag, OBJECT *tree, WORD imenu, WORD item)
+WORD menu_istart(WORD flag, GEMTREE tree, WORD imenu, WORD item)
 {
     int_in[0] = flag;
     int_in[1] = imenu;
     int_in[2] = item;
-    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    addr_in[0] = tree_addr(tree);
     return aes(38, 3, 1, 1, 0);
 }
 
@@ -1344,7 +1385,7 @@ WORD appl_xgetinfo(WORD ap_gtype, WORD *ap_gout1, WORD *ap_gout2,
 /* objc_edit: `idx` is both the cursor position going in and the one
  * that comes back (the ST passes it by address; here it is a word in
  * and a word out, which is what the shim does with it). */
-WORD objc_edit(OBJECT *tree, WORD obj, WORD in_char, WORD *idx, WORD kind)
+WORD objc_edit(GEMTREE tree, WORD obj, WORD in_char, WORD *idx, WORD kind)
 {
     WORD r;
     int_in[0] = obj;
@@ -1357,7 +1398,7 @@ WORD objc_edit(OBJECT *tree, WORD obj, WORD in_char, WORD *idx, WORD kind)
     return r;
 }
 
-WORD form_keybd(OBJECT *tree, WORD obj, WORD nxt_obj, WORD thechar,
+WORD form_keybd(GEMTREE tree, WORD obj, WORD nxt_obj, WORD thechar,
                 WORD *pnxt_obj, WORD *pchar)
 {
     WORD r;
@@ -1371,7 +1412,7 @@ WORD form_keybd(OBJECT *tree, WORD obj, WORD nxt_obj, WORD thechar,
     return r;
 }
 
-WORD form_button(OBJECT *tree, WORD obj, WORD clks, WORD *pnxt_obj)
+WORD form_button(GEMTREE tree, WORD obj, WORD clks, WORD *pnxt_obj)
 {
     WORD r;
     int_in[0] = obj;
@@ -1408,12 +1449,12 @@ WORD graf_movebox(WORD w, WORD h, WORD sx, WORD sy, WORD ex, WORD ey)
 
 /* graf_slidebox (76): answers where the child ended up, 0..1000 of the
  * way along its parent -- a measurement, not a status. */
-WORD graf_slidebox(OBJECT *tree, WORD parent, WORD obj, WORD orient)
+WORD graf_slidebox(GEMTREE tree, WORD parent, WORD obj, WORD orient)
 {
     int_in[0] = parent;
     int_in[1] = obj;
     int_in[2] = orient;
-    addr_in[0] = (LONG)(uint32_t)(OBJECT FAR *)tree;
+    addr_in[0] = tree_addr(tree);
     return aes(76, 3, 1, 1, 0);
 }
 
@@ -1430,7 +1471,7 @@ WORD graf_rubbox(WORD x, WORD y, WORD w, WORD h, WORD *pw, WORD *ph)
     return r;
 }
 
-WORD graf_watchbox(OBJECT *tree, WORD obj, WORD instate, WORD outstate)
+WORD graf_watchbox(GEMTREE tree, WORD obj, WORD instate, WORD outstate)
 {
     int_in[1] = obj;
     int_in[2] = instate;
@@ -1470,7 +1511,7 @@ WORD rsrc_saddr(WORD type, WORD index, void *addr)
     return aes(113, 2, 1, 1, 0);
 }
 
-WORD rsrc_obfix(OBJECT *tree, WORD obj)
+WORD rsrc_obfix(GEMTREE tree, WORD obj)
 {
     int_in[0] = obj;
     addr_in[0] = tree_addr(tree);
@@ -1928,7 +1969,7 @@ WORD wind_set_str(WORD handle, WORD field, const char *str)
     return wind_set(handle, field, (WORD)((uint32_t)a >> 16), (WORD)a, 0, 0);
 }
 
-WORD form_center_grect(OBJECT *tree, GRECT *r)
+WORD form_center_grect(GEMTREE tree, GRECT *r)
 {
     return form_center(tree, &r->g_x, &r->g_y, &r->g_w, &r->g_h);
 }
@@ -1939,7 +1980,7 @@ WORD form_dial_grect(WORD flag, const GRECT *little, const GRECT *big)
                      big->g_x, big->g_y, big->g_w, big->g_h);
 }
 
-WORD objc_draw_grect(OBJECT *tree, WORD start, WORD depth, const GRECT *r)
+WORD objc_draw_grect(GEMTREE tree, WORD start, WORD depth, const GRECT *r)
 {
     return objc_draw(tree, start, depth, r->g_x, r->g_y, r->g_w, r->g_h);
 }

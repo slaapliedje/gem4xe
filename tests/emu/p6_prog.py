@@ -59,8 +59,9 @@ from a8test.launcher import launch          # noqa: E402
 import aesref                               # noqa: E402
 import devref                               # noqa: E402
 import a6_aes as A6                         # noqa: E402  A6's own calls
+import p6rsc as P6RSC                       # noqa: E402  the program's resource
 from aesref import (Layout, NAME, WF_NAME, WIND_CREATE, WIND_OPEN,  # noqa: E402
-                    WIND_GET)
+                    WIND_GET, G_STRING, SELECTED)
 from vdiref import (VSWR_MODE, VSF_INTERIOR, VSF_COLOR, VS_CLIP,  # noqa: E402
                     VR_RECFL, V_GTEXT)
 
@@ -80,8 +81,9 @@ P6_HELLO = 0x4138
 WM_REDRAW = 20
 AES_VERSION = 0x0400
 WIN3 = (30, 40, 180, 60)                    # src/p6_prog.c's window
-TEXT = "FROM A BANK"
+TEXT = P6RSC.TEXT                           # object 1's string, which it draws
 AWAY = (300, 180)                           # the pointer, off the window
+STACK_PAINT, STACK_GUARD, STACK_MARGIN = 0xA5, 128, 64
 
 
 def model():
@@ -193,6 +195,13 @@ def main(argv):
             b.frames(50)
             if bytes(b.memdump(STATUS, 3)) == b"A6K" or b.peek(STATUS + 4):
                 break
+        # THE SYSTEM'S C STACK, 1 KB shared by every call (docs/6502.md,
+        # 5b-3): its bottom GUARD bytes painted now, while A6 waits near the
+        # top, and at least MARGIN of them must still be paint at the end.
+        # It overflowed into the VDI's workstation table, silently, until
+        # a program got a stack of its own and vdi.c lost its inlining.
+        cs_lo = int(re.search(r"^cstack\s+([0-9a-f]+)-", text, re.M).group(1), 16)
+        b.memload(cs_lo, bytes([STACK_PAINT]) * STACK_GUARD)
         b.poke(STATUS + 12, 1)              # the program, at the go
         b.poke(STATUS + 6, 1)
         for _ in range(600):
@@ -243,6 +252,11 @@ def main(argv):
         check(abs((t1 - t0) - want) <= want * 0.02 and b.peek(POKMSK) & 1,
               f"after the read, timer 1 counted {t1 - t0} in 100 frames, want {want:.0f}; "
               f"POKMSK ${b.peek(POKMSK):02X}")
+        paint = bytes(b.memdump(cs_lo, STACK_GUARD))
+        spare = next((i for i, x in enumerate(paint) if x != STACK_PAINT), STACK_GUARD)
+        check(spare >= STACK_MARGIN,
+              f"the system's C stack kept {spare} of its bottom {STACK_GUARD} bytes "
+              f"untouched (${cs_lo:04X} up); want {STACK_MARGIN}")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
         check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
 
@@ -260,6 +274,23 @@ def main(argv):
                                           f"want WM_REDRAW ({WM_REDRAW}) for {wh}")
         work = tuple(w16(STATUS + 0x49 + 2 * k) for k in range(4))
         check(work == want_work, f"its work area {work}; the model {want_work}")
+        # its resource (step 5b-3): loaded far, its tree read and written
+        # through far_fetch/far_store, and read by the AES itself
+        ld, ga = b.peek(STATUS + 0x52), b.peek(STATUS + 0x53)
+        check((ld, ga) == (1, 1), f"rsrc_load answered {ld} and rsrc_gaddr {ga}, want 1 and 1")
+        tr = w16(STATUS + 0x54) | (w16(STATUS + 0x56) << 16)
+        check(tr >> 16 >= 1 and not ps <= tr < ps + 0x4000,
+              f"its tree is at ${tr:06X}: in the far heap, outside its own bank ${ps:06X}")
+        ty, st = b.peek(STATUS + 0x58), b.peek(STATUS + 0x59)
+        check(ty == G_STRING, f"object 1, fetched, is of type {ty}; want G_STRING ({G_STRING})")
+        check(st == SELECTED, f"object 2's state, stored SELECTED and fetched back, is {st}")
+        wc = b.peek(STATUS + 0x5E)
+        ox, oy = w16(STATUS + 0x5A), w16(STATUS + 0x5C)
+        want_o = ((P6RSC.ROOT_X + P6RSC.OK_X) * wc, (P6RSC.ROOT_Y + P6RSC.OK_Y) * hc)
+        check((ox, oy) == want_o, f"objc_offset of object 2, read by the AES from the far "
+                                  f"tree, is {(ox, oy)}; cells of {wc}x{hc} make {want_o}")
+        fr = b.peek(STATUS + 0x5F)
+        check(fr == 1, f"rsrc_free answered {fr}, want 1")
         pieces = b.peek(STATUS + 0x51)
         check(pieces == 1, f"its redraw painted {pieces} rectangle(s), want 1")
 

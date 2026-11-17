@@ -38,6 +38,17 @@
 #include "sys/farmem.h"
 #include "sys/zwin.h"
 
+/* WHERE THIS FILE'S OWN VARIABLES LIVE.  On the 65C816, zwin and the
+ * near bss, as they always have.  On the 6502 the resident memory has no
+ * room for them (docs/6502.md, step 5b-3), and only this file's code
+ * touches them, so they are in its own bank, with the code.  The 6502
+ * has no copies of the desktop's resources either (below). */
+#ifdef __CALYPSI_TARGET_6502__
+#define RS_BSS  BANK_DATA("rsrc")
+#else
+#define RS_BSS
+#endif
+
 /* The running process's resource and the pool mark before it: see
  * src/aes/proc.h for why these belong to a process and not to this file.
  * rs_cur is the one a call acts on; rs_loaded() hands its base out. */
@@ -399,9 +410,9 @@ void rs_fixit(uint32_t base)
 typedef struct {
     uint32_t base;              /* the block, 0 if none */
 } FARBLK;
-static uint32_t rs_imbase;      /* where they went, 0 if they stayed */
-static uint16_t rs_imsize;
-static FARBLK   rs_im[2];       /* by slot: [0] the resident, [1] the nested */
+RS_BSS static uint32_t rs_imbase;      /* where they went, 0 if they stayed */
+RS_BSS static uint16_t rs_imsize;
+RS_BSS static FARBLK   rs_im[2];       /* by slot: [0] the resident, [1] the nested */
 
 void rs_imaddr(uint32_t *base, uint16_t *len)
 {
@@ -491,9 +502,9 @@ static void rs_imfar(uint8_t *mem, uint16_t im_off, uint16_t size)
                                          * drawn, 32 x 32; a bigger one draws
                                          * its mono form */
 
-uint32_t rs_cibase;                     /* where the extension went, 0 if none */
-uint16_t rs_cisize;
-static FARBLK   rs_ci[2];               /* by slot, as rs_im */
+RS_BSS uint32_t rs_cibase;                     /* where the extension went, 0 if none */
+RS_BSS uint16_t rs_cisize;
+RS_BSS static FARBLK   rs_ci[2];               /* by slot, as rs_im */
 
 /* Give a slot's far blocks back -- wherever they are: the heap frees any
  * block, not just its top (phase 79).  `slot` is 1 or 2, as rs_1/rs_2
@@ -572,6 +583,32 @@ static uint32_t rd_long(uint32_t far)   /* a 68000 LONG, from far memory */
  * rsrc_load must hand out a fresh one.  So the copy is read through as a
  * file would be, by rs_rd, and loading from it is a far-to-far copy and
  * the same fixups. */
+#ifdef __CALYPSI_TARGET_6502__
+/* NO COPIES ON THE 6502: the cache is the desktop's, and the desktop is
+ * not a 6502 program yet (step 5c); what it would take -- a whole-file
+ * read, a 32-bit hash, a far-to-far span copy -- is resident code there
+ * is no room for.  A resource is read from its file, always. */
+RS_BSS static int16_t rs_fd;
+
+void rs_cache_purged(uint32_t addr) { (void)addr; }
+void rs_cache_flush(void) {}
+
+static WORD rs_open(const char *cio)
+{
+    rs_fd = cio_open(cio, CIO_A_READ, 0);
+    return rs_fd >= 0;
+}
+
+static void rs_close(void)
+{
+    cio_close(rs_fd);
+}
+
+static uint8_t rs_rd(void *buf, uint16_t n, uint16_t *got)
+{
+    return cio_read(rs_fd, buf, n, got);
+}
+#else
 #define RC_MAX      4
 #define RC_LEVEL    2                   /* purge level: before the desktop's
                                          * own program file, which is 1 */
@@ -755,6 +792,8 @@ static uint8_t rs_rd(void *buf, uint16_t n, uint16_t *got)
     *got = n;
     return rs_pos < rs_len ? CIO_OK : CIO_OK_EOF;
 }
+
+#endif
 
 /* The resource is positioned just past the rsh_rssize bytes already in
  * `h`.  1 on success; 0 and nothing of the pool kept on any failure. */

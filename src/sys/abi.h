@@ -33,6 +33,7 @@
 #define ABI_VDI    0x56     /* 'V' */
 #define ABI_AES    0x41     /* 'A' */
 #define ABI_GEMDOS 0x44     /* 'D' */
+#define ABI_FAR    0x46     /* 'F': the 6502's far fetch and store */
 
 /* Written by the handler in abi.s before gem_entry() runs. */
 extern uint32_t gem_pb;        /* the parameter block: X:C at the COP */

@@ -3,7 +3,7 @@
  * Built with the kit alone -- src/app/gem.h and lib/gemlib.c, the 6502's
  * gates (src/app/gemabi6502.s) and start-up (src/app/crt6502.s), linked
  * whole into one 16 KB bank (src/app/gemapp6502.scm) -- and loaded by
- * A6 into the first program slot (src/a6_evt.c), it knows no address of
+ * A6 into a bank from the far heap (src/a6_evt.c), it knows no address of
  * the system's but the gate's.  Everything it passes is in its own bank
  * or on the shared C stack: its arrays, its parameter blocks, the
  * window's title, the text it draws, the message buffers.
@@ -18,6 +18,18 @@
  *   $0647  the first message's type; $0648 the window it names
  *   $0649-$0650  the window's work area: x, y, w, h (two bytes each)
  *   $0651  the rectangles its redraw painted
+ *   $0652  rsrc_load's answer; $0653 rsrc_gaddr's for tree 0
+ *   $0654-$0657  the tree's far address
+ *   $0658  object 1's ob_type, fetched
+ *   $0659  object 2's ob_state, stored SELECTED and fetched back
+ *   $065A-$065D  objc_offset of object 2: x, y
+ *   $065E  graf_handle's cell width; $065F rsrc_free's answer
+ *
+ * ITS RESOURCE (step 5b-3) is P6PROG.RSC (tools/p6rsc.py), loaded into
+ * the far heap: its tree is a far address (gem.h, GEMTREE), read and
+ * written through far_fetch and far_store.  The text it draws is object
+ * 1's string, read that way -- the same words it once carried itself, so
+ * the gate's pixels say whether the read was right.
  *
  * Its redraw is what a GEM program owes its window: the AES draws the
  * frame and nothing inside it, so on WM_REDRAW the program walks the
@@ -37,7 +49,7 @@
 static WORD work_in[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2 };
 static WORD work_out[57];
 static const char title[] = " BANKED ";
-static const char text[] = "FROM A BANK";
+static char text[16];                   /* object 1's string, fetched */
 
 /* *a cut to what it shares with *b; 0 if nothing */
 static WORD meet(WORD *a, const WORD *b)
@@ -62,7 +74,9 @@ static void put16(uint8_t at, WORD v)
 
 int main(void)
 {
-    WORD ap, vh, wh, wc, hc, wb, hb, x, y, w, h;
+    WORD ap, vh, wh, wc, hc, wb, hb, x, y, w, h, ox, oy;
+    GEMTREE tree = 0;
+    OBJECT o;
     WORD msg[8], r[4], pxy[4];
     uint8_t pieces = 0;
 
@@ -74,6 +88,25 @@ int main(void)
     STATUS[0x46] = (unsigned char)hc;
     v_opnvwk(work_in, &vh, work_out);
     STATUS[0x44] = (unsigned char)vh;
+    STATUS[0x5E] = (unsigned char)wc;
+
+    STATUS[0x52] = (unsigned char)rsrc_load("P6PROG.RSC");
+    STATUS[0x53] = (unsigned char)rsrc_gaddr(R_TREE, 0, &tree);
+    put16(0x54, (WORD)tree);
+    put16(0x56, (WORD)(tree >> 16));
+    far_fetch(&o, OB_ADDR(tree, 1), sizeof o);
+    STATUS[0x58] = (unsigned char)o.ob_type;
+    far_fetch(text, (uint32_t)o.ob_spec.index, sizeof text - 1);
+    text[sizeof text - 1] = 0;
+    far_fetch(&o, OB_ADDR(tree, 2), sizeof o);
+    o.ob_state |= SELECTED;
+    far_store(OB_ADDR(tree, 2), &o, sizeof o);
+    o.ob_state = 0;
+    far_fetch(&o, OB_ADDR(tree, 2), sizeof o);
+    STATUS[0x59] = (unsigned char)o.ob_state;
+    objc_offset(tree, 2, &ox, &oy);
+    put16(0x5A, ox);
+    put16(0x5C, oy);
 
     wh = wind_create(NAME, 30, 40, 180, 60);
     STATUS[0x45] = (unsigned char)wh;
@@ -124,6 +157,7 @@ int main(void)
     msg[5] = msg[6] = msg[7] = 0;
     appl_write(0, 16, msg);
 
+    STATUS[0x5F] = (unsigned char)rsrc_free();
     STATUS[0x40] = 'E';
     return 0x1234;
 }

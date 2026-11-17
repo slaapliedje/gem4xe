@@ -8,7 +8,8 @@
 ;;; (b6_cur: the window is the program's while it runs) for src/sys/abi.c,
 ;;; and is then a veneer itself: _bcall maps the `abi` bank, calls
 ;;; gem_entry there, maps the program's bank again and returns to the
-;;; program, past the JMP that brought it here.
+;;; program, past the JSR that brought it here -- the kit's, which has put
+;;; _Vsp on the system's C stack for the call (src/app/gemabi6502.s).
 ;;;
 ;;; THE PROGRAM'S START, p6_ven: a veneer in RAM, to $4003 -- the JMP in
 ;;; the program's header (src/app/crt6502.s) -- in a bank written into its

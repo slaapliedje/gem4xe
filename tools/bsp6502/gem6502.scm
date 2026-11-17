@@ -34,7 +34,7 @@
     (memory Bank4 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store4)
             (section dev))
     (memory Bank5 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store5)
-            (section antic))
+            (section antic antic__bank))
     (memory Bank6 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store6)
             (section far))
     (memory Bank7 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store7)
