@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """mkxex6502.py -- a banked 6502 link as an Atari binary file.
 
-    python3 tools/bsp6502/mkxex6502.py IN.elf OUT.xex [--report]
+    python3 tools/bsp6502/mkxex6502.py IN.elf OUT.xex [--report] [--bank N=PROG.elf ...]
+
+--bank N=PROG.elf loads a separately linked program's window segments
+($4000-$7FFF: src/app/gemapp6502.scm) into PORTB bank N as well, as if
+it were one of the link's own banks -- the program slot of docs/6502.md,
+step 5a.  N must be no bank of the link's.
 
 The link (tools/bsp6502/gem6502.scm) puts resident code and data below
 $4000 and above $8000, and each bank's code at $4000-$7FFF with its bytes
@@ -54,6 +59,12 @@ def seg(start, body):
 
 
 def main(argv):
+    extra = [a.split("=", 1)[1] for a in argv if a.startswith("--bank=")]
+    argv = [a for a in argv if not a.startswith("--bank=")]
+    while "--bank" in argv:
+        i = argv.index("--bank")
+        extra.append(argv[i + 1])
+        del argv[i:i + 2]
     argv = [a for a in argv if a != "--report"] + (["--report"] if "--report" in argv else [])
     if len(argv) not in (3, 4):
         print(__doc__)
@@ -86,6 +97,21 @@ def main(argv):
                 raise SystemExit(f"mkxex6502: resident segment ${a:04X}+{len(body)} "
                                  f"runs into the window")
             resident.append((a, body))
+    for spec in extra:
+        n_s, path = spec.split("=", 1)
+        n = int(n_s, 0)
+        if n in banks:
+            raise SystemExit(f"mkxex6502: --bank {n}: the link has a bank {n} of its own")
+        _, psegs = segments(open(path, "rb").read())
+        body_of = []
+        for a, body in psegs:
+            if not (WIN_LO <= a and a + len(body) - 1 <= WIN_HI):
+                raise SystemExit(f"mkxex6502: --bank {n}: {path} has a segment at ${a:X}, "
+                                 f"outside the window")
+            body_of.append((a, body))
+        if not body_of:
+            raise SystemExit(f"mkxex6502: --bank {n}: {path} has nothing in the window")
+        banks[n] = body_of
     out = bytearray(b"\xff\xff")
     for a, body in sorted(resident):
         out += seg(a, body)

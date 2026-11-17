@@ -56,8 +56,28 @@
 #include "sys/app.h"
 #include "sys/zwin.h"
 
+/* A CALLER'S WORD ARRAY: its global, a message buffer, a menu block.  On
+ * the 65C816 a far pointer, read and written in place; on the 6502 a far
+ * address, read and written through the far helpers -- there is no
+ * pointer that reaches another bank there (docs/6502.md, step 5). */
+#ifdef __CALYPSI_TARGET_6502__
+extern const uint8_t b6_far_base;   /* src/sys6502/farmem6502.c */
+typedef uint32_t ABI_WP;
+#define ABI_WP_OF(a)        ((uint32_t)(a))
+#define ABI_W(p, k)         ((WORD)far_rd16((p) + 2u * (uint16_t)(k)))
+#define ABI_SETW(p, k, v)   far_wr16((p) + 2u * (uint16_t)(k), (uint16_t)(v))
+#else
+typedef WORD FAR *ABI_WP;
+#define ABI_WP_OF(a)        ((WORD FAR *)(uint32_t)(a))
+#define ABI_W(p, k)         ((p)[k])
+#define ABI_SETW(p, k, v)   ((p)[k] = (v))
+#endif
+
 uint32_t gem_pb;
 uint8_t  gem_which;
+#ifdef __CALYPSI_TARGET_6502__
+uint8_t  gem_bank6;             /* the caller's bank: src/sys6502/gate6502.s */
+#endif
 uint16_t gem_api_sp;
 uint8_t  gem_depth;
 /* In the window (src/sys/zwin.h): LoRAM keeps 256 bytes for the
@@ -140,6 +160,93 @@ typedef struct {
  * shel_write(1) runs the program when the caller ends. */
 #define AES_VERSION 0x0400
 
+#ifdef __CALYPSI_TARGET_6502__
+/* ---- the 6502's addresses ------------------------------------------------
+ * A 6502 program's every pointer is 16 bits, and its memory is the bank
+ * the window held when it called (gem_bank6, which the gate records).  An
+ * address in the window is turned into that bank's far address -- far
+ * bank k, 16 KB piece p, as src/sys6502/farmem6502.c numbers them -- and
+ * any other is near and stays as it is: a local on the shared C stack, a
+ * buffer in the resident memory below $4000.  A caller in one of the
+ * system's own CODE banks has no far address for its window; its
+ * addresses are left alone too, and it must keep what it passes near. */
+static uint32_t win_far(uint32_t a, uint8_t bank)
+{
+    uint8_t i, k;
+    uint16_t off;
+
+    if (a < 0x4000u || a >= 0x8000u || bank < b6_far_base)
+        return a;
+    /* bytes STORED, then widened: cc6502 5.18 sign-extends a computed
+     * byte that is cast and widened in one expression (b6scan) */
+    i = (uint8_t)(bank - b6_far_base);
+    k = (uint8_t)(i >> 2);
+    k++;
+    off = (uint16_t)(((uint16_t)(i & 3) << 14) | ((uint16_t)a & 0x3FFFu));
+    return ((uint32_t)k << 16) | off;
+}
+
+/* The other way, for an address the AES hands back: one in the caller's
+ * own bank becomes its window address; any other stays far. */
+static uint32_t win_near(uint32_t a, uint8_t bank)
+{
+    uint8_t i, k, ak, piece, ap;
+    uint16_t lo;
+
+    if (bank < b6_far_base || !(a >> 16))
+        return a;
+    i = (uint8_t)(bank - b6_far_base);
+    k = (uint8_t)(i >> 2);
+    k++;
+    piece = (uint8_t)(i & 3);
+    lo = (uint16_t)(a >> 16);
+    ak = (uint8_t)(lo & 0xFFu);
+    lo = (uint16_t)a;
+    ap = (uint8_t)((lo >> 14) & 3u);
+    if (ak != k || ap != piece)
+        return a;
+    return (uint32_t)(0x4000u | (lo & 0x3FFFu));
+}
+
+/* The caller's bank, for crysbind's one translation of its own
+ * (wind_set's title): set by aes_entry6 just before the call, and read
+ * before anything in it can switch processes. */
+static uint8_t abi_bank6;
+
+/* A count from the caller, as a byte count of words: none if negative,
+ * and never more than the array it goes into holds. */
+static uint16_t abi_n(WORD n, WORD max)
+{
+    if (n <= 0)
+        return 0;
+    if (n > max)
+        n = max;
+    return (uint16_t)n * 2u;
+}
+
+/* ---- VDI ---------------------------------------------------------------- */
+
+static void vdi_entry6(uint16_t pba, uint8_t bank)
+{
+    uint16_t img[5];                    /* the block: five window addresses */
+    uint32_t c, po, io;
+
+    far_get((uint8_t *)img, win_far(pba, bank), sizeof img);
+    c = win_far(img[0], bank);
+    io = win_far(img[3], bank);
+    po = win_far(img[4], bank);
+    far_get((uint8_t *)contrl, c, CONTRL_SIZE * 2);
+    far_get((uint8_t *)intin, win_far(img[1], bank), abi_n(contrl[3], INTIN_SIZE));
+    far_get((uint8_t *)ptsin, win_far(img[2], bank),
+            abi_n((WORD)(contrl[1] * 2), PTSIN_SIZE));
+
+    vdi();
+
+    far_put(c, (const uint8_t *)contrl, CONTRL_SIZE * 2);
+    far_put(io, (const uint8_t *)intout, abi_n(contrl[4], INTOUT_SIZE));
+    far_put(po, (const uint8_t *)ptsout, abi_n((WORD)(contrl[2] * 2), PTSOUT_SIZE));
+}
+#else
 /* ---- VDI ---------------------------------------------------------------- */
 
 static void vdi_entry(const VDIPB_IMG FAR *pb)
@@ -179,6 +286,7 @@ static void vdi_entry(const VDIPB_IMG FAR *pb)
     for (k = 0; k < n; k++)
         po[k] = ptsout[k];
 }
+#endif
 
 /* ---- AES ---------------------------------------------------------------- */
 
@@ -281,10 +389,10 @@ static const char *pool_str(int32_t a)
  * AES call that returns an address (the donor's ad_rso). */
 static uint32_t ad_rso;
 
-static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
+static WORD crysbind(WORD opcode, ABI_WP global, const WORD *int_in,
                      WORD *int_out, const int32_t *addr_in)
 {
-    OBJECT FAR *tree = 0;
+    OBTREE tree = 0;
     GRECT clip;
     WORD ret = 1;                   /* TRUE unless the call says otherwise */
     WORD k;
@@ -305,7 +413,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     case 50: case 54: case 55: case 56:
     case 75: case 76:
     case 114:
-        tree = (OBJECT FAR *)(uint32_t)addr_in[0];    /* any bank: see docs/far-trees.md */
+        tree = (OBTREE)(uint32_t)addr_in[0];    /* any bank: see docs/far-trees.md */
         if (!tree)
             return -1;
         break;
@@ -316,18 +424,18 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     switch (opcode) {
     /* Application manager */
     case 10:                        /* appl_init */
-        global[0] = AES_VERSION;
-        global[1] = 1;              /* concurrent applications */
-        global[2] = proc_pid(rlr);  /* ap_id: an accessory's own, which
+        ABI_SETW(global, 0, AES_VERSION);
+        ABI_SETW(global, 1, 1);              /* concurrent applications */
+        ABI_SETW(global, 2, proc_pid(rlr));  /* ap_id: an accessory's own, which
                                      * this said 0 for until phase 124 */
         for (k = 3; k < 15; k++)
-            global[k] = 0;
-        global[10] = gl_nplanes;
+            ABI_SETW(global, k, 0);
+        ABI_SETW(global, 10, gl_nplanes);
         /* AES 4's: the largest and smallest character height the AES
          * draws with -- one face here, so both are its cell height, which
          * is what appl_getinfo's AES_LARGEFONT answers too */
-        global[13] = gl_hchar;
-        global[14] = gl_hchar;
+        ABI_SETW(global, 13, gl_hchar);
+        ABI_SETW(global, 14, gl_hchar);
         ret = proc_pid(rlr);        /* ap_id */
         break;
     case 11:                        /* appl_read: id, length, buffer */
@@ -341,7 +449,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         break;
     case 12:                        /* appl_write: id, len, buffer */
         {
-            const WORD FAR *m = (const WORD FAR *)addr_in[0];
+            ABI_WP m = ABI_WP_OF(addr_in[0]);
             WORD msg[AP_MSGWORDS];
             /* THE LENGTH IS READ NOW, and it was not before.  This copied
              * eight words whatever it was told, which is wrong in both
@@ -354,7 +462,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
                 break;
             }
             for (k = 0; k < AP_MSGWORDS; k++)
-                msg[k] = m[k];
+                msg[k] = ABI_W(m, k);
             /* The destination was read and thrown away while there was
              * one process; it is honoured now, and word 1 says who sent
              * it -- which for appl_write is the only place in gem4xe
@@ -431,11 +539,11 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         ev_mouse((const MOBLK *)&int_in[0], &int_out[1]);
         break;
     case 23: {                      /* evnt_mesag: buffer */
-        WORD FAR *m = (WORD FAR *)addr_in[0];
+        ABI_WP m = ABI_WP_OF(addr_in[0]);
         WORD msg[8];
         ev_mesag(msg);
         for (k = 0; k < 8; k++)
-            m[k] = msg[k];
+            ABI_SETW(m, k, msg[k]);
         break;
     }
     case 24:                        /* evnt_timer: lo, hi */
@@ -443,7 +551,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
                  | ((uint32_t)(uint16_t)int_in[1] << 16));
         break;
     case 25: {                      /* evnt_multi */
-        WORD FAR *m = (WORD FAR *)addr_in[0];
+        ABI_WP m = ABI_WP_OF(addr_in[0]);
         WORD msg[8] = {0, 0, 0, 0, 0, 0, 0, 0};
         uint32_t ms = 0;
         if (int_in[0] & MU_TIMER)
@@ -456,7 +564,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
                        msg, &int_out[1]);
         if (ret & MU_MESAG)
             for (k = 0; k < 8; k++)
-                m[k] = msg[k];
+                ABI_SETW(m, k, msg[k]);
         break;
     }
     case 26:                        /* evnt_dclick: rate, setit */
@@ -509,7 +617,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     case 36: {                      /* menu_popup: me, x, y, mdata */
         WORD me[MENU_WORDS], md[MENU_WORDS];
         uint32_t pme = (uint32_t)addr_in[0], pmd = (uint32_t)addr_in[1];
-        OBJECT FAR *mt;
+        OBTREE mt;
         WORD chosen, ks = 0;
 
         if (!pme || !pmd)
@@ -518,7 +626,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
         /* The caller's OWN mdata too, not a copy of me: the four words
          * this call may leave alone are the caller's to keep. */
         far_get((uint8_t *)md, pmd, MENU_WORDS * 2);
-        mt = (OBJECT FAR *)(((uint32_t)(UWORD)me[1] << 16) | (UWORD)me[0]);
+        mt = (OBTREE)(((uint32_t)(UWORD)me[1] << 16) | (UWORD)me[0]);
         chosen = mn_popup(mt, me[2], me[3], int_in[0], int_in[1], &ks);
         /* ON FAILURE ONLY THE KEYSTATE IS WRITTEN and the caller's other
          * four words stay as they were.  Both donors agree: the ROM's
@@ -791,6 +899,17 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
          * title at whatever it said during the call.  Until 2026-09-16
          * there was nowhere in bank $00 to put the two buffers that
          * needs; the LoRAM/Near boundary found them (src/gem4xe.scm). */
+#ifdef __CALYPSI_TARGET_6502__
+        /* ...but on the 6502 the address is a window one, and the window
+         * manager keeps it for every redraw after this call: so it is
+         * made the caller's far address here, as aes_entry6 does for
+         * addr_in.  The tree WF_NEWDESK names is the same pair. */
+        if (int_in[1] == WF_NAME || int_in[1] == WF_INFO || int_in[1] == WF_NEWDESK) {
+            uint32_t a = win_far(((uint32_t)(UWORD)w[0] << 16) | (UWORD)w[1], abi_bank6);
+            w[0] = (WORD)(UWORD)(a >> 16);
+            w[1] = (WORD)(UWORD)a;
+        }
+#endif
         ret = wm_set(int_in[0], int_in[1], w);
         break;
     }
@@ -843,18 +962,18 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
             uint32_t b = rs_loaded(), tr;
             rs_header(&h);
             tr = b + h.rsh_trindex;
-            global[5] = (WORD)(tr & 0xFFFF);        /* ap_ptree */
-            global[6] = (WORD)(tr >> 16);
-            global[7] = (WORD)(b & 0xFFFF);         /* the header */
-            global[8] = (WORD)(b >> 16);
-            global[9] = (WORD)h.rsh_rssize;
+            ABI_SETW(global, 5, (WORD)(tr & 0xFFFF));        /* ap_ptree */
+            ABI_SETW(global, 6, (WORD)(tr >> 16));
+            ABI_SETW(global, 7, (WORD)(b & 0xFFFF));         /* the header */
+            ABI_SETW(global, 8, (WORD)(b >> 16));
+            ABI_SETW(global, 9, (WORD)h.rsh_rssize);
         }
         break;
     }
     case 111:                       /* rsrc_free */
         ret = rs_free();
         for (k = 5; k < 10; k++)
-            global[k] = 0;
+            ABI_SETW(global, k, 0);
         break;
     case 112:                       /* rsrc_gaddr: type, index -> addr_out */
         ret = rs_gaddr((UWORD)int_in[0], (UWORD)int_in[1], &ad_rso);
@@ -893,7 +1012,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
              * string, and copied in here as appl_write copies its
              * message -- through a far pointer, so a large-data caller's
              * buffer works where it is (phase 123). */
-            const WORD FAR *m = (const WORD FAR *)addr_in[0];
+            ABI_WP m = ABI_WP_OF(addr_in[0]);
             WORD msg[AP_MSGWORDS];
 
             if (!addr_in[0]) {
@@ -901,7 +1020,7 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
                 break;
             }
             for (k = 0; k < AP_MSGWORDS; k++)
-                msg[k] = m[k];
+                msg[k] = ABI_W(m, k);
             ret = (int_in[0] == 7) ? sh_broadcast(msg) : sh_aesmsg(msg);
         } else if (int_in[0] == 8) {
             /* SWM_ENVIRON: cmd is the buffer a copy goes to, any bank */
@@ -1003,6 +1122,63 @@ static WORD crysbind(WORD opcode, WORD FAR *global, const WORD *int_in,
     return ret;
 }
 
+#ifdef __CALYPSI_TARGET_6502__
+/* The call itself, the arrays gem4xe's by now: the 6502's.  The 65C816's
+ * aes_entry keeps these lines inline, as they were: split out on both,
+ * appl_getinfo's last two words came back zero there (test-m11). */
+static void aes_core(const WORD *control, ABI_WP global, const WORD *int_in,
+                     WORD *int_out, const int32_t *addr_in)
+{
+    uint16_t was = gem_bad;
+    /* Process 0 waiting in an evnt_ call of its OWN -- not in a
+     * form_do or a drag, which wait on the same polls -- is where the
+     * switch key may put it aside (src/aes/shel.c, sh_hotkey).  Only
+     * process 0 writes it, so an accessory's calls in between leave it
+     * as it was. */
+    WORD top = (rlr == proc_app);
+    if (top && control[0] >= 20 && control[0] <= 25)
+        ev_appwait = 1;
+    int_out[0] = crysbind(control[0], global, int_in, int_out, addr_in);
+    if (top)
+        ev_appwait = 0;
+    if (gem_bad != was)
+        gem_badop = (uint16_t)control[0];
+}
+
+/* The 6502's: six window addresses in the block, every one turned into a
+ * far address, and so is each address in addr_in -- a tree, a string, a
+ * message buffer -- before crysbind sees it. */
+static void aes_entry6(uint16_t pba, uint8_t bank)
+{
+    uint16_t img[6];
+    WORD control[C_SIZE];
+    WORD int_in[I_SIZE];
+    WORD int_out[O_SIZE];
+    int32_t addr_in[AI_SIZE];
+    uint16_t k, n;
+
+    far_get((uint8_t *)img, win_far(pba, bank), sizeof img);
+    far_get((uint8_t *)control, win_far(img[0], bank), sizeof control);
+    for (k = 0; k < I_SIZE; k++)
+        int_in[k] = 0;
+    for (k = 0; k < O_SIZE; k++)
+        int_out[k] = 0;
+    for (k = 0; k < AI_SIZE; k++)
+        addr_in[k] = 0;
+    far_get((uint8_t *)int_in, win_far(img[2], bank), abi_n(control[1], I_SIZE));
+    n = abi_n(control[3], AI_SIZE);
+    far_get((uint8_t *)addr_in, win_far(img[4], bank), (uint16_t)(n * 2u));
+    for (k = 0; k < AI_SIZE; k++)
+        addr_in[k] = (int32_t)win_far((uint32_t)addr_in[k], bank);
+
+    abi_bank6 = bank;
+    aes_core(control, win_far(img[1], bank), int_in, int_out, addr_in);
+
+    far_put(win_far(img[3], bank), (const uint8_t *)int_out, abi_n(control[2], O_SIZE));
+    if (control[0] == 112 && control[4] > 0)
+        far_wr32(win_far(img[5], bank), win_near(ad_rso, bank));
+}
+#else
 static void aes_entry(const AESPB_IMG FAR *pb)
 {
     const WORD FAR *ctl = (const WORD FAR *)pb->control;
@@ -1036,11 +1212,8 @@ static void aes_entry(const AESPB_IMG FAR *pb)
 
     {
         uint16_t was = gem_bad;
-        /* Process 0 waiting in an evnt_ call of its OWN -- not in a
-         * form_do or a drag, which wait on the same polls -- is where the
-         * switch key may put it aside (src/aes/shel.c, sh_hotkey).  Only
-         * process 0 writes it, so an accessory's calls in between leave it
-         * as it was. */
+        /* aes_core's lines, as they were here before step 5: the
+         * 65C816's entry is the code it was (see aes_core) */
         WORD top = (rlr == proc_app);
         if (top && control[0] >= 20 && control[0] <= 25)
             ev_appwait = 1;
@@ -1060,6 +1233,7 @@ static void aes_entry(const AESPB_IMG FAR *pb)
     if (control[0] == 112 && control[4] > 0)
         *(uint32_t FAR *)pb->addr_out = ad_rso;
 }
+#endif
 
 /* ---- the entry ---------------------------------------------------------- */
 
@@ -1113,6 +1287,20 @@ void gem_entry(void)
     if (rlr == proc_app)
         app_calls++;
     switch (gem_which) {
+#ifdef __CALYPSI_TARGET_6502__
+    /* the block's window address and the caller's bank, taken now: a
+     * process switch inside the call lets another program's call through
+     * the gate, which writes both again (src/sys6502/gate6502.s) */
+    case ABI_VDI:
+        vdi_entry6((uint16_t)gem_pb, gem_bank6);
+        break;
+    case ABI_AES:
+        aes_entry6((uint16_t)gem_pb, gem_bank6);
+        break;
+    case ABI_GEMDOS:                    /* not on the 6502 yet: step 5b */
+        gem_bad++;
+        break;
+#else
     case ABI_VDI:
         vdi_entry((const VDIPB_IMG FAR *)gem_pb);
         break;
@@ -1122,6 +1310,7 @@ void gem_entry(void)
     case ABI_GEMDOS:
         gemdos_call(gem_pb);
         break;
+#endif
     default:
         gem_bad++;
         break;

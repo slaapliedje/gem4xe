@@ -34,12 +34,21 @@
  * the application sends it A6_PING, and it answers A6_PONG with the ping's
  * number and the pid the AES says is running (rlr) -- 1, its own.  $060B
  * is 'P' once it has parked.
+ *
+ * AND A PROGRAM IN A BANK OF ITS OWN (step 5a), when $060C is 1 at the
+ * go: whatever the load put in the first program slot -- far bank 1,
+ * piece 0 (src/sys6502/farmem6502.c) -- if its header says it is one
+ * (src/app/crt6502.s), started as a process as a6_acc is, its entry the
+ * resident veneer gate6502.s keeps for it.  It calls the system only
+ * through the gate.  $060C is 'R' once its first turn is over, 'H' if
+ * the slot held no program.
  */
 #include "portab.h"
 #include "aes/aes.h"
 #include "sys/irq.h"
 #include "vdi/pointer.h"
 #include "aes/proc.h"
+#include "sys/farmem.h"
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -56,6 +65,9 @@ uint16_t a6_acc_ticks, a6_acc_pings;    /* resident: the gate reads them */
 WORD     a6_acc_got[4];                 /* the last ping: 0, 1, 3, its pid */
 static SECTION("zwin") WORD acc_queue[ACC_MSGS * 8];
 static WORD a6_pings;                   /* pings the application sent */
+static WORD prog_queue[ACC_MSGS * 8];   /* the program's (step 5a) */
+extern uint8_t p6_ven[];                /* src/sys6502/gate6502.s */
+extern const uint8_t b6_prog_bank;      /* src/sys6502/farmem6502.c */
 
 /* The message, with msg[1] the sender's pid as appl_write fills it. */
 static void send(PROC *to, WORD type, WORD w3, WORD w4)
@@ -111,6 +123,31 @@ static void acc_start(void)
     STATUS[11] = 'P';
 }
 
+/* The program in the first slot, if there is one: a process of its own,
+ * whose first turn runs it to its first wait. */
+#define P6_SLOT 0x10000UL               /* far bank 1, piece 0 */
+static void prog_start(void)
+{
+    PROC *p;
+
+    if (far_rd16(P6_SLOT) != 0x3647 || far_read8(P6_SLOT + 2) != 1) {
+        STATUS[12] = 'H';               /* "G6", format 1: none */
+        return;
+    }
+    p6_ven[5] = b6_prog_bank;           /* its veneer's bank byte */
+    p = proc_new(prog_queue, ACC_MSGS);
+    if (!p)
+        return;
+    if (!ctx_make(&p->p_ctx, (uint32_t)(uint16_t)p6_ven)) {
+        proc_drop(p);
+        return;
+    }
+    proc_name(p, "P6PROG");
+    ctx_switch(&p->p_ctx);
+    p->p_stat = P_LIVE;
+    STATUS[12] = 'R';
+}
+
 /* The inside of window wh, white, where it shows inside *area. */
 static void redraw(WORD wh, const GRECT *area)
 {
@@ -145,6 +182,8 @@ void a6_events(void)
     ratinit();                          /* the pointer on, and an arrow */
     gr_mouse(ARROW, 0);
     acc_start();
+    if (STATUS[12] == 1)
+        prog_start();
     STATUS[7] = 'L';
     for (;;) {
         for (i = 0; i < 8; i++)

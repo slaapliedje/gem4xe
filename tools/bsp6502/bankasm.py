@@ -153,6 +153,45 @@ def bank_data(lines, banks):
     return out
 
 
+SWITCH = re.compile(r"^(\s+\.section\s+)switch\s*,\s*rodata\s*$")
+
+
+def switch_in_bank(lines, banks):
+    """--switch-in-bank: a switch's jump table in its function's own bank.
+    cc6502 puts each in a `switch,rodata` section, which the link file
+    places in resident memory; but a table is indexed by its own function
+    alone -- `adc #.byte0 table`, never handed anywhere -- and its entries
+    are that function's own case labels, so it can sit beside the function
+    in the bank, which is mapped whenever the table is read.  The OWNER is
+    the text section that names the table's label (the tables all come at
+    the end of the file, after every function, so the section before one
+    is nobody's); a table whose owner is in bank X goes in X__bank, as
+    BANK_DATA's do (the link file lists X__bank with X), and one whose
+    owner is resident, or that nothing names, stays where it was.
+    src/sys/abi.c's crysbind has the AES's opcodes in two such tables."""
+    owner, cur = {}, None
+    for ln in lines:
+        m = SECTION.match(ln)
+        if m:
+            cur = m.group(1) if (m.group(2) or "") == "text" else None
+            continue
+        if cur in banks:
+            for t in re.findall(r"#\.byte[01]\s+(`[^`]+`|[A-Za-z_]\w*)", ln):
+                owner.setdefault(t, cur)
+    out, i = [], 0
+    while i < len(lines):
+        ln = lines[i]
+        sw = SWITCH.match(ln)
+        if sw:
+            lab = LABEL.match(lines[i + 1]) if i + 1 < len(lines) else None
+            o = owner.get(lab.group(1)) if lab else None
+            if o in banks:
+                ln = f"{sw.group(1)}{o}__bank,text"
+        out.append(ln)
+        i += 1
+    return out
+
+
 def read_source(path):
     # The C source, which cc6502 copies in as `;` comment lines, goes: as6502
     # still honours /* */ inside them, so a C comment that opens on one
@@ -229,7 +268,10 @@ def main(argv):
     tu = argv[argv.index("--tu") + 1]
     banks, _ = parse_banks(argv[3:])
     ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
-    lines = localise_tails(bank_data(runtime_fixes(read_source(src)), banks), banks)
+    lines = bank_data(runtime_fixes(read_source(src)), banks)
+    if "--switch-in-bank" in argv:
+        lines = switch_in_bank(lines, banks)
+    lines = localise_tails(lines, banks)
     sect_of_line, func_sect, publics = scan(lines, banks)
 
     banked = {f: s for f, s in func_sect.items() if s in banks}
