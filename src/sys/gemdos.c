@@ -126,10 +126,18 @@ uint16_t gemdos_calls, gemdos_bad;
 
 /* ---- far memory, typed ---------------------------------------------- */
 
+#ifdef __CALYPSI_TARGET_6502__
+/* No far pointers on the 6502: the window's helpers (src/sys/farmem.h) */
+static UWORD rd16(uint32_t a) { return far_rd16(a); }
+static LONG  rd32(uint32_t a) { return (LONG)far_rd32(a); }
+static void  wr16(uint32_t a, UWORD v) { far_wr16(a, v); }
+static void  wr32(uint32_t a, LONG v) { far_wr32(a, (uint32_t)v); }
+#else
 static UWORD rd16(uint32_t a) { return *(const UWORD FAR *)a; }
 static LONG  rd32(uint32_t a) { return *(const LONG FAR *)a; }
 static void  wr16(uint32_t a, UWORD v) { *(UWORD FAR *)a = v; }
 static void  wr32(uint32_t a, LONG v) { *(LONG FAR *)a = v; }
+#endif
 
 static uint32_t gd_file(uint8_t iocb)
 {
@@ -147,8 +155,20 @@ static void gd_moved(uint8_t iocb, uint32_t by)
 }
 
 /* The block's arguments, at the ST's offsets plus four. */
-static WORD arg_w(uint8_t off) { return *(const WORD FAR *)(gd_pb + off); }
-static LONG arg_l(uint8_t off) { return *(const LONG FAR *)(gd_pb + off); }
+static WORD arg_w(uint8_t off) { return (WORD)rd16(gd_pb + off); }
+static LONG arg_l(uint8_t off) { return rd32(gd_pb + off); }
+/* ...and one that is an ADDRESS, in the caller's memory.  The same on the
+ * 65C816, where a program passes a far address already.  A 6502 program
+ * passes its own 16-bit one, which is a window address in its bank
+ * (gd_bank6, from the gate) or a near one, or the far address Malloc
+ * gave it: win_far makes the first far and leaves the others be
+ * (src/sys/abi.c, docs/6502.md 5b-4). */
+#ifdef __CALYPSI_TARGET_6502__
+static uint8_t gd_bank6;
+static LONG arg_p(uint8_t off) { return (LONG)win_far((uint32_t)arg_l(off), gd_bank6); }
+#else
+#define arg_p arg_l
+#endif
 
 /* ---- errors --------------------------------------------------------- */
 
@@ -301,6 +321,7 @@ static LONG gd_name(LONG path)
     return gd_cio(gw->full, gw->cio);
 }
 
+BANK_TEXT("gemdos_b")             /* the 6502's: the search */
 /* ---- the DTA and the search slots ----------------------------------- */
 
 static void gd_dta_fill(const char *name, uint8_t attr, UWORD time,
@@ -640,6 +661,7 @@ static WORD gd_in_dir(void)
     return there;
 }
 
+BANK_TEXT("gemdos")
 static LONG gd_open(LONG fname, uint8_t aux1)
 {
     LONG d = gd_name(fname);
@@ -655,8 +677,8 @@ static LONG gd_open(LONG fname, uint8_t aux1)
     iocb = cio_open(gw->cio, aux1, 0);
     if (iocb < 0)
         return gd_err((uint8_t)-iocb, 0);
-    gd_owned |= (uint8_t)(1 << iocb);
-    gd_ateof &= (uint8_t)~(1 << iocb);
+    gd_owned |= (uint16_t)(1u << iocb);
+    gd_ateof &= (uint16_t)~(1u << iocb);
     wr32(gd_file(iocb) + FH_AT, 0);
     far_write8(gd_file(iocb) + FH_MODE, aux1);
     far_write8(gd_file(iocb) + FH_REFS, 0);
@@ -664,6 +686,7 @@ static LONG gd_open(LONG fname, uint8_t aux1)
     return iocb + GD_HANDLE_BASE;
 }
 
+BANK_TEXT("gdos")                 /* the 6502's: the handles */
 /* ---- the standard handles ------------------------------------------------
  * The ST gives every process six: 0 and 1 the console, 2 aux:, 3 prn:, 4
  * and 5 reserved.  Each is a byte here naming what it reaches -- an IOCB,
@@ -679,7 +702,7 @@ static LONG gd_open(LONG fname, uint8_t aux1)
 #define GT_PRN      0x82
 #define GT_NUL      0x83
 
-static const uint8_t FAR gd_stddef[GD_STDS] = {
+static const uint8_t FAR_816 gd_stddef[GD_STDS] = {
     GT_CON, GT_CON, GT_AUX, GT_PRN, GT_NUL, GT_NUL
 };
 
@@ -785,8 +808,8 @@ static LONG gd_close(WORD h)
     i = h - GD_HANDLE_BASE;
     if (i < 1 || i >= CIO_IOCBS || !(gd_owned & (1 << i)))
         return GD_EIHNDL;
-    gd_owned &= (uint8_t)~(1 << i);
-    gd_ateof &= (uint8_t)~(1 << i);
+    gd_owned &= (uint16_t)~(1u << i);
+    gd_ateof &= (uint16_t)~(1u << i);
     if (!far_read8(gd_file((uint8_t)i) + FH_REFS))
         cio_close(i);
     return 0;
@@ -833,6 +856,7 @@ static LONG gd_fforce(WORD std, WORD h)
  * is handed over as it is, in pieces; one anywhere else goes through a
  * slice of the pool -- or, when the pool is spoken for, sixty-four
  * bytes of stack, slowly. */
+BANK_TEXT("gemdos")
 static LONG gd_xfer(uint8_t iocb, LONG count, LONG buf, WORD write)
 {
     uint8_t small[64], *slice = 0;
@@ -886,7 +910,7 @@ static LONG gd_xfer(uint8_t iocb, LONG count, LONG buf, WORD write)
             break;
     }
     if (!write && (got < m || st == CIO_OK_EOF || st == CIO_E_EOF))
-        gd_ateof |= (uint8_t)(1 << iocb);
+        gd_ateof |= (uint16_t)(1u << iocb);
     if (slice && slice != small)
         pool_release(mark);
     gd_moved(iocb, done);               /* what Fseek counts (gd_seek) */
@@ -895,6 +919,7 @@ static LONG gd_xfer(uint8_t iocb, LONG count, LONG buf, WORD write)
     return (LONG)done;
 }
 
+BANK_TEXT("gdos")                 /* the 6502's: seek and the time */
 /* ---- Fseek ---------------------------------------------------------------
  * GEMDOS counts a file in bytes from its start.  CIO does not count at
  * all: its POINT takes a sector and an offset within it, which is a
@@ -949,7 +974,7 @@ static LONG gd_skip(uint8_t iocb, uint32_t bytes, uint32_t *moved)
     if (slice != small)
         pool_release(mark);
     if (got < m || st == CIO_OK_EOF || st == CIO_E_EOF)
-        gd_ateof |= (uint8_t)(1 << iocb);
+        gd_ateof |= (uint16_t)(1u << iocb);
     *moved = done;
     gd_moved(iocb, done);
     if (st != CIO_OK && st != CIO_OK_EOF && st != CIO_E_EOF && !done)
@@ -1025,12 +1050,12 @@ static LONG gd_seek(LONG offset, WORD h, WORD mode)
         far_strget(name, gd_file(iocb) + FH_NAME, sizeof name);
         dos_cioname(name, gw->cio);     /* A:\X -> D1:X, as the open did */
         if (cio_reopen(iocb, gw->cio, far_read8(gd_file(iocb) + FH_MODE), 0) < 0) {
-            gd_owned &= (uint8_t)~(1 << iocb);
+            gd_owned &= (uint16_t)~(1u << iocb);
             return GD_EFILNF;
         }
         wr32(gd_file(iocb) + FH_AT, 0);
         at = 0;
-        gd_ateof &= (uint8_t)~(1 << iocb);   /* a fresh open is not at the end */
+        gd_ateof &= (uint16_t)~(1u << iocb);   /* a fresh open is not at the end */
     }
     if (target > at) {
         r = gd_skip(iocb, target - at, &moved);
@@ -1044,6 +1069,7 @@ static LONG gd_seek(LONG offset, WORD h, WORD mode)
 }
 
 /* An XIO on a path: delete, mkdir, rmdir, lock. */
+BANK_TEXT("gemdos")
 static LONG gd_xio(uint8_t cmd, LONG path, WORD dir)
 {
     LONG d = gd_name(path);
@@ -1062,6 +1088,12 @@ static LONG gd_xio(uint8_t cmd, LONG path, WORD dir)
  * a FILE of that name as readily, which Ddelete must never do.  So there
  * the name is first opened as a folder's listing, and refused when it
  * will not open as one (phase 161). */
+/* THE 6502's SECOND BANK from here (docs/6502.md, 5b-4): directories,
+ * drives, memory, the console and the clock, with the search above.  The
+ * first, `gemdos`, has the names, open, the transfers and the dispatch;
+ * the handles, Fseek and Fdatime are in `gdos`, with dos.c, con.c and
+ * clock.c.  BANK_TEXT is nothing on the 65C816. */
+BANK_TEXT("gemdos_b")
 static LONG gd_ddelete(LONG path)
 {
     char *in = gw->in;
@@ -1509,7 +1541,8 @@ static LONG gd_dcaps(WORD drv)
  * drive is told before it formats: tracks, step rate, sectors a track
  * (high, low), sides less one, $04 for MFM, bytes a sector (high, low).
  * GD_DF_SD to GD_DF_DSDD, eight bytes each. */
-static const uint8_t FAR df_geom[32] = {
+BANK_DATA("gemdos_b")                 /* gd_dformat's, beside it */
+static const uint8_t FAR_816 df_geom[32] = {
     40, 1, 0, 18, 0, 0x00, 0, 128,      /*  720 x 128 */
     40, 1, 0, 26, 0, 0x04, 0, 128,      /* 1040 x 128 */
     40, 1, 0, 18, 0, 0x04, 1, 0,        /*  720 x 256 */
@@ -1644,7 +1677,7 @@ static LONG gd_dformat(WORD drv, WORD dens, uint32_t bad)
         len = 128;
     } else if (dens >= GD_DF_SD && dens <= GD_DF_DSDD) {
         if (flags & GD_DG_PERCOM) {
-            memcpy_far((uint8_t FAR *)pc, df_geom + (dens - 1) * 8, 8);
+            memcpy_far((uint8_t FAR_816 *)pc, df_geom + (dens - 1) * 8, 8);
             pc[8] = 0xFF;                   /* the drive is there */
             pc[9] = pc[10] = pc[11] = 0;
             r = dsk_setpercom((uint8_t)drv, pc);
@@ -2020,6 +2053,11 @@ static WORD gd_prn(void)
     WORD p = far_read8(gd_far + GF_PRN);
     int16_t r;
 
+#ifdef __CALYPSI_TARGET_6502__
+    (void)r;                            /* no GEM4XE.CFG read on the 6502:
+                                         * PRINTER=NONE, its default */
+    return p;
+#else
     if (p || config.printer == CFG_PRINT_NONE)
         return p;
     r = cio_open(config.printto, CIO_A_WRITE, 0);
@@ -2027,6 +2065,7 @@ static WORD gd_prn(void)
         return 0;
     far_write8(gd_far + GF_PRN, (uint8_t)r);
     return r;
+#endif
 }
 
 /* One byte to what a handle reaches: 1 if it went. */
@@ -2242,6 +2281,7 @@ static LONG gd_conws(LONG s)
 /* Fread and Fwrite, whatever the handle reaches.  Reading the console
  * reads a line as Cconrs does, or one key, echoed, when only one byte is
  * asked for (EmuTOS bdos/bdosmain.c). */
+BANK_TEXT("gemdos")
 static LONG gd_rw(WORD h, LONG count, LONG buf, WORD write)
 {
     WORD t = gd_target(h), n;
@@ -2270,6 +2310,7 @@ static LONG gd_rw(WORD h, LONG count, LONG buf, WORD write)
 }
 
 /* Cconis, Cauxis: whether the handle has a byte to give. */
+BANK_TEXT("gemdos_b")
 static LONG gd_instat(WORD std)
 {
     WORD t = gd_stdt(std);
@@ -2413,10 +2454,10 @@ static LONG gd_nopath(WORD fn)
         r = gd_getdev(gd_stdt(2), 1);
         break;
     case GD_CCONWS:
-        r = gd_conws(arg_l(6));
+        r = gd_conws(arg_p(6));
         break;
     case GD_CCONRS:
-        r = gd_conrs(arg_l(6));
+        r = gd_conrs(arg_p(6));
         break;
     case GD_CCONIS:
         r = gd_instat(0);
@@ -2456,19 +2497,19 @@ static LONG gd_nopath(WORD fn)
         r = gd_malloc(arg_l(6));
         break;
     case GD_MFREE:
-        r = gd_mfree(arg_l(6));
+        r = gd_mfree(arg_p(6));
         break;
     case GD_MSHRINK:
-        r = gd_mshrink(arg_l(8), arg_l(12));
+        r = gd_mshrink(arg_p(8), arg_l(12));
         break;
     case GD_FCLOSE:
         r = gd_close(arg_w(6));
         break;
     case GD_FREAD:
-        r = gd_rw(arg_w(6), arg_l(8), arg_l(12), 0);
+        r = gd_rw(arg_w(6), arg_l(8), arg_p(12), 0);
         break;
     case GD_FWRITE:
-        r = gd_rw(arg_w(6), arg_l(8), arg_l(12), 1);
+        r = gd_rw(arg_w(6), arg_l(8), arg_p(12), 1);
         break;
     case GD_FDUP:
         r = gd_fdup(arg_w(6));
@@ -2483,16 +2524,18 @@ static LONG gd_nopath(WORD fn)
         r = gd_dcaps(arg_w(6));
         break;
     case GD_DGEOM:
-        r = gd_dgeom(arg_w(6), (uint32_t)arg_l(8));
+        r = gd_dgeom(arg_w(6), (uint32_t)arg_p(8));
         break;
     case GD_DFORMAT:
-        r = gd_dformat(arg_w(6), arg_w(8), (uint32_t)arg_l(10));
+        r = gd_dformat(arg_w(6), arg_w(8), (uint32_t)arg_p(10));
         break;
     case GD_DRWSEC:
         r = gd_drwsec(arg_w(6), arg_w(8), (uint16_t)arg_w(10),
                       (uint16_t)arg_w(12), (uint16_t)arg_w(14),
-                      (uint32_t)arg_l(16));
+                      (uint32_t)arg_p(16));
         break;
+#ifndef __CALYPSI_TARGET_6502__         /* no control panel, nor a DOS's
+                                         * command line, on the 6502 yet */
     case GD_CPXLOAD:                    /* a control panel module, by index */
         r = sh_cpxload(arg_w(6), arg_w(8));
         break;
@@ -2506,11 +2549,13 @@ static LONG gd_nopath(WORD fn)
     case GD_MFREEPOOL:
         r = gd_mfreepool(arg_w(6));
         break;
+#endif
     case GD_MCLAIM:
-        r = (LONG)far_claim((uint32_t)arg_l(6), (uint32_t)arg_l(10));
+        r = (LONG)far_claim((uint32_t)arg_p(6), (uint32_t)arg_l(10));
         if (!r)
             r = GD_ENSMEM;
         break;
+#ifndef __CALYPSI_TARGET_6502__
     case GD_PSYSTEM:                    /* the DOS's command processor: it
                                          * is lent the pool above its top,
                                          * so nothing of ours is taken first */
@@ -2521,6 +2566,7 @@ static LONG gd_nopath(WORD fn)
         r = dos_command((uint32_t)arg_l(6), (uint32_t)arg_l(10),
                         (uint32_t)arg_l(14));
         break;
+#endif
     default:
         r = GD_PATHCALL;
         break;
@@ -2530,8 +2576,10 @@ static LONG gd_nopath(WORD fn)
 
 /* The ST's device names, which Fopen and Fcreate answer with the device's
  * own handle; 0 for any other name. */
-static const char FAR gd_devnames[] = "CON:AUX:PRN:";
+BANK_DATA("gemdos")                    /* gd_devname's, beside it */
+static const char FAR_816 gd_devnames[] = "CON:AUX:PRN:";
 
+BANK_TEXT("gemdos")
 static WORD gd_devname(LONG path)
 {
     char n[6];
@@ -2554,6 +2602,7 @@ static WORD gd_devname(LONG path)
 
 /* ---- entry ---------------------------------------------------------- */
 
+BANK_TEXT("gemdos_b")
 void gemdos_init(void)
 {
     WORD i;
@@ -2660,7 +2709,7 @@ static void gd_release_files(void)
     }
     for (i = 1; i < CIO_IOCBS; i++)
         if (gd_owned & (1 << i)) {
-            gd_owned &= (uint8_t)~(1 << i);
+            gd_owned &= (uint16_t)~(1u << i);
             if (!far_read8(gd_file((uint8_t)i) + FH_REFS))
                 cio_close((int16_t)i);
         }
@@ -2718,6 +2767,7 @@ void gemdos_release(void)
 #define PE_LOADGO       0
 #define GD_PEXEC_STACK  1024
 
+#ifndef __CALYPSI_TARGET_6502__         /* Pexec and the shell's: the 65C816's */
 LONG gd_loaderr(WORD st)
 {
     if (st == APP_E_FILE)
@@ -2810,6 +2860,8 @@ LONG gd_run(void *app, const char *name, uint32_t tail, WORD keep,
     return r;
 }
 
+#endif
+
 /* Mpool and Mfreepool (gemdos.h): a sub-pool is the low nibble of the
  * running program's tag, which its context carries (src/sys/ctx.h) so
  * that a switch away and back keeps it. */
@@ -2833,6 +2885,7 @@ static LONG gd_mfreepool(WORD sub)
     return 0;
 }
 
+#ifndef __CALYPSI_TARGET_6502__
 /* Room on the engine stack for a child's calls: see GD_PEXEC_STACK. */
 WORD gd_room_to_run(void)
 {
@@ -2865,6 +2918,9 @@ static LONG gd_pexec(WORD mode, LONG fname, LONG tail)
     return r;
 }
 
+#endif
+
+BANK_TEXT("gemdos")
 void gemdos_call(uint32_t pb)
 {
     LONG r;
@@ -2901,41 +2957,45 @@ void gemdos_call(uint32_t pb)
         r = gd_drive;
         break;
     case GD_FSETDTA:
-        gd_dta = (uint32_t)arg_l(6);
+        gd_dta = (uint32_t)arg_p(6);
         r = 0;
         break;
-    case GD_FGETDTA:
+    case GD_FGETDTA:                    /* in the caller's terms: win_near */
+#ifdef __CALYPSI_TARGET_6502__
+        r = (LONG)win_near(gd_dta, gd_bank6);
+#else
         r = (LONG)gd_dta;
+#endif
         break;
     case GD_SVERSION:
         r = 0x1500;                     /* what TOS 1.04 says */
         break;
     case GD_DFREE:
-        r = gd_dfree(arg_l(6), arg_w(10));
+        r = gd_dfree(arg_p(6), arg_w(10));
         break;
     case GD_DCREATE:                    /* a flat DOS cannot */
-        r = dos.dirsep ? gd_xio(CIO_X_MKDIR, arg_l(6), 1) : GD_EACCDN;
+        r = dos.dirsep ? gd_xio(CIO_X_MKDIR, arg_p(6), 1) : GD_EACCDN;
         break;
     case GD_DDELETE:
-        r = gd_ddelete(arg_l(6));
+        r = gd_ddelete(arg_p(6));
         break;
     case GD_DSETPATH:
-        r = gd_setpath(arg_l(6));
+        r = gd_setpath(arg_p(6));
         break;
     case GD_FCREATE:
-        r = gd_devname(arg_l(6));
+        r = gd_devname(arg_p(6));
         if (!r)
-            r = gd_open(arg_l(6), CIO_A_WRITE);
+            r = gd_open(arg_p(6), CIO_A_WRITE);
         break;
     case GD_FOPEN:
-        r = gd_devname(arg_l(6));
+        r = gd_devname(arg_p(6));
         if (!r)
-            r = gd_open(arg_l(6), (arg_w(10) & 3) == GD_O_READ
+            r = gd_open(arg_p(6), (arg_w(10) & 3) == GD_O_READ
                                       ? CIO_A_READ : CIO_A_UPDATE);
         break;
     case GD_FDELETE:
         rs_cache_flush();
-        r = gd_xio(CIO_X_DELETE, arg_l(6), 0);
+        r = gd_xio(CIO_X_DELETE, arg_p(6), 0);
         if (r == GD_EFILNF) {
             /* SpartaDOS erases around a protected file and reports
              * "not found" ($AA, measured on 3.2): a file still there
@@ -2957,20 +3017,20 @@ void gemdos_call(uint32_t pb)
         }
         break;
     case GD_FATTRIB:
-        r = gd_fattrib(arg_l(6), arg_w(10), arg_w(12));
+        r = gd_fattrib(arg_p(6), arg_w(10), arg_w(12));
         break;
     case GD_DGETPATH:
-        r = gd_getpath(arg_l(6), arg_w(10));
+        r = gd_getpath(arg_p(6), arg_w(10));
         break;
     case GD_FSFIRST:
-        r = gd_fsfirst(arg_l(6), arg_w(10));
+        r = gd_fsfirst(arg_p(6), arg_w(10));
         break;
     case GD_FSNEXT:
         r = gd_fsnext();
         break;
     case GD_FRENAME:
         rs_cache_flush();
-        r = gd_rename(arg_l(8), arg_l(12));
+        r = gd_rename(arg_p(8), arg_p(12));
         break;
     case GD_FSEEK:
         r = gd_seek(arg_l(6), arg_w(10), arg_w(12));
@@ -2999,7 +3059,7 @@ void gemdos_call(uint32_t pb)
          * calendar, because a bit-banged DS1305 read costs milliseconds
          * and a clock that jumps is no clock for pacing.  Without an RTC
          * the epoch is the ST's, 1 January 1980, as Tgettime says. */
-        uint32_t tvp = (uint32_t)arg_l(6), tzp = (uint32_t)arg_l(10);
+        uint32_t tvp = (uint32_t)arg_p(6), tzp = (uint32_t)arg_p(10);
         uint32_t sec, usec;
         irq_clock(&sec, &usec);
         if (!gd_wall_ok) {
@@ -3020,15 +3080,18 @@ void gemdos_call(uint32_t pb)
         break;
     }
     case GD_FDATIME:
-        r = gd_datime(arg_l(6), arg_w(10), arg_w(12));
+        r = gd_datime(arg_p(6), arg_w(10), arg_w(12));
         break;
     case GD_SSYSTEM:
-        r = gd_ssystem(arg_w(6), arg_l(8), arg_l(12));
+        r = gd_ssystem(arg_w(6), arg_l(8), arg_p(12));
         break;
+#ifndef __CALYPSI_TARGET_6502__         /* a 6502 program is loaded by
+                                         * src/a6_evt.c's prog_load: 5c */
     case GD_PEXEC:                      /* it waits, holding gw: the child's
                                          * pool is above it and goes first */
         r = gd_pexec(arg_w(6), arg_l(8), arg_l(12));
         break;
+#endif
     default:                            /* Maddalt, Flock, MiNT's: not here */
         gemdos_bad++;
         r = GD_EINVFN;
@@ -3037,3 +3100,16 @@ void gemdos_call(uint32_t pb)
     pool_release(mark);
     wr32(pb, r);
 }
+
+#ifdef __CALYPSI_TARGET_6502__
+/* The 6502's gate 'D' (src/sys/abi.c): the block's window address and the
+ * caller's bank.  The bank is kept for arg_p, which every address argument
+ * is read through at the start of its call; a call that waits (Cconin)
+ * lets another program's call in, which writes gd_bank6 again, so nothing
+ * after a wait reads an argument -- as nothing after one reads gd_pb. */
+void gemdos_call6(uint16_t pba, uint8_t bank)
+{
+    gd_bank6 = bank;
+    gemdos_call(win_far(pba, bank));
+}
+#endif

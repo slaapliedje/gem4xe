@@ -110,7 +110,7 @@ static uint16_t cart_header(const uint8_t *h)
  * what is at $A000, and an icon for it would only start gem4xe again --
  * measured, it came out as a cartridge (phase 165).  Its bank says so in
  * so many words, cart_msg, and nothing else would. */
-static const char FAR cart_sig[] = "gem4xe cartridge";
+static const char FAR_816 cart_sig[] = "gem4xe cartridge";
 
 static uint16_t cart_ours(void)
 {

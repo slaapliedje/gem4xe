@@ -133,7 +133,9 @@ def scan(lines, banks):
     return sect_of_line, func_sect, publics
 
 
-BANK_DATA = re.compile(r"^(\s+\.section\s+)([A-Za-z_]\w*)__bank\s*,\s*(bss|data)\s*$")
+# (rodata too: a const table BANK_DATA'd beside the one function that reads
+# it, gemdos.c's df_geom and gd_devnames, step 5b-4)
+BANK_DATA = re.compile(r"^(\s+\.section\s+)([A-Za-z_]\w*)__bank\s*,\s*(bss|data|rodata)\s*$")
 
 
 def bank_data(lines, banks):
@@ -215,6 +217,21 @@ def runtime_fixes(lines):
     return [FIX_TOKEN.sub(lambda m: RUNTIME_FIX[m.group(1)], ln) for ln in lines]
 
 
+# A NAME as6502 CANNOT READ BACK.  cc6502 names a string literal after its
+# text, in backquotes -- "\\*.*" is `_StringLiteral_\*.*` -- and its own
+# --assembly-source writes the backslash as it is, which as6502 then
+# refuses as an escape ("illegal escape sequence", Calypsi 5.18; gemdos.c's
+# search patterns, step 5b-4, were the first 6502 literals to have one).
+# Spelled the same way in every file, so the weak literals of two files
+# still come out one.
+QUOTED_BS = re.compile(r"`[^`]*\\[^`]*`")
+
+
+def quoted_names(lines):
+    return [QUOTED_BS.sub(lambda m: m.group(0).replace("\\", "_bs_"), ln)
+            if "\\" in ln else ln for ln in lines]
+
+
 def parse_banks(argv):
     banks, rest, i = {}, [], 0
     while i < len(argv):
@@ -268,7 +285,7 @@ def main(argv):
     tu = argv[argv.index("--tu") + 1]
     banks, _ = parse_banks(argv[3:])
     ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
-    lines = bank_data(runtime_fixes(read_source(src)), banks)
+    lines = bank_data(runtime_fixes(quoted_names(read_source(src))), banks)
     if "--switch-in-bank" in argv:
         lines = switch_in_bank(lines, banks)
     lines = localise_tails(lines, banks)

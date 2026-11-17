@@ -37,6 +37,7 @@
               .public b6_probe, b6_sel, b6_main, b6_next, _bcall, b6_report
               .public b6_cur, b6_count, b6_portb, bc_t, b6_kind, b6_sites
               .public b6sw_call, b6sw_ret, b6sw_sel, b6sw_main
+              .public b6init_lo, b6init_hi
 
 PORTB:        .equ    0xd301
 AXLON:        .equ    0xcfff          ; an Axlon's bank register (write only)
@@ -109,6 +110,12 @@ bc_jmp:       jmp     (bc_t)
 ;;; which every link file puts in Low, below the window: a PORTB value tried
 ;;; may map ROM over $A000-$BFFF (the sentinel's check is for that), and
 ;;; code running there would vanish under it.
+              .section b6init, root
+;;; ...and dead once main runs, so a call's scratch may have its bytes
+;;; then: the bounds, for src/sys6502/abistub6502.c's pool (step 5b-4)
+              .section cdata, rodata
+b6init_lo:    .word   .sectionStart b6init
+b6init_hi:    .word   .sectionEnd b6init
               .section b6init, root
 ;;; ---------------------------------------------------------------------------
 ;;; b6_probe -- INITAD, before any bank's segment.  Fills b6_portb and

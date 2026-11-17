@@ -10,8 +10,8 @@
  *
  * What it does, and what it leaves at $0640 for tests/emu/p6_prog.py:
  *
- *   $0640  'p' once main runs, 'W' waiting for its redraw, 'D' drawn,
- *          'E' about to return
+ *   $0640  'p' once main runs, 'W' waiting for its redraw, 'G' in its GEMDOS
+ *          calls, 'D' drawn, 'E' about to return
  *   $0641  ap_id from appl_init; $0642-3 global[0] (the AES version)
  *   $0644  the workstation handle from v_opnvwk; $0645 the window's
  *   $0646  the character height graf_handle answered
@@ -24,6 +24,18 @@
  *   $0659  object 2's ob_state, stored SELECTED and fetched back
  *   $065A-$065D  objc_offset of object 2: x, y
  *   $065E  graf_handle's cell width; $065F rsrc_free's answer
+ *
+ * and GEMDOS's (step 5b-4), every address one in its own bank:
+ *
+ *   $0680-1  Sversion; $0682 1 if Fgetdta gave back the DTA it set
+ *   $0683    Fsfirst("*.RSC")'s answer (low byte); $0684-7 the DTA's
+ *            length; $0690-$069D the DTA's name
+ *   $0688-9  Fopen("P6PROG.RSC")'s handle; $068A Fread's count of the
+ *            header (18 bytes, at $06A0-$06B1); $068B Fseek(0)'s answer;
+ *            $068C the count of a second read of the first 4 bytes, and
+ *            $06B4-$06B7 those bytes; $068E Fclose's answer
+ *   $068F    Dgetpath's answer, and the path at $06B8 (8 bytes)
+ *   $06C0-3  Fopen of a file that is not there: the error, a LONG
  *
  * ITS RESOURCE (step 5b-3) is P6PROG.RSC (tools/p6rsc.py), loaded into
  * the far heap: its tree is a far address (gem.h, GEMTREE), read and
@@ -50,6 +62,56 @@ static WORD work_in[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2 };
 static WORD work_out[57];
 static const char title[] = " BANKED ";
 static char text[16];                   /* object 1's string, fetched */
+static DTA dta;                         /* its own, in its bank */
+static uint8_t hdr[18];                 /* P6PROG.RSC's header, read */
+static char path[8];
+
+static void put32(uint8_t at, LONG v)
+{
+    STATUS[at] = (unsigned char)v;
+    STATUS[at + 1] = (unsigned char)((uint32_t)v >> 8);
+    STATUS[at + 2] = (unsigned char)((uint32_t)v >> 16);
+    STATUS[at + 3] = (unsigned char)((uint32_t)v >> 24);
+}
+
+/* GEMDOS, from a bank (step 5b-4): the calls a program opening its own
+ * file makes, and one that fails */
+static void files(void)
+{
+    LONG r, h;
+    uint8_t i;
+
+    r = Sversion();
+    STATUS[0x80] = (unsigned char)r;
+    STATUS[0x81] = (unsigned char)((UWORD)r >> 8);
+    Fsetdta(&dta);
+    STATUS[0x82] = (unsigned char)(Fgetdta() == &dta);
+    r = Fsfirst("*.RSC", 0);
+    STATUS[0x83] = (unsigned char)r;
+    put32(0x84, dta.d_length);
+    for (i = 0; i < 14; i++)
+        STATUS[0x90 + i] = (unsigned char)dta.d_fname[i];
+
+    h = Fopen("P6PROG.RSC", 0);
+    STATUS[0x88] = (unsigned char)h;
+    STATUS[0x89] = (unsigned char)((uint32_t)h >> 8);
+    r = Fread((WORD)h, sizeof hdr, hdr);
+    STATUS[0x8A] = (unsigned char)r;
+    for (i = 0; i < sizeof hdr; i++)
+        STATUS[0xA0 + i] = hdr[i];
+    STATUS[0x8B] = (unsigned char)Fseek(0, (WORD)h, 0);
+    r = Fread((WORD)h, 4, hdr);
+    STATUS[0x8C] = (unsigned char)r;
+    for (i = 0; i < 4; i++)
+        STATUS[0xB4 + i] = hdr[i];
+    STATUS[0x8E] = (unsigned char)Fclose((WORD)h);
+    for (i = 0; i < sizeof path; i++)   /* not zero: a "" must be written */
+        path[i] = (char)0xFF;
+    STATUS[0x8F] = (unsigned char)Dgetpath(path, 0);
+    for (i = 0; i < sizeof path; i++)
+        STATUS[0xB8 + i] = (unsigned char)path[i];
+    put32(0xC0, Fopen("NOFILE.XYZ", 0));
+}
 
 /* *a cut to what it shares with *b; 0 if nothing */
 static WORD meet(WORD *a, const WORD *b)
@@ -107,6 +169,8 @@ int main(void)
     objc_offset(tree, 2, &ox, &oy);
     put16(0x5A, ox);
     put16(0x5C, oy);
+    STATUS[0x40] = 'G';
+    files();
 
     wh = wind_create(NAME, 30, 40, 180, 60);
     STATUS[0x45] = (unsigned char)wh;

@@ -56,7 +56,8 @@
 
 #define A6_LOG  8
 #define A6_REC  10
-WORD     a6_log[A6_LOG][A6_REC];        /* resident: the gate reads it */
+SECTION("page5") WORD a6_log[A6_LOG][A6_REC];  /* resident: the gate reads it;
+                                         * page 5 (tools/bsp6502/a6.scm) */
 uint16_t a6_nlog;
 
 #define A6_PING 0x4136                  /* the application to a6_acc */
@@ -67,7 +68,7 @@ uint16_t a6_acc_ticks, a6_acc_pings;    /* resident: the gate reads them */
 WORD     a6_acc_got[4];                 /* the last ping: 0, 1, 3, its pid */
 static SECTION("zwin") WORD acc_queue[ACC_MSGS * 8];
 static WORD a6_pings;                   /* pings the application sent */
-static WORD prog_queue[ACC_MSGS * 8];   /* the program's (step 5a) */
+static SECTION("page5") WORD prog_queue[ACC_MSGS * 8];   /* the program's (step 5a) */
 extern uint8_t p6_ven[];                /* src/sys6502/gate6502.s */
 uint32_t p6_slot;                       /* its bank's far address: gates */
 

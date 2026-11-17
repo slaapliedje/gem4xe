@@ -288,7 +288,7 @@ static void escape(CONDRAW *d, CONREC *c, uint8_t ch)
         c->flags |= CF_CURSOR;
         break;
     case 'f':
-        c->flags &= (uint8_t)~CF_CURSOR;
+        c->flags = (uint8_t)(c->flags & ~CF_CURSOR);
         break;
     case 'j':
         c->scol = (uint8_t)col;
@@ -309,13 +309,13 @@ static void escape(CONDRAW *d, CONREC *c, uint8_t ch)
         c->flags |= CF_REV;
         break;
     case 'q':
-        c->flags &= (uint8_t)~CF_REV;
+        c->flags = (uint8_t)(c->flags & ~CF_REV);
         break;
     case 'v':
         c->flags |= CF_WRAP;
         break;
     case 'w':
-        c->flags &= (uint8_t)~CF_WRAP;
+        c->flags = (uint8_t)(c->flags & ~CF_WRAP);
         break;
     default:                            /* not a VT-52 escape: both go */
         break;

@@ -812,6 +812,12 @@ static WORD rs_cicons(const RSHDR *h, uint32_t rbase, uint16_t size)
     if (tab == 0 || tab == 0xFFFFFFFFUL)
         return 1;                       /* new format, no colour icons: an
                                          * outer resource's record stands */
+#ifdef __CALYPSI_TARGET_6502__
+    /* Colour icons keep a near table (CICON_NEAR) for as long as the
+     * resource is loaded, and the 6502's pool is a call's scratch only
+     * (src/sys6502/abistub6502.c): refused whole, as before it had one. */
+    return 0;
+#endif
     if (true_len <= (uint32_t)size + sizeof ext || tab < size)
         return 0;
     ext_len = true_len - size;

@@ -170,7 +170,7 @@ typedef struct {
  * buffer in the resident memory below $4000.  A caller in one of the
  * system's own CODE banks has no far address for its window; its
  * addresses are left alone too, and it must keep what it passes near. */
-static uint32_t win_far(uint32_t a, uint8_t bank)
+uint32_t win_far(uint32_t a, uint8_t bank)
 {
     uint8_t i, k;
     uint16_t off;
@@ -188,7 +188,7 @@ static uint32_t win_far(uint32_t a, uint8_t bank)
 
 /* The other way, for an address the AES hands back: one in the caller's
  * own bank becomes its window address; any other stays far. */
-static uint32_t win_near(uint32_t a, uint8_t bank)
+uint32_t win_near(uint32_t a, uint8_t bank)
 {
     uint8_t i, k, ak, piece, ap;
     uint16_t lo;
@@ -1335,8 +1335,8 @@ void gem_entry(void)
     case ABI_AES:
         aes_entry6((uint16_t)gem_pb, gem_bank6);
         break;
-    case ABI_GEMDOS:                    /* not on the 6502 yet: step 5b */
-        gem_bad++;
+    case ABI_GEMDOS:                    /* docs/6502.md, 5b-4 */
+        gemdos_call6((uint16_t)gem_pb, gem_bank6);
         break;
 #else
     case ABI_VDI:

@@ -20,6 +20,8 @@
 #include "sys/farmem.h"
 #include "sys/hiprobe.h"           /* farmem_probe */
 #include "sys/irq.h"
+#include "sys/dos.h"                /* dos_ident */
+#include "sys/gemdos.h"             /* gemdos_init */
 #include <string.h>
 
 void a6_tree(void);
@@ -37,26 +39,33 @@ typedef struct {
 
 /* The table and its strings into one far block: the objects, then the
  * strings, each string object's ob_spec its far address.  0 when the far
- * heap has not the room. */
-static OBTREE tree_put(const OBDEF *d, WORD n, const char *const *str)
+ * heap has not the room.  `str` is every object's string one after the
+ * other, each with its NUL, an empty one for an object that has none. */
+#define STR_MAX 24                      /* the longest, NUL in */
+static OBTREE tree_put(const OBDEF *d, WORD n, const char *str)
 {
     uint32_t size = (uint32_t)n * sizeof(OBJECT), far, at;
+    const char *s;
+    char buf[STR_MAX];
     WORD i;
 
-    for (i = 0; i < n; i++)
-        if (str[i])
-            size += strlen(str[i]) + 1;
+    for (i = 0, s = str; i < n; i++, s += strlen(s) + 1)
+        if (*s)
+            size += strlen(s) + 1;
     far = far_alloc(size);
     if (!far)
         return 0;
     at = far + (uint32_t)n * sizeof(OBJECT);
-    for (i = 0; i < n; i++) {
+    for (i = 0, s = str; i < n; i++, s += strlen(s) + 1) {
         OBTREE t = (OBTREE)far;
         uint32_t spec = d[i].spec;
 
-        if (str[i]) {
-            uint16_t len = (uint16_t)(strlen(str[i]) + 1);
-            far_put(at, (const uint8_t *)str[i], len);
+        if (*s) {
+            /* through a buffer on the stack, below the window: far_put
+             * maps the far side over this bank, where `s` is */
+            uint16_t len = (uint16_t)(strlen(s) + 1);
+            memcpy(buf, s, len);
+            far_put(at, (const uint8_t *)buf, len);
             spec = at;
             at += len;
         }
@@ -77,14 +86,14 @@ static OBTREE tree_put(const OBDEF *d, WORD n, const char *const *str)
 
 /* The tables are this bank's own (BANK_DATA): only tree_put, here, reads
  * them, and resident memory has not the room since the interrupt
- * handlers came in (step 4e).  The strings stay resident: far_put reads
- * its source with the far bank in the window, not this one.
+ * handlers came in (step 4e).  The strings too since GEMDOS came
+ * (step 5b-4): tree_put copies each through its stack.
  *
  * The desk: the box test-m7's desk() is, the size of this screen. */
 static const OBDEF desk[1] BANK_DATA("far") = {
     { -1, -1, -1, G_BOX, LASTOB, NORMAL, 0x00001148UL, 0, 0, 320, 192 },
 };
-static const char *const desk_str[1] = { 0 };
+static const char desk_str[] BANK_DATA("far") = "";
 
 /* The menu bar: test-m9's shape at 6x6.  Objects 0-6 are the AES's
  * fixed positions (the screen, the bar, the titles' box, the titles, the
@@ -114,11 +123,10 @@ static const OBDEF menu[21] BANK_DATA("far") = {
     {  6,  20,  20, G_BOX,    NONE,   NORMAL,   0x00FF1100UL,84,  0,  60,   6 },  /* 19 View */
     { 19,  -1,  -1, G_STRING, LASTOB, CHECKED,  0,            0,  0,  60,   6 },
 };
-static const char *const menu_str[21] = {
-    0, 0, 0, " Desk ", " File ", " View ", 0, 0,
-    "  About gem4xe...", "--------------------", "1", "2", "3", "4", "5", "6",
-    0, "  Open", "  Quit", 0, "  Icons",
-};
+static const char menu_str[] BANK_DATA("far") =
+    "\0" "\0" "\0" " Desk \0" " File \0" " View \0" "\0" "\0"
+    "  About gem4xe...\0" "--------------------\0" "1\0" "2\0" "3\0" "4\0" "5\0" "6\0"
+    "\0" "  Open\0" "  Quit\0" "\0" "  Icons";
 
 #define KINDS (NAME | CLOSER | FULLER | MOVER | INFO | SIZER)
 
@@ -186,6 +194,7 @@ void a6_boot(void)
     STATUS[2] = 0;
     STATUS[8] = b6_count;
 
+    dos_ident();                        /* as src/gem.c: first */
     farmem_probe();
     STATUS[9] = (unsigned char)farmem.banks;
     vdev = &vdev_antic;
@@ -216,6 +225,7 @@ void a6_aes_up(void)
     wm_init();
     STATUS[3] = '6';
     mn_init();
+    gemdos_init();                      /* step 5b-4: its far state */
     STATUS[3] = '7';
     a6_tree();
 }

@@ -167,7 +167,8 @@ static uint8_t looks_like_rtc(uint16_t addr)
 {
     volatile uint8_t *p = (volatile uint8_t *)addr;
 
-    if ((uint8_t)(*p & (uint8_t)~RTC_IN) != 0)
+    if (*p & (0xFFu ^ RTC_IN))          /* no byte cast: cc6502 widens one
+                                         * signed (tools/bsp6502/b6scan.py) */
         return 0;
     if (addr == RTC_U1MB && *p == *(volatile uint8_t *)PIA_PACTL)
         return 0;                               /* the PIA, mirrored */
@@ -383,7 +384,7 @@ static uint8_t tobcd(uint16_t v)
     return (uint8_t)(((v / 10) << 4) | (v % 10));
 }
 
-static const uint8_t FAR month_key[12] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+static const uint8_t FAR_816 month_key[12] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
 
 /* The year into a local before January and February take one off it: a
  * parameter changed on one path in an inlined static is B10 (tools/ccbug). */

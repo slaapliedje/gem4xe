@@ -231,6 +231,9 @@ void gemdos_init(void);
 
 /* One call: the block at `pb`, the result written into it. */
 void gemdos_call(uint32_t pb);
+#ifdef __CALYPSI_TARGET_6502__
+void gemdos_call6(uint16_t pba, uint8_t bank);   /* gate 'D' on the 6502 */
+#endif
 
 /* The application has exited: its handles closed, its searches freed,
  * the DTA and the standard handles back to the defaults, the printer

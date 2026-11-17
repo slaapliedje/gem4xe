@@ -84,6 +84,12 @@ WIN3 = (30, 40, 180, 60)                    # src/p6_prog.c's window
 TEXT = P6RSC.TEXT                           # object 1's string, which it draws
 AWAY = (300, 180)                           # the pointer, off the window
 STACK_PAINT, STACK_GUARD, STACK_MARGIN = 0xA5, 128, 64
+RSC = os.path.abspath(os.path.join(ROOT, "build", "p6prog.rsc"))
+# GEMDOS's answers (src/sys/gemdos.h, gemdos.c), written down again here
+SVERSION = 0x1500                           # what TOS 1.04 says
+GD_EFILNF = -33
+GD_HANDLE_BASE, CIO_IOCBS = 6, 8            # a file's handle is 6 + its IOCB
+GD_CALLS = 11                               # the program's, src/p6_prog.c files()
 
 
 def model():
@@ -291,6 +297,48 @@ def main(argv):
                                   f"tree, is {(ox, oy)}; cells of {wc}x{hc} make {want_o}")
         fr = b.peek(STATUS + 0x5F)
         check(fr == 1, f"rsrc_free answered {fr}, want 1")
+
+        # GEMDOS from a bank (docs/6502.md, 5b-4): every address the
+        # program passes is in its own bank, and comes back through it
+        rsc = open(RSC, "rb").read()
+        with open(DISK, "rb") as f:
+            secsize = int.from_bytes(f.read(6)[4:6], "little")
+        g = bytes(b.memdump(STATUS + 0x80, 0x44))
+        check(g[0] | g[1] << 8 == SVERSION, f"Sversion answered ${g[0] | g[1] << 8:04X}, "
+                                            f"want ${SVERSION:04X}")
+        check(g[2] == 1, "Fgetdta gave back the program's own DTA, the one Fsetdta set")
+        name = g[0x10:0x1E].split(b"\0")[0]
+        # GEMDOS's rule for a DOS 2 directory: its sectors times 125
+        want_len = -(-len(rsc) // (secsize - 3)) * 125
+        dlen = int.from_bytes(g[4:8], "little")
+        check(g[3] == 0 and name == b"P6PROG.RSC" and dlen == want_len,
+              f"Fsfirst(\"*.RSC\") answered {g[3]}, into its DTA {name!r} of {dlen} "
+              f"bytes; want 0, b'P6PROG.RSC', {want_len}")
+        h = g[8] | g[9] << 8
+        check(GD_HANDLE_BASE <= h < GD_HANDLE_BASE + CIO_IOCBS,
+              f"Fopen(\"P6PROG.RSC\") gave handle {h}, want a file's, "
+              f"{GD_HANDLE_BASE}-{GD_HANDLE_BASE + CIO_IOCBS - 1}")
+        check(g[0xA] == 18 and g[0x20:0x32] == rsc[:18],
+              f"Fread of 18 bytes read {g[0xA]}: {g[0x20:0x32].hex()}, "
+              f"want the file's {rsc[:18].hex()}")
+        check(g[0xB] == 0 and g[0xC] == 4 and g[0x34:0x38] == rsc[:4],
+              f"Fseek(0) answered {g[0xB]}, and a read of 4 then gave {g[0xC]}: "
+              f"{g[0x34:0x38].hex()}, want 0, 4, {rsc[:4].hex()}")
+        check(g[0xE] == 0, f"Fclose answered {g[0xE]}, want 0")
+        check(g[0xF] == 0 and g[0x38] == 0,
+              f"Dgetpath answered {g[0xF]} and {g[0x38:0x40]!r}, want 0 and \"\" "
+              f"(no Dsetpath yet)")
+        nf = int.from_bytes(g[0x40:0x44], "little", signed=True)
+        check(nf == GD_EFILNF, f"Fopen of a file that is not there answered {nf}, "
+                               f"want {GD_EFILNF}")
+        lo, hi = w16(sym("b6init_lo")), w16(sym("b6init_hi"))
+        peak, refused = w16(sym("pool6_peak")), w16(sym("pool6_refused"))
+        check(lo < peak <= hi and refused == 0,
+              f"the pool went to ${peak:04X} of ${lo:04X}-${hi:04X} (the load-time "
+              f"code's), refusing {refused}")
+        calls, bad = w16(sym("gemdos_calls")), w16(sym("gemdos_bad"))
+        check(calls == GD_CALLS and bad == 0,
+              f"GEMDOS served {calls} call(s), {bad} of them unknown; want {GD_CALLS}, 0")
         pieces = b.peek(STATUS + 0x51)
         check(pieces == 1, f"its redraw painted {pieces} rectangle(s), want 1")
 

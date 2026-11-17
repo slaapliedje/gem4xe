@@ -35,6 +35,13 @@
 #define ABI_GEMDOS 0x44     /* 'D' */
 #define ABI_FAR    0x46     /* 'F': the 6502's far fetch and store */
 
+#ifdef __CALYPSI_TARGET_6502__
+/* A 6502 program's 16-bit address and its far one, by the bank it called
+ * from (src/sys/abi.c): GEMDOS's address arguments go through these too. */
+uint32_t win_far(uint32_t a, uint8_t bank);
+uint32_t win_near(uint32_t a, uint8_t bank);
+#endif
+
 /* Written by the handler in abi.s before gem_entry() runs. */
 extern uint32_t gem_pb;        /* the parameter block: X:C at the COP */
 extern uint8_t  gem_which;     /* the signature byte after the COP opcode */

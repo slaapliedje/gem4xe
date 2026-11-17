@@ -26,8 +26,9 @@
  * counts from its last key, which it never sees: the VBI handler holds
  * ATRACT at zero.
  *
- * The handlers' state is defined here, with src/sys/irq.h's names.  Not
- * yet: irq_clock, which nothing on the 6502 calls before GEMDOS does.
+ * The handlers' state is defined here, with src/sys/irq.h's names, and
+ * irq_clock with them, the 65C816's own (src/sys/irqclock.inc): GEMDOS's
+ * Tgettimeofday counts from it (step 5b-4).
  */
 #include "portab.h"
 #include "sys/irq.h"
@@ -40,6 +41,8 @@ volatile uint8_t  irq_kb[8];
 volatile uint8_t  irq_kb_head, irq_kb_tail, irq_kb_count;
 volatile uint8_t  irq_tq[4], irq_tq_head, irq_tq_tail;
 volatile uint8_t  irq_fault;
+
+#include "sys/irqclock.inc"            /* irq_clock */
 uint8_t  irq_ptr_on;
 uint8_t  irq_plo[16], irq_phi[16];
 signed char irq_qtab[16];

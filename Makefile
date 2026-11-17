@@ -319,7 +319,7 @@ build/rapidus.o: src/sys/rapidus.c src/sys/rapidus.h src/vbxe/vbxe.h
 
 # The interrupt regime: the C side installs and removes it, the assembly
 # side is the handlers and the bank-$00 stubs the vectors point at.
-build/irq.o: src/sys/irq.c src/sys/irq.h src/sys/rapidus.h
+build/irq.o: src/sys/irq.c src/sys/irqclock.inc src/sys/irq.h src/sys/rapidus.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -I src -o $@ $<
 

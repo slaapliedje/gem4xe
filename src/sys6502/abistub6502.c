@@ -16,6 +16,7 @@
 #include "sys/pool.h"
 #include "sys/cio.h"
 #include "sys/sdcio.h"
+#include "sys/gemdos.h"
 
 static WORD refused(void)
 {
@@ -38,52 +39,62 @@ WORD fs_input(char *pipath, char *pisel, WORD *pbutton, const char *pilabel)
 /* the language file (src/aes/lang.c): the built-in strings */
 WORD lang_loaded(void) { return 0; }
 
-/* the pool (src/sys/pool.c) */
-void    *pool_alloc(uint16_t size, uint16_t align) { (void)size; (void)align; refused(); return 0; }
-uint16_t pool_mark(void) { return 0; }
-void     pool_release(uint16_t mark) { (void)mark; }
+/* THE POOL, a call's scratch (docs/6502.md, 5b-4).  On the 65C816 the
+ * pool is bank $00's application pool (src/sys/pool.c), with a table of
+ * blocks and owners; GEMDOS takes its path work and its transfer slices
+ * from it and gives them back before the call returns.  That is all the
+ * 6502 asks of it, so here it is a stack -- pool_alloc at the top,
+ * pool_release back to a mark -- over the bytes of the load-time code,
+ * section b6init (src/sys6502/bank6502.s), which runs from INITAD before
+ * main and never again: 494 bytes of resident memory that nothing else
+ * could have.  It must be NEAR and outside the window: far_get and
+ * far_put map the far side into $4000-$7FFF, and CIO's buffer cannot be
+ * in a bank a DOS might switch.  Nothing may keep a block past its call:
+ * rsrc.c's colour icons, which would, are refused on the 6502. */
+extern const uint16_t b6init_lo, b6init_hi;
+#define POOL6_LO b6init_lo
+#define POOL6_HI b6init_hi
+static uint16_t pool6_top;              /* 0: not started (main has run) */
+uint16_t pool6_peak;                    /* the highest it went: the gate's */
+uint16_t pool6_refused;
 
-/* what src/aes/rsrc.c reaches for (step 5b-3), resources being real now:
- *
- * A NAME, without GEMDOS.  On the 65C816 sh_cioname goes through GEMDOS
- * (src/sys/gemdos.c, gd_cioname), which knows the current directory and
- * the DOS's separator; the 6502 has neither yet.  So this is the flat
- * DOS's rule from src/sys/dos.c, dos_cioname with no separator: a drive
- * letter A-H becomes D1:-D8:, only the last component is kept, and it is
- * upper-cased.  "A:\X.RSC" and "X.RSC" both open D1:X.RSC (a bare name is
- * CIO's default drive).  GEMDOS replaces it. */
-void sh_cioname(const char *gem, char *cio)
+void *pool_alloc(uint16_t size, uint16_t align)
 {
-    const char *p = gem, *q;
-    uint8_t k = 0;
+    uint16_t at;
 
-    if (gem[0] && gem[1] == ':') {
-        int d = (uint8_t)gem[0] | 0x20;     /* not a byte: B8, tools/ccbug */
-        if (d >= 'a' && d <= 'h') {
-            cio[k++] = 'D';
-            cio[k++] = (char)('1' + (d - 'a'));
-            cio[k++] = ':';
-        }
-        p = gem + 2;
+    if (!pool6_top)
+        pool6_top = pool6_peak = POOL6_LO;
+    at = pool6_top;
+
+    if (align > 1)
+        at = (uint16_t)((at + align - 1) & ~(align - 1));
+    if (size > POOL6_HI - at) {
+        pool6_refused++;
+        return 0;
     }
-    for (q = p; *q; q++)
-        if (*q == '\\')
-            p = q + 1;
-    if (!k) {
-        cio[k++] = 'D';
-        cio[k++] = ':';
-    }
-    for (; *p && k < CIO_NAME_MAX; p++) {
-        int c = (uint8_t)*p;
-        if (c >= 'a' && c <= 'z')
-            c -= 0x20;
-        cio[k++] = (char)c;
-    }
-    cio[k] = 0;
+    pool6_top = (uint16_t)(at + size);
+    if (pool6_top > pool6_peak)
+        pool6_peak = pool6_top;
+    return (void *)at;
+}
+uint16_t pool_mark(void)
+{
+    if (!pool6_top)
+        pool6_top = pool6_peak = POOL6_LO;
+    return pool6_top;
+}
+void     pool_release(uint16_t mark)
+{
+    if (mark >= POOL6_LO && mark <= pool6_top)
+        pool6_top = mark;
 }
 
-/* The pool has nothing above its top: there is no pool. */
-uint16_t pool_room(void) { return 0; }
+/* A resource's name (src/aes/rsrc.c), as the 65C816's shell makes it:
+ * through GEMDOS, which knows each drive's directory and the DOS's
+ * separator (src/sys/gemdos.c). */
+void sh_cioname(const char *gem, char *cio) { gd_cioname(gem, cio); }
+
+uint16_t pool_room(void) { return (uint16_t)(POOL6_HI - pool_mark()); }
 
 /* the scrap directory (src/aes/scrap.c) */
 WORD sc_clear(void) { return refused(); }
@@ -132,3 +143,18 @@ uint8_t sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len, uint16_t *g
     return CIO_E_NOTOPEN;
 }
 uint8_t sdc_xio(uint8_t cmd, const char *name) { (void)cmd; (void)name; refused(); return CIO_E_NODEV; }
+/* SpartaDOS X's kernel (src/sys/cio.h): src/sys/clock.c asks it the time
+ * on an SDX machine only, and SDX is a cartridge where the 6502 build
+ * keeps resident code ($A000-$BFFF): not there.  Bit 0 set is its "no". */
+uint16_t dos_call(uint16_t fn) { (void)fn; return 1; }
+
+/* src/crt_atari.s's on the 65C816, how the program leaves for DOS, which
+ * src/sys/dos.c sets from the DOS it found; A6 never leaves. */
+uint8_t _exit_dosvec;
+
+/* ...and what GEMDOS asks of it (src/sys/gemdos.c): Frename's move in
+ * place, which a name it never claims never reaches, and the drive's
+ * folder cache, which there is none of */
+void    sdc_init(void) { }
+void    sdc_forget(uint8_t drv) { (void)drv; }
+uint8_t sdc_move(const char *from, const char *to) { (void)from; (void)to; refused(); return CIO_E_NODEV; }
