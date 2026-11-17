@@ -2,6 +2,14 @@
 """mkxex6502.py -- a banked 6502 link as an Atari binary file.
 
     python3 tools/bsp6502/mkxex6502.py IN.elf OUT.xex [--report] [--bank N=PROG.elf ...]
+    python3 tools/bsp6502/mkxex6502.py --g6a PROG.elf OUT.G6A
+
+--g6a writes a separately linked program (src/app/gemapp6502.scm) as the
+file gem4xe reads into a program slot from a disk (docs/6502.md, step
+5b): its window segments as one image from $4000, gaps zero, nothing
+after its last byte.  Its first bytes are its header, "G6" and the
+format, 1 (src/app/crt6502.s); a file that does not start so, or that
+has anything outside the window, is refused.
 
 --bank N=PROG.elf loads a separately linked program's window segments
 ($4000-$7FFF: src/app/gemapp6502.scm) into PORTB bank N as well, as if
@@ -58,7 +66,28 @@ def seg(start, body):
     return struct.pack("<HH", start, start + len(body) - 1) + bytes(body)
 
 
+def g6a(elf, out):
+    _, segs = segments(open(elf, "rb").read())
+    img = bytearray()
+    for a, body in sorted(segs):
+        if not (WIN_LO <= a and a + len(body) - 1 <= WIN_HI):
+            raise SystemExit(f"mkxex6502: --g6a: {elf} has a segment at ${a:X}, "
+                             f"outside the window")
+        o = a - WIN_LO
+        if len(img) < o:
+            img += bytes(o - len(img))
+        img[o:o + len(body)] = body
+    if img[:3] != b"G6\x01":
+        raise SystemExit(f"mkxex6502: --g6a: {elf} does not start with its header "
+                         f"(\"G6\", 1 at $4000)")
+    open(out, "wb").write(img)
+    print(f"{out}: {len(img)} bytes, ${WIN_LO:04X}-${WIN_LO + len(img) - 1:04X}")
+    return 0
+
+
 def main(argv):
+    if len(argv) == 4 and argv[1] == "--g6a":
+        return g6a(argv[2], argv[3])
     extra = [a.split("=", 1)[1] for a in argv if a.startswith("--bank=")]
     argv = [a for a in argv if not a.startswith("--bank=")]
     while "--bank" in argv:

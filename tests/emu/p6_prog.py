@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-"""p6_prog.py -- make test-p6: a program in a bank of its own, on a stock
-6502 (docs/6502.md, step 5a).
+"""p6_prog.py -- make test-p6: a program in a bank of its own, read from
+the disk, on a stock 6502 (docs/6502.md, steps 5a and 5b).
 
 src/p6_prog.c is built with the application kit alone -- src/app/gem.h,
 gemlib.c, the 6502's gates and start-up -- and linked whole into one 16 KB
-bank (src/app/gemapp6502.scm); the load puts it in the first program slot
-(tools/bsp6502/mkxex6502.py --bank), and A6 (src/a6_evt.c) starts it as a
-process of its own when $060C is 1 at the go.  It knows one address of the
+bank (src/app/gemapp6502.scm) and written to A6's boot disk as
+P6PROG.G6A (tools/bsp6502/mkxex6502.py --g6a); when $060C is 1 at the go
+A6 (src/a6_evt.c) reads it through CIO into the first program slot
+(step 5b) and starts it as a process of its own.  It knows one address of the
 system's, the gate's at $2000 (src/sys6502/gate6502.s), and every call
 goes through src/sys/abi.c, which turns its window addresses into its
 bank's far ones.  The gate holds it to:
 
   - the pseudo-registers -- _Zp, _Vsp, _Vfp, which the calling convention
     shares -- at the same addresses in its link and the system's;
+  - it was read from the disk: CIO's status 1 and every byte of the file;
+    and timer 1, the pointer's sampler, counting at its rate after SIO
+    had POKEY.  That guards the timer, not irq_pokey_resync: the XL OS's
+    SIO leaves timer 1 alone, and this passes with the resync turned off,
+    with --siopatch and with real serial timing alike;
   - it ran: its header found, its first turn over ($060C 'R'), main run to
     its end ($0640 'E'), no stub that must not run reached, and not one
     call refused (gem_bad);
@@ -30,7 +36,8 @@ bank's far ones.  The gate holds it to:
     made far in abi.c), its white inside and its text.
 
 Broken on purpose (each fails): window addresses not made far; the
-title's pair left as it came; the gate not recording the caller's bank.
+title's pair left as it came; the gate not recording the caller's bank;
+the file not on the disk; the read not put into the slot.
 
     python3 tests/emu/p6_prog.py [--shot]
 """
@@ -52,6 +59,11 @@ from vdiref import (VSWR_MODE, VSF_INTERIOR, VSF_COLOR, VS_CLIP,  # noqa: E402
                     VR_RECFL, V_GTEXT)
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "a6-boot.atr"))
+G6A = os.path.abspath(os.path.join(ROOT, "build", "p6prog.g6a"))
+G6A_NAME = "D1:P6PROG.G6A"
+IRQ_TIMER_DIV, IRQ_PAL = 7, 8               # src/sys/irq.h's IRQ_STATE
+FRAME = {0: 114 * 262, 1: 114 * 312}        # machine cycles a frame, NTSC and PAL
+POKMSK = 0x0010
 MAP = os.path.abspath(os.path.join(ROOT, "build", "a6.map"))
 PMAP = os.path.abspath(os.path.join(ROOT, "build", "p6prog.map"))
 SHARED = ("_Zp", "_Vsp", "_Vfp")            # the calling convention's, both links
@@ -125,7 +137,7 @@ def main(argv):
             fails.append(msg)
         return cond
 
-    print("gem4xe-p6: a program in a bank of its own, on a stock 6502")
+    print("gem4xe-p6: a program in a bank of its own, read from the disk, on a stock 6502")
     dev, want_wh, want_work = model()
     text = open(MAP).read()
 
@@ -165,6 +177,10 @@ def main(argv):
         stuck = b.peek(STATUS + 4)
         check(not stuck, f"no stub that must not run was reached "
                          f"({chr(stuck) if stuck else 'none'} at $0604)")
+        rd, n_rd = b.peek(STATUS + 13), w16(STATUS + 14)
+        check(rd == 1 and n_rd == os.path.getsize(G6A),
+              f"it was read from the disk: CIO status {rd}, {n_rd} bytes; "
+              f"{G6A_NAME} is {os.path.getsize(G6A)}")
         slot = b.peek(STATUS + 12)
         check(slot == ord("R"), f"the slot held a program and its first turn ended "
                                 f"($060C {chr(slot) if slot > 31 else slot!r})")
@@ -174,6 +190,16 @@ def main(argv):
             b.screenshot(SHOT)
             print(f"  screen: {SHOT}")
             return 1
+        # SIO has had POKEY: timer 1, the pointer's sampler, counts on at its rate
+        irq = sym("irq")
+        t0 = w16(sym("irq_timer")) | (w16(sym("irq_timer") + 2) << 16)
+        b.frames(100)
+        t1 = w16(sym("irq_timer")) | (w16(sym("irq_timer") + 2) << 16)
+        div, pal = b.peek(irq + IRQ_TIMER_DIV), b.peek(irq + IRQ_PAL)
+        want = 100 * FRAME[pal] / (28 * (div + 1))
+        check(abs((t1 - t0) - want) <= want * 0.02 and b.peek(POKMSK) & 1,
+              f"after the read, timer 1 counted {t1 - t0} in 100 frames, want {want:.0f}; "
+              f"POKMSK ${b.peek(POKMSK):02X}")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
         check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
 
@@ -235,7 +261,7 @@ def main(argv):
     if not fails and not keep and os.path.exists(SHOT):
         os.remove(SHOT)
     print(f"gem4xe-p6: {'PASS' if not fails else 'FAIL'} -- a program in a bank of its "
-          f"own, on a stock 6502, {len(fails)} problem(s)")
+          f"own, read from the disk, on a stock 6502, {len(fails)} problem(s)")
     return 1 if fails else 0
 
 

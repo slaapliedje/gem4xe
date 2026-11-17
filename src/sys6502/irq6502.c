@@ -88,6 +88,28 @@ uint8_t irq_install(void)
     return 1;
 }
 
+/* After CIO (src/sys/cio.c): SIO has had POKEY -- AUDCTL for its linked
+ * channels, SKCTL for the serial port -- and timer 1 is set to count from
+ * the sampler's divisor again: src/sys/irq.c's, as the 6502 has it.  The
+ * XL OS's own SIO does not need it -- it leaves channel 1 alone and
+ * timer 1 in POKMSK (irq6_hook put it there), and test-p6 passes with
+ * this turned off, with real serial timing and without -- so it is kept
+ * for the SIO drivers that are not the OS's (a high-speed one in a DOS
+ * or a PBI ROM), which nothing here tests. */
+#define SKCTL   (*(volatile uint8_t *)0xD20F)
+
+void irq_pokey_resync(void)
+{
+    if (irq.how == IRQ_OFF)
+        return;
+    AUDCTL = 0;                     /* 64 kHz base, no linking */
+    AUDF1  = irq.timer_div;
+    AUDC1  = 0;                     /* silent */
+    SKCTL  = 3;                     /* keyboard scan and debounce */
+    STIMER = 0;
+    IRQEN  = POKMSK;
+}
+
 void irq_remove(void)
 {
     if (irq.how == IRQ_OFF)

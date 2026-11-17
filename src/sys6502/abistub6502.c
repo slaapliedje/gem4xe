@@ -14,6 +14,8 @@
 #include "aes/aes.h"
 #include "sys/abi.h"
 #include "sys/pool.h"
+#include "sys/cio.h"
+#include "sys/sdcio.h"
 
 static WORD refused(void)
 {
@@ -76,3 +78,25 @@ WORD     sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd, const ch
     (void)doex; (void)isgem; (void)isover; (void)pcmd; (void)ptail;
     return refused();
 }
+
+/* G4DOS's own file system (src/sys/sdcio.c), which src/sys/cio.c asks
+ * first: not on the 6502, so it claims no name and every file goes to
+ * the DOS's D: (step 5b).  An IOCB never has SDC_ICHID here, so the rest
+ * is not reached; each refuses if it is. */
+uint8_t sdc_claims(const char *name) { (void)name; return 0; }
+int16_t sdc_open(int16_t iocb, const char *name, uint8_t aux1, uint8_t aux2)
+{
+    (void)iocb; (void)name; (void)aux1; (void)aux2;
+    refused();
+    return -(int16_t)CIO_E_NODEV;
+}
+uint8_t sdc_close(int16_t iocb) { (void)iocb; refused(); return CIO_E_NOTOPEN; }
+uint8_t sdc_xfer(int16_t iocb, uint8_t cmd, void *buf, uint16_t len, uint16_t *got)
+{
+    (void)iocb; (void)cmd; (void)buf; (void)len;
+    if (got)
+        *got = 0;
+    refused();
+    return CIO_E_NOTOPEN;
+}
+uint8_t sdc_xio(uint8_t cmd, const char *name) { (void)cmd; (void)name; refused(); return CIO_E_NODEV; }

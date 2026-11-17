@@ -2,7 +2,8 @@
  *
  * Step 1 of docs/6502.md is the VDI and its ANTIC device, banked, drawing
  * on a stock 6502.  The VDI also reaches for things the steps after it
- * bring: far memory (step 3), CIO for a loaded face, the printer
+ * bring: far memory (step 3), CIO for a loaded face (refused in
+ * src/sys6502/ciostub6502.c; A6 has src/sys/cio.c), the printer
  * device, the process context.  (The interrupt handlers' state, quiet:
  * src/sys6502/irqstub6502.c, for a program without the handlers.)
  * (Far memory is real since step 3b: src/sys6502/farmem6502.c.)  Each
@@ -45,20 +46,6 @@ void     sh_hotkey(void) {}
 WORD     sh_nprogs(void) { return 0; }
 uint32_t sh_prog(WORD i, char *text) { (void)i; text[0] = 0; return 0; }
 void     sh_request(uint32_t e) { (void)e; b6_unreached('R'); }
-
-/* ---- CIO: a face loaded from a file is refused ------------------------ */
-int16_t  cio_open(const char *name, uint8_t aux1, uint8_t aux2)
-{
-    (void)name; (void)aux1; (void)aux2;
-    return -1;
-}
-uint8_t  cio_read(int16_t iocb, void *buf, uint16_t len, uint16_t *got)
-{
-    (void)iocb; (void)buf; (void)len;
-    *got = 0;
-    return 136;                         /* end of file */
-}
-uint8_t  cio_close(int16_t iocb) { (void)iocb; return 1; }
 
 /* The running context (src/sys/ctx.h): here, because the VDI reads it to
  * know whose a workstation is, and V6 has no context switch; the switch

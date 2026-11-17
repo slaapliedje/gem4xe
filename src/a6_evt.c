@@ -36,12 +36,13 @@
  * is 'P' once it has parked.
  *
  * AND A PROGRAM IN A BANK OF ITS OWN (step 5a), when $060C is 1 at the
- * go: whatever the load put in the first program slot -- far bank 1,
- * piece 0 (src/sys6502/farmem6502.c) -- if its header says it is one
- * (src/app/crt6502.s), started as a process as a6_acc is, its entry the
- * resident veneer gate6502.s keeps for it.  It calls the system only
- * through the gate.  $060C is 'R' once its first turn is over, 'H' if
- * the slot held no program.
+ * go: read from the disk (step 5b), D1:P6PROG.G6A, into the first
+ * program slot -- far bank 1, piece 0 (src/sys6502/farmem6502.c) -- and,
+ * if its header says it is one (src/app/crt6502.s), started as a process
+ * as a6_acc is, its entry the resident veneer gate6502.s keeps for it.
+ * It calls the system only through the gate.  $060C is 'R' once its
+ * first turn is over, 'H' if the slot held no program; $060D is the
+ * read's CIO status (1: all of it) and $060E-F how many bytes came.
  */
 #include "portab.h"
 #include "aes/aes.h"
@@ -49,6 +50,7 @@
 #include "vdi/pointer.h"
 #include "aes/proc.h"
 #include "sys/farmem.h"
+#include "sys/cio.h"
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -123,14 +125,52 @@ static void acc_start(void)
     STATUS[11] = 'P';
 }
 
+/* The program read into the first slot: a .G6A is the bank's bytes from
+ * $4000, header first (tools/bsp6502/mkxex6502.py --g6a), a piece at a
+ * time through a buffer outside the window -- where CIO and a DOS that
+ * banks may write it (src/sys6502/cio6502.s) -- and on into the slot.
+ * CIO_OK when the whole file came and fitted. */
+#define P6_SLOT 0x10000UL               /* far bank 1, piece 0 */
+#define P6_FILE "D1:P6PROG.G6A"
+#define P6_MAX  0x4000u                 /* one bank */
+static SECTION("bounce") uint8_t p6_buf[256];
+
+static uint8_t prog_load(void)
+{
+    int16_t io = cio_open(P6_FILE, CIO_A_READ, 0);
+    uint16_t at = 0, got;
+    uint8_t st;
+
+    if (io < 0) {
+        io = -io;
+        st = (uint8_t)io;
+        return st;
+    }
+    do {
+        got = 0;
+        st = cio_read(io, p6_buf, sizeof p6_buf, &got);
+        if (got > P6_MAX - at) {
+            st = CIO_E_TRUNC;           /* more than a bank */
+            break;
+        }
+        far_put(P6_SLOT + at, p6_buf, got);
+        at += got;
+    } while (st == CIO_OK);
+    cio_close(io);
+    STATUS[14] = (unsigned char)at;
+    STATUS[15] = (unsigned char)(at >> 8);
+    return st == CIO_E_EOF ? CIO_OK : st;
+}
+
 /* The program in the first slot, if there is one: a process of its own,
  * whose first turn runs it to its first wait. */
-#define P6_SLOT 0x10000UL               /* far bank 1, piece 0 */
 static void prog_start(void)
 {
     PROC *p;
+    uint8_t st = prog_load();
 
-    if (far_rd16(P6_SLOT) != 0x3647 || far_read8(P6_SLOT + 2) != 1) {
+    STATUS[13] = st;
+    if (st != CIO_OK || far_rd16(P6_SLOT) != 0x3647 || far_read8(P6_SLOT + 2) != 1) {
         STATUS[12] = 'H';               /* "G6", format 1: none */
         return;
     }
