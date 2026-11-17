@@ -140,7 +140,7 @@ PORTB_1088K = ("P", 64)
 AXLON_BASE = "128K"                         # a 130XE's 4 PORTB banks beside it: the
                                             # probe must take the Axlon's, which are more
 AXLON_BANKS = {"64K": 3, "128K": 7, "256K": 15, "512K": 31, "1024K": 63,
-               "2048K": 127}               # its bank 0 is main memory
+               "2048K": 127, "4096K": 255}             # its bank 0 is main memory
 
 
 def main(argv):

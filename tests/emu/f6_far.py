@@ -22,12 +22,13 @@ addresses.  On an 800XL's 6502 with 1088K:
 
 And with --axlon SIZE, on a 130XE with an Axlon of SIZE, whose banks
 the probe takes over PORTB's four (src/sys6502/bank6502.s): 2048K makes
-31 far banks.  The top block a3 -- whose string is bit 3 -- stays under
+31 far banks, 4096K 63.  The top block a3 -- whose string is bit 3 -- stays under
 the first megabyte, as the allocator prefers, so the program also writes
-the heap's last bytes, far bank 31 (PORTB index 125): past the 15
+the heap's last bytes, far bank 31 (PORTB index 125) or
+63 (253): past the 15
 far banks fmap took until the Axlon came (src/sys6502/far6502.s).
 
-    python3 tests/emu/f6_far.py [--axlon 2048K]
+    python3 tests/emu/f6_far.py [--axlon 2048K|4096K]
 """
 import os
 import struct
@@ -66,7 +67,8 @@ def model(banks):
     return [a1, a2, a3, a4, a5, a6, a7, a8]
 
 
-AXLON_BANKS = {"512K": 31, "1024K": 63, "2048K": 127}   # bank 0 is main
+AXLON_BANKS = {"512K": 31, "1024K": 63, "2048K": 127,
+               "4096K": 255}               # bank 0 is main
 
 
 def main(argv):

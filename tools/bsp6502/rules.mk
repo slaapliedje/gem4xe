@@ -270,11 +270,12 @@ test-e6n: build/a6-boot.atr
 test-p6: build/a6-boot.atr
 	python3 tests/emu/p6_prog.py
 
-# ...and on an Axlon's banks, switched by $CFFF: a 2 MB one on a 130XE,
-# whose banks src/sys6502/bank6502.s takes over PORTB's and patches every
-# bank switch to reach
+# ...and on an Axlon's banks, switched by $CFFF: a 4 MB one (255 banks,
+# the MiSTer core's largest) on a 130XE, whose banks src/sys6502/bank6502.s
+# takes over PORTB's and patches every bank switch to reach.  Needs an
+# AltirraSDL with ilmenit/AltirraSDL#114: before it, 4096K gave 2 MB.
 test-p6a: build/a6-boot.atr
-	python3 tests/emu/p6_prog.py --axlon 2048K
+	python3 tests/emu/p6_prog.py --axlon 4096K
 
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.
@@ -335,9 +336,9 @@ build/f6-boot.atr: build/f6.xex
 test-f6: build/f6-boot.atr
 	python3 tests/emu/f6_far.py
 
-# ...on a 2 MB Axlon: 31 far banks, the last one written (far bank 31)
+# ...on a 4 MB Axlon: 63 far banks, the last one written (far bank 63)
 test-f6a: build/f6-boot.atr
-	python3 tests/emu/f6_far.py --axlon 2048K
+	python3 tests/emu/f6_far.py --axlon 4096K
 
 .PHONY: test-f6
 
