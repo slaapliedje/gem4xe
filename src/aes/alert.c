@@ -53,6 +53,26 @@
 #define ALSTR_SIZE   (MAX_LINENUM * (MAX_LINELEN + 1) \
                       + MAX_BUTNUM * (MAX_BUTLEN + 1))
 
+/* THE 6502 (docs/6502.md, 5b-5).  The pool there is the 494 bytes over
+ * the load-time code (src/sys6502/abistub6502.c), and it already holds
+ * the caller's string (src/sys/abi.c, pool_str): the ten objects and
+ * their 268 bytes of string would not fit beside it.  So the tree and its
+ * strings are one far block, taken for the call and freed after it; the
+ * BITBLK and the icon stay in the pool, as on the 65C816 -- a bank-0
+ * address is a far one too.  The strings are written a piece at a time
+ * through a near buffer, also from the pool: far_put cannot read from
+ * the window, which is where this file's own bank is. */
+#ifdef __CALYPSI_TARGET_6502__
+#define AL_STR_AT   ((uint32_t)NUM_ALOBJS * sizeof(OBJECT))
+#define AL_BYTES    (AL_STR_AT + ALSTR_SIZE)
+typedef uint32_t al_str;
+#define AL_SPEC(s)  (s)
+BANK_DATA("rsrc") static char *al_piece;   /* MAX_LINELEN + 1, in the pool */
+#else
+typedef char *al_str;
+#define AL_SPEC(s)  ((uint16_t)(s))
+#endif
+
 /* The three icons' far addresses.  Not a const table: the address of a
  * far object is not a compile-time constant to this compiler, so they are
  * taken at the call. */
@@ -88,13 +108,18 @@ static const char *fm_strbrk(OBTREE tree, WORD start, WORD maxnum,
 {
     WORD i, j, len;
     char *p;
+#ifdef __CALYPSI_TARGET_6502__
+#define AL_BUF(o)   al_piece
+#else
+#define AL_BUF(o)   ((char *)(uint16_t)OB_GET(tree, o, ob_spec))
+#endif
 
     *plen = 0;
     if (*alert == '[')
         alert++;
 
     for (i = 0; i < maxnum; i++, alert++) {
-        p = (char *)(uint16_t)OB_GET(tree, start + i, ob_spec);
+        p = AL_BUF(start + i);
         for (j = 0; j < maxlen; j++) {
             if (endsubstring(*alert)) {
                 if (*alert != '\0' && *alert == *(alert + 1))
@@ -105,7 +130,11 @@ static const char *fm_strbrk(OBTREE tree, WORD start, WORD maxnum,
             *p++ = *alert++;
         }
         *p = 0;
-        len = (WORD)(p - (char *)(uint16_t)OB_GET(tree, start + i, ob_spec));
+        len = (WORD)(p - AL_BUF(start + i));
+#ifdef __CALYPSI_TARGET_6502__
+        far_put(OB_GET(tree, start + i, ob_spec), (const uint8_t *)al_piece,
+                (uint16_t)(len + 1));
+#endif
         if (len > *plen)
             *plen = len;
         while (!endsubstring(*alert))   /* a substring that was too long */
@@ -113,6 +142,7 @@ static const char *fm_strbrk(OBTREE tree, WORD start, WORD maxnum,
         if (endstring(*alert))
             break;
     }
+#undef AL_BUF
     while (!endstring(*alert))          /* whatever is left of the group */
         alert++;
     *pnum = (WORD)(i < maxnum ? i + 1 : maxnum);
@@ -199,13 +229,29 @@ static void fm_build(OBTREE tree, WORD iconnum, WORD nummsg, WORD mlenmsg,
  * strings they point at.  0 when the pool has not the room. */
 static OBTREE al_tree(void)
 {
+#ifdef __CALYPSI_TARGET_6502__
+    OBTREE tree = (OBTREE)far_alloc(AL_BYTES);
+    al_str str = OB_A_(tree) + AL_STR_AT;
+    WORD i;
+
+    al_piece = pool_alloc(MAX_LINELEN + 1, 1);
+    if (!tree || !al_piece) {
+        if (tree)
+            far_free(OB_A_(tree));
+        return 0;
+    }
+    far_fill(OB_A_(tree), 0, (uint16_t)AL_BYTES);   /* every string empty */
+#define AL_EMPTY(s) ((void)0)
+#else
     OBTREE tree = OB_NEAR(pool_alloc(NUM_ALOBJS * (uint16_t)sizeof(OBJECT), 2));
-    char *str = pool_alloc(ALSTR_SIZE, 2);
+    al_str str = pool_alloc(ALSTR_SIZE, 2);
     WORD i;
 
     if (!tree || !str)
         return 0;
     OB_MEMSET(tree, 0, NUM_ALOBJS * sizeof(OBJECT));
+#define AL_EMPTY(s) (*(s) = 0)
+#endif
     for (i = 0; i < NUM_ALOBJS; i++) {
         OB_SET(tree, i, ob_next, OB_SET(tree, i, ob_head, OB_SET(tree, i, ob_tail, NIL)));
         OB_SET(tree, i, ob_type, G_STRING);
@@ -222,14 +268,15 @@ static OBTREE al_tree(void)
     OB_SET(tree, ROOT, ob_state, OUTLINED);
     OB_SET(tree, 1, ob_type, G_IMAGE);
     for (i = 0; i < MAX_LINENUM; i++, str += MAX_LINELEN + 1) {
-        OB_SET(tree, MSGOFF + i, ob_spec, (uint16_t)str);
-        *str = 0;
+        OB_SET(tree, MSGOFF + i, ob_spec, AL_SPEC(str));
+        AL_EMPTY(str);
     }
     for (i = 0; i < MAX_BUTNUM; i++, str += MAX_BUTLEN + 1) {
         OB_SET(tree, BUTOFF + i, ob_type, G_BUTTON);
-        OB_SET(tree, BUTOFF + i, ob_spec, (uint16_t)str);
-        *str = 0;
+        OB_SET(tree, BUTOFF + i, ob_spec, AL_SPEC(str));
+        AL_EMPTY(str);
     }
+#undef AL_EMPTY
     return tree;
 }
 
@@ -254,6 +301,10 @@ WORD fm_alert(WORD defbut, const char *palstr)
      * offset in bank $00.  128 bytes, for the length of the call. */
     icon = pool_alloc(GEM_ICON_WB * GEM_ICON_HL, 2);
     if (!tree || !bi || !icon) {
+#ifdef __CALYPSI_TARGET_6502__
+        if (tree)
+            far_free(OB_A_(tree));
+#endif
         pool_release(mark);
         return 0;
     }
@@ -270,7 +321,13 @@ WORD fm_alert(WORD defbut, const char *palstr)
     if (icnum) {
         if (icnum < 1 || icnum > 3)
             icnum = 3;
+#ifdef __CALYPSI_TARGET_6502__
+        /* in this file's bank (tools/gemdata.py), so in the window now */
+        memcpy(icon, (const uint8_t *)(uint16_t)al_icon(icnum),
+               GEM_ICON_WB * GEM_ICON_HL);
+#else
         far_get(icon, al_icon(icnum), GEM_ICON_WB * GEM_ICON_HL);
+#endif
         bi->bi_pdata = (uint16_t)icon;
         bi->bi_wb = GEM_ICON_WB;
         bi->bi_hl = GEM_ICON_HL;
@@ -283,7 +340,13 @@ WORD fm_alert(WORD defbut, const char *palstr)
     ob_center(tree, &d);
     rc_intersect(&gl_rscreen, &d);
 
-    wm_update(BEG_UPDATE);
+    /* THE SCREEN LOCK, not the count: wm_update(BEG_UPDATE) here held
+     * nothing off, and another process's redraw painted over the alert
+     * while it waited in fm_do -- A6's window 2, the first time a 6502
+     * program raised one (docs/6502.md, 5b-5).  The donor's wm_update
+     * IS the lock (EmuTOS gemwmlib.c); gem4xe's is wm_lock (phase 97),
+     * which waits, as a program's wind_update does, if another holds it. */
+    wm_lock(BEG_UPDATE);
     gsx_gclip(&t);
     bb_save(&d);
 
@@ -295,12 +358,16 @@ WORD fm_alert(WORD defbut, const char *palstr)
     gsx_sclip(&d);
     bb_restore(&d);
     gsx_sclip(&t);
-    wm_update(END_UPDATE);
+    wm_lock(END_UPDATE);
 
+#ifdef __CALYPSI_TARGET_6502__
+    far_free(OB_A_(tree));
+#endif
     pool_release(mark);
     return (WORD)(i - BUTOFF + 1);
 }
 
+#ifndef __CALYPSI_TARGET_6502__   /* LANG.RSC is not there yet: abistub6502.c refuses it */
 /* form_error: the alert for a DOS error number (the donor's fm_error,
  * gemfmlib.c, and its strings from gem_rsc.c).  TRUE when the user
  * pressed anything but the first button, as the donor answers; an
@@ -342,3 +409,4 @@ WORD fm_error(WORD n)
     }
     return fm_alert(1, s) != 1;
 }
+#endif

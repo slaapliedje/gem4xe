@@ -61,7 +61,7 @@ import devref                               # noqa: E402
 import a6_aes as A6                         # noqa: E402  A6's own calls
 import p6rsc as P6RSC                       # noqa: E402  the program's resource
 from aesref import (Layout, NAME, WF_NAME, WIND_CREATE, WIND_OPEN,  # noqa: E402
-                    WIND_GET, G_STRING, SELECTED)
+                    WIND_GET, G_STRING, SELECTED, FORM_ALERT, RETURN)
 from vdiref import (VSWR_MODE, VSF_INTERIOR, VSF_COLOR, VS_CLIP,  # noqa: E402
                     VR_RECFL, V_GTEXT)
 
@@ -75,6 +75,7 @@ MAP = os.path.abspath(os.path.join(ROOT, "build", "a6.map"))
 PMAP = os.path.abspath(os.path.join(ROOT, "build", "p6prog.map"))
 SHARED = ("_Zp", "_Vsp", "_Vfp")            # the calling convention's, both links
 SHOT = os.path.abspath(os.path.join(ROOT, "build", "p6.png"))
+ASHOT = os.path.abspath(os.path.join(ROOT, "build", "p6-alert.png"))
 STATUS = 0x0600
 SHOT_X0, SHOT_Y0 = 8, 24
 P6_HELLO = 0x4138
@@ -90,6 +91,12 @@ SVERSION = 0x1500                           # what TOS 1.04 says
 GD_EFILNF = -33
 GD_HANDLE_BASE, CIO_IOCBS = 6, 8            # a file's handle is 6 + its IOCB
 GD_CALLS = 11                               # the program's, src/p6_prog.c files()
+# its alert (step 5b-5), read out of the program's source: the model
+# draws the same string
+with open(os.path.join(ROOT, "src", "p6_prog.c")) as _f:
+    ALERT = re.search(r'alert\[\] = "([^"]*)";', _f.read()).group(1)
+ALERT_DEF, ALERT_ADDR = 2, 0x2021           # Return answers the default; the
+                                            # address is the model's to choose
 
 
 def model():
@@ -135,10 +142,14 @@ def model():
         (VR_RECFL, pxy, ()),
         (V_GTEXT, (x + 4, y + 12), tuple(ord(c) for c in TEXT)),
         (VS_CLIP, pxy, (0,)),
+        (FORM_ALERT, (), (ALERT_DEF,), ALERT_ADDR),
     ]
-    v, _, _ = aesref.run(script, objs, mem, trees={L2.base: objs2}, home=L.base,
-                         dev=devref.Antic())
-    return v.dev, wh, (x, y, w, h)
+    # the alert: drawn, the screen as it shows, then Return
+    plan = {len(script) - 1: [("frames", 1), ("shot",), ("key", "RETURN", RETURN)]}
+    v, a, res = aesref.run(script, objs, mem, trees={L2.base: objs2}, home=L.base,
+                           dev=devref.Antic(), plan=plan, pointer=AWAY,
+                           pool=ALERT_ADDR, buffers={ALERT_ADDR: ALERT})
+    return v.dev, wh, (x, y, w, h), a.shots[0], res[-1][2]
 
 
 # what the probe should find: (b6_kind, b6_count)
@@ -162,7 +173,7 @@ def main(argv):
 
     print("gem4xe-p6: a program in a bank of its own, read from the disk, on a stock 6502"
           + (f" with an Axlon of {axlon}" if axlon else ""))
-    dev, want_wh, want_work = model()
+    dev, want_wh, want_work, alert_shot, want_alert = model()
     text = open(MAP).read()
 
     def sym(n):
@@ -208,12 +219,32 @@ def main(argv):
         # a program got a stack of its own and vdi.c lost its inlining.
         cs_lo = int(re.search(r"^cstack\s+([0-9a-f]+)-", text, re.M).group(1), 16)
         b.memload(cs_lo, bytes([STACK_PAINT]) * STACK_GUARD)
+        b.poke(STATUS + 0x62, 0)            # its alert waits for this
         b.poke(STATUS + 12, 1)              # the program, at the go
         b.poke(STATUS + 6, 1)
-        for _ in range(600):
-            b.frames(5)
-            if b.peek(STATUS + 0x40) == ord("E") or b.peek(STATUS + 4):
-                break
+
+        def until(*stages):
+            for _ in range(600):
+                b.frames(5)
+                if b.peek(STATUS + 0x40) in stages or b.peek(STATUS + 4):
+                    break
+        until(ord("a"), ord("E"))
+        # ITS ALERT (step 5b-5): the pointer off it, the alert raised and
+        # photographed, then Return, which presses the default button
+        alert_px = None
+        if b.peek(STATUS + 0x40) == ord("a"):
+            ptr = sym("ptr_state")
+            poke16(ptr + 6, 0)              # PTR_NONE: the gate moves it
+            poke16(ptr, AWAY[0])
+            poke16(ptr + 2, AWAY[1])
+            b.frames(30)
+            b.poke(STATUS + 0x62, 1)
+            b.frames(400)
+            b.screenshot(ASHOT)
+            from PIL import Image
+            alert_px = Image.open(ASHOT).convert("RGB").load()
+            b.key("RETURN")
+            until(ord("E"))
         b.frames(60)
         kind, count = chr(b.peek(sym("b6_kind"))), b.peek(sym("b6_count"))
         check((kind, count) == want_banks,
@@ -342,6 +373,42 @@ def main(argv):
         pieces = b.peek(STATUS + 0x51)
         check(pieces == 1, f"its redraw painted {pieces} rectangle(s), want 1")
 
+        # its alert: the screen while it showed, against the model's, over
+        # the rectangle the alert changed (and a margin); the answer Return
+        # gave; and, below, the window under it put back as it was
+        if check(alert_px is not None, "the program reached its alert"):
+            ink = devref.Antic.INK
+            sw, sh = len(alert_shot[0]), len(alert_shot)
+            moved = [(x, y) for y in range(sh) for x in range(sw)
+                     if (alert_shot[y][x] == ink) != bool(dev.bit(x, y))]
+            ax0 = max(min(x for x, _ in moved) - 4, 0)
+            ax1 = min(max(x for x, _ in moved) + 5, sw)
+            ay0 = max(min(y for _, y in moved) - 4, 0)
+            ay1 = min(max(y for _, y in moved) + 5, sh)
+            on = next((x, y) for y in range(ay0, ay1) for x in range(ax0, ax1)
+                      if alert_shot[y][x] == ink)
+            off = next((x, y) for y in range(ay0, ay1) for x in range(ax0, ax1)
+                       if alert_shot[y][x] != ink)
+            afg = alert_px[SHOT_X0 + on[0], SHOT_Y0 + on[1]]
+            abg = alert_px[SHOT_X0 + off[0], SHOT_Y0 + off[1]]
+            abad, afirst = 0, []
+            for y in range(ay0, ay1):
+                for x in range(ax0, ax1):
+                    want_ink = alert_shot[y][x] == ink
+                    if alert_px[SHOT_X0 + x, SHOT_Y0 + y] != (afg if want_ink else abg):
+                        abad += 1
+                        if len(afirst) < 4:
+                            afirst.append((x, y, want_ink))
+            atotal = (ax1 - ax0) * (ay1 - ay0)
+            check(afg != abg and not abad,
+                  f"the alert {ALERT!r}: {atotal - abad:,} of {atotal:,} pixels over "
+                  f"({ax0},{ay0})-({ax1 - 1},{ay1 - 1}) as the model draws it; first "
+                  f"differing (x, y, wanted) {afirst}")
+        got_alert = w16(STATUS + 0x60)
+        check(got_alert == want_alert == ALERT_DEF,
+              f"form_alert answered {got_alert} to Return; the model {want_alert}, "
+              f"the default button {ALERT_DEF}")
+
         n, base = w16(sym("a6_nlog")), sym("a6_log")
         got = []
         for k in range(min(n, 8)):
@@ -380,8 +447,9 @@ def main(argv):
               f"them; first differing (x, y, wanted) {first}")
     finally:
         emu.stop()
-    if not fails and not keep and os.path.exists(SHOT):
-        os.remove(SHOT)
+    for shot in (SHOT, ASHOT):
+        if not fails and not keep and os.path.exists(shot):
+            os.remove(shot)
     print(f"gem4xe-p6: {'PASS' if not fails else 'FAIL'} -- a program in a bank of its "
           f"own, read from the disk, on a stock 6502, {len(fails)} problem(s)")
     return 1 if fails else 0

@@ -146,7 +146,7 @@ A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
              $(B6)/res/a6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
              $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o
-A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc gemdos dos con clock
+A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc alert gemdos dos con clock
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
 
@@ -172,6 +172,9 @@ $(B6)/w/a6cio.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far
 $(B6)/w/abi.c:    ; @mkdir -p $(dir $@); printf '#pragma clang section text="abi"\n#include "../../../src/sys/abi.c"\n' > $@
 $(B6)/w/abistub.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="abi"\n#include "../../../src/sys6502/abistub6502.c"\n' > $@
 $(B6)/w/rsrc.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="rsrc"\n#include "../../../src/aes/rsrc.c"\n' > $@
+# form_alert (docs/6502.md, 5b-5), beside the resource loader: rs_obfix
+# is its, and the alert icons are in this bank too (tools/gemdata.py)
+$(B6)/w/alert.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="rsrc"\n#include "../../../src/aes/alert.c"\n' > $@
 # GEMDOS (docs/6502.md, 5b-4): gemdos.c in two banks, the second taken by
 # BANK_TEXT in the file; the DOS's identity, the console and the clock in
 # a third
@@ -196,14 +199,15 @@ $(B6)/pre/a6cio.o:  $(B6)/w/a6cio.c src/sys/cio.c $(HDRS6)
 $(B6)/pre/abi.o:    $(B6)/w/abi.c src/sys/abi.c $(HDRS6)
 $(B6)/pre/abistub.o: $(B6)/w/abistub.c src/sys6502/abistub6502.c $(HDRS6)
 $(B6)/pre/rsrc.o:   $(B6)/w/rsrc.c src/aes/rsrc.c build/gemdata.h $(HDRS6)
+$(B6)/pre/alert.o:  $(B6)/w/alert.c src/aes/alert.c build/gemdata.h build/lang_rsc.h $(HDRS6)
 $(B6)/pre/gemdos.o: $(B6)/w/gemdos.c src/sys/gemdos.c build/version.h $(HDRS6)
 $(B6)/pre/dos.o:    $(B6)/w/dos.c src/sys/dos.c $(HDRS6)
 $(B6)/pre/con.o:    $(B6)/w/con.c src/sys/con.c $(HDRS6)
 $(B6)/pre/clock.o:  $(B6)/w/clock.c src/sys/clock.c $(HDRS6)
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o: EXTRA6 = -I src/aes -I build -I src/sys
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/alert.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o: EXTRA6 = -I src/aes -I build -I src/sys
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o:
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/alert.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o:
 	@mkdir -p $(dir $@) $(B6)/asm
 	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \
 	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))

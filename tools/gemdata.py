@@ -254,10 +254,14 @@ def emit(c_path, h_path):
         lines.append('    },')
     lines.append('};')
     lines.append('')
-    lines.append('/* The three alert icons, 32 rows of 4 bytes, MSB first. */')
+    lines.append('/* The three alert icons, 32 rows of 4 bytes, MSB first.  On the 6502')
+    lines.append(' * in alert__bank, which tools/bsp6502/a6.scm puts in alert.c\'s bank (docs/6502.md, 5b-5). */')
+    lines += ['#ifdef __CALYPSI_TARGET_6502__', '#define GEM_ICONS_AT BANK_DATA("alert")',
+              '#else', '#define GEM_ICONS_AT', '#endif']
     for name in ICON_NAMES:
         data = icon_bytes(name)
-        lines.append('const uint8_t FAR gem_icon_%s[%d] = {' % (name.lower(), len(data)))
+        lines.append('const uint8_t FAR gem_icon_%s[%d] GEM_ICONS_AT = {'
+                     % (name.lower(), len(data)))
         for i in range(0, len(data), 12):
             lines.append('    ' + ', '.join('0x%02X' % b for b in data[i:i + 12]) + ',')
         lines.append('};')

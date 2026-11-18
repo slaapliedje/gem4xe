@@ -1821,7 +1821,9 @@ void wm_update(WORD beg_update)
  *
  * Only a PROGRAM's call is the lock (src/sys/abi.c, wind_update); the
  * AES's own wm_update calls count as before, so nothing inside the AES
- * can wait on it.  A waiter is parked as a wait is (p_evwait, EVW_UPDATE)
+ * can wait on it -- except form_alert (src/aes/alert.c), which is a
+ * program's call too, made for it, and must hold the others off while
+ * it waits in fm_do (docs/6502.md, 5b-5).  A waiter is parked as a wait is (p_evwait, EVW_UPDATE)
  * and proc_ready does not give it a turn until the holder lets go.
  * BEG_UPDATE | 0x100, AES 4's check-and-set, answers 0 instead of
  * waiting. */

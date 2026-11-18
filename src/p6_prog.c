@@ -11,7 +11,7 @@
  * What it does, and what it leaves at $0640 for tests/emu/p6_prog.py:
  *
  *   $0640  'p' once main runs, 'W' waiting for its redraw, 'G' in its GEMDOS
- *          calls, 'D' drawn, 'E' about to return
+ *          calls, 'D' drawn, 'a' at its alert, 'E' about to return
  *   $0641  ap_id from appl_init; $0642-3 global[0] (the AES version)
  *   $0644  the workstation handle from v_opnvwk; $0645 the window's
  *   $0646  the character height graf_handle answered
@@ -24,6 +24,8 @@
  *   $0659  object 2's ob_state, stored SELECTED and fetched back
  *   $065A-$065D  objc_offset of object 2: x, y
  *   $065E  graf_handle's cell width; $065F rsrc_free's answer
+ *   $0660-1  form_alert's answer (step 5b-5); it waits at 'a' for the
+ *            gate to write $0662 before it raises the alert
  *
  * and GEMDOS's (step 5b-4), every address one in its own bank:
  *
@@ -65,6 +67,9 @@ static char text[16];                   /* object 1's string, fetched */
 static DTA dta;                         /* its own, in its bank */
 static uint8_t hdr[18];                 /* P6PROG.RSC's header, read */
 static char path[8];
+/* its alert, in its bank: the default is the SECOND button, so Return
+ * answers 2, which the first button's index could not fake */
+static const char alert[] = "[1][FROM A BANK|ON A 6502][OK|NO]";
 
 static void put32(uint8_t at, LONG v)
 {
@@ -212,6 +217,11 @@ int main(void)
     wind_update(END_UPDATE);
     STATUS[0x51] = pieces;
     STATUS[0x40] = 'D';
+
+    STATUS[0x40] = 'a';
+    while (!STATUS[0x62])
+        ;
+    put16(0x60, form_alert(2, alert));
 
     msg[0] = P6_HELLO;
     msg[1] = ap;

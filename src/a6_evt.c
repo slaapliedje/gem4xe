@@ -216,12 +216,17 @@ static void prog_start(void)
     STATUS[12] = 'R';
 }
 
-/* The inside of window wh, white, where it shows inside *area. */
+/* The inside of window wh, white, where it shows inside *area -- inside
+ * the screen lock, as a GEM program's redraw takes it (wind_update, which
+ * src/sys/abi.c makes wm_lock): a redraw that came while another process
+ * holds the screen -- a program's alert, step 5b-5 -- waits for it
+ * instead of painting over it. */
 static void redraw(WORD wh, const GRECT *area)
 {
     WORD w[4];
     GRECT r;
 
+    wm_lock(BEG_UPDATE);
     gsx_moff();
     wm_get(wh, WF_FIRSTXYWH, w, 0);
     while (w[2] && w[3]) {
@@ -237,6 +242,7 @@ static void redraw(WORD wh, const GRECT *area)
     }
     gsx_sclip(&gl_rscreen);
     gsx_mon();
+    wm_lock(END_UPDATE);
 }
 
 void a6_events(void)

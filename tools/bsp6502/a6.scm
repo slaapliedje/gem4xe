@@ -75,9 +75,12 @@
     ;; src/sys/abi.c, the call gate's C (docs/6502.md, step 5)
     (memory Bank17 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store17)
             (section abi abi__bank))
-    ;; src/aes/rsrc.c, the resource loader, and its variables (step 5b-3)
+    ;; src/aes/rsrc.c, the resource loader, and its variables (step 5b-3);
+    ;; src/aes/alert.c, and the alert icons, which are resident gemdata.o's
+    ;; and so a section of their own: a const in a resident object is
+    ;; rodata, what bankasm makes of rsrc.c's is text (step 5b-5)
     (memory Bank18 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store18)
-            (section rsrc rsrc__bank))
+            (section rsrc rsrc__bank alert__bank))
     ;; src/sys/gemdos.c in two, and dos.c, con.c, clock.c (step 5b-4)
     (memory Bank19 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store19)
             (section gemdos gemdos__bank))

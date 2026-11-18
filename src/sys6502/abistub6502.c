@@ -24,8 +24,8 @@ static WORD refused(void)
     return 0;
 }
 
-/* alerts (src/aes/alert.c): the pool */
-WORD fm_alert(WORD defbut, const char *palstr) { (void)defbut; (void)palstr; return refused(); }
+/* form_error (src/aes/alert.c): its texts are LANG.RSC's, which the
+ * 6502 does not load yet.  form_alert itself is served (step 5b-5). */
 WORD fm_error(WORD n) { (void)n; return refused(); }
 
 /* the file selector (src/aes/fsel.c) */
