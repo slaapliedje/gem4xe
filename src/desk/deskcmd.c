@@ -60,16 +60,16 @@ TINY WORD  cmd_lines;      /* the EOLs in it, plus a last
 TINY WORD  cmd_top;        /* the first line shown ... */
 TINY UWORD cmd_top_off;    /* ... and where in the text it is */
 TINY WORD  cmd_rows;       /* lines the work area holds */
-char FAR * TINY cmd_buf;       /* the title, then the text */
+FPTR(char) TINY cmd_buf;       /* the title, then the text */
 
 static WORD mul_div(WORD m1, WORD m2, WORD d1)
 {
     return (WORD)((LONG)m1 * m2 / d1);
 }
 
-static const uint8_t FAR *cmd_textp(void)
+static FPTR(const uint8_t) cmd_textp(void)
 {
-    return (const uint8_t FAR *)cmd_buf + CMD_TEXT;
+    return FIDX(const uint8_t, FP_OF(const uint8_t, cmd_buf), CMD_TEXT);
 }
 
 /* THE LINE ENDINGS A FILE MAY CARRY, and how many bytes the one at off
@@ -81,13 +81,13 @@ static const uint8_t FAR *cmd_textp(void)
  * walk below asks this, so the count, the slider and the text agree. */
 static UWORD cmd_eol(UWORD off)
 {
-    const uint8_t FAR *p = cmd_textp();
-    WORD c = p[off];
+    FPTR(const uint8_t) p = cmd_textp();
+    WORD c = FAT(const uint8_t, p, off);
 
     if (c == EOL || c == '\n')
         return 1;
     if (c == '\r')
-        return (UWORD)((off + 1 < cmd_len && p[off + 1] == '\n') ? 2 : 1);
+        return (UWORD)((off + 1 < cmd_len && FAT(const uint8_t, p, off + 1) == '\n') ? 2 : 1);
     return 0;
 }
 
@@ -143,7 +143,7 @@ static void cmd_count(void)
  * offset after its ending, or the end. */
 static UWORD cmd_line(UWORD off, char *d)
 {
-    const uint8_t FAR *p = cmd_textp();
+    FPTR(const uint8_t) p = cmd_textp();
     WORD n = 0, c;
     UWORD k;
 
@@ -153,7 +153,7 @@ static UWORD cmd_line(UWORD off, char *d)
             off += k;
             break;
         }
-        c = p[off];
+        c = FAT(const uint8_t, p, off);
         off++;
         if (c == '\t') {
             do {
@@ -218,7 +218,7 @@ static void cmd_paint(const GRECT *work, const GRECT *pc)
     tree[CMD_LINE].ob_y = 0;
     tree[CMD_LINE].ob_width = (WORD)(G.g_wchar * CMD_COLS);
     tree[CMD_LINE].ob_height = G.g_hchar;
-    objc_draw(tree, ROOT, 0, pc->g_x, pc->g_y, pc->g_w, pc->g_h);
+    objc_draw(TREE_OF(tree), ROOT, 0, pc->g_x, pc->g_y, pc->g_w, pc->g_h);
 
     first = (WORD)((pc->g_y - work->g_y) / G.g_hchar);
     last = (WORD)((pc->g_y + pc->g_h - 1 - work->g_y) / G.g_hchar);
@@ -230,7 +230,7 @@ static void cmd_paint(const GRECT *work, const GRECT *pc)
             break;
         off = cmd_line(off, line);
         tree[CMD_LINE].ob_y = (WORD)(i * G.g_hchar);
-        objc_draw(tree, CMD_LINE, 0, pc->g_x, pc->g_y, pc->g_w, pc->g_h);
+        objc_draw(TREE_OF(tree), CMD_LINE, 0, pc->g_x, pc->g_y, pc->g_w, pc->g_h);
     }
 }
 
@@ -302,14 +302,14 @@ static void cmd_close(void)
  * reads at every draw of it. */
 static void cmd_title(const char *line)
 {
-    char FAR *t = cmd_buf;
+    FPTR(char) t = cmd_buf;
     WORD i;
 
-    t[0] = ' ';
+    FPUT(char, t, 0, ' ');
     for (i = 0; i < LEN_ZCMD - 1 && line[i]; i++)
-        t[i + 1] = line[i];
-    t[i + 1] = ' ';
-    t[i + 2] = 0;
+        FPUT(char, t, i + 1, line[i]);
+    FPUT(char, t, i + 1, ' ');
+    FPUT(char, t, i + 2, 0);
     wind_set(cmd_id, WF_NAME, (WORD)((uint32_t)cmd_buf >> 16),
              (WORD)(uint32_t)cmd_buf, 0, 0);
 }
@@ -353,12 +353,12 @@ static WORD cmd_show(const char *line)
  * (tools/ccbug B26).  The path went to bank $00. */
 static void cmd_path(const char *path)
 {
-    char FAR *b = cmd_buf + CMD_PATH;
+    FPTR(char) b = FIDX(char, cmd_buf, CMD_PATH);
     WORD i;
 
     for (i = 0; i < LEN_ZPATH - 1 && path[i]; i++)
-        b[i] = path[i];
-    b[i] = 0;
+        FPUT(char, b, i, path[i]);
+    FPUT(char, b, i, 0);
 }
 
 /* Whether the DOS has a command processor to hand a line to, asked once
@@ -380,11 +380,11 @@ void cmd_run(const char *line)
             fun_alert(1, STCMDMEM);
             return;
         }
-        cmd_buf = (char FAR *)a;
+        cmd_buf = FP_OF(char, a);
     }
     cmd_path("");                               /* not a file: no Edit */
     desk_busy(TRUE);
-    n = Psystem(line, cmd_buf + CMD_TEXT, CMD_BUF - CMD_TEXT);
+    n = Psystem(line, FIDX(char, cmd_buf, CMD_TEXT), CMD_BUF - CMD_TEXT);
     desk_busy(FALSE);
     if (n < 0)
         n = 0;                                  /* the item was enabled;
@@ -417,7 +417,7 @@ WORD cmd_file(const char *path, const char *title)
         LONG a = Malloc(CMD_BUF);
         if (a <= 0)
             return FALSE;
-        cmd_buf = (char FAR *)a;
+        cmd_buf = FP_OF(char, a);
     }
     desk_busy(TRUE);
     h = Fopen(path, 0);                         /* read only */
@@ -425,7 +425,7 @@ WORD cmd_file(const char *path, const char *title)
         desk_busy(FALSE);
         return FALSE;
     }
-    n = Fread((WORD)h, CMD_BUF - CMD_TEXT, cmd_buf + CMD_TEXT);
+    n = Fread((WORD)h, CMD_BUF - CMD_TEXT, FIDX(char, cmd_buf, CMD_TEXT));
     Fclose((WORD)h);
     desk_busy(FALSE);
     if (n < 0)
@@ -444,19 +444,19 @@ WORD cmd_file(const char *path, const char *title)
 WORD cmd_edit(void)
 {
     char doc[LEN_ZPATH];
-    const char FAR *b;
+    FPTR(const char) b;
     WORD topw = 0, i, d;
 
     if (!cmd_id)
         return FALSE;
-    b = cmd_buf + CMD_PATH;                     /* a pointer of its own: B26 */
-    if (!b[0])
+    b = FIDX(char, cmd_buf, CMD_PATH);          /* a pointer of its own: B26 */
+    if (!FAT(const char, b, 0))
         return FALSE;
     wind_get(0, WF_TOP, &topw, &d, &d, &d);
     if (topw != cmd_id)
         return FALSE;
     for (i = 0; i < LEN_ZPATH; i++)
-        doc[i] = b[i];
+        doc[i] = FAT(const char, b, i);
     return do_edit(doc);
 }
 
@@ -478,17 +478,17 @@ WORD cmd_print(const char *path)
         LONG a = Malloc(CMD_BUF);
         if (a <= 0)
             return FALSE;
-        cmd_buf = (char FAR *)a;
+        cmd_buf = FP_OF(char, a);
     }
     h = Fopen(path, 0);
     if (h < 0)
         return FALSE;
     desk_busy(TRUE);
     for (;;) {
-        n = Fread((WORD)h, CMD_BUF - CMD_TEXT, cmd_buf + CMD_TEXT);
+        n = Fread((WORD)h, CMD_BUF - CMD_TEXT, FIDX(char, cmd_buf, CMD_TEXT));
         if (n <= 0)
             break;                              /* end, or a read error */
-        w = Fwrite(3, n, cmd_buf + CMD_TEXT);   /* 3 is PRN: */
+        w = Fwrite(3, n, FIDX(char, cmd_buf, CMD_TEXT));   /* 3 is PRN: */
         if (w != n) {
             ok = FALSE;
             break;

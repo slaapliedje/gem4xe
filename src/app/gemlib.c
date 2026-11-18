@@ -1069,12 +1069,21 @@ WORD form_dial(WORD type, WORD x1, WORD y1, WORD w1, WORD h1,
     return aes(51, 9, 1, 0, 0);
 }
 
+#ifdef __CALYPSI_TARGET_6502__
+WORD form_alert(WORD defbut, uint32_t s)
+{
+    int_in[0] = defbut;
+    addr_in[0] = (LONG)s;
+    return aes(52, 1, 1, 1, 0);
+}
+#else
 WORD form_alert(WORD defbut, const char *s)
 {
     int_in[0] = defbut;
     addr_in[0] = (LONG)(uint32_t)(const char FAR *)s;
     return aes(52, 1, 1, 1, 0);
 }
+#endif
 
 WORD form_error(WORD n)
 {

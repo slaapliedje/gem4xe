@@ -37,7 +37,9 @@ static uint8_t *fa_map(uint32_t a)
     k--;
     k = (uint8_t)(k << 2);
     p &= 3;
-    PORTB = g6_l_tab[(uint8_t)(g6_l_fbase + k + p)];
+    k += p;                             /* bytes stored, then an index: cc6502 */
+    k += g6_l_fbase;                    /* sign-extends a computed byte cast */
+    PORTB = g6_l_tab[k];
     return (uint8_t *)(WINDOW + ((uint16_t)a & (PIECE - 1)));
 }
 

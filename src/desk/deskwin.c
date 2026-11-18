@@ -35,13 +35,15 @@ static const WORD win_ycell[NUM_WNODES] = { 6, 8, 10, 13 };
 
 /* -- strings and rectangles -------------------------------------------- */
 
-static char *put_str(char *d, const char FAR *s)
+static char *put_str(char *d, FPTR(const char) s)
 {
-    while (*s)
-        *d++ = *s++;
+    while (FDEREF(char, s))
+        *d++ = FNEXT(char, s);
     *d = 0;
     return d;
 }
+/* a near string or a far one alike (gem.h, FAR_ARG) */
+#define put_str(d, s)   (put_str)((d), FAR_ARG(s))
 
 /* n in decimal at d; the sizes and counts are never negative. */
 static char *put_num(char *d, LONG n)
@@ -64,13 +66,13 @@ static char *put_num(char *d, LONG n)
  * where the desktop having written them itself was the argument for putting
  * them: every GEM program wants the same three, and an ST program arrives
  * already written against gemlib's spelling of them. */
-static WORD far_strcmp(const char FAR *a, const char FAR *b)
+static WORD far_strcmp(FPTR(const char) a, FPTR(const char) b)
 {
-    while (*a && *a == *b) {
-        a++;
-        b++;
+    while (FDEREF(char, a) && FDEREF(char, a) == FDEREF(char, b)) {
+        FINC(char, a);
+        FINC(char, b);
     }
-    return (WORD)((unsigned char)*a - (unsigned char)*b);
+    return (WORD)((unsigned char)FDEREF(char, a) - (unsigned char)FDEREF(char, b));
 }
 
 static WORD mul_div(WORD m1, WORD m2, WORD d1)
@@ -90,25 +92,25 @@ WORD win_start(void)
     arena = Malloc((LONG)ARENA_SIZE);
     if (arena <= 0)
         return FALSE;
-    G.g_dta = (DTA FAR *)arena;
+    G.g_dta = FP_OF(DTA, arena);
     Fsetdta(G.g_dta);
     for (i = 0; i < NUM_WNODES; i++) {
         WNODE *pw = &G.g_wlist[i];
         pw->w_id = 0;
         pw->w_root = (WORD)(DROOT + 1 + i);
         pw->w_path.p_flist =
-            (FNODE FAR *)(arena + (LONG)sizeof(DTA) + (LONG)i * (NUM_FNODES * sizeof(FNODE)));
+            FP_OF(FNODE, (arena + (LONG)sizeof(DTA) + (LONG)i * (NUM_FNODES * sizeof(FNODE))));
     }
-    G.g_cnxsave = (CSAVE FAR *)(arena + (LONG)sizeof(DTA)
-                                  + (LONG)NUM_WNODES * (NUM_FNODES * sizeof(FNODE)));
-    G.g_shelbuf = (char FAR *)G.g_cnxsave + sizeof(CSAVE);
-    G.g_opdta = (DTA FAR *)(G.g_shelbuf + SIZE_SHELBUF);
-    G.g_copybuf = (char FAR *)(G.g_opdta + MAX_DELLEVEL);
+    G.g_cnxsave = FP_OF(CSAVE, (arena + (LONG)sizeof(DTA)
+                                  + (LONG)NUM_WNODES * (NUM_FNODES * sizeof(FNODE))));
+    G.g_shelbuf = FIDX(char, FP_OF(char, G.g_cnxsave), sizeof(CSAVE));
+    G.g_opdta = FP_OF(DTA, FIDX(char, G.g_shelbuf, SIZE_SHELBUF));
+    G.g_copybuf = FP_OF(char, FIDX(DTA, G.g_opdta, MAX_DELLEVEL));
     {                                           /* the donor's is zeroed */
-        char FAR *p = (char FAR *)G.g_cnxsave;
+        FPTR(char) p = FP_OF(char, G.g_cnxsave);
         WORD n;
         for (n = 0; n < sizeof(CSAVE); n++)
-            *p++ = 0;
+            FPUTN(char, p, 0);
     }
     return TRUE;
 }
@@ -135,7 +137,7 @@ WNODE *win_ontop(void)
 
 static void win_top(WNODE *pw)
 {
-    objc_order(G.g_screen, pw->w_root, NIL);
+    objc_order(TREE_OF(G.g_screen), pw->w_root, NIL);
 }
 
 /* Give the window up: the AES's handle, and its box, which goes to the
@@ -146,7 +148,7 @@ static void win_free(WNODE *pw)
         wind_delete(pw->w_id);
     G.g_wcnt--;
     pw->w_id = 0;
-    objc_order(G.g_screen, pw->w_root, 1);
+    objc_order(TREE_OF(G.g_screen), pw->w_root, 1);
     obj_wfree(pw->w_root, 0, 0, 0, 0);
 }
 
@@ -156,18 +158,18 @@ static void win_free(WNODE *pw)
  * are out. */
 static WNODE *win_alloc(void)
 {
-    WSAVE FAR *pws;
+    FPTR(WSAVE) pws;
     WNODE *pw;
     WORD wob;
     GRECT r;
 
     if (G.g_wcnt == NUM_WNODES)
         return NULL;
-    pws = &G.g_cnxsave->cs_wnode[G.g_wcnt];
-    r.g_x = pws->x_save;
-    r.g_y = pws->y_save;
-    r.g_w = pws->w_save;
-    r.g_h = pws->h_save;
+    pws = FIDX(WSAVE, FARR(CSAVE, G.g_cnxsave, cs_wnode), G.g_wcnt);
+    r.g_x = FGET(WSAVE, pws, x_save);
+    r.g_y = FGET(WSAVE, pws, y_save);
+    r.g_w = FGET(WSAVE, pws, w_save);
+    r.g_h = FGET(WSAVE, pws, h_save);
     wob = obj_walloc(r.g_x, r.g_y, r.g_w, r.g_h);
     if (!wob)
         return NULL;
@@ -189,15 +191,15 @@ static WNODE *win_alloc(void)
 /* -- the listing ------------------------------------------------------- */
 
 /* The window's FNODE behind item obj, or NULL. */
-FNODE FAR *win_fnode(WNODE *pw, WORD obj)
+FPTR(FNODE) win_fnode(WNODE *pw, WORD obj)
 {
-    FNODE FAR *pf = pw->w_path.p_flist;
+    FPTR(FNODE) pf = pw->w_path.p_flist;
     WORD i;
 
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        if (pf->f_obid == obj)
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        if (FGET(FNODE, pf, f_obid) == obj)
             return pf;
-    return NULL;
+    return 0;
 }
 
 /* The field the current order compares, the donor's pn_fcomp: date and
@@ -207,45 +209,46 @@ FNODE FAR *win_fnode(WNODE *pw, WORD obj)
  * the tie-break for the rest, so the listing never depends on the order
  * the directory happened to be in.  Except S_NSRT, which is that
  * order. */
-static WORD pn_fcomp(const FNODE *a, const FNODE FAR *b)
+static WORD pn_fcomp(const FNODE *a, FPTR(const FNODE) b)
 {
-    const char FAR *ea;
+    FPTR(const char) ea;
     const char *ta;
     LONG chk = 0;
 
     switch (G.g_isort) {
     case S_DATE:
-        chk = (LONG)b->f_date - (LONG)a->f_date;
+        chk = (LONG)FGET(FNODE, b, f_date) - (LONG)a->f_date;
         if (!chk)
-            chk = (LONG)b->f_time - (LONG)a->f_time;
+            chk = (LONG)FGET(FNODE, b, f_time) - (LONG)a->f_time;
         break;
     case S_SIZE:
-        chk = b->f_size - a->f_size;
+        chk = FGET(FNODE, b, f_size) - a->f_size;
         break;
     case S_TYPE:
         for (ta = a->f_name; *ta && *ta != '.'; ta++)
             ;
-        for (ea = b->f_name; *ea && *ea != '.'; ea++)
+        for (ea = FARR(FNODE, b, f_name); FDEREF(char, ea) && FDEREF(char, ea) != '.';
+             FINC(char, ea))
             ;
-        chk = far_strcmp(ta, ea);
+        chk = far_strcmp(FP_NEAR(const char, ta), ea);
         break;
     case S_NSRT:
-        chk = (LONG)a->f_seq - (LONG)b->f_seq;
+        chk = (LONG)a->f_seq - (LONG)FGET(FNODE, b, f_seq);
         break;
     default:
         break;
     }
     if (chk)
         return chk < 0 ? -1 : 1;
-    return far_strcmp(a->f_name, b->f_name);
+    return far_strcmp(FP_NEAR(const char, a->f_name), FARR(FNODE, b, f_name));
 }
 
 /* Folders first -- unless nothing is being sorted, when the directory's
  * own order is the whole of it -- and then the field: the donor's
  * pn_comp. */
-static WORD pn_comp(const FNODE *a, const FNODE FAR *b)
+static WORD pn_comp(const FNODE *a, FPTR(const FNODE) b)
 {
-    if (G.g_isort != S_NSRT && ((a->f_attr ^ b->f_attr) & FA_SUBDIR))
+    if (G.g_isort != S_NSRT && ((a->f_attr ^ FGET(FNODE, b, f_attr)) & FA_SUBDIR))
         return (a->f_attr & FA_SUBDIR) ? -1 : 1;
     return pn_fcomp(a, b);
 }
@@ -259,7 +262,7 @@ static WORD pn_open(PNODE *pn, const char *spec)
         n++;
     if (n >= LEN_ZPATH)
         return FALSE;
-    put_str(pn->p_spec, spec);
+    put_str(pn->p_spec, FP_NEAR(const char, spec));
     pn->p_count = 0;
     pn->p_size = 0;
     return TRUE;
@@ -268,25 +271,25 @@ static WORD pn_open(PNODE *pn, const char *spec)
 /* A near FNODE into a far one, byte by byte: cc65816 5.18 cannot
  * compile a struct assignment between near and far objects over 8 bytes
  * at all (tools/ccbug/README.md, B11); far to far it can. */
-static void fn_copy(FNODE FAR *d, const FNODE *s)
+static void fn_copy(FPTR(FNODE) d, const FNODE *s)
 {
-    char FAR *pd = (char FAR *)d;
+    FPTR(char) pd = FP_OF(char, d);
     const char *ps = (const char *)s;
     WORD n;
 
     for (n = 0; n < sizeof(FNODE); n++)
-        *pd++ = *ps++;
+        FPUTN(char, pd, *ps++);
 }
 
 /* ...and a far one into a near one, for the same reason. */
-static void fn_read(FNODE *d, const FNODE FAR *s)
+static void fn_read(FNODE *d, FPTR(const FNODE) s)
 {
     char *pd = (char *)d;
-    const char FAR *ps = (const char FAR *)s;
+    FPTR(const char) qs = FP_OF(const char, s);
     WORD n;
 
     for (n = 0; n < sizeof(FNODE); n++)
-        *pd++ = *ps++;
+        *pd++ = FNEXT(char, qs);
 }
 
 /* -- what the desktop asks --------------------------------------------- */
@@ -326,15 +329,15 @@ WORD spec_dirlen(const char *spec)
 
 /* Does NAME.EXT match a mask of * and ?, as the DOS matches one?  A name
  * with no extension is NAME. -- so "*.*" is everything, the DOS's rule. */
-static WORD mask_match(const char *mask, const char FAR *name)
+static WORD mask_match(const char *mask, FPTR(const char) name)
 {
     char nm[LEN_ZFNAME + 1];
     const char *m = mask, *star_m = 0, *star_n = 0, *n = nm;
     WORD k, dot = FALSE;
 
-    for (k = 0; name[k] && k < LEN_ZFNAME - 1; k++) {
-        nm[k] = name[k];
-        if (name[k] == '.')
+    for (k = 0; FAT(const char, name, k) && k < LEN_ZFNAME - 1; k++) {
+        nm[k] = FAT(const char, name, k);
+        if (FAT(const char, name, k) == '.')
             dot = TRUE;
     }
     if (!dot)
@@ -364,8 +367,8 @@ static WORD mask_match(const char *mask, const char FAR *name)
  * Fsfirst lists nothing. */
 static void pn_active(PNODE *pn)
 {
-    DTA FAR *dta = G.g_dta;
-    FNODE FAR *pf;
+    FPTR(DTA) dta = G.g_dta;
+    FPTR(FNODE) pf;
     FNODE fn;
     LONG ret;
     WORD count = 0, i;
@@ -393,26 +396,26 @@ static void pn_active(PNODE *pn)
     Fsetdta(dta);
     ret = Fsfirst(all, DISPATTR);
     while (ret == E_OK && count < NUM_FNODES) {
-        if (dta->d_fname[0] != '.'
-            && ((dta->d_attrib & FA_SUBDIR)
-                || mask_match(mask, (const char FAR *)dta->d_fname))) {
+        if (FAT(char, FARR(DTA, dta, d_fname), 0) != '.'
+            && ((FGET(DTA, dta, d_attrib) & FA_SUBDIR)
+                || mask_match(mask, FARR(DTA, dta, d_fname)))) {
             fn.f_obid = 0;
             fn.f_flags = 0;
             fn.f_seq = count;               /* where the directory had it */
-            fn.f_attr = (WORD)(unsigned char)dta->d_attrib;
-            fn.f_time = dta->d_time;
-            fn.f_date = dta->d_date;
-            fn.f_size = dta->d_length;
-            for (i = 0; i < LEN_ZFNAME - 1 && dta->d_fname[i]; i++)
-                fn.f_name[i] = dta->d_fname[i];
+            fn.f_attr = (WORD)(unsigned char)FGET(DTA, dta, d_attrib);
+            fn.f_time = FGET(DTA, dta, d_time);
+            fn.f_date = FGET(DTA, dta, d_date);
+            fn.f_size = FGET(DTA, dta, d_length);
+            for (i = 0; i < LEN_ZFNAME - 1 && FAT(char, FARR(DTA, dta, d_fname), i); i++)
+                fn.f_name[i] = FAT(char, FARR(DTA, dta, d_fname), i);
             for (; i < LEN_ZFNAME; i++)
                 fn.f_name[i] = 0;
             /* insertion: slide the ones after it up one */
             i = count;
-            pf = pn->p_flist + count;
-            while (i > 0 && pn_comp(&fn, pf - 1) < 0) {
-                *pf = *(pf - 1);
-                pf--;
+            pf = FIDX(FNODE, pn->p_flist, count);
+            while (i > 0 && pn_comp(&fn, FIDX(FNODE, pf, -1)) < 0) {
+                FMOVE(FNODE, pf, FIDX(FNODE, pf, -1));
+                FDEC(FNODE, pf);
                 i--;
             }
             fn_copy(pf, &fn);
@@ -430,17 +433,17 @@ static void pn_active(PNODE *pn)
  * read, which is the whole reason an FNODE carries f_seq. */
 static void pn_sort(PNODE *pn)
 {
-    FNODE FAR *pf;
+    FPTR(FNODE) pf;
     FNODE fn;
     WORD i, j;
 
     for (i = 1; i < pn->p_count; i++) {
-        pf = pn->p_flist + i;
+        pf = FIDX(FNODE, pn->p_flist, i);
         fn_read(&fn, pf);
         j = i;
-        while (j > 0 && pn_comp(&fn, pf - 1) < 0) {
-            *pf = *(pf - 1);
-            pf--;
+        while (j > 0 && pn_comp(&fn, FIDX(FNODE, pf, -1)) < 0) {
+            FMOVE(FNODE, pf, FIDX(FNODE, pf, -1));
+            FDEC(FNODE, pf);
             j--;
         }
         fn_copy(pf, &fn);
@@ -521,26 +524,26 @@ static const char FAR win_exts[][4] = {
 
 /* Which of win_exts[] the name ends in, or -1.  The name is the DOS's
  * own upper case, so a plain compare is the right one. */
-static WORD win_extof(const FNODE FAR *pf)
+static WORD win_extof(FPTR(const FNODE) pf)
 {
-    const char FAR *s = pf->f_name;
+    FPTR(const char) s = FARR(FNODE, pf, f_name);
     WORD i;
 
-    while (*s && *s != '.')
-        s++;
-    if (s[0] != '.' || s[4])
+    while (FDEREF(char, s) && FDEREF(char, s) != '.')
+        FINC(char, s);
+    if (FAT(const char, s, 0) != '.' || FAT(const char, s, 4))
         return -1;
     for (i = 0; i < WIN_NEXTS; i++)
-        if (s[1] == win_exts[i][0] && s[2] == win_exts[i][1]
-            && s[3] == win_exts[i][2])
+        if (FAT(const char, s, 1) == win_exts[i][0] && FAT(const char, s, 2) == win_exts[i][1]
+            && FAT(const char, s, 3) == win_exts[i][2])
             return i;
     return -1;
 }
 
 /* Which icon an entry gets: a folder, a program, or a document. */
-static WORD win_which(const FNODE FAR *pf)
+static WORD win_which(FPTR(const FNODE) pf)
 {
-    if (pf->f_attr & FA_SUBDIR)
+    if (FGET(FNODE, pf, f_attr) & FA_SUBDIR)
         return IB_FOLDER;
     return (WORD)(win_extof(pf) >= 0 ? IB_APPL : IB_DOCU);
 }
@@ -603,61 +606,61 @@ static void win_num(char *d, WORD n, LONG value, char pad)
  * none of that is written here.  A run shorter than its field truncates
  * it, a longer one pads it.  Anything that is not a placeholder is
  * copied as it stands. */
-static void win_line(char *d, const FNODE FAR *pf)
+static void win_line(char *d, FPTR(const FNODE) pf)
 {
-    const char *t = G.g_fline;
-    const char FAR *s;
+    FPTR(const char) t = G.g_fline;
+    FPTR(const char) s;
     char *end = d + LEN_FNODE - 1;
     WORD n, i;
     char c;
 
-    while (*t && d < end) {
-        c = *t;
-        for (n = 1; t[n] == c; n++)
+    while (FDEREF(char, t) && d < end) {
+        c = FDEREF(char, t);
+        for (n = 1; FAT(char, t, n) == c; n++)
             ;
         if (n > (WORD)(end - d))
             n = (WORD)(end - d);
         switch (c) {
         case 'f':                               /* the mark, one of three */
             for (i = 0; i < n; i++)
-                d[i] = G.g_fmark[(pf->f_attr & FA_SUBDIR) ? 0
-                                 : (pf->f_attr & FA_RDONLY) ? 1 : 2];
+                d[i] = FAT(char, G.g_fmark, (FGET(FNODE, pf, f_attr) & FA_SUBDIR) ? 0
+                                 : (FGET(FNODE, pf, f_attr) & FA_RDONLY) ? 1 : 2);
             break;
         case 'n':                               /* the name up to the dot */
         case 'e':                               /* ...and what follows it */
-            s = pf->f_name;
+            s = FARR(FNODE, pf, f_name);
             if (c == 'e') {
-                while (*s && *s != '.')
-                    s++;
-                if (*s)
-                    s++;
+                while (FDEREF(char, s) && FDEREF(char, s) != '.')
+                    FINC(char, s);
+                if (FDEREF(char, s))
+                    FINC(char, s);
             }
             for (i = 0; i < n; i++)
-                d[i] = (*s && *s != '.') ? *s++ : ' ';
+                d[i] = (FDEREF(char, s) && FDEREF(char, s) != '.') ? FNEXT(char, s) : ' ';
             break;
         case 's':                               /* a folder's size is what it
                                                  * holds, and Show info is
                                                  * where the walk for that is */
-            if (pf->f_attr & FA_SUBDIR)
+            if (FGET(FNODE, pf, f_attr) & FA_SUBDIR)
                 for (i = 0; i < n; i++)
                     d[i] = ' ';
             else
-                win_num(d, n, pf->f_size, ' ');
+                win_num(d, n, FGET(FNODE, pf, f_size), ' ');
             break;
         case 'd':
-            win_num(d, n, (LONG)(pf->f_date & 0x1F), '0');
+            win_num(d, n, (LONG)(FGET(FNODE, pf, f_date) & 0x1F), '0');
             break;
         case 'm':
-            win_num(d, n, (LONG)((pf->f_date >> 5) & 0x0F), '0');
+            win_num(d, n, (LONG)((FGET(FNODE, pf, f_date) >> 5) & 0x0F), '0');
             break;
         case 'y':
-            win_num(d, n, (LONG)(((pf->f_date >> 9) + 80) % 100), '0');
+            win_num(d, n, (LONG)(((FGET(FNODE, pf, f_date) >> 9) + 80) % 100), '0');
             break;
         case 'H':
-            win_num(d, n, (LONG)((pf->f_time >> 11) & 0x1F), '0');
+            win_num(d, n, (LONG)((FGET(FNODE, pf, f_time) >> 11) & 0x1F), '0');
             break;
         case 'M':
-            win_num(d, n, (LONG)((pf->f_time >> 5) & 0x3F), '0');
+            win_num(d, n, (LONG)((FGET(FNODE, pf, f_time) >> 5) & 0x3F), '0');
             break;
         default:
             for (i = 0; i < n; i++)
@@ -677,7 +680,7 @@ static void win_bldview(WNODE *pw, const GRECT *r)
 {
     WORD iwspc = (WORD)(G.g_iwext + G.g_iwint);
     WORD ihspc = (WORD)(G.g_ihext + G.g_ihint);
-    FNODE FAR *pf;
+    FPTR(FNODE) pf;
     WORD wfit, hfit, i, n, row, col, obid, which;
 
     obj_wfree(pw->w_root, r->g_x, r->g_y, r->g_w, r->g_h);
@@ -689,8 +692,8 @@ static void win_bldview(WNODE *pw, const GRECT *r)
     if (hfit < 1)
         hfit = 1;
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        pf->f_obid = 0;
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        FSET(FNODE, pf, f_obid, 0);
     /* THE GRID THE LISTING IS LAID ON.  With size to fit the columns are
      * the window's own, so the items reflow as it is resized and nothing
      * ever scrolls sideways; without it they are laid out for the widest
@@ -730,7 +733,7 @@ static void win_bldview(WNODE *pw, const GRECT *r)
             i = (WORD)((pw->w_cvrow + row) * pw->w_vncol + vcol);
             if (i >= pw->w_path.p_count)
                 break;                          /* past the last entry */
-            pf = pw->w_path.p_flist + i;
+            pf = FIDX(FNODE, pw->w_path.p_flist, i);
             if (G.g_iview == V_TEXT) {
                 obid = obj_text(pw->w_root, (WORD)(col * iwspc + G.g_iwint),
                                 (WORD)(row * ihspc + G.g_ihint),
@@ -741,18 +744,18 @@ static void win_bldview(WNODE *pw, const GRECT *r)
                 which = win_which(pf);
                 obid = obj_icon(pw->w_root, (WORD)(col * iwspc + G.g_iwint),
                                 (WORD)(row * ihspc + G.g_ihint), which,
-                                pf->f_name, 0);
+                                FARR(FNODE, pf, f_name), 0);
             }
             if (!obid) {
                 row = hfit;                     /* no items left: stop */
                 break;
             }
-            pf->f_obid = obid;
+            FSET(FNODE, pf, f_obid, obid);
             /* WHITEBAK on an icon only: on a G_STRING -- the text view's
              * lines -- it is MagiC's "underline a shortcut" (objc.c) */
             G.g_screen[obid].ob_state =
                 (UWORD)((G.g_iview == V_TEXT ? 0 : WHITEBAK)
-                        | ((pf->f_flags & F_SELECTED) ? SELECTED : 0));
+                        | ((FGET(FNODE, pf, f_flags) & F_SELECTED) ? SELECTED : 0));
             G.g_screen[obid].ob_flags = NONE;
         }
     }
@@ -800,7 +803,7 @@ void do_wredraw(WORD wh, const GRECT *pc)
     wind_get_grect(wh, WF_FIRSTXYWH, &t);
     while (t.g_w && t.g_h) {
         if (rc_intersect(pc, &t))
-            objc_draw(G.g_screen, root, MAX_DEPTH, t.g_x, t.g_y, t.g_w, t.g_h);
+            objc_draw(TREE_OF(G.g_screen), root, MAX_DEPTH, t.g_x, t.g_y, t.g_w, t.g_h);
         wind_get_grect(wh, WF_NEXTXYWH, &t);
     }
     graf_mouse(M_ON, 0);
@@ -897,13 +900,13 @@ void act_chg(WORD wh, WORD root, WORD obj, WORD set, WORD dodraw)
         return;
     pob->ob_state = state;
     if (root != DROOT) {
-        FNODE FAR *pf = win_fnode(&G.g_wlist[root - (DROOT + 1)], obj);
+        FPTR(FNODE) pf = win_fnode(&G.g_wlist[root - (DROOT + 1)], obj);
         if (pf)
-            pf->f_flags = set ? (WORD)(pf->f_flags | F_SELECTED)
-                              : (WORD)(pf->f_flags & ~F_SELECTED);
+            FSET(FNODE, pf, f_flags, set ? (WORD)(FGET(FNODE, pf, f_flags) | F_SELECTED)
+                              : (WORD)(FGET(FNODE, pf, f_flags) & ~F_SELECTED));
     }
     if (dodraw) {
-        objc_offset(G.g_screen, obj, &t.g_x, &t.g_y);
+        objc_offset(TREE_OF(G.g_screen), obj, &t.g_x, &t.g_y);
         t.g_w = pob->ob_width;
         t.g_h = pob->ob_height;
         do_wredraw(wh, &t);
@@ -953,7 +956,7 @@ void act_allselect(WORD wh, WORD root, const GRECT *box)
     for (i = G.g_screen[root].ob_head; i >= WOBS_START; i = G.g_screen[i].ob_next) {
         GRECT t;
 
-        objc_offset(G.g_screen, i, &t.g_x, &t.g_y);
+        objc_offset(TREE_OF(G.g_screen), i, &t.g_x, &t.g_y);
         t.g_w = G.g_screen[i].ob_width;
         t.g_h = G.g_screen[i].ob_height;
         act_chg(wh, root, i, rc_intersect(box, &t), TRUE);
@@ -965,11 +968,11 @@ void act_allselect(WORD wh, WORD root, const GRECT *box)
  * from, then the objects that are showing, drawn. */
 void act_selall(WNODE *pw)
 {
-    FNODE FAR *pf = pw->w_path.p_flist;
+    FPTR(FNODE) pf = pw->w_path.p_flist;
     WORD i;
 
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        pf->f_flags = (WORD)(pf->f_flags | F_SELECTED);
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        FSET(FNODE, pf, f_flags, (WORD)(FGET(FNODE, pf, f_flags) | F_SELECTED));
     for (i = G.g_screen[pw->w_root].ob_head; i >= WOBS_START;
          i = G.g_screen[i].ob_next)
         act_chg(pw->w_id, pw->w_root, i, TRUE, TRUE);
@@ -1046,7 +1049,7 @@ static void do_wopen(WORD new_win, WORD wh, WORD curr, const GRECT *pt)
     do_xyfix(&t.g_x, &t.g_y);
     if (curr > 0) {
         WORD croot = obj_parent(curr);
-        objc_offset(G.g_screen, curr, &c.g_x, &c.g_y);
+        objc_offset(TREE_OF(G.g_screen), curr, &c.g_x, &c.g_y);
         c.g_w = G.g_screen[curr].ob_width;
         c.g_h = G.g_screen[curr].ob_height;
         graf_growbox(c.g_x, c.g_y, c.g_w, c.g_h, t.g_x, t.g_y, t.g_w, t.g_h);
@@ -1182,7 +1185,7 @@ static WORD do_dopen(WORD curr)
 }
 
 /* A folder in a window: its listing in the same window. */
-static WORD do_fopen(WNODE *pw, WORD curr, const char FAR *name)
+static WORD do_fopen(WNODE *pw, WORD curr, FPTR(const char) name)
 {
     char path[LEN_ZPATH];
     const char *spec = pw->w_path.p_spec;
@@ -1197,9 +1200,9 @@ static WORD do_fopen(WNODE *pw, WORD curr, const char FAR *name)
                                                  * down with it */
     for (i = 0; i < n; i++)
         path[i] = spec[i];
-    while (*name && i < LEN_ZPATH - 14)
-        path[i++] = *name++;
-    if (*name)
+    while (FDEREF(char, name) && i < LEN_ZPATH - 14)
+        path[i++] = FNEXT(char, name);
+    if (FDEREF(char, name))
         return FALSE;
     path[i++] = '\\';
     while (*mask && i < LEN_ZPATH - 1)
@@ -1316,25 +1319,25 @@ WORD do_cart(void)
 /* A window's directory and a name in it, as one path: "A:\SUB\" and
  * "NAME.EXT" into `out`, LEN_ZPATH.  The directory's length, or -1 when
  * the whole will not fit. */
-static WORD win_pathof(const WNODE *pw, const char FAR *name, char *out)
+static WORD win_pathof(const WNODE *pw, FPTR(const char) name, char *out)
 {
     const char *spec = pw->w_path.p_spec;
     WORD n = 0, k = 0, i;
 
     n = spec_dirlen(spec);                      /* "A:\SUB\", less the mask */
-    while (name[k])
+    while (FAT(char, name, k))
         k++;
     if (n + k >= LEN_ZPATH)
         return -1;
     for (i = 0; i < n; i++)
         out[i] = spec[i];
-    for (k = 0; name[k]; k++)
-        out[i++] = name[k];
+    for (k = 0; FAT(char, name, k); k++)
+        out[i++] = FAT(char, name, k);
     out[i] = 0;
     return n;
 }
 
-WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
+WORD do_aopen(WNODE *pw, WORD curr, FPTR(const char) name,
               const char *args)
 {
     char app_path[LEN_ZPATH];
@@ -1424,17 +1427,17 @@ static DAPP desk_apps[N_APPS];
 
 /* A name's extension, upper case as the DOS gives it, into ext; FALSE
  * when it has none. */
-static WORD ext_of(const char FAR *name, char *ext)
+static WORD ext_of(FPTR(const char) name, char *ext)
 {
     WORD k = 0;
 
-    while (*name && *name != '.')
-        name++;
-    if (*name != '.')
+    while (FDEREF(char, name) && FDEREF(char, name) != '.')
+        FINC(char, name);
+    if (FDEREF(char, name) != '.')
         return FALSE;
-    name++;
-    while (name[k] && k < APP_EXTLEN - 1) {
-        ext[k] = name[k];
+    FINC(char, name);
+    while (FAT(char, name, k) && k < APP_EXTLEN - 1) {
+        ext[k] = FAT(char, name, k);
         k++;
     }
     ext[k] = 0;
@@ -1507,7 +1510,7 @@ WORD app_install(const char *path, const char *ext)
  * the caller then asks Show / Print / Cancel as before.  Not static,
  * for do_aopen's reason: inlined, its two paths would sit in do_open's
  * frame under every window the desktop opens. */
-WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name)
+WORD do_docapp(WNODE *pw, WORD curr, FPTR(const char) name)
 {
     char ext[APP_EXTLEN], doc[LEN_ZPATH], prog[LEN_ZPATH];
     WORD i, k, dir = 0;
@@ -1566,9 +1569,9 @@ WORD do_edit(const char *doc)
 }
 
 /* Is this listing entry a program -- the extension says so? */
-WORD win_isprog(const FNODE FAR *pf)
+WORD win_isprog(FPTR(const FNODE) pf)
 {
-    return (WORD)(!(pf->f_attr & FA_SUBDIR) && win_which(pf) == IB_APPL);
+    return (WORD)(!(FGET(FNODE, pf, f_attr) & FA_SUBDIR) && win_which(pf) == IB_APPL);
 }
 
 /* A file dropped on a program's icon: that program run with the file's
@@ -1577,21 +1580,21 @@ WORD win_isprog(const FNODE FAR *pf)
  * when dobj is not a program -- the drop is then a copy, as before. */
 WORD do_dropopen(WNODE *src, WNODE *pd, WORD dobj)
 {
-    FNODE FAR *pf = win_fnode(pd, dobj);
-    FNODE FAR *ps;
+    FPTR(FNODE) pf = win_fnode(pd, dobj);
+    FPTR(FNODE) ps;
     char doc[LEN_ZPATH], prog[LEN_ZPATH];
     WORD i, dir;
 
-    if (!pf || (pf->f_attr & FA_SUBDIR) || win_which(pf) != IB_APPL)
+    if (!pf || (FGET(FNODE, pf, f_attr) & FA_SUBDIR) || win_which(pf) != IB_APPL)
         return FALSE;
     ps = src->w_path.p_flist;
-    for (i = 0; i < src->w_path.p_count; i++, ps++)
-        if (ps->f_flags & F_SELECTED)
+    for (i = 0; i < src->w_path.p_count; i++, FINC(FNODE, ps))
+        if (FGET(FNODE, ps, f_flags) & F_SELECTED)
             break;
-    if (i >= src->w_path.p_count || (ps->f_attr & FA_SUBDIR))
+    if (i >= src->w_path.p_count || (FGET(FNODE, ps, f_attr) & FA_SUBDIR))
         return FALSE;
-    if (win_pathof(src, ps->f_name, doc) < 0
-        || (dir = win_pathof(pd, pf->f_name, prog)) < 0)
+    if (win_pathof(src, FARR(FNODE, ps, f_name), doc) < 0
+        || (dir = win_pathof(pd, FARR(FNODE, pf, f_name), prog)) < 0)
         return FALSE;
     return run_prog(prog, dir, doc, pd, dobj);
 }
@@ -1613,26 +1616,26 @@ WORD do_dropopen(WNODE *src, WNODE *pd, WORD dobj)
  * Its own frame, like do_aopen's above and for the same reason: the path
  * would otherwise sit in do_open's frame under every window the desktop
  * opens. */
-void do_docu(WNODE *pw, const char FAR *name)
+void do_docu(WNODE *pw, FPTR(const char) name)
 {
     char path[LEN_ZPATH];
     const char *spec = pw->w_path.p_spec;
     WORD n = 0, k = 0, i;
 
     n = spec_dirlen(spec);                      /* "A:\SUB\", less the mask */
-    while (name[k])
+    while (FAT(char, name, k))
         k++;
     if (n + k >= LEN_ZPATH)
         return;
     for (i = 0; i < n; i++)
         path[i] = spec[i];
-    for (k = 0; name[k]; k++)
-        path[i++] = name[k];
+    for (k = 0; FAT(char, name, k); k++)
+        path[i++] = FAT(char, name, k);
     path[i] = 0;
 
     switch (fun_alert(3, STDOCUMT)) {           /* Cancel is the default */
     case 1:
-        if (!cmd_file(path, (const char *)name))
+        if (!cmd_file(path, path + n))          /* the name, as it is in path */
             fun_alert(1, STCMDMEM);             /* no far memory, or no read */
         break;
     case 2:
@@ -1651,7 +1654,7 @@ void do_docu(WNODE *pw, const char FAR *name)
 WORD do_open(WORD wh, WORD obj)
 {
     WNODE *pw;
-    FNODE FAR *pf;
+    FPTR(FNODE) pf;
 
     if (wh == DESKWH) {
         if (icon_letter(obj))
@@ -1666,8 +1669,8 @@ WORD do_open(WORD wh, WORD obj)
     pf = win_fnode(pw, obj);
     if (!pf)
         return FALSE;
-    if (pf->f_attr & FA_SUBDIR) {
-        do_fopen(pw, obj, pf->f_name);
+    if (FGET(FNODE, pf, f_attr) & FA_SUBDIR) {
+        do_fopen(pw, obj, FARR(FNODE, pf, f_name));
         return FALSE;
     }
     if (win_which(pf) == IB_APPL) {
@@ -1675,11 +1678,11 @@ WORD do_open(WORD wh, WORD obj)
         args[0] = 0;
         if (win_extof(pf) == WIN_TTP)           /* Takes Parameters */
             (void)fun_askline(args);
-        return do_aopen(pw, obj, pf->f_name, args);
+        return do_aopen(pw, obj, FARR(FNODE, pf, f_name), args);
     }
-    if (do_docapp(pw, obj, pf->f_name))         /* a type somebody installed */
+    if (do_docapp(pw, obj, FARR(FNODE, pf, f_name)))         /* a type somebody installed */
         return TRUE;
-    do_docu(pw, pf->f_name);
+    do_docu(pw, FARR(FNODE, pf, f_name));
     return FALSE;                               /* a document: never a run */
 }
 
@@ -1772,16 +1775,16 @@ static WORD hex_dig(char c)
 
 /* The donor's scan_2: past the spaces, two hex digits (0xFF is -1) or
  * nothing at a CR. */
-static WORD scan_2(const char FAR **pp)
+static WORD scan_2(FPTR(const char) *pp)
 {
-    const char FAR *p = *pp;
+    FPTR(const char) p = *pp;
     WORD v = 0;
 
-    while (*p == ' ')
-        p++;
-    if (*p != '\r') {
-        v = (WORD)(hex_dig(*p++) << 4);
-        v |= hex_dig(*p++);
+    while (FDEREF(char, p) == ' ')
+        FINC(char, p);
+    if (FDEREF(char, p) != '\r') {
+        v = (WORD)(hex_dig(FNEXT(char, p)) << 4);
+        v |= hex_dig(FNEXT(char, p));
         if (v == 0xFF)
             v = -1;
     }
@@ -1789,22 +1792,24 @@ static WORD scan_2(const char FAR **pp)
     return v;
 }
 
-static char FAR *put_hex2(char FAR *d, WORD v)
+static FPTR(char) put_hex2(FPTR(char) d, WORD v)
 {
     static const char hex[] = "0123456789ABCDEF";
 
-    *d++ = ' ';
-    *d++ = hex[(v >> 4) & 0x0F];
-    *d++ = hex[v & 0x0F];
+    FPUTN(char, d, ' ');
+    FPUTN(char, d, hex[(v >> 4) & 0x0F]);
+    FPUTN(char, d, hex[v & 0x0F]);
     return d;
 }
 
-static char FAR *put_far(char FAR *d, const char FAR *s)
+static FPTR(char) put_far(FPTR(char) d, FPTR(const char) s)
 {
-    while (*s)
-        *d++ = *s++;
+    while (FDEREF(char, s))
+        FPUTN(char, d, FNEXT(char, s));
     return d;
 }
+/* a near string or a far one alike (gem.h, FAR_ARG) */
+#define put_far(d, s)   (put_far)((d), FAR_ARG(s))
 
 /* WHERE THE LAYOUT LIVES (phase 90).  The donor keeps DESKTOP.INF in
  * the root of the boot drive (deskapp.c read_inf_file), and so did this
@@ -1909,8 +1914,8 @@ static WORD inf_name(char *name)
 /* The INF text from the slots; its length with the NUL. */
 static WORD inf_write(void)
 {
-    char FAR *p = G.g_shelbuf + CPDATA_LEN;
-    WSAVE FAR *pws = G.g_cnxsave->cs_wnode;
+    FPTR(char) p = G.g_shelbuf + CPDATA_LEN;
+    FPTR(WSAVE) pws = FARR(CSAVE, G.g_cnxsave, cs_wnode);
     WORD i;
 
     p = put_far(p, "#R");
@@ -1969,20 +1974,20 @@ static WORD inf_write(void)
                 p = put_far(p, drv_names[i]);
                 p = put_far(p, "@ @\r\n");
             }
-    for (i = 0; i < NUM_WNODES; i++, pws++) {
+    for (i = 0; i < NUM_WNODES; i++, FINC(WSAVE, pws)) {
         p = put_far(p, "#W");
-        p = put_hex2(p, pws->hsl_save);
-        p = put_hex2(p, pws->vsl_save);
-        p = put_hex2(p, (WORD)(pws->x_save / G.g_wchar));
-        p = put_hex2(p, (WORD)(pws->y_save / G.g_hchar));
-        p = put_hex2(p, (WORD)(pws->w_save / G.g_wchar));
-        p = put_hex2(p, (WORD)(pws->h_save / G.g_hchar));
+        p = put_hex2(p, FGET(WSAVE, pws, hsl_save));
+        p = put_hex2(p, FGET(WSAVE, pws, vsl_save));
+        p = put_hex2(p, (WORD)(FGET(WSAVE, pws, x_save) / G.g_wchar));
+        p = put_hex2(p, (WORD)(FGET(WSAVE, pws, y_save) / G.g_hchar));
+        p = put_hex2(p, (WORD)(FGET(WSAVE, pws, w_save) / G.g_wchar));
+        p = put_hex2(p, (WORD)(FGET(WSAVE, pws, h_save) / G.g_hchar));
         p = put_hex2(p, 0);
-        *p++ = ' ';
-        p = put_far(p, pws->pth_save);
+        FPUTN(char, p, ' ');
+        p = put_far(p, FARR(WSAVE, pws, pth_save));
         p = put_far(p, "@\r\n");
     }
-    *p = 0;
+    FPUT(char, p, 0, 0);
     return (WORD)((uint32_t)p - (uint32_t)G.g_shelbuf + 1);
 }
 
@@ -1997,7 +2002,7 @@ static WORD inf_len(WORD len)
 static WORD inf_load(void)
 {
     char name[LEN_ZPATH];
-    char FAR *buf = G.g_shelbuf + CPDATA_LEN;
+    FPTR(char) buf = G.g_shelbuf + CPDATA_LEN;
     LONG fd, got;
 
     if (!inf_name(name)) {
@@ -2021,8 +2026,8 @@ static WORD inf_load(void)
     Fclose((WORD)fd);
     if (got < 0)
         got = 0;
-    buf[got] = 0;
-    return (WORD)(buf[0] == '#');
+    FPUT(char, buf, got, 0);
+    return (WORD)(FAT(char, buf, 0) == '#');
 }
 
 /* ...and the buffer out to it.  `len` is inf_write's, so the NUL and
@@ -2046,42 +2051,42 @@ static WORD inf_store(WORD len)
  * than the one before, as text for app_start to read like any other. */
 static void build_inf(void)
 {
-    WSAVE FAR *pws = G.g_cnxsave->cs_wnode;
+    FPTR(WSAVE) pws = FARR(CSAVE, G.g_cnxsave, cs_wnode);
     WORD i;
 
-    for (i = 0; i < NUM_WNODES; i++, pws++) {
-        pws->x_save = (WORD)(WIN_XCELL * G.g_wchar);
-        pws->y_save = (WORD)(win_ycell[i] * G.g_hchar);
-        pws->w_save = (WORD)(WIN_WCELL * G.g_wchar);
-        pws->h_save = (WORD)(WIN_HCELL * G.g_hchar);
-        pws->hsl_save = 0;
-        pws->vsl_save = 0;
-        pws->pth_save[0] = 0;
+    for (i = 0; i < NUM_WNODES; i++, FINC(WSAVE, pws)) {
+        FSET(WSAVE, pws, x_save, (WORD)(WIN_XCELL * G.g_wchar));
+        FSET(WSAVE, pws, y_save, (WORD)(win_ycell[i] * G.g_hchar));
+        FSET(WSAVE, pws, w_save, (WORD)(WIN_WCELL * G.g_wchar));
+        FSET(WSAVE, pws, h_save, (WORD)(WIN_HCELL * G.g_hchar));
+        FSET(WSAVE, pws, hsl_save, 0);
+        FSET(WSAVE, pws, vsl_save, 0);
+        FPUT(char, FARR(WSAVE, pws, pth_save), 0, 0);
     }
     inf_write();
 }
 
 /* The slots from the "#W" lines of INF text. */
-static void inf_parse(const char FAR *pcurr)
+static void inf_parse(FPTR(const char) pcurr)
 {
-    WSAVE FAR *pws;
+    FPTR(WSAVE) pws;
     WORD wincnt = 0, rev, i;
 
     drv_own = FALSE;                    /* the map, unless "#M" says */
 
-    while (*pcurr) {
-        if (*pcurr++ != '#')
+    while (FDEREF(char, pcurr)) {
+        if (FNEXT(char, pcurr) != '#')
             continue;
-        switch (*pcurr) {
+        switch (FDEREF(char, pcurr)) {
         case 'R':
-            pcurr++;
+            FINC(char, pcurr);
             rev = scan_2(&pcurr);
             (void)rev;
             break;
         case 'E': {
             WORD e1, e5;
 
-            pcurr++;
+            FINC(char, pcurr);
             e1 = scan_2(&pcurr);
             desk_setasks((WORD)(~scan_2(&pcurr) & CNF_ALL));    /* what is not
                                                  * asked (desk_asks); the rest
@@ -2096,7 +2101,7 @@ static void inf_parse(const char FAR *pcurr)
             break;
         }
         case 'Q':                       /* the backgrounds: see inf_write */
-            pcurr++;
+            FINC(char, pcurr);
             for (i = 0; i < N_SCREENS; i++) {
                 G.g_patcol[i][0] = (UWORD)scan_2(&pcurr);
                 G.g_patcol[i][1] = (UWORD)scan_2(&pcurr);
@@ -2107,18 +2112,18 @@ static void inf_parse(const char FAR *pcurr)
             WORD k, drive;
             char label[LABEL_LEN];
 
-            pcurr++;
+            FINC(char, pcurr);
             for (k = 0; k < 4; k++)             /* x, y, the icon, FF */
                 (void)scan_2(&pcurr);
-            while (*pcurr == ' ')
-                pcurr++;
-            drive = (WORD)((*pcurr & 0x5F) - 'A');
-            if (*pcurr)
-                pcurr++;
-            while (*pcurr == ' ')
-                pcurr++;
-            for (i = 0; *pcurr && *pcurr != '@' && i < LABEL_LEN - 1; i++)
-                label[i] = *pcurr++;
+            while (FDEREF(char, pcurr) == ' ')
+                FINC(char, pcurr);
+            drive = (WORD)((FDEREF(char, pcurr) & 0x5F) - 'A');
+            if (FDEREF(char, pcurr))
+                FINC(char, pcurr);
+            while (FDEREF(char, pcurr) == ' ')
+                FINC(char, pcurr);
+            for (i = 0; FDEREF(char, pcurr) && FDEREF(char, pcurr) != '@' && i < LABEL_LEN - 1; i++)
+                label[i] = FNEXT(char, pcurr);
             label[i] = 0;
             if (drive >= 0 && drive < N_DRVICONS) {
                 drv_icon_own();
@@ -2129,39 +2134,39 @@ static void inf_parse(const char FAR *pcurr)
         case 'G': {                     /* an installed application */
             char ext[APP_EXTLEN], path[LEN_ZPATH];
 
-            pcurr++;
-            while (*pcurr == ' ')
-                pcurr++;
-            for (i = 0; *pcurr && *pcurr != '@' && i < APP_EXTLEN - 1; i++)
-                ext[i] = *pcurr++;
+            FINC(char, pcurr);
+            while (FDEREF(char, pcurr) == ' ')
+                FINC(char, pcurr);
+            for (i = 0; FDEREF(char, pcurr) && FDEREF(char, pcurr) != '@' && i < APP_EXTLEN - 1; i++)
+                ext[i] = FNEXT(char, pcurr);
             ext[i] = 0;
-            while (*pcurr && *pcurr != '@')
-                pcurr++;
-            if (*pcurr)
-                pcurr++;
-            while (*pcurr == ' ')
-                pcurr++;
-            for (i = 0; *pcurr && *pcurr != '@' && i < LEN_ZPATH - 1; i++)
-                path[i] = *pcurr++;
+            while (FDEREF(char, pcurr) && FDEREF(char, pcurr) != '@')
+                FINC(char, pcurr);
+            if (FDEREF(char, pcurr))
+                FINC(char, pcurr);
+            while (FDEREF(char, pcurr) == ' ')
+                FINC(char, pcurr);
+            for (i = 0; FDEREF(char, pcurr) && FDEREF(char, pcurr) != '@' && i < LEN_ZPATH - 1; i++)
+                path[i] = FNEXT(char, pcurr);
             path[i] = 0;
             if (ext[0] && path[0])
                 (void)app_install(path, ext);
             break;
         }
         case 'W':
-            pcurr++;
+            FINC(char, pcurr);
             if (wincnt < NUM_WNODES) {
-                pws = &G.g_cnxsave->cs_wnode[wincnt];
-                pws->hsl_save = scan_2(&pcurr);
-                pws->vsl_save = scan_2(&pcurr);
-                pws->x_save = (WORD)(scan_2(&pcurr) * G.g_wchar);
-                pws->y_save = (WORD)(scan_2(&pcurr) * G.g_hchar);
-                pws->w_save = (WORD)(scan_2(&pcurr) * G.g_wchar);
-                pws->h_save = (WORD)(scan_2(&pcurr) * G.g_hchar);
+                pws = FIDX(WSAVE, FARR(CSAVE, G.g_cnxsave, cs_wnode), wincnt);
+                FSET(WSAVE, pws, hsl_save, scan_2(&pcurr));
+                FSET(WSAVE, pws, vsl_save, scan_2(&pcurr));
+                FSET(WSAVE, pws, x_save, (WORD)(scan_2(&pcurr) * G.g_wchar));
+                FSET(WSAVE, pws, y_save, (WORD)(scan_2(&pcurr) * G.g_hchar));
+                FSET(WSAVE, pws, w_save, (WORD)(scan_2(&pcurr) * G.g_wchar));
+                FSET(WSAVE, pws, h_save, (WORD)(scan_2(&pcurr) * G.g_hchar));
                 pcurr += 4;                     /* " 00 ", then the path */
-                for (i = 0; *pcurr != '@' && i < LEN_ZPATH - 1; i++)
-                    pws->pth_save[i] = *pcurr++;
-                pws->pth_save[i] = 0;
+                for (i = 0; FDEREF(char, pcurr) != '@' && i < LEN_ZPATH - 1; i++)
+                    FPUT(char, FARR(WSAVE, pws, pth_save), i, FNEXT(char, pcurr));
+                FPUT(char, FARR(WSAVE, pws, pth_save), i, 0);
                 wincnt++;
             }
             break;
@@ -2191,7 +2196,7 @@ void app_start(void)
         G.g_patcol[i][1] = (UWORD)(WINDOW_SPEC & PATCOL_MASK);
     }
     shel_get(G.g_shelbuf, SIZE_SHELBUF);
-    if (G.g_shelbuf[CPDATA_LEN] != '#' && !inf_load())
+    if (FAT(char, G.g_shelbuf, CPDATA_LEN) != '#' && !inf_load())
         build_inf();
     inf_parse(G.g_shelbuf + CPDATA_LEN);
 }
@@ -2234,7 +2239,7 @@ void app_save(void)
  * them in puts them back as they were. */
 void cnx_put(void)
 {
-    WSAVE FAR *pws = G.g_cnxsave->cs_wnode;
+    FPTR(WSAVE) pws = FARR(CSAVE, G.g_cnxsave, cs_wnode);
     WORD wob, n = 0, i;
     GRECT r;
 
@@ -2247,57 +2252,57 @@ void cnx_put(void)
             continue;
         wind_get_grect(pw->w_id, WF_CURRXYWH, &r);
         do_xyfix(&r.g_x, &r.g_y);
-        pws->x_save = r.g_x;
-        pws->y_save = r.g_y;
-        pws->w_save = r.g_w;
-        pws->h_save = r.g_h;
-        pws->hsl_save = 0;
-        pws->vsl_save = pw->w_cvrow;
+        FSET(WSAVE, pws, x_save, r.g_x);
+        FSET(WSAVE, pws, y_save, r.g_y);
+        FSET(WSAVE, pws, w_save, r.g_w);
+        FSET(WSAVE, pws, h_save, r.g_h);
+        FSET(WSAVE, pws, hsl_save, 0);
+        FSET(WSAVE, pws, vsl_save, pw->w_cvrow);
         for (i = 0; pw->w_path.p_spec[i]; i++)
-            pws->pth_save[i] = pw->w_path.p_spec[i];
-        pws->pth_save[i] = 0;
-        pws++;
+            FPUT(char, FARR(WSAVE, pws, pth_save), i, pw->w_path.p_spec[i]);
+        FPUT(char, FARR(WSAVE, pws, pth_save), i, 0);
+        FINC(WSAVE, pws);
         n++;
     }
-    for (; n < NUM_WNODES; n++, pws++)
-        pws->pth_save[0] = 0;
+    for (; n < NUM_WNODES; n++, FINC(WSAVE, pws))
+        FPUT(char, FARR(WSAVE, pws, pth_save), 0, 0);
 }
 
 /* The windows back from the slots, each in its place -- on the desk,
  * at least -- and its view, growing from its drive's icon. */
 void cnx_get(void)
 {
-    WSAVE FAR *pws = G.g_cnxsave->cs_wnode;
+    FPTR(WSAVE) pws = FARR(CSAVE, G.g_cnxsave, cs_wnode);
     WNODE *pw;
     WORD nw, obid, i;
     char path[LEN_ZPATH];
     GRECT r;
 
-    for (nw = 0; nw < NUM_WNODES; nw++, pws++) {
-        if (pws->x_save >= G.g_desk.g_w)
-            pws->x_save = (WORD)(G.g_desk.g_w / 2);
-        if (pws->y_save >= G.g_desk.g_h)
-            pws->y_save = (WORD)(G.g_desk.g_h / 2);
-        if (pws->w_save <= 0 || pws->w_save > G.g_desk.g_w)
-            pws->w_save = G.g_desk.g_w;
-        if (pws->h_save <= 0 || pws->h_save > G.g_desk.g_h)
-            pws->h_save = G.g_desk.g_h;
-        if (!pws->pth_save[0])
+    for (nw = 0; nw < NUM_WNODES; nw++, FINC(WSAVE, pws)) {
+        if (FGET(WSAVE, pws, x_save) >= G.g_desk.g_w)
+            FSET(WSAVE, pws, x_save, (WORD)(G.g_desk.g_w / 2));
+        if (FGET(WSAVE, pws, y_save) >= G.g_desk.g_h)
+            FSET(WSAVE, pws, y_save, (WORD)(G.g_desk.g_h / 2));
+        if (FGET(WSAVE, pws, w_save) <= 0 || FGET(WSAVE, pws, w_save) > G.g_desk.g_w)
+            FSET(WSAVE, pws, w_save, G.g_desk.g_w);
+        if (FGET(WSAVE, pws, h_save) <= 0 || FGET(WSAVE, pws, h_save) > G.g_desk.g_h)
+            FSET(WSAVE, pws, h_save, G.g_desk.g_h);
+        if (!FAT(char, FARR(WSAVE, pws, pth_save), 0))
             continue;
-        obid = obj_get_obid(pws->pth_save[0]);
+        obid = obj_get_obid(FAT(char, FARR(WSAVE, pws, pth_save), 0));
         pw = win_alloc();
         if (!pw)
             continue;
-        pw->w_cvrow = pws->vsl_save;
-        r.g_x = pws->x_save;
-        r.g_y = pws->y_save;
+        pw->w_cvrow = FGET(WSAVE, pws, vsl_save);
+        r.g_x = FGET(WSAVE, pws, x_save);
+        r.g_y = FGET(WSAVE, pws, y_save);
         do_xyfix(&r.g_x, &r.g_y);
-        pws->x_save = r.g_x;
-        pws->y_save = r.g_y;
-        r.g_w = pws->w_save;
-        r.g_h = pws->h_save;
-        for (i = 0; pws->pth_save[i]; i++)
-            path[i] = pws->pth_save[i];
+        FSET(WSAVE, pws, x_save, r.g_x);
+        FSET(WSAVE, pws, y_save, r.g_y);
+        r.g_w = FGET(WSAVE, pws, w_save);
+        r.g_h = FGET(WSAVE, pws, h_save);
+        for (i = 0; FAT(char, FARR(WSAVE, pws, pth_save), i); i++)
+            path[i] = FAT(char, FARR(WSAVE, pws, pth_save), i);
         path[i] = 0;
         if (!do_diropen(pw, TRUE, obid, path, &r, TRUE))
             win_free(pw);

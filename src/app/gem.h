@@ -222,11 +222,21 @@ typedef void   *GEMADDR;
  *   FP_OF(T, a)      the far T at a LONG address (Malloc's, rsrc_gaddr's)
  *   FP_ADDR(p)       ...and back
  *   FIDX(T, p, i)    the far T i after p
+ *   FINC(T, p)       p++, by one T
+ *   FDEC(T, p)       p--
+ *   FMOVE(T, d, s)   *d = *s, far to far (a statement)
  *   FGET(T, p, f)    p->f, a scalar field
  *   FSET(T, p, f, v) p->f = v
  *   FFLD(T, p, f)    the far address of field f, for fa_get and fa_put
+ *   FARR(T, p, f)    p->f of an ARRAY field, as it decays: its first element
  *   FDEREF(T, p)     *p, a scalar T
  *   FNEXT(T, p)      *p++
+ *   FAT(T, p, i)     p[i], a scalar T
+ *   FPUT(T, p, i, v) p[i] = v
+ *   FPUTN(T, p, v)   *p++ = v
+ *   FP_NEAR(T, p)    a near pointer where a far T is wanted
+ *   TGET(t, i, f)    t[i].f, object i of a tree (GEMTREE)
+ *   TSET(t, i, f, v) t[i].f = v
  *   FCOPY(T, d, p)   *d = *p: a whole T from far to near
  *   FGETS(T, d, p, f) *d = p->f: a struct field from far to near
  *   fa_get(d, a, n)  n bytes from far address a to near d
@@ -252,6 +262,11 @@ typedef void   *GEMADDR;
 #define FP_ADDR(p)       ((LONG)(p))
 #define FIDX(T, p, i)    ((uint32_t)(p) + (uint32_t)(i) * (uint32_t)sizeof(T))
 #define FFLD(T, p, f)    ((uint32_t)(p) + (uint32_t)offsetof(T, f))
+#define FARR(T, p, f)    FFLD(T, p, f)
+#define FINC(T, p)       ((p) += (uint32_t)sizeof(T))
+#define FDEC(T, p)       ((p) -= (uint32_t)sizeof(T))
+#define FMOVE(T, d, s)   do { T fm_; fa_get(&fm_, (s), (UWORD)sizeof(T));      \
+                              fa_put((d), &fm_, (UWORD)sizeof(T)); } while (0)
 #define FA_TY_(T, f)     __typeof__(((T *)0)->f)
 /* By the field's type, not one 32-bit read cast down: cc6502 5.18's
  * (uint8_t) of a 32-bit value keeps bits 8-15 (tools/bsp6502/b6scan.py). */
@@ -266,10 +281,26 @@ typedef void   *GEMADDR;
     (sizeof(FA_TY_(T, f)) == 4 ? fa_wr32(FFLD(T, p, f), (uint32_t)(v))      \
      : sizeof(FA_TY_(T, f)) == 2 ? fa_wr16(FFLD(T, p, f), (uint16_t)(v))    \
      : fa_wr8(FFLD(T, p, f), (uint8_t)(v)))
-#define FDEREF(T, p)                                                        \
-    ((T)(sizeof(T) == 4 ? fa_rd32(p) : sizeof(T) == 2 ? (uint32_t)fa_rd16(p) \
-         : (uint32_t)fa_rd8(p)))
+#define FDEREF(T, p) _Generic((T)0,                                         \
+    char: (char)fa_rd8(p),                                                  \
+    signed char: (signed char)fa_rd8(p),                                    \
+    unsigned char: fa_rd8(p),                                               \
+    long: (long)fa_rd32(p),                                                 \
+    unsigned long: fa_rd32(p),                                              \
+    default: (T)fa_rd16(p))
 #define FNEXT(T, p)       ((p) += (uint32_t)sizeof(T), FDEREF(T, (p) - (uint32_t)sizeof(T)))
+#define FAT(T, p, i)      FDEREF(T, FIDX(T, p, i))
+/* The value stored into a T first: cc6502 5.18 widens a computed byte
+ * cast wrongly when it is passed on as it is (tools/bsp6502/b6scan.py). */
+#define FPUT(T, p, i, v)                                                    \
+    ({ T fp_ = (v);                                                         \
+       sizeof(T) == 4 ? fa_wr32(FIDX(T, p, i), (uint32_t)fp_)               \
+       : sizeof(T) == 2 ? fa_wr16(FIDX(T, p, i), (uint16_t)fp_)             \
+       : fa_wr8(FIDX(T, p, i), (uint8_t)fp_); })
+#define FPUTN(T, p, v)    (FPUT(T, p, 0, v), (p) += (uint32_t)sizeof(T))
+#define FP_NEAR(T, p)     ((uint32_t)(uint16_t)(p))
+#define TGET(t, i, f)     FGET(OBJECT, FIDX(OBJECT, t, i), f)
+#define TSET(t, i, f, v)  FSET(OBJECT, FIDX(OBJECT, t, i), f, v)
 #define FCOPY(T, d, p)    fa_get((d), (p), (UWORD)sizeof(T))
 #define FGETS(T, d, p, f) fa_get((d), FFLD(T, p, f), (UWORD)sizeof(FA_TY_(T, f)))
 uint8_t  fa_rd8(uint32_t a);
@@ -287,10 +318,20 @@ void     fa_put(uint32_t dst, const void *src, UWORD n);
 #define FP_ADDR(p)       ((LONG)(p))
 #define FIDX(T, p, i)    ((p) + (i))
 #define FFLD(T, p, f)    (&(p)->f)
+#define FARR(T, p, f)    ((p)->f)
+#define FINC(T, p)       ((p)++)
+#define FDEC(T, p)       ((p)--)
+#define FMOVE(T, d, s)   (*(d) = *(s))
 #define FGET(T, p, f)    ((p)->f)
 #define FSET(T, p, f, v) ((p)->f = (v))
 #define FDEREF(T, p)     (*(p))
 #define FNEXT(T, p)      (*(p)++)
+#define FAT(T, p, i)     ((p)[i])
+#define FPUT(T, p, i, v) ((p)[i] = (v))
+#define FPUTN(T, p, v)   (*(p)++ = (v))
+#define FP_NEAR(T, p)    (p)
+#define TGET(t, i, f)    ((t)[i].f)
+#define TSET(t, i, f, v) ((t)[i].f = (v))
 #define FCOPY(T, d, p)   (*(d) = *(p))
 #define FGETS(T, d, p, f) (*(d) = (p)->f)
 #define fa_get(d, a, n)  ((void)memcpy((d), (const void FAR *)(a), (n)))
@@ -927,7 +968,11 @@ WORD objc_order(GEMTREE tree, WORD obj, WORD newpos);
 WORD form_do(GEMTREE tree, WORD start);
 WORD form_dial(WORD type, WORD x1, WORD y1, WORD w1, WORD h1,
                WORD x2, WORD y2, WORD w2, WORD h2);
+#ifdef __CALYPSI_TARGET_6502__
+WORD form_alert(WORD defbut, uint32_t s);     /* near or far: FAR_ARG, below */
+#else
 WORD form_alert(WORD defbut, const char *s);  /* s: near, or far up to 511 bytes */
+#endif
 WORD form_error(WORD n);
 WORD form_center(GEMTREE tree, WORD *x, WORD *y, WORD *w, WORD *h);
 
@@ -1623,6 +1668,7 @@ void Ptermres(LONG keep, WORD code);
  * a near pointer or a far address alike.  Not in gemlib.c, which defines
  * them (GEMLIB_DEFS). */
 #if defined(__CALYPSI_TARGET_6502__) && !defined(GEMLIB_DEFS)
+#define form_alert(d, s)        (form_alert)((d), FAR_ARG(s))
 #define shel_get(b, n)          (shel_get)(FAR_ARG(b), (n))
 #define shel_put(d, n)          (shel_put)(FAR_ARG(d), (n))
 #define Dsetpath(p)             (Dsetpath)(FAR_ARG(p))

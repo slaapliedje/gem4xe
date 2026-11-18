@@ -40,9 +40,9 @@ static char op_path[LEN_ZPATH];
  * that says the resource is missing (desktop.c). */
 WORD fun_alert(WORD defbut, WORD stnum)
 {
-    char *str;
+    FPTR(char) str;
 
-    rsrc_gaddr(R_STRING, stnum, (void **)&str);
+    rsrc_gaddr(R_STRING, stnum, (GEMADDR *)&str);
     return form_alert(defbut, str);
 }
 
@@ -66,57 +66,60 @@ static WORD same_path(const char *a, const char *b)
     return (WORD)(*a == *b);
 }
 
-static char *put_far(char *d, const char FAR *s)
+static char *put_far(char *d, FPTR(const char) s)
 {
-    while ((*d = *s++) != 0)
+    while ((*d = FNEXT(char, s)) != 0)
         d++;
     return d;
 }
 
 /* -- the dialogs' fields (the donor's deskinf.c) ------------------------ */
 
-static TEDINFO *ted_of(OBJECT *tree, WORD obj)
+static FPTR(TEDINFO) ted_of(GEMTREE tree, WORD obj)
 {
-    return (TEDINFO *)(uint32_t)tree[obj].ob_spec.index;
+    return FP_OF(TEDINFO, (uint32_t)TGET(tree, obj, ob_spec.index));
 }
 
-static void inf_sset(OBJECT *tree, WORD obj, const char *str)
+static void inf_sset(GEMTREE tree, WORD obj, const char *str)
 {
-    TEDINFO *ted = ted_of(tree, obj);
-    char *text = (char *)(uint32_t)ted->te_ptext;
-    WORD len = ted->te_txtlen;                  /* its own local, then the
+    FPTR(TEDINFO) ted = ted_of(tree, obj);
+    FPTR(char) text = FP_OF(char, (uint32_t)FGET(TEDINFO, ted, te_ptext));
+    WORD len = FGET(TEDINFO, ted, te_txtlen);   /* its own local, then the
                                                  * arithmetic: cc65816 drops
                                                  * the load otherwise
                                                  * (tools/ccbug, rule 5) */
     WORD n = (WORD)(len - 1);
 
     while (n-- > 0 && *str)
-        *text++ = *str++;
-    *text = 0;
+        FPUTN(char, text, *str++);
+    FPUT(char, text, 0, 0);
 }
 
-static void inf_sget(OBJECT *tree, WORD obj, char *str)
+static void inf_sget(GEMTREE tree, WORD obj, char *str)
 {
-    put_str(str, (const char *)(uint32_t)ted_of(tree, obj)->te_ptext);
+    put_far(str, FP_OF(const char, (uint32_t)FGET(TEDINFO, ted_of(tree, obj), te_ptext)));
 }
 
 /* The number at the right of the field, the donor's "%*lu". */
-static void inf_numset(OBJECT *tree, WORD obj, LONG value)
+static void inf_numset(GEMTREE tree, WORD obj, LONG value)
 {
-    TEDINFO *ted = ted_of(tree, obj);
-    char *text = (char *)(uint32_t)ted->te_ptext;
-    WORD len = ted->te_txtlen;                  /* rule 5, as above: the
+    FPTR(TEDINFO) ted = ted_of(tree, obj);
+    FPTR(char) text = FP_OF(char, (uint32_t)FGET(TEDINFO, ted, te_ptext));
+    WORD len = FGET(TEDINFO, ted, te_txtlen);   /* rule 5, as above: the
                                                  * field into a local, then
                                                  * the subtraction */
     WORD i = (WORD)(len - 1);
 
-    text[i] = 0;
+    FPUT(char, text, i, 0);
     do {
-        text[--i] = (char)('0' + (WORD)(value % 10));
+        --i;
+        FPUT(char, text, i, (char)('0' + (WORD)(value % 10)));
         value /= 10;
     } while (value && i > 0);
-    while (i > 0)
-        text[--i] = ' ';
+    while (i > 0) {
+        --i;
+        FPUT(char, text, i, ' ');
+    }
 }
 
 /* Two digits at `at`, as a date's fields are written. */
@@ -131,7 +134,7 @@ static void inf_two(char *at, WORD v)
  * in the line a translation cannot move -- the separators are the
  * resource's, the order is here -- where the donor picks it from the
  * country the ROM was built for (deskinf.c inf_dttm, datestr). */
-static void inf_dttm(OBJECT *tree, WORD obj, UWORD date, UWORD time)
+static void inf_dttm(GEMTREE tree, WORD obj, UWORD date, UWORD time)
 {
     char places[11];
 
@@ -149,19 +152,19 @@ static void inf_dttm(OBJECT *tree, WORD obj, UWORD date, UWORD time)
  * NOT padded out -- "SUB" stays three characters -- because the places
  * left over are where the edit cursor then sits, ready to be typed
  * into rather than backspaced through. */
-static void fmt_name(const char FAR *name, char *places)
+static void fmt_name(FPTR(const char) name, char *places)
 {
     WORD i, j = 0;
 
-    for (i = 0; name[i] && name[i] != '.'; i++)
+    for (i = 0; FAT(const char, name, i) && FAT(const char, name, i) != '.'; i++)
         if (j < 8)
-            places[j++] = name[i];          /* excess before the dot is eaten */
-    if (name[i] == '.') {
+            places[j++] = FAT(const char, name, i); /* excess before the dot is eaten */
+    if (FAT(const char, name, i) == '.') {
         i++;
         while (j < 8)
             places[j++] = ' ';
-        while (j < 11 && name[i])
-            places[j++] = name[i++];
+        while (j < 11 && FAT(const char, name, i))
+            places[j++] = FAT(const char, name, i++);
     }
     places[j] = 0;
 }
@@ -190,13 +193,13 @@ static void unfmt_name(const char *places, char *name)
 
 /* Which of the two buttons after ok is selected: 0 for it, 1 for the
  * next (the donor's inf_what through inf_gindex), the state cleared. */
-static WORD inf_what(OBJECT *tree, WORD ok)
+static WORD inf_what(GEMTREE tree, WORD ok)
 {
     WORD i;
 
     for (i = 0; i < 2; i++)
-        if (tree[ok + i].ob_state & SELECTED) {
-            tree[ok + i].ob_state = NORMAL;
+        if (TGET(tree, ok + i, ob_state) & SELECTED) {
+            TSET(tree, ok + i, ob_state, NORMAL);
             return (WORD)(i == 0);
         }
     return 0;
@@ -206,7 +209,7 @@ static WORD inf_what(OBJECT *tree, WORD ok)
 
 static GRECT dlg;
 
-static void fun_start(OBJECT *tree)
+static void fun_start(GEMTREE tree)
 {
     form_center(tree, &dlg.g_x, &dlg.g_y, &dlg.g_w, &dlg.g_h);
     form_dial(FMD_START, 0, 0, 0, 0, dlg.g_x, dlg.g_y, dlg.g_w, dlg.g_h);
@@ -219,13 +222,13 @@ static void fun_end(void)
 }
 
 /* One field of a dialog already on the screen (the donor's draw_fld). */
-static void fun_fld(OBJECT *tree, WORD obj)
+static void fun_fld(GEMTREE tree, WORD obj)
 {
     GRECT t;
 
     objc_offset(tree, obj, &t.g_x, &t.g_y);
-    t.g_w = tree[obj].ob_width;
-    t.g_h = tree[obj].ob_height;
+    t.g_w = TGET(tree, obj, ob_width);
+    t.g_h = TGET(tree, obj, ob_height);
     objc_draw(tree, obj, MAX_DEPTH, t.g_x, t.g_y, t.g_w, t.g_h);
 }
 
@@ -243,7 +246,7 @@ static char *path_tail(char *path)
 }
 
 /* "A:\SUB\*.*" -> "A:\SUB\NAME", and the tail to put "*.*" back at. */
-static char *add_fname(char *path, const char FAR *name)
+static char *add_fname(char *path, FPTR(const char) name)
 {
     char *tail = path_tail(path);
 
@@ -267,7 +270,7 @@ static void set_all_files(char *tail)
 }
 
 /* "A:\SUB\*.*" -> "A:\SUB\NAME\*.*", FALSE if that will not fit. */
-static WORD add_path(char *path, const char FAR *name)
+static WORD add_path(char *path, FPTR(const char) name)
 {
     char *tail = path_tail(path);
     char *end = put_far(tail, name);
@@ -357,7 +360,7 @@ static WORD make_dir(void)
 #define CF_STOP 2
 static WORD copy_conflict(void)
 {
-    OBJECT *tree;
+    GEMTREE tree;
     GRECT d;
     char places[LEN_ZFNAME], name[LEN_ZFNAME], *tail;
     LONG fd;
@@ -372,16 +375,16 @@ static WORD copy_conflict(void)
             return CF_COPY;                     /* replaced, unasked */
         if (!rsrc_load("PREFS.RSC"))
             return CF_STOP;
-        rsrc_gaddr(R_TREE, ADCNFBOX, (void **)&tree);
+        rsrc_gaddr(R_TREE, ADCNFBOX, (GEMADDR *)&tree);
         tail = path_tail(dst_path);
-        fmt_name((const char FAR *)tail, places);
+        fmt_name(FP_NEAR(const char, tail), places);
         inf_sset(tree, NCOLD, places);
         inf_sset(tree, NCNEW, places);
         form_center(tree, &d.g_x, &d.g_y, &d.g_w, &d.g_h);
         form_dial(FMD_START, 0, 0, 0, 0, d.g_x, d.g_y, d.g_w, d.g_h);
         objc_draw(tree, ROOT, MAX_DEPTH, d.g_x, d.g_y, d.g_w, d.g_h);
         ret = (WORD)(form_do(tree, NCNEW) & 0x7FFF);
-        tree[ret].ob_state = NORMAL;
+        TSET(tree, ret, ob_state, NORMAL);
         inf_sget(tree, NCNEW, places);
         form_dial(FMD_FINISH, 0, 0, 0, 0, d.g_x, d.g_y, d.g_w, d.g_h);
         rsrc_free();                            /* the nested one */
@@ -404,7 +407,7 @@ static WORD copy_conflict(void)
 static WORD copy_file(void)
 {
     LONG in, out, got, put;
-    char FAR *buf = G.g_copybuf;
+    FPTR(char) buf = G.g_copybuf;
     WORD ok = TRUE;
 
     in = Fopen(op_path, 0)      /* read */;
@@ -479,7 +482,7 @@ static WORD copy_one(WORD op)
  * they stopped -- the caller is stopping too. */
 static WORD walk(WORD level, WORD op)
 {
-    DTA FAR *dta;
+    FPTR(DTA) dta;
     LONG ret;
     char *tail, *dtail;
 
@@ -487,18 +490,18 @@ static WORD walk(WORD level, WORD op)
         fun_alert(1, STFO8DEE);
         return FALSE;
     }
-    dta = &G.g_opdta[level];
+    dta = FIDX(DTA, G.g_opdta, level);
     Fsetdta(dta);
     ret = Fsfirst(op_path, FA_SUBDIR);
     while (ret == E_OK) {
-        if (dta->d_fname[0] != '.') {           /* "." and ".." */
-            if (dta->d_attrib & FA_SUBDIR) {
-                if (!add_path(op_path, dta->d_fname)) {
+        if (FAT(char, FARR(DTA, dta, d_fname), 0) != '.') {           /* "." and ".." */
+            if (FGET(DTA, dta, d_attrib) & FA_SUBDIR) {
+                if (!add_path(op_path, FARR(DTA, dta, d_fname))) {
                     fun_alert(1, STDEEPPA);
                     return FALSE;
                 }
                 if (op == OP_COPY || op == OP_MOVE) {
-                    if (!add_path(dst_path, dta->d_fname)) {
+                    if (!add_path(dst_path, FARR(DTA, dta, d_fname))) {
                         fun_alert(1, STDEEPPA);
                         return FALSE;
                     }
@@ -511,7 +514,7 @@ static WORD walk(WORD level, WORD op)
                 if (op == OP_COPY || op == OP_MOVE)
                     sub_path(dst_path);
                 Fsetdta(dta);                   /* this level's own again */
-                tail = add_fname(op_path, dta->d_fname);
+                tail = add_fname(op_path, FARR(DTA, dta, d_fname));
                 if (op == OP_COUNT) {
                     G.g_ndirs++;
                 } else if (op == OP_COPY) {
@@ -527,10 +530,10 @@ static WORD walk(WORD level, WORD op)
                 }
                 set_all_files(tail);
             } else {
-                tail = add_fname(op_path, dta->d_fname);
+                tail = add_fname(op_path, FARR(DTA, dta, d_fname));
                 if (op == OP_COUNT) {
                     G.g_nfiles++;
-                    G.g_opsize += dta->d_length;    /* what Show info calls
+                    G.g_opsize += FGET(DTA, dta, d_length);    /* what Show info calls
                                                      * a folder's size */
                 } else if (op == OP_DELETE) {
                     if (!del_file())
@@ -538,7 +541,7 @@ static WORD walk(WORD level, WORD op)
                     G.g_nfiles--;
                     op_count(CDFILES, G.g_nfiles);
                 } else {
-                    dtail = add_fname(dst_path, dta->d_fname);
+                    dtail = add_fname(dst_path, FARR(DTA, dta, d_fname));
                     if (!copy_one(op))
                         return FALSE;
                     set_all_files(dtail);
@@ -605,7 +608,7 @@ static void win_follow(const char *from, const char *to)
 /* Is `dest` (a path ending in "*.*") the folder `name` of `spec`'s
  * directory, or inside it?  The donor's source_is_parent.  op_path is the
  * scratch, as everywhere here. */
-static WORD in_itself(const char *spec, const char FAR *name, const char *dest)
+static WORD in_itself(const char *spec, FPTR(const char) name, const char *dest)
 {
     WORD k, n;
 
@@ -625,19 +628,19 @@ static WORD in_itself(const char *spec, const char FAR *name, const char *dest)
  * copy's own questions deal with, or the DOS would not.  The counters go
  * down by what went, a folder's contents counted again where they are
  * now. */
-static WORD move_name(const FNODE FAR *pf)
+static WORD move_name(FPTR(const FNODE) pf)
 {
     LONG files, dirs;
     WORD n;
 
-    add_fname(op_path, pf->f_name);
-    add_fname(dst_path, pf->f_name);
-    Fsetdta(&G.g_opdta[0]);
+    add_fname(op_path, FARR(FNODE, pf, f_name));
+    add_fname(dst_path, FARR(FNODE, pf, f_name));
+    Fsetdta(FIDX(DTA, G.g_opdta, 0));
     if (Fsfirst(dst_path, FA_SUBDIR) == E_OK)
         return FALSE;                           /* taken: the copy asks */
     if (Frename(op_path, dst_path) != E_OK)
         return FALSE;
-    if (!(pf->f_attr & FA_SUBDIR)) {
+    if (!(FGET(FNODE, pf, f_attr) & FA_SUBDIR)) {
         G.g_nfiles--;
         op_count(CDFILES, G.g_nfiles);
         return TRUE;
@@ -670,19 +673,19 @@ static WORD move_name(const FNODE FAR *pf)
  * so a title of any length -- a translated one included -- sits in the
  * middle.  Only ob_x moves; the width the resource gave it is the
  * longest title's, so nothing clips. */
-static void dlg_title(OBJECT *tree, WORD obj, WORD stnum)
+static void dlg_title(GEMTREE tree, WORD obj, WORD stnum)
 {
-    char *str;
+    FPTR(char) str;
     WORD len;
 
-    rsrc_gaddr(R_STRING, stnum, (void **)&str);
-    tree[obj].ob_spec.index = (LONG)(uint32_t)(char FAR *)str;
-    for (len = 0; str[len]; len++)
+    rsrc_gaddr(R_STRING, stnum, (GEMADDR *)&str);
+    TSET(tree, obj, ob_spec.index, (LONG)(uint32_t)FP_OF(char, str));
+    for (len = 0; FAT(char, str, len); len++)
         ;
     len = (WORD)(len * G.g_wchar);
-    if (len > tree[ROOT].ob_width)
-        len = tree[ROOT].ob_width;
-    tree[obj].ob_x = (WORD)((tree[ROOT].ob_width - len) / 2);
+    if (len > TGET(tree, ROOT, ob_width))
+        len = TGET(tree, ROOT, ob_width);
+    TSET(tree, obj, ob_x, (WORD)((TGET(tree, ROOT, ob_width) - len) / 2));
 }
 
 /* The operation dialog serves all three and says which one it is from a
@@ -703,7 +706,7 @@ static void op_title(WORD op)
 static WORD drop_path(WORD dst_wh, WORD dst_obj, char *path)
 {
     WNODE *pd;
-    FNODE FAR *pf;
+    FPTR(FNODE) pf;
 
     if (dst_wh == DESKWH) {
         WORD drive = (WORD)icon_letter(dst_obj);
@@ -724,9 +727,9 @@ static WORD drop_path(WORD dst_wh, WORD dst_obj, char *path)
     if (!dst_obj)                               /* the window's own directory */
         return TRUE;
     pf = win_fnode(pd, dst_obj);
-    if (!pf || !(pf->f_attr & FA_SUBDIR))       /* onto a file: no */
+    if (!pf || !(FGET(FNODE, pf, f_attr) & FA_SUBDIR))       /* onto a file: no */
         return FALSE;
-    return add_path(path, pf->f_name);
+    return add_path(path, FARR(FNODE, pf, f_name));
 }
 
 /* An item dragged out of pw and let go somewhere.  SHIFT makes it a
@@ -739,8 +742,8 @@ static WORD drop_path(WORD dst_wh, WORD dst_obj, char *path)
  * what is selected, ask, then do it with the counters ticking down. */
 void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
 {
-    OBJECT *tree = G.a_delete;
-    FNODE FAR *pf;
+    GEMTREE tree = G.a_delete;
+    FPTR(FNODE) pf;
     char dest[LEN_ZPATH];
     WORD i, ok, op, chose = FALSE, byname;
 
@@ -753,8 +756,8 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
         return;
 
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        if (pf->f_flags & F_SELECTED)
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        if (FGET(FNODE, pf, f_flags) & F_SELECTED)
             chose = TRUE;
     if (!chose) {
         fun_alert(1, STNOTHIN);
@@ -765,9 +768,9 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
         return;
     }
     pf = pw->w_path.p_flist;                    /* ...or inside itself */
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        if ((pf->f_flags & F_SELECTED) && (pf->f_attr & FA_SUBDIR)
-            && in_itself(pw->w_path.p_spec, pf->f_name, dest)) {
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        if ((FGET(FNODE, pf, f_flags) & F_SELECTED) && (FGET(FNODE, pf, f_attr) & FA_SUBDIR)
+            && in_itself(pw->w_path.p_spec, FARR(FNODE, pf, f_name), dest)) {
             fun_alert(1, STINSELF);
             return;
         }
@@ -781,12 +784,12 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
     G.g_ndirs = 0;
     ok = TRUE;
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count && ok; i++, pf++) {
-        if (!(pf->f_flags & F_SELECTED))
+    for (i = 0; i < pw->w_path.p_count && ok; i++, FINC(FNODE, pf)) {
+        if (!(FGET(FNODE, pf, f_flags) & F_SELECTED))
             continue;
         put_str(op_path, pw->w_path.p_spec);
-        if (pf->f_attr & FA_SUBDIR) {
-            if (!add_path(op_path, pf->f_name)) {
+        if (FGET(FNODE, pf, f_attr) & FA_SUBDIR) {
+            if (!add_path(op_path, FARR(FNODE, pf, f_name))) {
                 fun_alert(1, STDEEPPA);
                 ok = FALSE;
                 break;
@@ -820,10 +823,10 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
 
     desk_busy(TRUE);                            /* ...and do it */
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count && ok; i++, pf++) {
+    for (i = 0; i < pw->w_path.p_count && ok; i++, FINC(FNODE, pf)) {
         char *tail, *dtail;
 
-        if (!(pf->f_flags & F_SELECTED))
+        if (!(FGET(FNODE, pf, f_flags) & F_SELECTED))
             continue;
         put_str(op_path, pw->w_path.p_spec);
         put_str(dst_path, dest);
@@ -833,16 +836,16 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
             put_str(op_path, pw->w_path.p_spec);    /* the copy, then */
             put_str(dst_path, dest);
         }
-        if (pf->f_attr & FA_SUBDIR) {
-            add_path(op_path, pf->f_name);      /* both fitted at the count */
-            if (!add_path(dst_path, pf->f_name) || !make_dir())
+        if (FGET(FNODE, pf, f_attr) & FA_SUBDIR) {
+            add_path(op_path, FARR(FNODE, pf, f_name));      /* both fitted at the count */
+            if (!add_path(dst_path, FARR(FNODE, pf, f_name)) || !make_dir())
                 break;
             ok = walk(0, op);
             if (!ok)
                 break;
             sub_path(op_path);
             sub_path(dst_path);
-            tail = add_fname(op_path, pf->f_name);
+            tail = add_fname(op_path, FARR(FNODE, pf, f_name));
             if (op == OP_MOVE && Ddelete(op_path) != E_OK) {
                 fun_alert(1, STDELDIR);
                 break;
@@ -851,8 +854,8 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
             op_count(CDFOLDS, G.g_ndirs);
             set_all_files(tail);
         } else {
-            tail = add_fname(op_path, pf->f_name);
-            dtail = add_fname(dst_path, pf->f_name);
+            tail = add_fname(op_path, FARR(FNODE, pf, f_name));
+            dtail = add_fname(dst_path, FARR(FNODE, pf, f_name));
             if (!copy_one(op))
                 break;
             set_all_files(dtail);
@@ -877,7 +880,7 @@ void fun_file2any(WNODE *pw, WORD dst_wh, WORD dst_obj, WORD kstate)
  * desktop's loop -- only a program run from an icon does (do_open). */
 void fun_mkdir(WNODE *pw)
 {
-    OBJECT *tree = G.a_mkdir;
+    GEMTREE tree = G.a_mkdir;
     char name[LEN_ZFNAME], made[LEN_ZFNAME];
     WORD i;
 
@@ -922,14 +925,14 @@ void fun_mkdir(WNODE *pw)
  * at rest (src/aes/rsrc.c nests it). */
 WORD fun_askline(char *line)
 {
-    OBJECT *tree;
+    GEMTREE tree;
     WORD ok, n;
 
     if (!rsrc_load("PREFS.RSC")) {
         fun_alert(1, STNOPREF);
         return FALSE;
     }
-    rsrc_gaddr(R_TREE, ADCMDBOX, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADCMDBOX, (GEMADDR *)&tree);
     inf_sset(tree, CMLINE, "");
     fun_start(tree);
     form_do(tree, CMLINE);
@@ -954,8 +957,8 @@ WORD fun_askline(char *line)
  * is Remove. */
 void fun_install(WNODE *pw)
 {
-    OBJECT *tree;
-    FNODE FAR *pf = 0;
+    GEMTREE tree;
+    FPTR(FNODE) pf = 0;
     char places[LEN_ZFNAME], path[LEN_ZPATH], ext[4];
     const char *spec;
     WORD i, n, k, ret;
@@ -966,8 +969,8 @@ void fun_install(WNODE *pw)
     }
     if (pw) {
         pf = pw->w_path.p_flist;
-        for (i = 0; i < pw->w_path.p_count; i++, pf++)
-            if (pf->f_flags & F_SELECTED)
+        for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+            if (FGET(FNODE, pf, f_flags) & F_SELECTED)
                 break;
         if (i >= pw->w_path.p_count || !win_isprog(pf))
             pf = 0;
@@ -979,7 +982,7 @@ void fun_install(WNODE *pw)
     }
     spec = pw->w_path.p_spec;                   /* "A:\SUB\*.*": the path */
     n = spec_dirlen(spec);
-    for (k = 0; pf->f_name[k]; k++)
+    for (k = 0; FAT(char, FARR(FNODE, pf, f_name), k); k++)
         ;
     if (n + k >= LEN_ZPATH) {
         rsrc_free();
@@ -987,19 +990,19 @@ void fun_install(WNODE *pw)
     }
     for (i = 0; i < n; i++)
         path[i] = spec[i];
-    for (k = 0; pf->f_name[k]; k++)
-        path[i++] = pf->f_name[k];
+    for (k = 0; FAT(char, FARR(FNODE, pf, f_name), k); k++)
+        path[i++] = FAT(char, FARR(FNODE, pf, f_name), k);
     path[i] = 0;
 
-    rsrc_gaddr(R_TREE, ADAPPBOX, (void **)&tree);
-    fmt_name(pf->f_name, places);
+    rsrc_gaddr(R_TREE, ADAPPBOX, (GEMADDR *)&tree);
+    fmt_name(FARR(FNODE, pf, f_name), places);
     inf_sset(tree, AANAME, places);
     app_typeof(path, ext);
     inf_sset(tree, AATYPE, ext);
     fun_start(tree);
     ret = (WORD)(form_do(tree, AATYPE) & 0x7FFF);
     fun_end();
-    tree[ret].ob_state = NORMAL;
+    TSET(tree, ret, ob_state, NORMAL);
     if (ret == AAOK || ret == AARMV) {
         ext[0] = 0;
         if (ret == AAOK) {
@@ -1027,7 +1030,7 @@ void fun_install(WNODE *pw)
  * DESKTOP.RSC, is the wrong one. */
 void fun_dinfo(WORD obj)
 {
-    OBJECT *tree;
+    GEMTREE tree;
     DISKINFO di;
     LONG freeb = -1;
     WORD drive = (WORD)(icon_letter(obj) - 'A');
@@ -1064,7 +1067,7 @@ void fun_dinfo(WORD obj)
         fun_alert(1, STNOPREF);
         return;
     }
-    rsrc_gaddr(R_TREE, ADDRVBOX, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADDRVBOX, (GEMADDR *)&tree);
     inf_sset(tree, DRNAME, label);
     inf_numset(tree, DRFOLDS, G.g_ndirs);
     inf_numset(tree, DRFILES, G.g_nfiles);
@@ -1076,7 +1079,7 @@ void fun_dinfo(WORD obj)
     fun_start(tree);
     form_do(tree, 0);
     fun_end();
-    tree[DROK].ob_state = NORMAL;
+    TSET(tree, DROK, ob_state, NORMAL);
     rsrc_free();                                /* the nested one */
 }
 
@@ -1085,7 +1088,7 @@ void fun_dinfo(WORD obj)
  * are listed whatever the mask is (src/desk/deskwin.c pn_active). */
 void fun_mask(WNODE *pw)
 {
-    OBJECT *tree;
+    GEMTREE tree;
     char places[LEN_ZFNAME], mask[LEN_ZFNAME];
     const char *spec;
     WORD ret;
@@ -1096,14 +1099,14 @@ void fun_mask(WNODE *pw)
         fun_alert(1, STNOPREF);
         return;
     }
-    rsrc_gaddr(R_TREE, ADMASKBOX, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADMASKBOX, (GEMADDR *)&tree);
     spec = pw->w_path.p_spec;
-    fmt_name((const char FAR *)(spec + spec_dirlen(spec)), places);
+    fmt_name(FP_NEAR(const char, (spec + spec_dirlen(spec))), places);
     inf_sset(tree, MSMASK, places);
     fun_start(tree);
     ret = (WORD)(form_do(tree, MSMASK) & 0x7FFF);
     fun_end();
-    tree[ret].ob_state = NORMAL;
+    TSET(tree, ret, ob_state, NORMAL);
     if (ret == MSOK) {
         inf_sget(tree, MSMASK, places);
         unfmt_name(places, mask);
@@ -1162,21 +1165,21 @@ WORD fun_disk(WORD copy, WORD a, WORD b)
  * in it, so it can be corrected rather than typed again. */
 void fun_info(WNODE *pw)
 {
-    OBJECT *tree = G.a_finfo;
-    FNODE FAR *pf;
+    GEMTREE tree = G.a_finfo;
+    FPTR(FNODE) pf;
     char places[LEN_ZFNAME], name[LEN_ZFNAME], was[LEN_ZFNAME];
     WORD i, folder, attr, ok, changed = FALSE, named;
 
     pf = pw->w_path.p_flist;                    /* what is selected */
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        if (pf->f_flags & F_SELECTED)
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        if (FGET(FNODE, pf, f_flags) & F_SELECTED)
             break;
     if (i >= pw->w_path.p_count)
         return;
-    folder = (WORD)((pf->f_attr & FA_SUBDIR) != 0);
+    folder = (WORD)((FGET(FNODE, pf, f_attr) & FA_SUBDIR) != 0);
     dlg_title(tree, FITITLE, folder ? STFOINFO : STFIINFO);
 
-    fmt_name(pf->f_name, places);
+    fmt_name(FARR(FNODE, pf, f_name), places);
     inf_sset(tree, FINAME, places);
     unfmt_name(places, was);                    /* what the field started
                                                  * as, which is what a
@@ -1185,7 +1188,7 @@ void fun_info(WNODE *pw)
                                                  * name, because eleven
                                                  * places cannot hold every
                                                  * name a file system can */
-    inf_dttm(tree, FIDATE, pf->f_date, pf->f_time);
+    inf_dttm(tree, FIDATE, FGET(FNODE, pf, f_date), FGET(FNODE, pf, f_time));
 
     /* A FOLDER's name is not every DOS's to change: XIO 32 renames a
      * file, and asked for a directory both SpartaDOS 3.2 and SpartaDOS X
@@ -1195,14 +1198,14 @@ void fun_info(WNODE *pw)
      * says so (phase 152). */
     named = (WORD)(!folder || (drive_caps(pw->w_path.p_spec) & DC_RENDIR));
     if (!named)
-        tree[FINAME].ob_flags = (UWORD)(tree[FINAME].ob_flags & ~EDITABLE);
+        TSET(tree, FINAME, ob_flags, (UWORD)(TGET(tree, FINAME, ob_flags) & ~EDITABLE));
     else
-        tree[FINAME].ob_flags = (UWORD)(tree[FINAME].ob_flags | EDITABLE);
+        TSET(tree, FINAME, ob_flags, (UWORD)(TGET(tree, FINAME, ob_flags) | EDITABLE));
     if (folder) {
         /* a folder is as big as what it holds, which is the count pass
          * a delete runs -- and it can refuse, on a path too deep */
         put_str(op_path, pw->w_path.p_spec);
-        if (!add_path(op_path, pf->f_name)) {
+        if (!add_path(op_path, FARR(FNODE, pf, f_name))) {
             fun_alert(1, STDEEPPA);
             return;
         }
@@ -1218,27 +1221,27 @@ void fun_info(WNODE *pw)
         inf_numset(tree, FIFILES, G.g_nfiles);
         inf_numset(tree, FIFOLDS, G.g_ndirs);
     } else {
-        inf_numset(tree, FISIZE, pf->f_size);
+        inf_numset(tree, FISIZE, FGET(FNODE, pf, f_size));
         inf_sset(tree, FIFILES, "");            /* a file holds nothing: the
                                                  * places stay as the
                                                  * template has them */
         inf_sset(tree, FIFOLDS, "");
     }
-    tree[FIFILES].ob_state = (UWORD)(folder ? NORMAL : DISABLED);
-    tree[FIFOLDS].ob_state = (UWORD)(folder ? NORMAL : DISABLED);
+    TSET(tree, FIFILES, ob_state, (UWORD)(folder ? NORMAL : DISABLED));
+    TSET(tree, FIFOLDS, ob_state, (UWORD)(folder ? NORMAL : DISABLED));
 
     for (;;) {
         if (folder) {                           /* not a folder's to change */
-            tree[FIRDWR].ob_state = DISABLED;
-            tree[FIRONLY].ob_state = DISABLED;
-        } else if (pf->f_attr & FA_RDONLY) {
-            tree[FIRDWR].ob_state = NORMAL;
-            tree[FIRONLY].ob_state = SELECTED;
+            TSET(tree, FIRDWR, ob_state, DISABLED);
+            TSET(tree, FIRONLY, ob_state, DISABLED);
+        } else if (FGET(FNODE, pf, f_attr) & FA_RDONLY) {
+            TSET(tree, FIRDWR, ob_state, NORMAL);
+            TSET(tree, FIRONLY, ob_state, SELECTED);
         } else {
-            tree[FIRDWR].ob_state = SELECTED;
-            tree[FIRONLY].ob_state = NORMAL;
+            TSET(tree, FIRDWR, ob_state, SELECTED);
+            TSET(tree, FIRONLY, ob_state, NORMAL);
         }
-        tree[FIOK].ob_state = NORMAL;
+        TSET(tree, FIOK, ob_state, NORMAL);
         fun_start(tree);
         form_do(tree, 0);
         fun_end();
@@ -1247,18 +1250,18 @@ void fun_info(WNODE *pw)
 
         desk_busy(TRUE);
         put_str(op_path, pw->w_path.p_spec);
-        add_fname(op_path, pf->f_name);
+        add_fname(op_path, FARR(FNODE, pf, f_name));
         if (!folder) {
-            attr = pf->f_attr;
-            if (tree[FIRONLY].ob_state & SELECTED)
+            attr = FGET(FNODE, pf, f_attr);
+            if (TGET(tree, FIRONLY, ob_state) & SELECTED)
                 attr = (WORD)(attr | FA_RDONLY);
             else
                 attr = (WORD)(attr & ~FA_RDONLY);
-            if (attr != pf->f_attr) {
+            if (attr != FGET(FNODE, pf, f_attr)) {
                 Fattrib(op_path, 1, attr);      /* the DOS's lock, and like
                                                  * the ST we do not ask what
                                                  * it thought of it */
-                pf->f_attr = attr;
+                FSET(FNODE, pf, f_attr, attr);
                 changed = TRUE;
             }
         }
@@ -1290,14 +1293,14 @@ void fun_info(WNODE *pw)
  * and then deleted, folders and all. */
 void fun_del(WNODE *pw)
 {
-    OBJECT *tree = G.a_delete;
-    FNODE FAR *pf;
+    GEMTREE tree = G.a_delete;
+    FPTR(FNODE) pf;
     WORD i, ok;
 
     ok = FALSE;
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count; i++, pf++)
-        if (pf->f_flags & F_SELECTED)
+    for (i = 0; i < pw->w_path.p_count; i++, FINC(FNODE, pf))
+        if (FGET(FNODE, pf, f_flags) & F_SELECTED)
             ok = TRUE;
     if (!ok)                                    /* nothing chosen */
         return;
@@ -1306,12 +1309,12 @@ void fun_del(WNODE *pw)
     G.g_nfiles = 0;
     G.g_ndirs = 0;
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count && ok; i++, pf++) {
-        if (!(pf->f_flags & F_SELECTED))
+    for (i = 0; i < pw->w_path.p_count && ok; i++, FINC(FNODE, pf)) {
+        if (!(FGET(FNODE, pf, f_flags) & F_SELECTED))
             continue;
         put_str(op_path, pw->w_path.p_spec);
-        if (pf->f_attr & FA_SUBDIR) {
-            if (!add_path(op_path, pf->f_name)) {
+        if (FGET(FNODE, pf, f_attr) & FA_SUBDIR) {
+            if (!add_path(op_path, FARR(FNODE, pf, f_name))) {
                 fun_alert(1, STDEEPPA);
                 ok = FALSE;
                 break;
@@ -1340,19 +1343,19 @@ void fun_del(WNODE *pw)
 
     desk_busy(TRUE);                            /* ...and do it */
     pf = pw->w_path.p_flist;
-    for (i = 0; i < pw->w_path.p_count && ok; i++, pf++) {
+    for (i = 0; i < pw->w_path.p_count && ok; i++, FINC(FNODE, pf)) {
         char *tail;
 
-        if (!(pf->f_flags & F_SELECTED))
+        if (!(FGET(FNODE, pf, f_flags) & F_SELECTED))
             continue;
         put_str(op_path, pw->w_path.p_spec);
-        if (pf->f_attr & FA_SUBDIR) {
-            add_path(op_path, pf->f_name);      /* it fitted at the count */
+        if (FGET(FNODE, pf, f_attr) & FA_SUBDIR) {
+            add_path(op_path, FARR(FNODE, pf, f_name));      /* it fitted at the count */
             ok = walk(0, OP_DELETE);
             if (!ok)
                 break;
             sub_path(op_path);
-            tail = add_fname(op_path, pf->f_name);
+            tail = add_fname(op_path, FARR(FNODE, pf, f_name));
             if (Ddelete(op_path) != E_OK) {
                 fun_alert(1, STDELDIR);
                 break;
@@ -1362,7 +1365,7 @@ void fun_del(WNODE *pw)
             fun_fld(tree, CDFOLDS);
             set_all_files(tail);
         } else {
-            add_fname(op_path, pf->f_name);
+            add_fname(op_path, FARR(FNODE, pf, f_name));
             if (!del_file())
                 break;
             G.g_nfiles--;
@@ -1397,12 +1400,12 @@ static void drv_take_over(void)
  * (desktop.c desk_build). */
 static void drv_default_label(WORD drive, char *label)
 {
-    char *disk;
+    FPTR(char) disk;
     WORD i;
 
-    rsrc_gaddr(R_STRING, STDISK, (void **)&disk);
-    for (i = 0; disk[i] && i < LABEL_LEN - 5; i++)
-        label[i] = disk[i];
+    rsrc_gaddr(R_STRING, STDISK, (GEMADDR *)&disk);
+    for (i = 0; FAT(char, disk, i) && i < LABEL_LEN - 5; i++)
+        label[i] = FAT(char, disk, i);
     label[i++] = ' ';
     label[i++] = 'D';
     label[i++] = (char)('1' + drive);
@@ -1451,7 +1454,7 @@ void fun_devices(void)
  * The desk is built again after; Save desktop keeps the set. */
 void fun_icon(WORD sel)
 {
-    OBJECT *tree;
+    GEMTREE tree;
     char digit[4], label[LABEL_LEN];
     WORD was, ret, drive, i;
 
@@ -1462,16 +1465,16 @@ void fun_icon(WORD sel)
         fun_alert(1, STNOPREF);
         return;
     }
-    rsrc_gaddr(R_TREE, ADICNBOX, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADICNBOX, (GEMADDR *)&tree);
     digit[0] = was ? (char)('1' + was - 'A') : 0;
     digit[1] = 0;
     inf_sset(tree, ICDRIVE, digit);
     inf_sset(tree, ICLABEL, sel ? obj_info(sel)->i.label : "");
-    tree[ICREMV].ob_state = (UWORD)(sel ? NORMAL : DISABLED);
+    TSET(tree, ICREMV, ob_state, (UWORD)(sel ? NORMAL : DISABLED));
     fun_start(tree);
     ret = (WORD)(form_do(tree, ICDRIVE) & 0x7FFF);
     fun_end();
-    tree[ret].ob_state = NORMAL;
+    TSET(tree, ret, ob_state, NORMAL);
     inf_sget(tree, ICDRIVE, digit);
     inf_sget(tree, ICLABEL, label);
     rsrc_free();                                /* the nested one */

@@ -26,7 +26,7 @@ GLOBES G;
 
 static GRECT dlg;
 
-static void start_dialog(OBJECT *tree)
+static void start_dialog(GEMTREE tree)
 {
     form_center(tree, &dlg.g_x, &dlg.g_y, &dlg.g_w, &dlg.g_h);
     form_dial(FMD_START, 0, 0, 0, 0, dlg.g_x, dlg.g_y, dlg.g_w, dlg.g_h);
@@ -69,7 +69,7 @@ static void snap_icon(WORD gx, WORD gy, WORD *px, WORD *py)
 }
 
 /* An icon on the desk at grid (gx, gy). */
-static WORD desk_icon(WORD gx, WORD gy, WORD which, const char *label, WORD letter)
+static WORD desk_icon(WORD gx, WORD gy, WORD which, FPTR(const char) label, WORD letter)
 {
     WORD x, y;
 
@@ -84,11 +84,13 @@ static void desk_build(void)
 {
     WORD xcnt, ycnt, drive, n, gx, gy;
     char label[LABEL_LEN];
-    char *disk, *trash;
+    FPTR(char) disk;                            /* the resource's strings */
+    FPTR(char) trash;
     UWORD map;
 
-    G.g_wicon = (WORD)(MAX_ICONTEXT_WIDTH * G.g_wchar + 2 * G.a_iblist[0].ib_xtext);
-    G.g_hicon = (WORD)(G.a_iblist[0].ib_hicon + G.g_hchar + 2);
+    G.g_wicon = (WORD)(MAX_ICONTEXT_WIDTH * G.g_wchar
+                       + 2 * FGET(ICONBLK, G.a_iblist, ib_xtext));
+    G.g_hicon = (WORD)(FGET(ICONBLK, G.a_iblist, ib_hicon) + G.g_hchar + 2);
     xcnt = G.g_desk.g_w / (G.g_wicon + MIN_WINT);
     G.g_icw = G.g_desk.g_w / xcnt;
     ycnt = G.g_desk.g_h / (G.g_hicon + MIN_HINT);
@@ -98,8 +100,8 @@ static void desk_build(void)
               (WORD)(G.g_desk.g_y + G.g_desk.g_h));
     G.g_screen[DROOT].ob_spec.index = DESK_SPEC;
 
-    rsrc_gaddr(R_STRING, STDISK, (void **)&disk);
-    rsrc_gaddr(R_STRING, STTRASH, (void **)&trash);
+    rsrc_gaddr(R_STRING, STDISK, (GEMADDR *)&disk);
+    rsrc_gaddr(R_STRING, STTRASH, (GEMADDR *)&trash);
 
     map = (UWORD)Dsetdrv(Dgetdrv());
     gx = gy = 0;
@@ -110,7 +112,8 @@ static void desk_build(void)
             continue;
         if (own) {                              /* Install icon's (phase 74) */
             desk_icon((WORD)(n % xcnt), (WORD)(n / xcnt),
-                      drive > 1 ? IB_HARD : IB_FLOPPY, own, (WORD)('A' + drive));
+                      drive > 1 ? IB_HARD : IB_FLOPPY, FP_NEAR(const char, own),
+                      (WORD)('A' + drive));
             gy = (WORD)(n / xcnt);
             n++;
             continue;
@@ -119,16 +122,17 @@ static void desk_build(void)
         gy = (WORD)(n / xcnt);
         {
             char *d = label;
-            const char *s = disk;
-            while (*s && d < label + LABEL_LEN - 5)
-                *d++ = *s++;
+            FPTR(const char) s = disk;
+            while (FDEREF(char, s) && d < label + LABEL_LEN - 5)
+                *d++ = FNEXT(char, s);
             *d++ = ' ';                         /* "DISK D1:", as SDX */
             *d++ = 'D';                         /* and a person say it */
             *d++ = (char)('1' + drive);
             *d++ = ':';
             *d = 0;
         }
-        desk_icon(gx, gy, drive > 1 ? IB_HARD : IB_FLOPPY, label, (WORD)('A' + drive));
+        desk_icon(gx, gy, drive > 1 ? IB_HARD : IB_FLOPPY, FP_NEAR(const char, label),
+                  (WORD)('A' + drive));
         n++;
     }
     /* ...then the cartridge, when the AES found one at boot (phase 165):
@@ -137,10 +141,10 @@ static void desk_build(void)
         LONG c = Ssystem(S_GETCOOKIE, G4CT_COOKIE, 0L);
 
         if (c == G4CT_BASIC || c == G4CT_CART) {
-            char *name;
+            FPTR(char) name;
 
             rsrc_gaddr(R_STRING, (WORD)(c == G4CT_CART ? STCART : STBASIC),
-                       (void **)&name);
+                       (GEMADDR *)&name);
             desk_icon((WORD)(n % xcnt), (WORD)(n / xcnt), IB_CART, name, 'c');
             n++;
         }
@@ -184,17 +188,17 @@ static WORD sel_item(WORD root)
 /* Put `spec` on the dialog: its pattern and colour selected in the two
  * rows, and the sample drawn in both.  A colour the screen cannot show is
  * left DISABLED and never selected. */
-static void pref_show(OBJECT *tree, LONG spec)
+static void pref_show(GEMTREE tree, LONG spec)
 {
     WORD i, pat = (WORD)((spec & FILLPAT_MASK) >> 4);
     WORD col = (WORD)(spec & FILLCOL_MASK);
 
     for (i = 0; i < N_PAT; i++)
-        tree[PRPAT0 + i].ob_state = (UWORD)(i == pat ? SELECTED : NORMAL);
+        TSET(tree, PRPAT0 + i, ob_state, (UWORD)(i == pat ? SELECTED : NORMAL));
     for (i = 0; i < N_COL; i++)
-        if (!(tree[PRCOL0 + i].ob_state & DISABLED))
-            tree[PRCOL0 + i].ob_state = (UWORD)(i == col ? SELECTED : NORMAL);
-    tree[PRSAMPLE].ob_spec.index = spec;
+        if (!(TGET(tree, PRCOL0 + i, ob_state) & DISABLED))
+            TSET(tree, PRCOL0 + i, ob_state, (UWORD)(i == col ? SELECTED : NORMAL));
+    TSET(tree, PRSAMPLE, ob_spec.index, spec);
 }
 
 /* The background chooser: EmuTOS's inf_backgrounds in gem4xe's one
@@ -206,7 +210,7 @@ static void pref_show(OBJECT *tree, LONG spec)
  * composite Atari, so the answer is to let somebody choose. */
 static void do_prefs(void)
 {
-    OBJECT *tree;
+    GEMTREE tree;
 
     /* THE CHOOSER LIVES IN A RESOURCE OF ITS OWN, loaded over ours while
      * it is up and freed again (src/aes/rsrc.c nests one).  Keeping it in
@@ -217,7 +221,7 @@ static void do_prefs(void)
         fun_alert(1, STNOPREF);
         return;
     }
-    rsrc_gaddr(R_TREE, ADPREF, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADPREF, (GEMADDR *)&tree);
     LONG curdesk = G.g_screen[DROOT].ob_spec.index;
     LONG curwin = G.g_screen[DROOT + 1].ob_spec.index;
     LONG spec;
@@ -228,15 +232,15 @@ static void do_prefs(void)
     if (ncol > N_COL)
         ncol = N_COL;
     for (i = 0; i < N_COL; i++)
-        tree[PRCOL0 + i].ob_state = (UWORD)(i < ncol ? NORMAL : DISABLED);
+        TSET(tree, PRCOL0 + i, ob_state, (UWORD)(i < ncol ? NORMAL : DISABLED));
 
-    tree[PRDESK].ob_state = SELECTED;
-    tree[PRWIND].ob_state = NORMAL;
+    TSET(tree, PRDESK, ob_state, SELECTED);
+    TSET(tree, PRWIND, ob_state, NORMAL);
     spec = curdesk;
     pref_show(tree, spec);
-    tree[PRCNFDEL].ob_state = (UWORD)(desk_asks(CNF_DELETE) ? SELECTED : NORMAL);
-    tree[PRCNFCPY].ob_state = (UWORD)(desk_asks(CNF_COPY) ? SELECTED : NORMAL);
-    tree[PRCNFOVW].ob_state = (UWORD)(desk_asks(CNF_OVERWRITE) ? SELECTED : NORMAL);
+    TSET(tree, PRCNFDEL, ob_state, (UWORD)(desk_asks(CNF_DELETE) ? SELECTED : NORMAL));
+    TSET(tree, PRCNFCPY, ob_state, (UWORD)(desk_asks(CNF_COPY) ? SELECTED : NORMAL));
+    TSET(tree, PRCNFOVW, ob_state, (UWORD)(desk_asks(CNF_OVERWRITE) ? SELECTED : NORMAL));
     start_dialog(tree);
 
     for (;;) {
@@ -262,13 +266,13 @@ static void do_prefs(void)
         objc_draw(tree, ROOT, MAX_DEPTH, dlg.g_x, dlg.g_y, dlg.g_w, dlg.g_h);
     }
 
-    tree[PROK].ob_state = NORMAL;
-    tree[PRCNCL].ob_state = NORMAL;
+    TSET(tree, PROK, ob_state, NORMAL);
+    TSET(tree, PRCNCL, ob_state, NORMAL);
     end_dialog();
     if (ret == PROK)                /* the toggles, before the file goes */
-        desk_setasks((WORD)(((tree[PRCNFDEL].ob_state & SELECTED) ? CNF_DELETE : 0)
-                            | ((tree[PRCNFCPY].ob_state & SELECTED) ? CNF_COPY : 0)
-                            | ((tree[PRCNFOVW].ob_state & SELECTED) ? CNF_OVERWRITE : 0)));
+        desk_setasks((WORD)(((TGET(tree, PRCNFDEL, ob_state) & SELECTED) ? CNF_DELETE : 0)
+                            | ((TGET(tree, PRCNFCPY, ob_state) & SELECTED) ? CNF_COPY : 0)
+                            | ((TGET(tree, PRCNFOVW, ob_state) & SELECTED) ? CNF_OVERWRITE : 0)));
 
     rsrc_free();                    /* the nested one: ours is untouched */
 
@@ -287,12 +291,12 @@ static void do_prefs(void)
 
 static WORD do_deskmenu(WORD item)
 {
-    OBJECT *tree = G.a_info;
+    GEMTREE tree = G.a_info;
 
     if (item == ABOUITEM) {
         start_dialog(tree);
         form_do(tree, 0);
-        tree[DEOK].ob_state = NORMAL;
+        TSET(tree, DEOK, ob_state, NORMAL);
         end_dialog();
     }
     return FALSE;
@@ -552,7 +556,7 @@ static WORD hndl_drag(WNODE *pw, WORD obj, WORD wh, WORD root)
      * that one. */
     if (!(G.g_screen[obj].ob_state & SELECTED))
         act_select(wh, root, obj);
-    objc_offset(G.g_screen, obj, &bx, &by);
+    objc_offset(TREE_OF(G.g_screen), obj, &bx, &by);
     wind_get(0, WF_WORKXYWH, &d.g_x, &d.g_y, &d.g_w, &d.g_h);
     graf_dragbox(pob->ob_width, pob->ob_height, bx, by,
                  d.g_x, d.g_y, d.g_w, d.g_h, &x, &y);
@@ -560,14 +564,14 @@ static WORD hndl_drag(WNODE *pw, WORD obj, WORD wh, WORD root)
 
     dwh = wind_find(x, y);
     if (dwh == DESKWH) {
-        dobj = objc_find(G.g_screen, DROOT, MAX_DEPTH, x, y);
+        dobj = objc_find(TREE_OF(G.g_screen), DROOT, MAX_DEPTH, x, y);
         if (dobj < WOBS_START)
             return TRUE;                        /* the bare desk */
     } else {
         WNODE *pd = win_find(dwh);
         if (!pd)
             return TRUE;
-        dobj = objc_find(G.g_screen, pd->w_root, MAX_DEPTH, x, y);
+        dobj = objc_find(TREE_OF(G.g_screen), pd->w_root, MAX_DEPTH, x, y);
         if (dobj < WOBS_START)
             dobj = 0;                           /* the window itself */
         if (dwh == wh && (dobj == 0 || dobj == obj))
@@ -597,7 +601,7 @@ static WORD hndl_ddrag(WORD obj)
         return FALSE;
     if (!(pob->ob_state & SELECTED))
         act_select(DESKWH, DROOT, obj);
-    objc_offset(G.g_screen, obj, &bx, &by);
+    objc_offset(TREE_OF(G.g_screen), obj, &bx, &by);
     wind_get(0, WF_WORKXYWH, &d.g_x, &d.g_y, &d.g_w, &d.g_h);
     w = pob->ob_width;
     h = pob->ob_height;
@@ -605,7 +609,7 @@ static WORD hndl_ddrag(WORD obj)
     graf_mkstate(&x, &y, &mstate, &kstate);
     if (wind_find(x, y) != DESKWH)
         return TRUE;
-    dobj = objc_find(G.g_screen, DROOT, MAX_DEPTH, x, y);
+    dobj = objc_find(TREE_OF(G.g_screen), DROOT, MAX_DEPTH, x, y);
     a = icon_letter(obj);
     b = dobj >= WOBS_START ? icon_letter(dobj) : 0;
     if (!b || b == a)
@@ -661,7 +665,7 @@ static WORD hndl_button(WORD clicks, WORD mx, WORD my, WORD kstate)
             return FALSE;
         root = pw->w_root;
     }
-    obj = objc_find(G.g_screen, root, MAX_DEPTH, mx, my);
+    obj = objc_find(TREE_OF(G.g_screen), root, MAX_DEPTH, mx, my);
     if (obj < WOBS_START)
         obj = 0;
     if (obj && clicks == 2) {
@@ -727,7 +731,7 @@ static const struct {
  * all for an item that is greyed out. */
 static WORD key_menu(WORD title, WORD item)
 {
-    if (G.a_menu[item].ob_state & DISABLED)
+    if (TGET(G.a_menu, item, ob_state) & DISABLED)
         return FALSE;
     menu_tnormal(G.a_menu, title, 0);
     return hndl_menu(title, item);
@@ -879,12 +883,12 @@ static const char *const ci_names[N_IB] = {
  * Every character a WORD: as a char, the path that folds the case reached
  * the compare with an 8-bit accumulator and every lower-case label missed
  * (B21, tools/ccbug). */
-static WORD ci_named(const char FAR *a, const char *want)
+static WORD ci_named(FPTR(const char) a, const char *want)
 {
     WORD i, j = 0, c;
 
     for (i = 0; i < 32; i++) {
-        c = (WORD)(uint8_t)a[i];
+        c = (WORD)(uint8_t)FAT(const char, a, i);
         if (!c)
             break;
         if (c == ' ')
@@ -899,61 +903,62 @@ static WORD ci_named(const char FAR *a, const char *want)
 }
 
 /* n bytes, far to far, a byte through a local each time (B18). */
-static void ci_copy(uint8_t FAR *d, const uint8_t FAR *s, WORD n)
+static void ci_copy(FPTR(uint8_t) d, FPTR(const uint8_t) s, WORD n)
 {
     WORD i;
     uint8_t v;
 
     for (i = 0; i < n; i++) {
-        v = s[i];
-        d[i] = v;
+        v = FAT(const uint8_t, s, i);
+        FPUT(uint8_t, d, i, v);
     }
 }
 
 static void desk_cicons(void)
 {
-    OBJECT *t = 0;
+    GEMTREE t = 0;
     WORD k, o;
     LONG a;
-    uint8_t FAR *p;
+    FPTR(uint8_t) p;
 
     WORD hi = 0, lo = 0;
 
     objc_sysvar(SV_INQUIRE, G4_DESKICON, 0, 0, &hi, &lo);
-    G.g_cicon = (DCICON FAR *)(((LONG)(UWORD)hi << 16) | (UWORD)lo);
+    G.g_cicon = FP_OF(DCICON, (((LONG)(UWORD)hi << 16) | (UWORD)lo));
     if (G.g_cicon)
         return;                         /* an earlier desktop's, kept */
     if (!rsrc_load("DESKICON.RSC"))
         return;
-    rsrc_gaddr(R_TREE, 0, (void **)&t);
+    rsrc_gaddr(R_TREE, 0, (GEMADDR *)&t);
     a = t ? Malloc((LONG)(N_IB * CI_SIZE)) : 0;
     if (a > 0) {
-        G.g_cicon = (DCICON FAR *)a;
-        p = (uint8_t FAR *)(a + N_IB * (LONG)sizeof(DCICON));
+        G.g_cicon = FP_OF(DCICON, a);
+        p = FP_OF(uint8_t, (a + N_IB * (LONG)sizeof(DCICON)));
         for (k = 0; k < N_IB; k++)
-            G.g_cicon[k].col4 = 0;
+            FSET(DCICON, FIDX(DCICON, G.g_cicon, k), col4, 0);
         for (k = 0; k < N_IB; k++) {
-            for (o = t[0].ob_head; o > 0; o = t[o].ob_next) {
-                DCICON FAR *src = (DCICON FAR *)t[o].ob_spec.index;
-                DCICON FAR *d = &G.g_cicon[k];
-                if ((t[o].ob_type & 0xFF) != G_CICON || !src->col4
-                    || src->ib.ib_wicon != 32 || src->ib.ib_hicon != 32
-                    || !ci_named((const char FAR *)src->ib.ib_ptext, ci_names[k]))
+            for (o = TGET(t, 0, ob_head); o > 0; o = TGET(t, o, ob_next)) {
+                FPTR(DCICON) src = FP_OF(DCICON, TGET(t, o, ob_spec.index));
+                FPTR(DCICON) d = FIDX(DCICON, G.g_cicon, k);
+                if ((TGET(t, o, ob_type) & 0xFF) != G_CICON || !FGET(DCICON, src, col4)
+                    || FGET(DCICON, src, ib.ib_wicon) != 32
+                    || FGET(DCICON, src, ib.ib_hicon) != 32
+                    || !ci_named(FP_OF(const char, FGET(DCICON, src, ib.ib_ptext)), ci_names[k]))
                     continue;
-                ci_copy((uint8_t FAR *)d, (const uint8_t FAR *)src, (WORD)sizeof(DCICON));
-                ci_copy(p, (const uint8_t FAR *)src->ib.ib_pdata, CI_BYTES);
-                d->ib.ib_pdata = (LONG)p;
+                ci_copy(FP_OF(uint8_t, d), FP_OF(const uint8_t, src), (WORD)sizeof(DCICON));
+                ci_copy(p, FP_OF(const uint8_t, FGET(DCICON, src, ib.ib_pdata)), CI_BYTES);
+                FSET(DCICON, d, ib.ib_pdata, (LONG)p);
                 p += CI_BYTES;
-                ci_copy(p, (const uint8_t FAR *)src->ib.ib_pmask, CI_BYTES);
-                d->ib.ib_pmask = (LONG)p;
+                ci_copy(p, FP_OF(const uint8_t, FGET(DCICON, src, ib.ib_pmask)), CI_BYTES);
+                FSET(DCICON, d, ib.ib_pmask, (LONG)p);
                 p += CI_BYTES;
-                ci_copy(p, (const uint8_t FAR *)src->col4, 5 * CI_BYTES);
-                d->col4 = (LONG)p;
+                ci_copy(p, FP_OF(const uint8_t, FGET(DCICON, src, col4)), 5 * CI_BYTES);
+                FSET(DCICON, d, col4, (LONG)p);
                 p += 5 * CI_BYTES;
-                d->sel4 = 0;
-                if (src->sel4) {
-                    ci_copy(p, (const uint8_t FAR *)src->sel4, 5 * CI_BYTES);
-                    d->sel4 = (LONG)p;
+                FSET(DCICON, d, sel4, 0);
+                if (FGET(DCICON, src, sel4)) {
+                    ci_copy(p, FP_OF(const uint8_t, FGET(DCICON, src, sel4)), 5 * CI_BYTES);
+                    FSET(DCICON, d, sel4, (LONG)p);
                     p += 5 * CI_BYTES;
                 }
                 break;
@@ -971,13 +976,13 @@ static void desk_cicons(void)
  * written over the resource's "0.00". */
 static void set_version(void)
 {
-    char *v = (char *)(uint32_t)G.a_info[DEVERSN].ob_spec.index;
+    FPTR(char) v = FP_OF(char, (uint32_t)TGET(G.a_info, DEVERSN, ob_spec.index));
     UWORD g = (UWORD)global[0];
     static const char hex[] = "0123456789ABCDEF";
 
-    v[0] = hex[(g >> 8) & 0x0F];
-    v[2] = hex[(g >> 4) & 0x0F];
-    v[3] = hex[g & 0x0F];
+    FPUT(char, v, 0, hex[(g >> 8) & 0x0F]);
+    FPUT(char, v, 2, hex[(g >> 4) & 0x0F]);
+    FPUT(char, v, 3, hex[g & 0x0F]);
 }
 
 int main(void)
@@ -1004,14 +1009,14 @@ int main(void)
         appl_exit();                    /* and GEM ends: see QUITITEM */
         return 1;
     }
-    rsrc_gaddr(R_TREE, ADMENU, (void **)&G.a_menu);
-    rsrc_gaddr(R_TREE, ADDINFO, (void **)&G.a_info);
-    rsrc_gaddr(R_TREE, ADMKDBOX, (void **)&G.a_mkdir);
-    rsrc_gaddr(R_TREE, ADDELDIA, (void **)&G.a_delete);
-    rsrc_gaddr(R_TREE, ADFINFO, (void **)&G.a_finfo);
-    rsrc_gaddr(R_ICONBLK, 0, (void **)&G.a_iblist);
-    rsrc_gaddr(R_STRING, STFLINE, (void **)&G.g_fline);
-    rsrc_gaddr(R_STRING, STFMARK, (void **)&G.g_fmark);
+    rsrc_gaddr(R_TREE, ADMENU, (GEMADDR *)&G.a_menu);
+    rsrc_gaddr(R_TREE, ADDINFO, (GEMADDR *)&G.a_info);
+    rsrc_gaddr(R_TREE, ADMKDBOX, (GEMADDR *)&G.a_mkdir);
+    rsrc_gaddr(R_TREE, ADDELDIA, (GEMADDR *)&G.a_delete);
+    rsrc_gaddr(R_TREE, ADFINFO, (GEMADDR *)&G.a_finfo);
+    rsrc_gaddr(R_ICONBLK, 0, (GEMADDR *)&G.a_iblist);
+    rsrc_gaddr(R_STRING, STFLINE, (GEMADDR *)&G.g_fline);
+    rsrc_gaddr(R_STRING, STFMARK, (GEMADDR *)&G.g_fmark);
     desk_cicons();
     set_version();
 #if N_NOT_YET
@@ -1036,7 +1041,7 @@ int main(void)
         desk_build();                           /* the INF chose the drives */
         desk_patcol_apply();                    /* and the "#Q" background */
     }
-    wind_newdesk(G.g_screen, DROOT);
+    wind_newdesk(TREE_OF(G.g_screen), DROOT);
     wind_update(BEG_UPDATE);
     do_wredraw(DESKWH, &G.g_desk);
     cnx_get();
