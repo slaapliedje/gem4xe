@@ -17,6 +17,7 @@
 #include "sys/cio.h"
 #include "sys/sdcio.h"
 #include "sys/gemdos.h"
+#include "sys/farmem.h"
 
 static WORD refused(void)
 {
@@ -111,14 +112,55 @@ WORD     sh_desk_running(void) { return 0; }
 WORD     sh_environ(WORD how, WORD len, uint32_t buf) { (void)how; (void)len; (void)buf; return refused(); }
 void     sh_envrn(const char **ppath, const char *psrch) { (void)psrch; *ppath = 0; refused(); }
 WORD     sh_find(char *pspec) { (void)pspec; return refused(); }
-void     sh_get(uint32_t pbuffer, WORD len) { (void)pbuffer; (void)len; refused(); }
-void     sh_put(uint32_t pdata, WORD len) { (void)pdata; (void)len; refused(); }
+/* THE SHELL BUFFER (step 5c-3): where the desktop keeps its DESKTOP.INF
+ * text between programs, as src/aes/shel.c's sh_get and sh_put serve it --
+ * here the far heap's, taken at the first call and kept as the system's
+ * (far_keep: a block taken during a program's call is that program's). */
+#define SH6_BUFLEN 4192                 /* the ST's SIZE_SHELBUF, gem.h's */
+BANK_DATA("abi") static uint32_t sh6_buf;
+
+static uint32_t sh6(void)
+{
+    if (!sh6_buf) {
+        sh6_buf = far_alloc(SH6_BUFLEN);
+        if (sh6_buf) {
+            far_keep(sh6_buf);
+            far_fill(sh6_buf, 0, SH6_BUFLEN);
+        }
+    }
+    return sh6_buf;
+}
+
+void sh_get(uint32_t pbuffer, WORD len)
+{
+    uint32_t b = sh6();
+
+    if (!b || len <= 0)
+        return;
+    if (len > SH6_BUFLEN)
+        len = SH6_BUFLEN;
+    far_copy(pbuffer, b, (uint16_t)len);
+}
+
+void sh_put(uint32_t pdata, WORD len)
+{
+    uint32_t b = sh6();
+
+    if (!b || len <= 0)
+        return;
+    if (len > SH6_BUFLEN)
+        len = SH6_BUFLEN;
+    far_copy(b, pdata, (uint16_t)len);
+}
 void     sh_rdef(char *lpcmd, char *lpdir) { lpcmd[0] = 0; lpdir[0] = 0; refused(); }
 void     sh_read(char *pcmd, char *ptail) { pcmd[0] = 0; ptail[0] = 0; refused(); }
 void     sh_wdef(const char *lpcmd, const char *lpdir) { (void)lpcmd; (void)lpdir; refused(); }
 WORD     sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd, const char *ptail)
 {
-    (void)doex; (void)isgem; (void)isover; (void)pcmd; (void)ptail;
+    (void)isgem; (void)isover; (void)pcmd; (void)ptail;
+    if (doex == 9)                      /* SWM_NEWMSG: what messages it takes;
+                                         * A6 sends none of them (5c-3) */
+        return 1;
     return refused();
 }
 

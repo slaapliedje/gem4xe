@@ -274,7 +274,7 @@ static void bchange(WORD new, WORD clicks)
         /* the bare desk is the application's: a press there takes the
          * input back from an accessory whose window is on top */
         if (own == 0)
-            proc_input = proc_app;
+            proc_input = wm_owner(DESKWH);  /* the desk's: src/aes/wind.c */
         if (ct_owns) {
             ct_click = TRUE;
             ct_x = xrat;
@@ -682,7 +682,7 @@ void ev_mesag(WORD *mebuff)
 
     rlr->p_evwait = MU_MESAG;
     if (rlr == proc_input && rlr != proc_app)
-        proc_input = proc_app;      /* see ev_wait: nothing on the screen */
+        proc_input = wm_owner(DESKWH);  /* see ev_wait: nothing on the screen */
     while (!mq_get(mebuff))
         ev_poll();
     rlr->p_evwait = s_evwait;
@@ -931,9 +931,9 @@ static WORD ev_wait(WORD flags, const MOBLK *pmo1, const MOBLK *pmo2,
          * to have an owner, which is a later milestone; this is the half
          * of it that an accessory without a window needs, and without it
          * an accessory that finishes a dialog keeps the mouse for ever. */
-        if (rlr == proc_input && rlr != proc_app
+        if (rlr == proc_input && rlr != wm_owner(DESKWH)
             && !(flags & (MU_KEYBD | MU_BUTTON | MU_M1 | MU_M2)))
-            proc_input = proc_app;
+            proc_input = wm_owner(DESKWH);
         for (;;) {
             ev_poll();
             if (in_mine()) {

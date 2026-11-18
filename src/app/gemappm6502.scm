@@ -3,7 +3,7 @@
 ;;; several banks (docs/6502.md, step 5c-1); gemapp6502.scm is a one-bank
 ;;; program's.
 ;;;
-;;; ITS CODE IN BANKS 1..3 here, each at $4000-$7FFF, stored at $10000 +
+;;; ITS CODE IN BANKS 1..8 here, a program using as many as it fills, each at $4000-$7FFF, stored at $10000 +
 ;;; (k-1) * $4000 as the system's link stores its banks: a program's C
 ;;; puts a function in bank k with `#pragma clang section text="pbK"` or
 ;;; BANK_TEXT("pbK") (src/portab.h), and tools/bsp6502/bankasm.py
@@ -33,7 +33,22 @@
             (section pb2 pb2__bank))
     (memory Bank3 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store3)
             (section pb3 pb3__bank))
+    (memory Bank4 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store4)
+            (section pb4 pb4__bank))
+    (memory Bank5 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store5)
+            (section pb5 pb5__bank))
+    (memory Bank6 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store6)
+            (section pb6 pb6__bank))
+    (memory Bank7 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store7)
+            (section pb7 pb7__bank))
+    (memory Bank8 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store8)
+            (section pb8 pb8__bank))
     (memory Store1 (address (#x10000 . #x13fff)) (section Store1))
     (memory Store2 (address (#x14000 . #x17fff)) (section Store2))
     (memory Store3 (address (#x18000 . #x1bfff)) (section Store3))
+    (memory Store4 (address (#x1c000 . #x1ffff)) (section Store4))
+    (memory Store5 (address (#x20000 . #x23fff)) (section Store5))
+    (memory Store6 (address (#x24000 . #x27fff)) (section Store6))
+    (memory Store7 (address (#x28000 . #x2bfff)) (section Store7))
+    (memory Store8 (address (#x2c000 . #x2ffff)) (section Store8))
     (block cstack (size #x400))))

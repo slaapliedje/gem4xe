@@ -347,12 +347,64 @@ test-p6m: build/a6m-boot.atr
 test-p6ma: build/a6m-boot.atr
 	python3 tests/emu/p6m_prog.py --axlon 4096K
 
+# ---- step 5c-3: the desktop, a program of several banks ---------------------
+# src/desk/*.c, the 65C816's desktop, built for the 6502 through gem.h's
+# far accessors (step 5c-2): eight banks -- desktop.c, deskobj.c,
+# deskfun.c in two and deskwin.c in three (BANK_TEXT in the files),
+# deskcmd.c with the kit's gemlib.c -- and P6M's start-up, gates and far
+# helpers.
+# On build/a6d-boot.atr as P6PROG.G6A, with the desktop's resources.
+D6         = $(B6)/d6
+D6_BANKS   = --bank pb1=1 --bank pb2=2 --bank pb3=3 --bank pb4=4 --bank pb5=5 \
+             --bank pb6=6 --bank pb7=7 --bank pb8=8
+D6_UNITS   = desktop deskobj deskfun deskwin deskcmd gemlib
+D6_OBJ     = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(D6_UNITS:%=$(D6)/bank/%.o)
+D6_DEPS    = $(wildcard src/desk/*.c) src/desk/desk.h build/deskrsc.h src/app/gemlib.c src/app/gem.h src/portab.h
+$(D6)/w/desktop.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#include "../../../../src/desk/desktop.c"\n' > $@
+$(D6)/w/deskobj.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb6"\n#include "../../../../src/desk/deskobj.c"\n' > $@
+$(D6)/w/deskfun.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb2"\n#include "../../../../src/desk/deskfun.c"\n' > $@
+$(D6)/w/deskwin.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb3"\n#include "../../../../src/desk/deskwin.c"\n' > $@
+$(D6)/w/deskcmd.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb5"\n#include "../../../../src/desk/deskcmd.c"\n' > $@
+$(D6)/w/gemlib.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb5"\n#include "../../../../src/app/gemlib.c"\n' > $@
+# the assembly is what bankasm reads (cc6502 writes no object with it)
+$(D6)/asm/%.s: $(D6)/w/%.c $(D6_DEPS)
+	@mkdir -p $(dir $@)
+	$(CC6) $(KITFLAGS6) -I build -I src/desk --no-cross-call -c $< -o $(D6)/asm/$*.tmp --assembly-source=$@
+$(D6)/d6.idx: $(D6_UNITS:%=$(D6)/asm/%.s) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(D6_BANKS) $(D6_UNITS:%=$(D6)/asm/%.s)
+$(D6)/bank/%.o: $(D6)/asm/%.s $(D6)/d6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
+	@mkdir -p $(dir $@) $(D6)/basm
+	python3 tools/bsp6502/bankasm.py $< $(D6)/basm/$*.b.s --tu $* $(D6_BANKS) \
+	    --index $(D6)/d6.idx --trampoline _pcall --switch-in-bank
+	python3 tools/bsp6502/bankcheck.py --asm $(D6)/basm/$*.b.s $(D6_BANKS) --index $(D6)/d6.idx
+	$(AS6) --core 6502 $(D6)/basm/$*.b.s -o $@
+build/desk6.elf: $(D6_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
+	$(LN6) src/app/gemappm6502.scm $(D6_OBJ) \
+	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/desk6.map > /dev/null
+	python3 tools/bsp6502/bankcheck.py build/desk6.map --elf $@ || { rm -f $@; exit 1; }
+build/desk6.g6a: build/desk6.elf tools/bsp6502/mkxex6502.py
+	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
+# D1: A6 and the desktop's resources; D2: the desktop itself -- a floppy
+# has not room for A6's 21 banks and its eight (A6 tries D2: after D1:)
+build/a6d-boot.atr: build/a6.xex build/desktop.rsc build/deskicon.rsc build/prefs.rsc
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
+	    --add build/desktop.rsc DESKTOP.RSC --add build/deskicon.rsc DESKICON.RSC --add build/prefs.rsc PREFS.RSC
+test-d6: build/a6d-boot.atr build/a6d-desk.atr
+	python3 tests/emu/d6_desk.py
+
+build/a6d-desk.atr: build/desk6.g6a
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ P6PROG.G6A --sweep --compact
+
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf build/p6mprog.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-p6m test-p6ma test-f6a b6asm
+.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-p6m test-p6ma test-d6 test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;

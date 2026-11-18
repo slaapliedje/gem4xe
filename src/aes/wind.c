@@ -1745,6 +1745,18 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
         gl_newdesk = (OBTREE)((((uint32_t)(uint16_t)pinwds[0]) << 16)
                                     | (uint16_t)pinwds[1]);
         gl_newroot = pinwds[2];
+        /* ...and THE DESK IS THEIRS: a press on the bare desk goes to
+         * whoever put it up (src/aes/event.c), as the TOS desktop's does.
+         * The application until 2026-11-18, which is the same process
+         * wherever the desktop is process 0; on the 6502 A6 is, and the
+         * desktop a program of its own (docs/6502.md, 5c-3). */
+        w_win(DESKWH)->w_owner = proc_pid(rlr);
+        /* ...and with the desk on top -- no window open -- its presses
+         * are inside the control rectangle (w_setactive), so they go to
+         * the input owner, which the desk's owner becomes now rather than
+         * at the next change of top window */
+        if (w_top() == DESKWH)
+            proc_input = wm_owner(DESKWH);
         break;
     case WF_HSLSIZ:
         if (pwin->w_hslsiz != pinwds[0]) {

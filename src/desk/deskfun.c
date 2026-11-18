@@ -692,6 +692,10 @@ static void dlg_title(GEMTREE tree, WORD obj, WORD stnum)
  * string of the resource -- a title in the C could not be translated
  * (docs/shipping.md).  The donor has a dialog each; one and a title is
  * the same dialog with less of DESKTOP.RSC spent on it. */
+/* ON THE 6502 the rest of this file is a second bank: the whole is ~17 KB
+ * of 6502 code with its veneers (docs/6502.md, 5c-3).  Nothing elsewhere. */
+BANK_TEXT("pb7")
+
 static void op_title(WORD op)
 {
     WORD stnum = (op == OP_COPY) ? STCPYTTL

@@ -788,6 +788,11 @@ static void desk_verify(WORD wh)
 
 /* Draw wh's tree -- the desk's, or the window's box and items -- once
  * per rectangle of its list that meets *pc. */
+/* ON THE 6502 this file is three banks -- it is ~35 KB of 6502 code with
+ * its veneers (docs/6502.md, 5c-3) -- and this is where the second starts.
+ * BANK_TEXT is nothing on the 65C816. */
+BANK_TEXT("pb4")
+
 void do_wredraw(WORD wh, const GRECT *pc)
 {
     WORD root = DROOT;
@@ -1563,6 +1568,9 @@ WORD do_apps(const char *name, WORD first, const char *args)
 
 /* EDIT.PRG on a document, from the viewer (deskcmd.c cmd_edit), looked
  * for first on the document's own drive. */
+/* ...and the third (the 6502's banks, as above). */
+BANK_TEXT("pb8")
+
 WORD do_edit(const char *doc)
 {
     return do_apps("EDIT.PRG", (WORD)(doc[0] - 'A'), doc);

@@ -143,7 +143,12 @@ static void acc_start(void)
  * and nothing yet keeps a second program's copy of it.  Its link block
  * at $C000 (src/app/crt6502m.s) gets the bank of each of its banks and
  * the addresses its _pcall needs. */
-#define P6_FILE "D1:P6PROG.G6A"
+/* in this bank, as src/sys/cio.c, their reader, is: resident memory has
+ * not the bytes */
+static const char p6_file[] BANK_DATA("far") = "D1:P6PROG.G6A";
+static const char p6_file2[] BANK_DATA("far") = "D2:P6PROG.G6A"; /* the desktop's
+                                         * own disk (5c-3): D1: has no
+                                         * room beside A6 */
 #define P6_MAX  0x4000u                 /* one bank */
 #define P6_NOMEM 0xC8                   /* no bank free: a6's own status */
 #define P6_BADF  0xC9                   /* not a .G6A */
@@ -290,9 +295,11 @@ static uint8_t prog_read(int16_t io, uint8_t own)
 
 static uint8_t prog_load(uint8_t own)
 {
-    int16_t io = cio_open(P6_FILE, CIO_A_READ, 0);
+    int16_t io = cio_open(p6_file, CIO_A_READ, 0);
     uint8_t st;
 
+    if (io < 0)
+        io = cio_open(p6_file2, CIO_A_READ, 0);
     p6_nbanks = 0;
     if (io < 0) {
         io = -io;
@@ -376,6 +383,15 @@ void a6_events(void)
     ratinit();                          /* the pointer on, and an arrow */
     gr_mouse(ARROW, 0);
     acc_start();
+    /* 1: the gate's program; 2: the desktop (step 5c-3), for which A6's own
+     * two test windows go first -- it puts up its own desk and menu */
+    if (STATUS[12] == 2) {
+        wm_close(2);
+        wm_delete(2);
+        wm_close(1);
+        wm_delete(1);
+        STATUS[12] = 1;
+    }
     if (STATUS[12] == 1)
         prog_start();
     STATUS[7] = 'L';
