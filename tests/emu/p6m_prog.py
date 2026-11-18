@@ -26,6 +26,11 @@ loads it into three banks from the far heap.  The gate holds it to:
     first 18 bytes into its buffer under the ROM, as the file has them;
     and its alert, text under the ROM, answering Return with its default,
     2 -- with the second button only if the text was read whole;
+  - its far memory (step 5c-2): a Malloc'd block written through gem.h's
+    FSET and fa_put (src/app/farm6502.c, which maps the far bank itself)
+    -- a record, one past the first 16 KB piece, 8 bytes across the
+    boundary -- read back through FGET and fa_get, and through the
+    system's far_fetch, which maps it its own way;
   - it ran to its end, nothing stopped at $0604, no call refused.
 
 With --axlon SIZE (an Axlon on a 130XE): the other way round.  An
@@ -201,6 +206,24 @@ def main(argv):
         check(cnt == 18 and data == rsc[:18],
               f"Fread into its buffer under the ROM: {cnt} bytes, {data.hex()}; want 18, "
               f"{rsc[:18].hex()}")
+        # its far memory through gem.h's FGET/FSET and fa_* (step 5c-2),
+        # read back through them and through the system's far_fetch
+        blk = w16(STATUS + 0xA0) | (w16(STATUS + 0xA2) << 16)
+        fr = [b.peek(STATUS + 0xA4 + k) for k in range(4)]
+        across = bytes(b.memdump(STATUS + 0xA8, 8))
+        check(blk >> 16 >= 1, f"Malloc(20000) gave far address ${blk:06X}")
+        check(fr[:3] == [1, 1, 1],
+              f"FGET read back what FSET put: record 0 {fr[0]}, record 1300 (past 16 KB) "
+              f"{fr[1]}, 8 bytes across the piece boundary {fr[2]}; want 1, 1, 1")
+        check(fr[3] == 1 and across == b"ABCDEFGH",
+              f"...and the system's far_fetch saw them the same ({fr[3]}), the 8 bytes "
+              f"{across!r}")
+        fcnt, fok, mf = (b.peek(STATUS + 0xB0), b.peek(STATUS + 0xB1),
+                         b.peek(STATUS + 0xB2))
+        check(fcnt == 18 and fok == 1,
+              f"Fread straight into the far block (a far address, as it is): {fcnt} "
+              f"bytes, the file's {fok}; want 18, 1")
+        check(mf == 0, f"Mfree of the block by its far address answered {mf}, want 0")
         ans = w16(STATUS + 0x60)
         check(at_alert and ans == ALERT_DEF,
               f"its alert, text under the ROM, answered {ans} to Return; want {ALERT_DEF}")

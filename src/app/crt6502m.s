@@ -21,6 +21,8 @@
 ;;;                     is in: its gate maps that one back on return
 ;;;   $C012  g6_l_tab   the address of b6_portb, PORTB per bank index
 ;;;   $C014  g6_l_kind  'P' PORTB's banks, 'A' an Axlon's ($CFFF)
+;;;   $C015  g6_l_fbase b6_far_base: far bank k piece p is bank index
+;;;                     b6_far_base + (k-1)*4 + p (src/app/farm6502.c)
 ;;;
 ;;; start writes the two addresses into _pcall's own instructions, so a
 ;;; cross-bank call costs no indirection.  It keeps the system's _Vsp in
@@ -46,7 +48,7 @@
               .rtmodel cpu, "*"
               .extern _Zp, _Vsp, main, __initialize_sections
               .public __program_root_section, g6_sysvsp, _pcall
-              .public g6_banks, g6_l_cur, g6_l_tab, g6_l_kind
+              .public g6_banks, g6_l_cur, g6_l_tab, g6_l_kind, g6_l_fbase
 
 PORTB:        .equ    0xd301
 AXLON:        .equ    0xcfff
@@ -59,6 +61,7 @@ g6_banks:     .space  16
 g6_l_cur:     .space  2
 g6_l_tab:     .space  2
 g6_l_kind:    .space  1
+g6_l_fbase:   .space  1
 
 ;;; the header and start, one section fixed at $4000 in bank 1: a `root`
 ;;; section in a memory that is scattered to its store crashes the 5.18

@@ -302,7 +302,7 @@ test-p6a: build/a6-boot.atr
 P6M        = $(B6)/p6m
 P6M_BANKS  = --bank pb1=1 --bank pb2=2 --bank pb3=3
 P6M_UNITS  = p6m_prog gemlib
-P6M_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M_UNITS:%=$(P6M)/bank/%.o)
+P6M_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(P6M_UNITS:%=$(P6M)/bank/%.o)
 $(P6M)/w/p6m_prog.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#include "../../../../src/p6m_prog.c"\n' > $@
 $(P6M)/w/gemlib.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb2"\n#include "../../../../src/app/gemlib.c"\n' > $@
 $(P6M)/pre/%.o: $(P6M)/w/%.c src/p6m_prog.c src/app/gemlib.c src/app/gem.h src/portab.h
@@ -316,6 +316,14 @@ $(P6M)/bank/%.o: $(P6M)/pre/%.o $(P6M)/p6m.idx tools/bsp6502/bankasm.py tools/bs
 	    --index $(P6M)/p6m.idx --trampoline _pcall --switch-in-bank
 	python3 tools/bsp6502/bankcheck.py --asm $(P6M)/basm/$*.b.s $(P6M_BANKS) --index $(P6M)/p6m.idx
 	$(AS6) --core 6502 $(P6M)/basm/$*.b.s -o $@
+# gem.h's fa_* (step 5c-2): in no bank -- they map the window -- so not
+# through bankasm, and into the shared RAM with the runtime.  The object
+# and the assembly (for make b6asm) in two runs: with --assembly-source
+# cc6502 5.18 writes the assembly and no object, exit status 0.
+$(P6M)/farm6502.o: src/app/farm6502.c src/app/gem.h src/portab.h
+	@mkdir -p $(dir $@) $(P6M)/asm
+	$(CC6) $(KITFLAGS6) -c $< -o $@
+	$(CC6) $(KITFLAGS6) -c $< -o $(P6M)/asm/farm6502.tmp --assembly-source=$(P6M)/asm/farm6502.s
 $(P6M)/crt6502m.o: src/app/crt6502m.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@

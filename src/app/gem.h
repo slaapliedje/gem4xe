@@ -208,6 +208,101 @@ typedef void   *GEMADDR;
 #define TREE_OF(p)    (p)
 #endif
 
+/* FAR DATA, IN ONE SOURCE FOR BOTH CPUs (docs/6502.md, step 5c-2).  A
+ * large-data 65C816 program reaches its far memory -- Malloc'd blocks,
+ * a resource's trees and strings -- through FAR pointers, and the 6502
+ * has none.  A program that is to build for both says what it does
+ * through these, which on the 65C816 are the same expressions it would
+ * have written (the object code does not change), and on the 6502 call
+ * src/app/farm6502.c, which maps the far bank itself -- a program of
+ * several banks only (src/app/gemappm6502.scm): its helpers live in the
+ * RAM under the ROM, outside the window they map.
+ *
+ *   FPTR(T)          a far T: T FAR * on the 65C816, a 32-bit address
+ *   FP_OF(T, a)      the far T at a LONG address (Malloc's, rsrc_gaddr's)
+ *   FP_ADDR(p)       ...and back
+ *   FIDX(T, p, i)    the far T i after p
+ *   FGET(T, p, f)    p->f, a scalar field
+ *   FSET(T, p, f, v) p->f = v
+ *   FFLD(T, p, f)    the far address of field f, for fa_get and fa_put
+ *   FDEREF(T, p)     *p, a scalar T
+ *   FNEXT(T, p)      *p++
+ *   FCOPY(T, d, p)   *d = *p: a whole T from far to near
+ *   FGETS(T, d, p, f) *d = p->f: a struct field from far to near
+ *   fa_get(d, a, n)  n bytes from far address a to near d
+ *   fa_put(a, s, n)  n bytes from near s to far address a
+ *   fa_rd8/16/32(a), fa_wr8/16/32(a, v)   one value at a far address */
+/* A CALL'S FAR ARGUMENT, the same way: FA_PARAM(T) is a parameter that
+ * takes a T anywhere, `T FAR *` on the 65C816 and a 32-bit address on
+ * the 6502, where each call that has one is a macro (at the end of this
+ * file) passing a near pointer as bank 0 and a far address as it is --
+ * FAR_ARG, by the argument's type -- so a program passes either. */
+#ifdef __CALYPSI_TARGET_6502__
+#define FA_PARAM(T)      uint32_t
+#define FAR_ARG(x)       _Generic((x), uint32_t: (uint32_t)(x), long: (uint32_t)(x), \
+                                  default: (uint32_t)(uint16_t)(x))
+#else
+#define FA_PARAM(T)      T FAR *
+#define FAR_ARG(x)       (x)
+#endif
+
+#ifdef __CALYPSI_TARGET_6502__
+#define FPTR(T)          uint32_t
+#define FP_OF(T, a)      ((uint32_t)(a))
+#define FP_ADDR(p)       ((LONG)(p))
+#define FIDX(T, p, i)    ((uint32_t)(p) + (uint32_t)(i) * (uint32_t)sizeof(T))
+#define FFLD(T, p, f)    ((uint32_t)(p) + (uint32_t)offsetof(T, f))
+#define FA_TY_(T, f)     __typeof__(((T *)0)->f)
+/* By the field's type, not one 32-bit read cast down: cc6502 5.18's
+ * (uint8_t) of a 32-bit value keeps bits 8-15 (tools/bsp6502/b6scan.py). */
+#define FGET(T, p, f) _Generic((((T *)0)->f),                               \
+    char: (char)fa_rd8(FFLD(T, p, f)),                                      \
+    signed char: (signed char)fa_rd8(FFLD(T, p, f)),                        \
+    unsigned char: fa_rd8(FFLD(T, p, f)),                                   \
+    long: (long)fa_rd32(FFLD(T, p, f)),                                     \
+    unsigned long: fa_rd32(FFLD(T, p, f)),                                  \
+    default: (FA_TY_(T, f))fa_rd16(FFLD(T, p, f)))
+#define FSET(T, p, f, v)                                                    \
+    (sizeof(FA_TY_(T, f)) == 4 ? fa_wr32(FFLD(T, p, f), (uint32_t)(v))      \
+     : sizeof(FA_TY_(T, f)) == 2 ? fa_wr16(FFLD(T, p, f), (uint16_t)(v))    \
+     : fa_wr8(FFLD(T, p, f), (uint8_t)(v)))
+#define FDEREF(T, p)                                                        \
+    ((T)(sizeof(T) == 4 ? fa_rd32(p) : sizeof(T) == 2 ? (uint32_t)fa_rd16(p) \
+         : (uint32_t)fa_rd8(p)))
+#define FNEXT(T, p)       ((p) += (uint32_t)sizeof(T), FDEREF(T, (p) - (uint32_t)sizeof(T)))
+#define FCOPY(T, d, p)    fa_get((d), (p), (UWORD)sizeof(T))
+#define FGETS(T, d, p, f) fa_get((d), FFLD(T, p, f), (UWORD)sizeof(FA_TY_(T, f)))
+uint8_t  fa_rd8(uint32_t a);
+uint16_t fa_rd16(uint32_t a);
+uint32_t fa_rd32(uint32_t a);
+void     fa_wr8(uint32_t a, uint8_t v);
+void     fa_wr16(uint32_t a, uint16_t v);
+void     fa_wr32(uint32_t a, uint32_t v);
+void     fa_get(void *dst, uint32_t src, UWORD n);
+void     fa_put(uint32_t dst, const void *src, UWORD n);
+#else
+#include <string.h>
+#define FPTR(T)          T FAR *
+#define FP_OF(T, a)      ((T FAR *)(a))
+#define FP_ADDR(p)       ((LONG)(p))
+#define FIDX(T, p, i)    ((p) + (i))
+#define FFLD(T, p, f)    (&(p)->f)
+#define FGET(T, p, f)    ((p)->f)
+#define FSET(T, p, f, v) ((p)->f = (v))
+#define FDEREF(T, p)     (*(p))
+#define FNEXT(T, p)      (*(p)++)
+#define FCOPY(T, d, p)   (*(d) = *(p))
+#define FGETS(T, d, p, f) (*(d) = (p)->f)
+#define fa_get(d, a, n)  ((void)memcpy((d), (const void FAR *)(a), (n)))
+#define fa_put(a, s, n)  ((void)memcpy((void FAR *)(a), (s), (n)))
+#define fa_rd8(a)        (*(const uint8_t FAR *)(a))
+#define fa_rd16(a)       (*(const uint16_t FAR *)(a))
+#define fa_rd32(a)       (*(const uint32_t FAR *)(a))
+#define fa_wr8(a, v)     (*(uint8_t FAR *)(a) = (v))
+#define fa_wr16(a, v)    (*(uint16_t FAR *)(a) = (v))
+#define fa_wr32(a, v)    (*(uint32_t FAR *)(a) = (v))
+#endif
+
 #define G_BOX      20
 #define G_TEXT     21
 #define G_BOXTEXT  22
@@ -947,8 +1042,8 @@ WORD shel_write(WORD doex, WORD isgr, WORD iscr, const char *cmd, const char *ta
  * SIZE_SHELBUF), where the desktop leaves its DESKTOP.INF text.  The
  * application's copy may be far -- only bytes cross. */
 #define SIZE_SHELBUF 4192
-WORD shel_get(void FAR *buffer, WORD len);
-WORD shel_put(const void FAR *data, WORD len);
+WORD shel_get(FA_PARAM(void) buffer, WORD len);
+WORD shel_put(FA_PARAM(const void) data, WORD len);
 
 /* The rest of the AES. */
 /* The message pipe, for messages evnt_mesag cannot carry: `length` is in
@@ -1283,29 +1378,29 @@ typedef struct {                /* Dfree's answer, in clusters of 1 sector */
 WORD Sversion(void);
 WORD Dsetdrv(WORD drive);       /* returns the drive map */
 WORD Dgetdrv(void);
-LONG Dsetpath(const char FAR *path);
-LONG Dgetpath(char FAR *buf, WORD drive);
-LONG Dcreate(const char FAR *path);
-LONG Ddelete(const char FAR *path);
-LONG Dfree(DISKINFO FAR *info, WORD drive);
-void Fsetdta(DTA FAR *dta);
-DTA FAR *Fgetdta(void);
-LONG Fsfirst(const char FAR *spec, WORD attr);
+LONG Dsetpath(FA_PARAM(const char) path);
+LONG Dgetpath(FA_PARAM(char) buf, WORD drive);
+LONG Dcreate(FA_PARAM(const char) path);
+LONG Ddelete(FA_PARAM(const char) path);
+LONG Dfree(FA_PARAM(DISKINFO) info, WORD drive);
+void Fsetdta(FA_PARAM(DTA) dta);
+FPTR(DTA) Fgetdta(void);
+LONG Fsfirst(FA_PARAM(const char) spec, WORD attr);
 LONG Fsnext(void);
-LONG Fopen(const char FAR *name, WORD mode);
-LONG Fcreate(const char FAR *name, WORD attr);
+LONG Fopen(FA_PARAM(const char) name, WORD mode);
+LONG Fcreate(FA_PARAM(const char) name, WORD attr);
 LONG Fclose(WORD handle);
-LONG Fread(WORD handle, LONG count, void FAR *buf);
-LONG Fwrite(WORD handle, LONG count, const void FAR *buf);
+LONG Fread(WORD handle, LONG count, FA_PARAM(void) buf);
+LONG Fwrite(WORD handle, LONG count, FA_PARAM(const void) buf);
 LONG Fseek(LONG offset, WORD handle, WORD mode);
-LONG Fdelete(const char FAR *name);
-LONG Frename(const char FAR *oldname, const char FAR *newname);
-LONG Fattrib(const char FAR *name, WORD wflag, WORD attr);
+LONG Fdelete(FA_PARAM(const char) name);
+LONG Frename(FA_PARAM(const char) oldname, FA_PARAM(const char) newname);
+LONG Fattrib(FA_PARAM(const char) name, WORD wflag, WORD attr);
 /* There is no C heap: an application's heap block is zero bytes, and
  * malloc/free refuse at link time (src/sys/clib.c).  Far memory comes from
  * Malloc. */
 LONG Malloc(LONG size);         /* -1 asks how much is left; 0: no room */
-LONG Mfree(void FAR *block);
+LONG Mfree(FA_PARAM(void) block);
 
 LONG Fdatime(WORD *timeptr, WORD handle, WORD wflag);   /* two words: time, date */
 WORD Tgetdate(void);
@@ -1320,7 +1415,7 @@ WORD Tgettime(void);
  * kit is built on it (gemlib.c). */
 struct timeval  { LONG tv_sec, tv_usec; };
 struct timezone { WORD tz_minuteswest, tz_dsttime; };
-LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz);
+LONG Tgettimeofday(FA_PARAM(struct timeval) tv, FA_PARAM(struct timezone) tz);
 
 /* MiNT's Ssystem (0x154), the one mode this machine answers: S_GETCOOKIE,
  * a cookie by name (phase 150).  `arg2` the address a LONG goes to, then 0
@@ -1350,7 +1445,7 @@ LONG Ssystem(WORD mode, LONG arg1, LONG arg2);
  * EINVFN on a DOS with no such entry; Psystem(0, 0, 0) asks only that.
  * The command runs on a console it cannot show, so one that asks a
  * question has nobody to answer it. */
-LONG Psystem(const char FAR *line, void FAR *out, LONG max);
+LONG Psystem(FA_PARAM(const char) line, FA_PARAM(void) out, LONG max);
 
 /* gem4xe's own (0x1F1): which of D1: to D8: answer, asked through the DOS
  * now, as Dsetdrv's map -- bit 0 D1: -- and Dsetdrv's answer from then on.
@@ -1418,10 +1513,10 @@ LONG Dcaps(WORD drive);
 #define DF_DD       3
 #define DF_DSDD     4
 #define DF_BADLEN   256
-LONG Dgeom(WORD drive, void FAR *buf);
-LONG Dformat(WORD drive, WORD density, void FAR *bad);
+LONG Dgeom(WORD drive, FA_PARAM(void) buf);
+LONG Dformat(WORD drive, WORD density, FA_PARAM(void) bad);
 LONG Drwsec(WORD drive, WORD rw, UWORD sector, UWORD count, UWORD secsize,
-            void FAR *buf);
+            FA_PARAM(void) buf);
 
 /* gem4xe's own (0x1F2): the `len` bytes at `addr` exactly, from the far
  * heap, the program's until it ends -- `addr` back (rounded down to 4), or
@@ -1458,7 +1553,7 @@ LONG Cpxload(WORD i, WORD on);
 #define CF_WRITE    3
 #define CF_RENAME   4
 #define CF_FIND     5
-LONG Cpxfile(WORD op, WORD i, const void FAR *a, void FAR *b);
+LONG Cpxfile(WORD op, WORD i, FA_PARAM(const void) a, FA_PARAM(void) b);
 
 /* gem4xe's own (0x1F4, 0x1F5): SUB-POOLS, GS/OS's aux user IDs.  After
  * Mpool(n), 1 to 15, what the program takes -- Malloc and Mxalloc, a
@@ -1523,4 +1618,33 @@ void Pterm0(void);
 void Pterm(WORD code);
 void Ptermres(LONG keep, WORD code);
 
+
+/* THE 6502'S FAR ARGUMENTS (FA_PARAM, above): each call taking one takes
+ * a near pointer or a far address alike.  Not in gemlib.c, which defines
+ * them (GEMLIB_DEFS). */
+#if defined(__CALYPSI_TARGET_6502__) && !defined(GEMLIB_DEFS)
+#define shel_get(b, n)          (shel_get)(FAR_ARG(b), (n))
+#define shel_put(d, n)          (shel_put)(FAR_ARG(d), (n))
+#define Dsetpath(p)             (Dsetpath)(FAR_ARG(p))
+#define Dgetpath(b, d)          (Dgetpath)(FAR_ARG(b), (d))
+#define Dcreate(p)              (Dcreate)(FAR_ARG(p))
+#define Ddelete(p)              (Ddelete)(FAR_ARG(p))
+#define Dfree(i, d)             (Dfree)(FAR_ARG(i), (d))
+#define Fsetdta(d)              (Fsetdta)(FAR_ARG(d))
+#define Fsfirst(s, a)           (Fsfirst)(FAR_ARG(s), (a))
+#define Fopen(n, m)             (Fopen)(FAR_ARG(n), (m))
+#define Fcreate(n, a)           (Fcreate)(FAR_ARG(n), (a))
+#define Fread(h, c, b)          (Fread)((h), (c), FAR_ARG(b))
+#define Fwrite(h, c, b)         (Fwrite)((h), (c), FAR_ARG(b))
+#define Fdelete(n)              (Fdelete)(FAR_ARG(n))
+#define Frename(o, n)           (Frename)(FAR_ARG(o), FAR_ARG(n))
+#define Fattrib(n, w, a)        (Fattrib)(FAR_ARG(n), (w), (a))
+#define Mfree(b)                (Mfree)(FAR_ARG(b))
+#define Tgettimeofday(t, z)     (Tgettimeofday)(FAR_ARG(t), FAR_ARG(z))
+#define Psystem(l, o, m)        (Psystem)(FAR_ARG(l), FAR_ARG(o), (m))
+#define Dgeom(d, b)             (Dgeom)((d), FAR_ARG(b))
+#define Dformat(d, n, b)        (Dformat)((d), (n), FAR_ARG(b))
+#define Drwsec(d, r, s, c, z, b) (Drwsec)((d), (r), (s), (c), (z), FAR_ARG(b))
+#define Cpxfile(o, i, a, b)     (Cpxfile)((o), (i), FAR_ARG(a), FAR_ARG(b))
+#endif
 #endif /* GEM4XE_APP_GEM_H */

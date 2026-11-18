@@ -25,6 +25,21 @@
  *   $0670    Fread's count of P6PROG.RSC's first 18 bytes, read into a
  *            buffer in the RAM under the ROM, copied to $0680-$0691
  *
+ * and its far memory through gem.h's FGET/FSET and fa_* (step 5c-2,
+ * src/app/farm6502.c), read back both through them and through the
+ * system's far_fetch, which maps the far heap its own way:
+ *
+ *   $06A0-3  Malloc(20000)'s far address
+ *   $06A4    record 0 through FGET: 1 if a, b and c are as FSET put them
+ *   $06A5    record 1300 (past the first 16 KB piece): 1 if as put
+ *   $06A6    8 bytes put across the piece boundary, read back whole: 1
+ *   $06A7    1 if far_fetch saw all three as written
+ *   $06A8-$06AF  the 8 bytes far_fetch read across the boundary
+ *   $06B0    Fread's count of P6PROG.RSC's first 18 bytes straight into
+ *            the far block (gem.h's FA_PARAM: a far address, as it is)
+ *   $06B1    1 if they are the bytes the near Fread read
+ *   $06B2    Mfree's answer for the block, by its far address (low byte)
+ *
  * Every pointer it hands the system is to the RAM under the ROM -- its
  * parameter arrays, the file's name, the buffer, the alert's text -- so
  * the system reads and writes them with the ROM out, as it runs. */
@@ -38,6 +53,14 @@ static uint8_t g_count;                 /* bss */
 static uint8_t buf[18];                 /* Fread's, under the ROM */
 static const char alert[] = "[1][SEVERAL BANKS|UNDER THE ROM][YES|NO]";
 static const char three[] = "BANK THREE";
+static const char across[] = "ABCDEFGH";
+
+typedef struct {                        /* 13 bytes: record 1300 is past 16 KB */
+    WORD a;
+    LONG b;
+    uint8_t c;
+    char s[6];
+} FREC;
 
 static void put16(uint8_t at, WORD v)
 {
@@ -93,6 +116,84 @@ int op2(int x)
     return x * 2;
 }
 
+/* ---- bank 2: the far memory (step 5c-2) ------------------------------ */
+static void put32(uint8_t at, uint32_t v)
+{
+    uint8_t k;
+
+    for (k = 0; k < 4; k++, v >>= 8)
+        STATUS[at + k] = (unsigned char)v;
+}
+
+void far_mem(void)
+{
+    LONG blk = Malloc(20000L);
+    FPTR(FREC) r0 = FP_OF(FREC, blk);
+    FPTR(FREC) r1 = FIDX(FREC, r0, 1300);
+    /* four bytes before the next 16 KB piece starts, wherever Malloc's
+     * block began: the 8 bytes straddle it */
+    uint32_t edge = ((uint32_t)blk | 0x3FFFu) + 1u - 4u;
+    char got[8];
+    FREC rec;
+    uint8_t k, ok;
+
+    put32(0xA0, (uint32_t)blk);
+    if (!blk)
+        return;
+    FSET(FREC, r0, a, 0x1234);
+    FSET(FREC, r0, b, 0x89ABCDEFL);
+    FSET(FREC, r0, c, 0x5A);
+    fa_put(FFLD(FREC, r0, s), "HELLO", 6);
+    FSET(FREC, r1, a, 0x7777);
+    FSET(FREC, r1, b, 0x01020304L);
+    FSET(FREC, r1, c, 0xA5);
+    fa_put(edge, across, 8);
+
+    STATUS[0xA4] = (unsigned char)(FGET(FREC, r0, a) == 0x1234
+                                   && FGET(FREC, r0, b) == 0x89ABCDEFL
+                                   && FGET(FREC, r0, c) == 0x5A);
+    STATUS[0xA5] = (unsigned char)(FGET(FREC, r1, a) == 0x7777
+                                   && FGET(FREC, r1, b) == 0x01020304L
+                                   && FGET(FREC, r1, c) == 0xA5);
+    fa_get(got, edge, 8);
+    ok = 1;
+    for (k = 0; k < 8; k++)
+        if (got[k] != across[k])
+            ok = 0;
+    STATUS[0xA6] = ok;
+
+    /* the system's view: far_fetch, gate 'F' (src/sys/abi.c) */
+    ok = 1;
+    far_fetch(&rec, (uint32_t)r0, sizeof rec);
+    if (rec.a != 0x1234 || rec.b != 0x89ABCDEFL || rec.c != 0x5A || rec.s[0] != 'H')
+        ok = 0;
+    far_fetch(&rec, (uint32_t)r1, sizeof rec);
+    if (rec.a != 0x7777 || rec.b != 0x01020304L || rec.c != 0xA5)
+        ok = 0;
+    far_fetch(got, edge, 8);
+    for (k = 0; k < 8; k++)
+        STATUS[0xA8 + k] = (unsigned char)got[k];
+    STATUS[0xA7] = ok;
+
+    /* a far address handed to GEMDOS as it is (gem.h, FA_PARAM) */
+    {
+        LONG h = Fopen("P6PROG.RSC", 0);
+        uint8_t far8[18];
+
+        if (h >= 0) {
+            STATUS[0xB0] = (unsigned char)Fread((WORD)h, sizeof far8, (uint32_t)blk + 100u);
+            Fclose((WORD)h);
+            fa_get(far8, (uint32_t)blk + 100u, sizeof far8);
+            ok = 1;
+            for (k = 0; k < sizeof far8; k++)
+                if (far8[k] != buf[k])
+                    ok = 0;
+            STATUS[0xB1] = ok;
+        }
+    }
+    STATUS[0xB2] = (unsigned char)Mfree(blk);
+}
+
 /* ---- bank 1 ---------------------------------------------------------- */
 BANK_TEXT("pb1")
 int op1(int x)
@@ -102,6 +203,8 @@ int op1(int x)
 }
 
 static int (*const ops[3])(int) = { op1, op2, op3 };
+
+void far_mem(void);
 
 int main(void)
 {
@@ -132,6 +235,8 @@ int main(void)
         for (k = 0; k < (WORD)sizeof buf; k++)
             STATUS[0x80 + k] = buf[k];
     }
+
+    far_mem();
 
     STATUS[0x40] = 'a';
     while (!STATUS[0x62])

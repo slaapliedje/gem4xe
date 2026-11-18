@@ -122,7 +122,7 @@ typedef struct {
     WORD  p_count;                      /* entries listed */
     LONG  p_size;                       /* their bytes together */
     char  p_spec[LEN_ZPATH];            /* "A:\SUB\*.*" */
-    FNODE FAR *p_flist;               /* NUM_FNODES of them */
+    FPTR(FNODE) p_flist;               /* NUM_FNODES of them */
 } PNODE;
 
 /* A folder window.  The one at index k has the box DROOT+1+k in the
@@ -190,12 +190,12 @@ typedef struct {
 } DCICON;
 
 typedef struct {
-    OBJECT  *a_menu;                    /* ADMENU */
-    OBJECT  *a_info;                    /* ADDINFO */
-    OBJECT  *a_mkdir;                   /* ADMKDBOX */
-    OBJECT  *a_delete;                  /* ADDELDIA */
-    OBJECT  *a_finfo;                   /* ADFINFO */
-    ICONBLK *a_iblist;                  /* IB_HARD .. IB_CART */
+    GEMTREE  a_menu;                    /* ADMENU */
+    GEMTREE  a_info;                    /* ADDINFO */
+    GEMTREE  a_mkdir;                   /* ADMKDBOX */
+    GEMTREE  a_delete;                  /* ADDELDIA */
+    GEMTREE  a_finfo;                   /* ADFINFO */
+    FPTR(ICONBLK) a_iblist;                  /* IB_HARD .. IB_CART */
     WORD     g_handle;                  /* the AES's VDI handle */
     WORD     g_wchar, g_hchar, g_wbox, g_hbox;
     GRECT    g_desk;                    /* the desk under the menu bar */
@@ -206,8 +206,8 @@ typedef struct {
                                          * the window rather than the screen */
     WORD     g_iwext, g_ihext;          /* what an item of that view fills, */
     WORD     g_iwint, g_ihint;          /* and the space in front of it */
-    const char *g_fline;                /* the text view's template, and the */
-    const char *g_fmark;                /* three marks its first column takes,
+    FPTR(const char) g_fline;                /* the text view's template, and the */
+    FPTR(const char) g_fmark;                /* three marks its first column takes,
                                          * both of the resource and fetched
                                          * once: a fetch per item would be
                                          * sixteen AES calls a redraw */
@@ -224,14 +224,14 @@ typedef struct {
     LONG     g_opsize;                  /* ...and their bytes together, which
                                          * is what Show info calls a folder's
                                          * size */
-    DTA FAR *g_dta;                   /* the listing's DTA, then the FNODEs */
-    DTA FAR *g_opdta;                 /* MAX_DELLEVEL of them, one per level
+    FPTR(DTA) g_dta;                   /* the listing's DTA, then the FNODEs */
+    FPTR(DTA) g_opdta;                 /* MAX_DELLEVEL of them, one per level
                                          * of the walk: our GEMDOS keeps a
                                          * search's state by the DTA that owns
                                          * it, as the ST does */
-    CSAVE FAR *g_cnxsave;             /* the windows' places between programs */
-    char FAR *g_shelbuf;              /* the desktop's copy of the shell buffer */
-    char FAR *g_copybuf;              /* COPY_BUF of it, for file copies */
+    FPTR(CSAVE) g_cnxsave;             /* the windows' places between programs */
+    FPTR(char) g_shelbuf;              /* the desktop's copy of the shell buffer */
+    FPTR(char) g_copybuf;              /* COPY_BUF of it, for file copies */
     WNODE    g_wlist[NUM_WNODES];       /* by w_root - (DROOT + 1) */
     /* Set preferences...: the desk's and a window's pattern and colour,
      * ONE PAIR PER SCREEN, as the INF's "#Q" line carries them.  Per
@@ -245,7 +245,7 @@ typedef struct {
     UWORD    g_patcol[N_SCREENS][2];    /* [screen][0] desk, [1] window */
     OBJECT     g_screen[NUM_SOBS];
     SCREENINFO g_screeninfo[NUM_ITEMS]; /* by obid - WOBS_START */
-    DCICON FAR *g_cicon;                /* N_IB of them from DESKICON.RSC,
+    FPTR(DCICON) g_cicon;                /* N_IB of them from DESKICON.RSC,
                                          * or 0: the mono icons (phase 87) */
 } GLOBES;
 
@@ -272,7 +272,7 @@ char *drv_show(char *d, const char *path, WORD n);
 SCREENINFO *obj_info(WORD obj);
 WORD obj_text(WORD wparent, WORD x, WORD y, WORD w, WORD h);
 WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
-              const char FAR *label, WORD letter);
+              FPTR(const char) label, WORD letter);
 
 /* desktop.c */
 void desk_busy(WORD on);
@@ -318,8 +318,8 @@ WORD act_count(WORD root, WORD *pfirst);
 void act_allselect(WORD wh, WORD root, const GRECT *box);
 WORD do_open(WORD wh, WORD obj);
 WORD do_dropopen(WNODE *src, WNODE *pd, WORD dobj);
-WORD win_isprog(const FNODE FAR *pf);
-WORD do_docapp(WNODE *pw, WORD curr, const char FAR *name);
+WORD win_isprog(FPTR(const FNODE) pf);
+WORD do_docapp(WNODE *pw, WORD curr, FPTR(const char) name);
 void fun_install(WNODE *pw);
 void fun_dinfo(WORD obj);
 void fun_mask(WNODE *pw);
@@ -327,15 +327,15 @@ void win_setmask(WNODE *pw, const char *mask);
 void app_typeof(const char *path, char *ext);
 WORD app_install(const char *path, const char *ext);
 WORD do_cart(void);
-WORD do_aopen(WNODE *pw, WORD curr, const char FAR *name,
+WORD do_aopen(WNODE *pw, WORD curr, FPTR(const char) name,
                const char *args);   /* args: a .TTP's line, or "" */
 WORD fun_askline(char *line);           /* one line, in the PREFS dialog */
-void do_docu(WNODE *pw, const char FAR *name);   /* Show / Print / Cancel */
+void do_docu(WNODE *pw, FPTR(const char) name);   /* Show / Print / Cancel */
 WORD do_edit(const char *doc);           /* EDIT.PRG on doc, if there is one */
 WORD do_apps(const char *name, WORD first, const char *args); /* \APPS\name */
 void win_rebld(WNODE *pw);
 /* The listing entry an item object shows, or 0. */
-FNODE FAR *win_fnode(WNODE *pw, WORD obj);
+FPTR(FNODE) win_fnode(WNODE *pw, WORD obj);
 void hndl_wmsg(const WORD *msg);
 void do_wfull(WORD wh);
 

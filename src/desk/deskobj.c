@@ -202,7 +202,7 @@ static void obj_clear(SCREENINFO *si)
  * -- the donor's app_blddesk for one ANODE, and win_bldview for one
  * FNODE.  0 when the items are all in use. */
 WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
-              const char FAR *label, WORD letter)
+              FPTR(const char) label, WORD letter)
 {
     WORD obid;
     OBJECT *pob;
@@ -220,14 +220,14 @@ WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
     si = obj_info(obid);
     obj_clear(si);
     pic = &si->i.blk;
-    if (G.g_cicon && G.g_cicon[which].col4) {
+    if (G.g_cicon && FGET(DCICON, FIDX(DCICON, G.g_cicon, which), col4)) {
         /* DESKICON.RSC's (desktop.c, desk_cicons): drawn in colour */
-        *pic = G.g_cicon[which].ib;
-        si->i.col4 = G.g_cicon[which].col4;
-        si->i.sel4 = G.g_cicon[which].sel4;
+        FGETS(DCICON, pic, FIDX(DCICON, G.g_cicon, which), ib);
+        si->i.col4 = FGET(DCICON, FIDX(DCICON, G.g_cicon, which), col4);
+        si->i.sel4 = FGET(DCICON, FIDX(DCICON, G.g_cicon, which), sel4);
         pob->ob_type = G_CICON;
     } else {
-        *pic = G.a_iblist[which];
+        FCOPY(ICONBLK, pic, FIDX(ICONBLK, G.a_iblist, which));
     }
     pob->ob_spec.index = (LONG)(uint32_t)pic;
     pic->ib_xicon = (WORD)((G.g_wicon - pic->ib_wicon) / 2);
@@ -238,8 +238,8 @@ WORD obj_icon(WORD wparent, WORD x, WORD y, WORD which,
         letter = (WORD)('1' + letter - 'A');
     pic->ib_char = (WORD)((pic->ib_char & 0xFF00) | letter);
     d = si->i.label;
-    while (*label && d < si->i.label + LABEL_LEN - 1)
-        *d++ = *label++;
+    while (FDEREF(char, label) && d < si->i.label + LABEL_LEN - 1)
+        *d++ = FNEXT(char, label);
     *d = 0;
     pic->ib_ptext = (LONG)(uint32_t)si->i.label;
     return obid;

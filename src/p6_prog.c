@@ -90,7 +90,7 @@ static void files(void)
     STATUS[0x80] = (unsigned char)r;
     STATUS[0x81] = (unsigned char)((UWORD)r >> 8);
     Fsetdta(&dta);
-    STATUS[0x82] = (unsigned char)(Fgetdta() == &dta);
+    STATUS[0x82] = (unsigned char)(Fgetdta() == FAR_ARG(&dta));
     r = Fsfirst("*.RSC", 0);
     STATUS[0x83] = (unsigned char)r;
     put32(0x84, dta.d_length);

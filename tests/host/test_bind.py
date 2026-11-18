@@ -375,7 +375,10 @@ def decl_names(text):
     # (gem.h, __CALYPSI_TARGET_6502__ only), not bindings of any opcode;
     # tests/emu/p6_prog.py exercises them on the machine.
     return out - {"vdi_call", "aes_call", "dos_call",
-                  "far_fetch", "far_store"}
+                  "far_fetch", "far_store",
+                  # ...and its fa_* helpers (gem.h, src/app/farm6502.c)
+                  "fa_get", "fa_put", "fa_rd8", "fa_rd16", "fa_rd32",
+                  "fa_wr8", "fa_wr16", "fa_wr32"}
 
 
 def called_names(text):

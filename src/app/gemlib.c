@@ -16,6 +16,7 @@
  * needs grows them.
  */
 #include "portab.h"
+#define GEMLIB_DEFS                     /* not gem.h's 6502 call macros */
 #include "gem.h"
 
 WORD contrl[12], intin[128], ptsin[16], intout[45], ptsout[12];
@@ -1206,14 +1207,14 @@ WORD shel_write(WORD doex, WORD isgr, WORD iscr, const char *cmd, const char *ta
     return aes(121, 3, 1, 2, 0);
 }
 
-WORD shel_get(void FAR *buffer, WORD len)
+WORD shel_get(FA_PARAM(void) buffer, WORD len)
 {
     int_in[0] = len;
     addr_in[0] = (LONG)(uint32_t)buffer;
     return aes(122, 1, 1, 1, 0);
 }
 
-WORD shel_put(const void FAR *data, WORD len)
+WORD shel_put(FA_PARAM(const void) data, WORD len)
 {
     int_in[0] = len;
     addr_in[0] = (LONG)(uint32_t)data;
@@ -1602,53 +1603,53 @@ static LONG dos(WORD fn)
 WORD Sversion(void)                       { return (WORD)dos(0x30); }
 WORD Dgetdrv(void)                        { return (WORD)dos(0x19); }
 WORD Dsetdrv(WORD drive)                  { dw(6, drive); return (WORD)dos(0x0E); }
-LONG Dsetpath(const char FAR *path)     { dl(6, (LONG)path); return dos(0x3B); }
-LONG Dcreate(const char FAR *path)      { dl(6, (LONG)path); return dos(0x39); }
-LONG Ddelete(const char FAR *path)      { dl(6, (LONG)path); return dos(0x3A); }
-LONG Fdelete(const char FAR *name)      { dl(6, (LONG)name); return dos(0x41); }
+LONG Dsetpath(FA_PARAM(const char) path)     { dl(6, (LONG)path); return dos(0x3B); }
+LONG Dcreate(FA_PARAM(const char) path)      { dl(6, (LONG)path); return dos(0x39); }
+LONG Ddelete(FA_PARAM(const char) path)      { dl(6, (LONG)path); return dos(0x3A); }
+LONG Fdelete(FA_PARAM(const char) name)      { dl(6, (LONG)name); return dos(0x41); }
 LONG Fsnext(void)                         { return dos(0x4F); }
 LONG Fclose(WORD handle)                  { dw(6, handle); return dos(0x3E); }
 LONG Malloc(LONG size)                    { dl(6, size); return dos(0x48); }
-LONG Mfree(void FAR *block)             { dl(6, (LONG)block); return dos(0x49); }
-void Fsetdta(DTA FAR *dta)              { dl(6, (LONG)dta); dos(0x1A); }
-DTA FAR *Fgetdta(void)                  { return (DTA FAR *)dos(0x2F); }
+LONG Mfree(FA_PARAM(void) block)             { dl(6, (LONG)block); return dos(0x49); }
+void Fsetdta(FA_PARAM(DTA) dta)              { dl(6, (LONG)dta); dos(0x1A); }
+FPTR(DTA) Fgetdta(void)                 { return FP_OF(DTA, dos(0x2F)); }
 
-LONG Dgetpath(char FAR *buf, WORD drive)
+LONG Dgetpath(FA_PARAM(char) buf, WORD drive)
 {
     dl(6, (LONG)buf);
     dw(10, drive);
     return dos(0x47);
 }
 
-LONG Dfree(DISKINFO FAR *info, WORD drive)
+LONG Dfree(FA_PARAM(DISKINFO) info, WORD drive)
 {
     dl(6, (LONG)info);
     dw(10, drive);
     return dos(0x36);
 }
 
-LONG Fsfirst(const char FAR *spec, WORD attr)
+LONG Fsfirst(FA_PARAM(const char) spec, WORD attr)
 {
     dl(6, (LONG)spec);
     dw(10, attr);
     return dos(0x4E);
 }
 
-LONG Fopen(const char FAR *name, WORD mode)
+LONG Fopen(FA_PARAM(const char) name, WORD mode)
 {
     dl(6, (LONG)name);
     dw(10, mode);
     return dos(0x3D);
 }
 
-LONG Fcreate(const char FAR *name, WORD attr)
+LONG Fcreate(FA_PARAM(const char) name, WORD attr)
 {
     dl(6, (LONG)name);
     dw(10, attr);
     return dos(0x3C);
 }
 
-LONG Fread(WORD handle, LONG count, void FAR *buf)
+LONG Fread(WORD handle, LONG count, FA_PARAM(void) buf)
 {
     dw(6, handle);
     dl(8, count);
@@ -1656,7 +1657,7 @@ LONG Fread(WORD handle, LONG count, void FAR *buf)
     return dos(0x3F);
 }
 
-LONG Fwrite(WORD handle, LONG count, const void FAR *buf)
+LONG Fwrite(WORD handle, LONG count, FA_PARAM(const void) buf)
 {
     dw(6, handle);
     dl(8, count);
@@ -1672,7 +1673,7 @@ LONG Fseek(LONG offset, WORD handle, WORD mode)
     return dos(0x42);
 }
 
-LONG Frename(const char FAR *oldname, const char FAR *newname)
+LONG Frename(FA_PARAM(const char) oldname, FA_PARAM(const char) newname)
 {
     dw(6, 0);
     dl(8, (LONG)oldname);
@@ -1680,7 +1681,7 @@ LONG Frename(const char FAR *oldname, const char FAR *newname)
     return dos(0x56);
 }
 
-LONG Fattrib(const char FAR *name, WORD wflag, WORD attr)
+LONG Fattrib(FA_PARAM(const char) name, WORD wflag, WORD attr)
 {
     dl(6, (LONG)name);
     dw(10, wflag);
@@ -1708,7 +1709,7 @@ WORD Tgettime(void)
     return (WORD)dos(0x2C);
 }
 
-LONG Tgettimeofday(struct timeval FAR *tv, struct timezone FAR *tz)
+LONG Tgettimeofday(FA_PARAM(struct timeval) tv, FA_PARAM(struct timezone) tz)
 {
     dl(6, (LONG)(uint32_t)tv);
     dl(10, (LONG)(uint32_t)tz);
@@ -1726,14 +1727,14 @@ LONG Dcaps(WORD drive)
     return dos(0x1F7);
 }
 
-LONG Dgeom(WORD drive, void FAR *buf)
+LONG Dgeom(WORD drive, FA_PARAM(void) buf)
 {
     dw(6, drive);
     dl(8, (LONG)(uint32_t)buf);
     return dos(0x1F8);
 }
 
-LONG Dformat(WORD drive, WORD density, void FAR *bad)
+LONG Dformat(WORD drive, WORD density, FA_PARAM(void) bad)
 {
     dw(6, drive);
     dw(8, density);
@@ -1742,7 +1743,7 @@ LONG Dformat(WORD drive, WORD density, void FAR *bad)
 }
 
 LONG Drwsec(WORD drive, WORD rw, UWORD sector, UWORD count, UWORD secsize,
-            void FAR *buf)
+            FA_PARAM(void) buf)
 {
     dw(6, drive);
     dw(8, rw);
@@ -1775,7 +1776,7 @@ LONG Ssystem(WORD mode, LONG arg1, LONG arg2)
     return dos(0x154);
 }
 
-LONG Cpxfile(WORD op, WORD i, const void FAR *a, void FAR *b)
+LONG Cpxfile(WORD op, WORD i, FA_PARAM(const void) a, FA_PARAM(void) b)
 {
     dw(6, op);
     dw(8, i);
@@ -1796,7 +1797,7 @@ LONG Mfreepool(WORD sub)
     return dos(0x1F5);
 }
 
-LONG Psystem(const char FAR *line, void FAR *out, LONG max)
+LONG Psystem(FA_PARAM(const char) line, FA_PARAM(void) out, LONG max)
 {
     dl(6, (LONG)(uint32_t)line);
     dl(10, (LONG)(uint32_t)out);
@@ -1819,7 +1820,7 @@ clock_t clock(void)
 
     uint32_t ms;
 
-    Tgettimeofday(&tv, 0);
+    Tgettimeofday(FAR_ARG(&tv), 0);
     if (!started) {
         s0 = tv.tv_sec;
         started = 1;

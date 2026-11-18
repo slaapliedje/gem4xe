@@ -152,6 +152,7 @@ static void acc_start(void)
 #define G6_LINK  0xC000u
 static SECTION("bounce") uint8_t p6_buf[256];
 extern uint8_t b6_cur, b6_kind, b6_portb[];
+extern const uint8_t b6_far_base;       /* src/sys6502/farmem6502.c */
 /* the program's banks, for the gate to read (test-p6m): in page 5, as
  * A6's other records are -- HiRam has not 61 bytes */
 SECTION("page5") uint8_t p6_nbanks;
@@ -282,6 +283,7 @@ static uint8_t prog_read(int16_t io, uint8_t own)
         lb[0x12] = (uint8_t)(uint16_t)b6_portb;
         lb[0x13] = (uint8_t)((uint16_t)b6_portb >> 8);
         lb[0x14] = b6_kind;
+        lb[0x15] = b6_far_base;         /* src/app/farm6502.c */
     }
     return CIO_OK;
 }
