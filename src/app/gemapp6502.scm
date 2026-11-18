@@ -13,7 +13,7 @@
 ;;; ITS C STACK IS ITS OWN, the top of the bank (crt6502.s says why);
 ;;; page 1 is the system's.
 (define memories
-  '((memory ZeroPage (address (#x80 . #xff)) (type ram) (qualifier zpage)
+  '((memory ZeroPage (address (#x80 . #xb5)) (type ram) (qualifier zpage)
             (section (registers #x80)))
     (memory Program (address (#x4000 . #x6fff)) (type rom)
             (section (header #x4000) code switch cdata data_init_table idata))

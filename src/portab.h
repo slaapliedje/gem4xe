@@ -104,7 +104,15 @@ void irq_sei(void);
  * it does not, because on the 6502 that is a 24-bit address. */
 #define FAR_816
 #define NEAR
+/* Zero page for the system's own (GEM4XE_BANKED, tools/bsp6502/rules.mk)
+ * and nothing in a PROGRAM, which shares the system's zero page and owns
+ * only the pseudo-registers: the desktop's TINY viewer variables landed
+ * on the system's $B6-$C5 (docs/6502.md, 5d). */
+#ifdef GEM4XE_BANKED
 #define TINY         __attribute__((zpage))
+#else
+#define TINY
+#endif
 #define SIMPLE_CALL
 #define TASK
 #define SAVEDS

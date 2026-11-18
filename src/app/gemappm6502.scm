@@ -17,9 +17,11 @@
 ;;; $D000-$D7FF is the chips; data, bss, heap and the C stack from $D800
 ;;; to $FDFF.  $FE00-$FFFF is the system's: the OS key table, copied to
 ;;; $FE00, and the interrupt vectors (src/a6_tree.c).  Zero page is the system's but for
-;;; the pseudo-registers at $80, as for a one-bank program.
+;;; the pseudo-registers at $80-$B5, as for a one-bank program -- the
+;;; memory ends there, so a program's zero-page variable fails the link
+;;; rather than landing on the system's.
 (define memories
-  '((memory ZeroPage (address (#x80 . #xff)) (type ram) (qualifier zpage)
+  '((memory ZeroPage (address (#x80 . #xb5)) (type ram) (qualifier zpage)
             (section (registers #x80)))
     (memory Link (address (#xc000 . #xc01f)) (type ram)
             (section (g6link #xc000)))

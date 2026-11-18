@@ -33,11 +33,16 @@ from atr import ATRImage, Dos2              # noqa: E402
 DISK = os.path.abspath(os.path.join(ROOT, "build", "a6d-boot.atr"))
 DESK = os.path.abspath(os.path.join(ROOT, "build", "a6d-desk.atr"))
 MAP = os.path.abspath(os.path.join(ROOT, "build", "a6.map"))
+DMAP = os.path.abspath(os.path.join(ROOT, "build", "desk6.map"))
 SHOT = os.path.abspath(os.path.join(ROOT, "build", "d6.png"))
 STATUS = 0x0600
 SHARED = (0xD800, 0x2600)           # a program's RAM under the ROM
 D1_ICON = (34, 28)                  # DISK D1:, the desk's first cell
 D1_CLOSE = (17, 43)                 # D1:'s window's close box
+AUTORUN = (56, 71)                  # AUTORUN.SYS, first in D1:'s window
+SHOW = (102, 120)                   # the document alert's Show
+VIEW_CLOSE = (17, 19)               # the viewer's close box
+VIEW_LEN = 16384 - (64 + 4 + 48)    # deskcmd.c: CMD_BUF - CMD_TEXT
 D2_ICON = (114, 28)                 # DISK D2:, the second
 D2_FULL = (240, 42)                 # its window's full box, where it opens
 P6M_ICON = (196, 48)                # P6M.G6A, third in the full window
@@ -57,8 +62,9 @@ def main(argv):
     print("gem4xe-d6: the desktop on a stock 6502, and a program from it")
     text = open(MAP).read()
 
-    def sym(n):
-        return int(re.search(rf"^\s+{n} = ([0-9a-f]+)\s*$", text, re.M).group(1), 16)
+    def sym(n, t=None):
+        return int(re.search(rf"^\s+{n} = ([0-9a-f]+)\s*$", t or text, re.M).group(1), 16)
+    dtext = open(DMAP).read()
 
     d1 = [e for e in Dos2(ATRImage.load(DISK)).entries() if e.in_use and e.nameable]
     want_info = f" {sum(e.count for e in d1) * 125} bytes used in {len(d1)} items.".encode()
@@ -74,6 +80,24 @@ def main(argv):
     def poke16(a, v):
         b.poke(a, v & 0xFF)
         b.poke(a + 1, (v >> 8) & 0xFF)
+
+    def rom_out():
+        """The RAM under the ROM reads as RAM only with the ROM out: the
+        system switches it in for CIO and an interrupt, and a read then
+        is the ROM's bytes (docs/6502.md, 5c-1).  Between frames until
+        PORTB says it is out."""
+        for _ in range(50):
+            if not b.peek(0xD301) & 1:
+                return
+            b.frames(1)
+
+    def shared():
+        rom_out()
+        return bytes(b.memdump(*SHARED))
+
+    def dw16(n):                        # a desktop variable, under the ROM
+        rom_out()
+        return w16(sym(n, dtext))
     try:
         b.frames(500)
         for _ in range(0, 9000, 50):
@@ -104,12 +128,39 @@ def main(argv):
             b.frames(4)
         b.frames(5000)
 
-        ram = bytes(b.memdump(*SHARED))
+        ram = shared()
         check(b" D1:\\*.* " in ram, "a window titled \" D1:\\*.* \" in the desktop's memory")
         found = re.search(rb" \d+ bytes used in \d+ items\.", ram)
         got = found.group(0) if found else None
         check(got == want_info, f"its information line {got!r}; D1:'s {len(d1)} files make "
                                 f"{want_info!r}")
+
+        # THE VIEWER (deskcmd.c): a document's Show reads it into a 16 KB
+        # far block and shows it in a window of its own -- its variables
+        # landed on the system's zero page until 5d (TINY)
+        def click0(xy, n=1):
+            poke16(ptr, xy[0])
+            poke16(ptr + 2, xy[1])
+            b.frames(20)
+            for _ in range(n):
+                poke16(ptr + 4, 1)
+                b.frames(4)
+                poke16(ptr + 4, 0)
+                b.frames(4)
+        click0(AUTORUN, 2)
+        b.frames(4000)
+        click0(SHOW)
+        for _ in range(100):
+            b.frames(100)
+            if dw16("cmd_id") and dw16("cmd_len") == VIEW_LEN:
+                break
+        vid, vlen, vlines = dw16("cmd_id"), dw16("cmd_len"), dw16("cmd_lines")
+        check(vid > 0 and vlen == VIEW_LEN and vlines > 0,
+              f"Show on AUTORUN.SYS: the viewer is window {vid} with {vlen} bytes of it in "
+              f"{vlines} lines; want a window, {VIEW_LEN} bytes (all the buffer takes)")
+        b.frames(3000)                      # its window drawn before it closes
+        click0(VIEW_CLOSE)
+        b.frames(3000)
         # A PROGRAM FROM THE DESKTOP (step 5d): D2:'s window, full, and a
         # double-click on P6M.G6A -- the desktop asks for it (shel_write)
         # and ends; A6's shell runs it; when it ends, the desktop again
@@ -129,7 +180,7 @@ def main(argv):
         click(D2_FULL, 1, 0)
         for _ in range(100):                # polled: the redraw's pace varies
             b.frames(100)
-            ram = bytes(b.memdump(*SHARED))
+            ram = shared()
             if b"P6M.G6A" in ram and b"P6PROG.G6A" in ram:
                 break
         b.frames(500)
@@ -165,7 +216,7 @@ def main(argv):
               f" and the desktop was started again ({starts1} -> {starts2}, CIO "
               f"{b.peek(STATUS + 13)})")
         for _ in range(100):                # polled, as above
-            ram = bytes(b.memdump(*SHARED))
+            ram = shared()
             if b"DISK D1:" in ram:
                 break
             b.frames(100)
