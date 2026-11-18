@@ -139,6 +139,11 @@ def verify_kernel(b):
     if not os.path.exists(XLROM):
         return None
     rom = open(XLROM, "rb").read()
+    # A 6502 gem4xe runs with the ROM switched out once it has started
+    # (docs/6502.md, 5c-1): PORTB bit 0 clear, and $E000 is RAM.  This
+    # way cannot see the ROM then -- unknown, not wrong.
+    if not b.peek(0xD301) & 1:
+        return None
     return b.memdump(0xE000, 32) == rom[0x2000:0x2020]
 
 

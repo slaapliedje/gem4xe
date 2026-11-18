@@ -4,6 +4,7 @@ sent through a veneer.
 
     python3 tools/bsp6502/bankasm.py --index OUT.idx --bank SECTION=N ... A.s B.s ...
     python3 tools/bsp6502/bankasm.py IN.s OUT.s --tu NAME --bank SECTION=N ... [--index IDX]
+                                     [--trampoline NAME]
 
 cc6502 compiles a banked file to assembly (--assembly-source), each
 function in a `.section NAME,text` of its own, named for its bank by the
@@ -46,6 +47,12 @@ function tails across functions -- is replaced by a copy of that tail.
 The compiler's copy of the C source, its `;` comment lines, is dropped:
 as6502 reads /* */ inside them as a comment, and a C comment spread over
 two lines takes the assembly between them with it.
+
+A PROGRAM OF SEVERAL BANKS (docs/6502.md, step 5c-1) is banked the same
+way with --trampoline _pcall: its own trampoline (src/app/crt6502m.s),
+whose bank numbers are the program's own, 1..n, which the loader maps to
+whatever banks the far heap gave it; its "resident" is the RAM under the
+OS ROM, where its veneers and data are.
 
 tools/bsp6502/bankcheck.py checks the result from the other side: the
 assembly (with the same index), the link map, and the linked code itself.
@@ -283,6 +290,7 @@ def main(argv):
         return 2
     src, dst = argv[1], argv[2]
     tu = argv[argv.index("--tu") + 1]
+    tramp = argv[argv.index("--trampoline") + 1] if "--trampoline" in argv else "_bcall"
     banks, _ = parse_banks(argv[3:])
     ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
     lines = bank_data(runtime_fixes(quoted_names(read_source(src))), banks)
@@ -406,11 +414,11 @@ def main(argv):
 
     final.append("")
     final.append(";;; veneers (tools/bsp6502/bankasm.py)")
-    final.append("              .extern _bcall")
+    final.append(f"              .extern {tramp}")
     for f, v in sorted(veneer_for.items()):
         final.append("              .section veneer")
         final.append(f"              .public {v}")
-        final.append(f"{v}:          jsr     _bcall")
+        final.append(f"{v}:          jsr     {tramp}")
         final.append(f"              .word   {target(f)}")
         final.append(f"              .byte   {fbank(f)}")
     # a bank's veneers in the bank: _bcall reads the veneer before it maps
@@ -418,7 +426,7 @@ def main(argv):
     for (f, k), (v, sect) in sorted(bank_veneers.items()):
         final.append(f"              .section {sect},text")
         final.append(f"              .public {v}")
-        final.append(f"{v}:          jsr     _bcall")
+        final.append(f"{v}:          jsr     {tramp}")
         final.append(f"              .word   {target(f)}")
         final.append(f"              .byte   {fbank(f)}")
     # another file's entries, named here only now

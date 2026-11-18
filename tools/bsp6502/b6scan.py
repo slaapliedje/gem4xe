@@ -79,7 +79,7 @@ CAL = os.environ.get("CALYPSI6502", os.path.expanduser("~/dev/toolchains/calypsi
 FILES = ["src/vdi/vdi.c", "src/vdi/dev_antic.c", "src/antic/antic.c", "src/vdi/font.c",
          "src/vdi/pointer.c", "src/vdi/fillpat.c", "src/vdi/sintbl.c", "src/sys/farmem.c",
          "src/sys6502/*.c", "src/v6_*.c", "src/f6_*.c", "src/a6_*.c", "src/c6_*.c", "src/i6_*.c",
-         "src/aes/*.c", "src/sys/abi.c", "src/sys/cio.c", "src/p6_prog.c", "src/app/gemlib.c",
+         "src/aes/*.c", "src/sys/abi.c", "src/sys/cio.c", "src/p6_prog.c", "src/p6m_prog.c", "src/app/gemlib.c",
          "src/sys/gemdos.c", "src/sys/dos.c", "src/sys/con.c", "src/sys/clock.c"]   # 5b-4
 PER_FILE = {
     "src/vdi/dev_antic.c": ["-DGEM4XE_DEV_IMPL", "-DGEM4XE_DEV_PREFIX=and_",
@@ -87,6 +87,7 @@ PER_FILE = {
     "src/sys6502/farmem6502.c": ["-DB6_CODE_BANKS=1"],
     # a program built with the kit (docs/6502.md, step 5): its headers
     "src/p6_prog.c": ["-Isrc/app"],
+    "src/p6m_prog.c": ["-Isrc/app"],
     "src/app/gemlib.c": ["-Isrc/app"],
 }
 INCS = ["src", "src/vdi", "src/aes", "build", "src/sys", "src/antic"]

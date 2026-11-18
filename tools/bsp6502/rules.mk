@@ -292,12 +292,59 @@ test-p6: build/a6-boot.atr
 test-p6a: build/a6-boot.atr
 	python3 tests/emu/p6_prog.py --axlon 4096K
 
+# ---- step 5c-1: a program of several banks (tests/emu/p6m_prog.py) ------
+# src/p6m_prog.c in three banks of its own (BANK_TEXT pb1..pb3) and the
+# kit's gemlib.c in bank 2, banked by bankasm.py with the program's own
+# trampoline (--trampoline _pcall, src/app/crt6502m.s); its veneers,
+# runtime and data in the RAM under the OS ROM (src/app/gemappm6502.scm).
+# A .G6A of format 2 (mkxex6502.py), on a boot disk of its own as
+# P6PROG.G6A, which A6 loads into three banks from the far heap.
+P6M        = $(B6)/p6m
+P6M_BANKS  = --bank pb1=1 --bank pb2=2 --bank pb3=3
+P6M_UNITS  = p6m_prog gemlib
+P6M_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M_UNITS:%=$(P6M)/bank/%.o)
+$(P6M)/w/p6m_prog.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#include "../../../../src/p6m_prog.c"\n' > $@
+$(P6M)/w/gemlib.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb2"\n#include "../../../../src/app/gemlib.c"\n' > $@
+$(P6M)/pre/%.o: $(P6M)/w/%.c src/p6m_prog.c src/app/gemlib.c src/app/gem.h src/portab.h
+	@mkdir -p $(dir $@) $(P6M)/asm
+	$(CC6) $(KITFLAGS6) --no-cross-call -c $< -o $@ --assembly-source=$(P6M)/asm/$(notdir $(@:.o=.s))
+$(P6M)/p6m.idx: $(P6M_UNITS:%=$(P6M)/pre/%.o) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(P6M_BANKS) $(P6M_UNITS:%=$(P6M)/asm/%.s)
+$(P6M)/bank/%.o: $(P6M)/pre/%.o $(P6M)/p6m.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
+	@mkdir -p $(dir $@) $(P6M)/basm
+	python3 tools/bsp6502/bankasm.py $(P6M)/asm/$*.s $(P6M)/basm/$*.b.s --tu $* $(P6M_BANKS) \
+	    --index $(P6M)/p6m.idx --trampoline _pcall --switch-in-bank
+	python3 tools/bsp6502/bankcheck.py --asm $(P6M)/basm/$*.b.s $(P6M_BANKS) --index $(P6M)/p6m.idx
+	$(AS6) --core 6502 $(P6M)/basm/$*.b.s -o $@
+$(P6M)/crt6502m.o: src/app/crt6502m.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+$(P6M)/gemabi6502.o: src/app/gemabi6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+build/p6mprog.elf: $(P6M_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
+	$(LN6) src/app/gemappm6502.scm $(P6M_OBJ) \
+	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/p6mprog.map > /dev/null
+	python3 tools/bsp6502/bankcheck.py build/p6mprog.map --elf $@ || { rm -f $@; exit 1; }
+build/p6mprog.g6a: build/p6mprog.elf tools/bsp6502/mkxex6502.py
+	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
+build/a6m-boot.atr: build/a6.xex build/p6mprog.g6a build/p6prog.rsc
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact --add build/p6mprog.g6a P6PROG.G6A \
+	    --add build/p6prog.rsc P6PROG.RSC
+test-p6m: build/a6m-boot.atr
+	python3 tests/emu/p6m_prog.py
+# ...and refused on an Axlon, whose $CFFF needs the ROM in
+test-p6ma: build/a6m-boot.atr
+	python3 tests/emu/p6m_prog.py --axlon 4096K
+
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.
-b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf
+b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf build/p6mprog.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-f6a b6asm
+.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-p6m test-p6ma test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;

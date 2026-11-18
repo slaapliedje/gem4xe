@@ -16,6 +16,7 @@
 ;;; loader's in ScreenTail (src/a6_evt.c).
 ;;;
 ;;; RESIDENT: CIO returns with whatever the DOS left in the window.
+;;; THE ROM is switched in for the call and out after (step 5c-1).
 ;;; src/sys/cio.c calls irq_pokey_resync after, since SIO has had POKEY.
 ;;; ---------------------------------------------------------------------------
 
@@ -37,14 +38,28 @@ cio_call:     lda     zp:_Zp+0        ; 1..7
               asl     a
               asl     a
               tax
+              jsr     rom_in
               jsr     CIOV
               jmp     back
 
-dsk_call:     jsr     SIOV
+dsk_call:     jsr     rom_in
+              jsr     SIOV
 back:         sty     zp:_Zp+0
               lda     #0
               sta     zp:_Zp+1
               ldx     b6_cur
 b6sw_cio:        lda     b6_portb,x
               sta     PORTB
+              lda     cio_pb          ; PORTB as it was: the ROM out again
+              sta     PORTB           ; where it was out (on an Axlon the
+              rts                     ; patched store above was to $CFFF)
+;;; the OS ROM in for the call: on a PORTB machine the system runs with it
+;;; out (step 5c-1, src/sys6502/gate6502.s)
+rom_in:       lda     PORTB
+              sta     cio_pb
+              ora     #1
+              sta     PORTB
               rts
+
+              .section zdata, bss
+cio_pb:       .space  1               ; PORTB before the call

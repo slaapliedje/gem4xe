@@ -121,6 +121,7 @@ PER_FILE = {
     # a 6502 program only (docs/6502.md, step 5): its trees are gem.h's
     # 6502 GEMTREE, a far address, which no 65C816 build has
     "src/p6_prog.c": ["-D__CALYPSI_TARGET_6502__"],
+    "src/p6m_prog.c": ["-D__CALYPSI_TARGET_6502__"],
 }
 
 # -m32: four-byte pointers and longs, as the target's large data model

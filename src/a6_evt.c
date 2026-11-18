@@ -126,65 +126,183 @@ static void acc_start(void)
     STATUS[11] = 'P';
 }
 
-/* The program read into a bank of its own: a .G6A is the bank's bytes
- * from $4000, header first (tools/bsp6502/mkxex6502.py --g6a).  The bank
- * is a far_alloc_piece block, the program's owner's -- taken from the
- * heap as the 65C816 takes a program's memory, so a machine with more
- * banks runs more programs and none is set aside.  The file goes a piece
- * at a time through a buffer outside the window -- where CIO and a DOS
- * that banks may write it (src/sys6502/cio6502.s) -- and on into the
- * bank.  CIO_OK when the whole file came and fitted; the block is given
- * back if not. */
+/* The program read into banks of its own.  A .G6A of format 1 is one
+ * bank's bytes from $4000, header first (tools/bsp6502/mkxex6502.py
+ * --g6a); format 2 (step 5c-1) is a header, the pieces that go into the
+ * RAM under the OS ROM, and n banks.  Each bank is a far_alloc_piece
+ * block, the program's owner's -- taken from the heap as the 65C816
+ * takes a program's memory, so a machine with more banks runs more
+ * programs and none is set aside.  The file goes a piece at a time
+ * through a buffer outside the window -- where CIO and a DOS that banks
+ * may write it (src/sys6502/cio6502.s) -- and on into the bank, or under
+ * the ROM, which the system runs with out (src/a6_tree.c): a bank-0 far
+ * address is near, and far_put writes it as it is.  CIO_OK when the
+ * whole file came and fitted; the blocks are given back if not.
+ *
+ * ONE PROGRAM OF SEVERAL BANKS AT A TIME: the RAM under the ROM is one,
+ * and nothing yet keeps a second program's copy of it.  Its link block
+ * at $C000 (src/app/crt6502m.s) gets the bank of each of its banks and
+ * the addresses its _pcall needs. */
 #define P6_FILE "D1:P6PROG.G6A"
 #define P6_MAX  0x4000u                 /* one bank */
 #define P6_NOMEM 0xC8                   /* no bank free: a6's own status */
 #define P6_BADF  0xC9                   /* not a .G6A */
+#define P6_NOROM 0xCA                   /* several banks, on an Axlon */
+#define G6_BANKS 15                     /* the link block's g6_banks */
+#define G6_LINK  0xC000u
 static SECTION("bounce") uint8_t p6_buf[256];
+extern uint8_t b6_cur, b6_kind, b6_portb[];
+/* the program's banks, for the gate to read (test-p6m): in page 5, as
+ * A6's other records are -- HiRam has not 61 bytes */
+SECTION("page5") uint8_t p6_nbanks;
+SECTION("page5") uint32_t p6_banks[G6_BANKS];
 
-static uint8_t prog_read(uint32_t slot)
+/* n bytes of the file to dst, far or under the ROM */
+static uint8_t prog_get(int16_t io, uint32_t dst, uint16_t n)
 {
-    int16_t io = cio_open(P6_FILE, CIO_A_READ, 0);
-    uint16_t at = 0, got;
+    uint16_t k, got;
     uint8_t st;
 
-    if (io < 0) {
-        io = -io;
-        st = (uint8_t)io;
-        return st;
-    }
-    do {
+    while (n) {
+        k = n > sizeof p6_buf ? (uint16_t)sizeof p6_buf : n;
         got = 0;
-        st = cio_read(io, p6_buf, sizeof p6_buf, &got);
-        if (got > P6_MAX - at) {
-            st = CIO_E_TRUNC;           /* more than a bank */
-            break;
+        st = cio_read(io, p6_buf, k, &got);
+        if (got != k)
+            return st == CIO_OK ? CIO_E_EOF : st;
+        if (st != CIO_OK && st != CIO_OK_EOF && st != CIO_E_EOF)
+            return st;
+        far_put(dst, p6_buf, got);
+        dst += got;
+        n = (uint16_t)(n - got);
+    }
+    return CIO_OK;
+}
+
+/* a piece under the ROM may go where gemappm6502.scm puts one, no more */
+static uint8_t g6_room(uint16_t a, uint16_t n)
+{
+    uint16_t e = (uint16_t)(a + n - 1);
+
+    if (!n || e < a)
+        return 0;
+    return (uint8_t)((a >= 0xC020u && e <= 0xCFFFu) || (a >= 0xD800u && e <= 0xFDFFu));
+}
+
+static uint8_t prog_read(int16_t io, uint8_t own)
+{
+    uint8_t keep = far_owner, st, n, np, k;
+    uint16_t lens[G6_BANKS], at[2], len[2];
+    uint32_t slot;
+    uint16_t got, total;
+
+    /* the header, or a format 1 program's first six bytes */
+    got = 0;
+    st = cio_read(io, p6_buf, 6, &got);
+    if (got != 6 || p6_buf[0] != 'G' || p6_buf[1] != '6')
+        return P6_BADF;
+    far_owner = own;
+    if (p6_buf[2] == 1) {               /* one bank: the bytes from $4000 */
+        slot = far_alloc_piece();
+        far_owner = keep;
+        if (!slot)
+            return P6_NOMEM;
+        p6_banks[0] = slot;
+        p6_nbanks = 1;
+        far_put(slot, p6_buf, 6);
+        total = 6;
+        do {
+            got = 0;
+            st = cio_read(io, p6_buf, sizeof p6_buf, &got);
+            if (got > P6_MAX - total)
+                return CIO_E_TRUNC;     /* more than a bank */
+            far_put(slot + total, p6_buf, got);
+            total = (uint16_t)(total + got);
+        } while (st == CIO_OK);
+        STATUS[14] = (unsigned char)total;
+        STATUS[15] = (unsigned char)(total >> 8);
+        return st == CIO_E_EOF ? CIO_OK : st;
+    }
+    far_owner = keep;
+    n = p6_buf[3];
+    np = p6_buf[4];
+    if (p6_buf[2] != 2 || !n || n > G6_BANKS || np > 2)
+        return P6_BADF;
+    if (b6_kind == 'A')
+        return P6_NOROM;                /* the ROM stays in there: a6_tree.c */
+    got = 0;
+    st = cio_read(io, p6_buf, (uint16_t)(np * 4u + n * 2u), &got);
+    if (got != np * 4u + n * 2u)
+        return P6_BADF;
+    for (k = 0; k < np; k++) {
+        at[k] = (uint16_t)(p6_buf[k * 4] | (p6_buf[k * 4 + 1] << 8));
+        len[k] = (uint16_t)(p6_buf[k * 4 + 2] | (p6_buf[k * 4 + 3] << 8));
+        if (!g6_room(at[k], len[k]))
+            return P6_BADF;
+    }
+    for (k = 0; k < n; k++) {
+        lens[k] = (uint16_t)(p6_buf[np * 4 + k * 2] | (p6_buf[np * 4 + k * 2 + 1] << 8));
+        if (lens[k] > P6_MAX)
+            return P6_BADF;
+    }
+    far_owner = own;
+    for (k = 0; k < n; k++) {
+        p6_banks[k] = far_alloc_piece();
+        if (!p6_banks[k]) {
+            far_owner = keep;
+            return P6_NOMEM;
         }
-        far_put(slot + at, p6_buf, got);
-        at += got;
-    } while (st == CIO_OK);
-    cio_close(io);
-    STATUS[14] = (unsigned char)at;
-    STATUS[15] = (unsigned char)(at >> 8);
-    return st == CIO_E_EOF ? CIO_OK : st;
+        p6_nbanks = (uint8_t)(k + 1);
+    }
+    far_owner = keep;
+    total = 0;
+    for (k = 0; k < np; k++) {
+        st = prog_get(io, at[k], len[k]);
+        if (st != CIO_OK)
+            return st;
+        total = (uint16_t)(total + len[k]);
+    }
+    for (k = 0; k < n; k++) {
+        st = prog_get(io, p6_banks[k], lens[k]);
+        if (st != CIO_OK)
+            return st;
+        total = (uint16_t)(total + lens[k]);
+    }
+    STATUS[14] = (unsigned char)total;
+    STATUS[15] = (unsigned char)(total >> 8);
+    if (far_rd16(p6_banks[0]) != 0x3647 || far_read8(p6_banks[0] + 2) != 2)
+        return P6_BADF;                 /* bank 1 is not "G6", 2 */
+    /* the link block: each bank's index, then what _pcall needs */
+    {
+        volatile uint8_t *lb = (volatile uint8_t *)G6_LINK;
+
+        for (k = 0; k < n; k++)
+            lb[1 + k] = far_piece(p6_banks[k]);
+        lb[0x10] = (uint8_t)(uint16_t)&b6_cur;
+        lb[0x11] = (uint8_t)((uint16_t)&b6_cur >> 8);
+        lb[0x12] = (uint8_t)(uint16_t)b6_portb;
+        lb[0x13] = (uint8_t)((uint16_t)b6_portb >> 8);
+        lb[0x14] = b6_kind;
+    }
+    return CIO_OK;
 }
 
 static uint8_t prog_load(uint8_t own)
 {
-    uint8_t keep = far_owner, st;
-    uint32_t slot;
+    int16_t io = cio_open(P6_FILE, CIO_A_READ, 0);
+    uint8_t st;
 
-    far_owner = own;
-    slot = far_alloc_piece();
-    far_owner = keep;
-    p6_slot = slot;
-    if (!slot)
-        return P6_NOMEM;
-    st = prog_read(slot);
-    if (st == CIO_OK && (far_rd16(slot) != 0x3647 || far_read8(slot + 2) != 1))
-        st = P6_BADF;                   /* not "G6", format 1 */
+    p6_nbanks = 0;
+    if (io < 0) {
+        io = -io;
+        return (uint8_t)io;
+    }
+    st = prog_read(io, own);
+    cio_close(io);
+    p6_slot = p6_nbanks ? p6_banks[0] : 0;
     if (st != CIO_OK) {
         far_free_owner(own);
         p6_slot = 0;
+        p6_nbanks = 0;
     }
     return st;
 }

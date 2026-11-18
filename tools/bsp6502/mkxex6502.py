@@ -11,6 +11,21 @@ after its last byte.  Its first bytes are its header, "G6" and the
 format, 1 (src/app/crt6502.s); a file that does not start so, or that
 has anything outside the window, is refused.
 
+A PROGRAM OF SEVERAL BANKS (src/app/gemappm6502.scm, docs/6502.md step
+5c-1) is format 2: its banks stored from $10000 as the system's are, and
+its veneers, runtime and data in the RAM under the OS ROM.  Its .G6A:
+
+    $00  "G6", 2, n          the magic, the format, its banks (1..15)
+    $04  p, 0                its pieces under the ROM (0..2)
+    $06  p x (addr, len)     each piece's address and length, two words
+         n x len             each bank's length, a word
+         the pieces' bytes, then the banks', in that order
+
+A piece may be in $C020-$CFFF or $D800-$FDFF and nowhere else -- not the
+chips, not the link block the loader fills at $C000, not the system's
+$FE00-$FFFF -- and bank 1 must begin with its header, "G6", 2.  The
+loader (src/a6_evt.c) checks the same.
+
 --bank N=PROG.elf loads a separately linked program's window segments
 ($4000-$7FFF: src/app/gemapp6502.scm) into PORTB bank N as well, as if
 it were one of the link's own banks -- the program slot of docs/6502.md,
@@ -70,8 +85,68 @@ def seg(start, body):
     return struct.pack("<HH", start, start + len(body) - 1) + bytes(body)
 
 
+SHARED = ((0xC020, 0xCFFF), (0xD800, 0xFDFF))   # under the ROM, a program's
+G6_BANKS = 15
+G6_LINK = 0xC000                        # src/app/crt6502m.s's link block
+
+
+def g6a2(elf, out, segs):
+    """Format 2: see the head of the file."""
+    banks, pieces = {}, []
+    for a, body in sorted(segs):
+        end = a + len(body) - 1
+        if WIN_LO <= a and end <= WIN_HI:
+            continue                    # a bank's run copy: its store is the one
+        if G6_LINK <= a and end < G6_LINK + 0x20:
+            if any(body):
+                raise SystemExit(f"mkxex6502: --g6a: {elf}: the link block at "
+                                 f"${G6_LINK:04X} has bytes; the loader fills it")
+            continue
+        if a >= STORE:
+            k = (a - STORE) // BANK + 1
+            if (end - STORE) // BANK + 1 != k or k > G6_BANKS:
+                raise SystemExit(f"mkxex6502: --g6a: {elf}: a segment at ${a:X} is in "
+                                 f"no one bank 1..{G6_BANKS}")
+            img = banks.setdefault(k, bytearray())
+            o = (a - STORE) % BANK
+            if len(img) < o:
+                img += bytes(o - len(img))
+            img[o:o + len(body)] = body
+        elif any(lo <= a and end <= hi for lo, hi in SHARED):
+            if pieces and pieces[-1][0] + len(pieces[-1][1]) <= a and \
+                    any(lo <= pieces[-1][0] and end <= hi for lo, hi in SHARED):
+                p0, pb = pieces[-1]
+                pb += bytes(a - p0 - len(pb)) + body
+            else:
+                pieces.append((a, bytearray(body)))
+        else:
+            raise SystemExit(f"mkxex6502: --g6a: {elf} has a segment at ${a:X}-${end:X}, "
+                             f"in no bank and not under the ROM ({SHARED})")
+    n = max(banks) if banks else 0
+    if sorted(banks) != list(range(1, n + 1)):
+        raise SystemExit(f"mkxex6502: --g6a: {elf}: banks {sorted(banks)}, not 1..n")
+    if len(pieces) > 2:
+        raise SystemExit(f"mkxex6502: --g6a: {elf}: {len(pieces)} pieces under the ROM, "
+                         f"room for 2")
+    if banks[1][:3] != b"G6\x02":
+        raise SystemExit(f"mkxex6502: --g6a: {elf}: bank 1 does not start with its "
+                         f"header (\"G6\", 2 at $4000)")
+    head = bytes([ord("G"), ord("6"), 2, n, len(pieces), 0])
+    head += b"".join(struct.pack("<HH", a, len(b)) for a, b in pieces)
+    head += b"".join(struct.pack("<H", len(banks[k])) for k in range(1, n + 1))
+    data = head + b"".join(bytes(b) for _, b in pieces) + \
+        b"".join(bytes(banks[k]) for k in range(1, n + 1))
+    open(out, "wb").write(data)
+    print(f"{out}: format 2, {len(data)} bytes: {n} bank(s) of "
+          f"{', '.join(str(len(banks[k])) for k in range(1, n + 1))} bytes; under the ROM "
+          f"{', '.join(f'${a:04X}+{len(b)}' for a, b in pieces)}")
+    return 0
+
+
 def g6a(elf, out):
     _, segs = segments(open(elf, "rb").read())
+    if any(a >= STORE or a >= 0xC000 for a, _ in segs):
+        return g6a2(elf, out, segs)
     img = bytearray()
     for a, body in sorted(segs):
         if not (WIN_LO <= a and a + len(body) - 1 <= WIN_HI):

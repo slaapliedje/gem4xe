@@ -122,10 +122,16 @@ void irq_sei(void);
  * bank.  bankcheck refuses a use by name from elsewhere. */
 #define BANK_DATA(s) __attribute__((section(s "__bank")))
 #define memcpy_far   memcpy
-void irq_sei(void);
-#define cpu_sei()    irq_sei()
-#define cpu_cli()    irq_cli()
-void irq_cli(void);
+/* SEI and CLI themselves: a 6502 has no native mode, and none of the
+ * IRQ storm src/sys/sei.s keeps the 65C816 from. */
+#if __has_include(<calypsi/intrinsics6502.h>)
+#include <calypsi/intrinsics6502.h>
+#else                                   /* a host's parse (make qscan) */
+void __disable_interrupts(void);
+void __enable_interrupts(void);
+#endif
+#define cpu_sei()    __disable_interrupts()
+#define cpu_cli()    __enable_interrupts()
 
 #else
 #error "portab.h: no dialect for this compiler -- add one here"

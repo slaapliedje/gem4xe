@@ -855,7 +855,17 @@ static LONG gd_fforce(WORD std, WORD h)
 /* Fread and Fwrite.  CIO takes a bank-$00 address, so a buffer there
  * is handed over as it is, in pieces; one anywhere else goes through a
  * slice of the pool -- or, when the pool is spoken for, sixty-four
- * bytes of stack, slowly. */
+ * bytes of stack, slowly.
+ *
+ * ON THE 6502 a bank-$00 buffer under the OS ROM goes through the slice
+ * too: a program of several banks keeps its data there (docs/6502.md,
+ * 5c-1), and CIO runs with the ROM in, when a write there goes nowhere
+ * and a read gets the ROM. */
+#ifdef __CALYPSI_TARGET_6502__
+#define GD_CIO_CANNOT(a)    ((uint16_t)(a) >= 0xC000u)
+#else
+#define GD_CIO_CANNOT(a)    0
+#endif
 BANK_TEXT("gemdos")
 static LONG gd_xfer(uint8_t iocb, LONG count, LONG buf, WORD write)
 {
@@ -867,7 +877,7 @@ static LONG gd_xfer(uint8_t iocb, LONG count, LONG buf, WORD write)
 
     if (count <= 0 || (!write && (gd_ateof & (1 << iocb))))
         return 0;
-    if ((a >> 16) != 0) {
+    if ((a >> 16) != 0 || GD_CIO_CANNOT(a)) {
         uint16_t room = pool_room();
         mark = pool_mark();
         n = room > 2048 ? 2048 : (uint16_t)(room & ~1);

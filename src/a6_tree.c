@@ -207,6 +207,71 @@ void a6_boot(void)
     ctx_make(&proc_app->p_ctx, 0);
 }
 
+/* THE OS ROM OUT (docs/6502.md, 5c-1).  A program of several banks keeps
+ * its data in the RAM under the ROM and hands the system pointers to it,
+ * so from here the system runs with that RAM in: bit 0 of PORTB clear,
+ * and of every PORTB value a bank switch writes.  The ROM comes in for
+ * CIO and SIO (src/sys6502/cio6502.s) and for an interrupt, whose vector
+ * the CPU now reads from the RAM: the handlers there are resident
+ * (src/sys6502/gate6502.s) and switch the ROM in before they enter its
+ * own.  The vectors are written with IRQs held off and the VBI's NMI too:
+ * nothing here sets a DLI, so $40 is NMIEN as the OS left it.  After
+ * irq_install: SETVBV is the ROM's. */
+#define PORTB   (*(volatile uint8_t *)0xD301)
+#define NMIEN   (*(volatile uint8_t *)0xD40E)
+#define KEYDEF  (*(volatile uint16_t *)0x0079)  /* the OS's key table */
+#define KEYDEF_LEN 192                          /* plain, shift, control */
+#define KEYDEF_AT  0xFE00u                      /* its copy, under the ROM */
+extern void g6_nmi(void), g6_reset(void), g6_irq(void);
+extern uint8_t b6_kind, b6_portb[];
+
+static void ram_vectors(void)
+{
+    volatile uint16_t *v = (volatile uint16_t *)0xFFFAu;
+
+    /* NOT ON AN AXLON: its register at $CFFF is decoded only while the
+     * ROM is in (AltirraSDL's mmu.cpp enables the layer with the kernel,
+     * as the hardware does), so with the ROM out no bank would switch.
+     * There the ROM stays in, and a program of several banks is refused
+     * (src/a6_evt.c). */
+    if (b6_kind == 'A')
+        return;
+    cpu_sei();
+    NMIEN = 0;
+    PORTB = (uint8_t)(PORTB & 0xFEu);
+    v[0] = (uint16_t)g6_nmi;
+    v[1] = (uint16_t)g6_reset;
+    v[2] = (uint16_t)g6_irq;
+    /* The OS's key table, which src/vdi/vdi.c translates every key
+     * through (KEYDEF, $79), copied to $FE00 under the ROM and KEYDEF
+     * pointed there.  Where the OS keeps it differs by version ($FEFE,
+     * $FB51 in the one the gates run), and a program's RAM is
+     * $D800-$FDFF (src/app/gemappm6502.scm); $FE00-$FFFF is the
+     * system's.  Nothing of the OS reads KEYDEF while gem4xe runs: its
+     * keyboard IRQ is taken before the OS's dispatch sees it
+     * (src/sys6502/irq6502.s). */
+    {
+        volatile uint8_t *k = (volatile uint8_t *)KEYDEF;
+        uint8_t i, b;
+
+        for (i = 0; i < KEYDEF_LEN; i++) {
+            PORTB = (uint8_t)(PORTB | 1u);
+            b = k[i];
+            PORTB = (uint8_t)(PORTB & 0xFEu);
+            ((volatile uint8_t *)KEYDEF_AT)[i] = b;
+        }
+        KEYDEF = KEYDEF_AT;
+    }
+    {
+        uint8_t i;
+
+        for (i = 0; i <= b6_count; i++)
+            b6_portb[i] = (uint8_t)(b6_portb[i] & 0xFEu);
+    }
+    NMIEN = 0x40;
+    cpu_cli();
+}
+
 /* ... then, the context made, the AES as src/gem.c starts it, and the
  * screen test-a6 holds to the model. */
 void a6_aes_up(void)
@@ -219,6 +284,7 @@ void a6_aes_up(void)
      * tick was taken for NTSC's 17 and every timer and the double-click
      * window ran 18% long (test-e6, step 4f). */
     irq_install();
+    ram_vectors();
     STATUS[3] = '4';
     ev_init();
     STATUS[3] = '5';

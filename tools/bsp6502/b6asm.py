@@ -162,7 +162,8 @@ BAD_RUNTIME = ("_Mul16to32",)
 def runtime_refs(root=ROOT):
     """(file, symbol) for every reference to a runtime helper that is wrong."""
     out = []
-    for f in sorted(glob.glob(os.path.join(root, "build", "b6502", "*asm", "*.b.s"))):
+    for f in sorted(glob.glob(os.path.join(root, "build", "b6502", "*asm", "*.b.s"))
+                    + glob.glob(os.path.join(root, "build", "b6502", "p6m", "basm", "*.b.s"))):
         text = open(f, errors="replace").read()
         out += [(f, sym) for sym in BAD_RUNTIME if re.search(r"(?<![\w`])" + sym + r"(?![\w`])", text)]
     for f in sorted(glob.glob(os.path.join(root, "build", "b6502", "res", "*.o"))):
@@ -174,7 +175,9 @@ def runtime_refs(root=ROOT):
 def main(argv):
     if "--self-test" in argv:
         return self_test()
-    files = argv[1:] or sorted(f for f in glob.glob(os.path.join(ROOT, "build", "b6502", "asm", "*.s"))
+    # the system's banked units, and a program of several banks' (step 5c-1)
+    files = argv[1:] or sorted(f for d in (("asm",), ("p6m", "asm"))
+                               for f in glob.glob(os.path.join(ROOT, "build", "b6502", *d, "*.s"))
                                if not f.endswith(".b.s"))
     if not files:
         print("b6asm: no assembly: build the 6502 programs first")
