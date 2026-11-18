@@ -394,10 +394,11 @@ build/a6d-boot.atr: build/a6.xex build/desktop.rsc build/deskicon.rsc build/pref
 test-d6: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_desk.py
 
-build/a6d-desk.atr: build/desk6.g6a
+build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a
 	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
 	@rm -f $@
-	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ P6PROG.G6A --sweep --compact
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ P6PROG.G6A --sweep --compact \
+	    --add build/p6mprog.g6a P6M.G6A
 
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.

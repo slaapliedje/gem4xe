@@ -297,7 +297,16 @@ typedef void   *GEMADDR;
        sizeof(T) == 4 ? fa_wr32(FIDX(T, p, i), (uint32_t)fp_)               \
        : sizeof(T) == 2 ? fa_wr16(FIDX(T, p, i), (uint16_t)fp_)             \
        : fa_wr8(FIDX(T, p, i), (uint8_t)fp_); })
-#define FPUTN(T, p, v)    (FPUT(T, p, 0, v), (p) += (uint32_t)sizeof(T))
+/* One statement expression, the address taken before the pointer moves:
+ * as (FPUT(...), p += n), cc6502 5.18 computed p + n FIRST and wrote
+ * there -- the comma's order lost with a statement expression on its left
+ * -- which put every FNODE the desktop copied one byte along. */
+#define FPUTN(T, p, v)                                                      \
+    ({ T fn_v = (v); uint32_t fn_a = (uint32_t)(p);                         \
+       (p) = fn_a + (uint32_t)sizeof(T);                                    \
+       sizeof(T) == 4 ? fa_wr32(fn_a, (uint32_t)fn_v)                       \
+       : sizeof(T) == 2 ? fa_wr16(fn_a, (uint16_t)fn_v)                     \
+       : fa_wr8(fn_a, (uint8_t)fn_v); })
 #define FP_NEAR(T, p)     ((uint32_t)(uint16_t)(p))
 #define TGET(t, i, f)     FGET(OBJECT, FIDX(OBJECT, t, i), f)
 #define TSET(t, i, f, v)  FSET(OBJECT, FIDX(OBJECT, t, i), f, v)

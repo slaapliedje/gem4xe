@@ -37,6 +37,10 @@ SHOT = os.path.abspath(os.path.join(ROOT, "build", "d6.png"))
 STATUS = 0x0600
 SHARED = (0xD800, 0x2600)           # a program's RAM under the ROM
 D1_ICON = (34, 28)                  # DISK D1:, the desk's first cell
+D1_CLOSE = (17, 43)                 # D1:'s window's close box
+D2_ICON = (114, 28)                 # DISK D2:, the second
+D2_FULL = (240, 42)                 # its window's full box, where it opens
+P6M_ICON = (196, 48)                # P6M.G6A, third in the full window
 NBANKS = 8
 
 
@@ -50,7 +54,7 @@ def main(argv):
             fails.append(msg)
         return cond
 
-    print("gem4xe-d6: the desktop on a stock 6502")
+    print("gem4xe-d6: the desktop on a stock 6502, and a program from it")
     text = open(MAP).read()
 
     def sym(n):
@@ -106,6 +110,71 @@ def main(argv):
         got = found.group(0) if found else None
         check(got == want_info, f"its information line {got!r}; D1:'s {len(d1)} files make "
                                 f"{want_info!r}")
+        # A PROGRAM FROM THE DESKTOP (step 5d): D2:'s window, full, and a
+        # double-click on P6M.G6A -- the desktop asks for it (shel_write)
+        # and ends; A6's shell runs it; when it ends, the desktop again
+        def click(xy, n=1, wait=0):
+            poke16(ptr, xy[0])
+            poke16(ptr + 2, xy[1])
+            b.frames(20)
+            for _ in range(n):
+                poke16(ptr + 4, 1)
+                b.frames(4)
+                poke16(ptr + 4, 0)
+                b.frames(4)
+            b.frames(wait)
+        starts0 = b.peek(STATUS + 0x3E)
+        click(D1_CLOSE, 1, 3000)            # D2:'s then opens where D1:'s was
+        click(D2_ICON, 2, 5000)
+        click(D2_FULL, 1, 0)
+        for _ in range(100):                # polled: the redraw's pace varies
+            b.frames(100)
+            ram = bytes(b.memdump(*SHARED))
+            if b"P6M.G6A" in ram and b"P6PROG.G6A" in ram:
+                break
+        b.frames(500)
+        check(b"P6M.G6A" in ram and b"P6PROG.G6A" in ram,
+              "D2:'s window lists P6M.G6A and P6PROG.G6A by name")
+        b.poke(STATUS + 0x40, 0)
+        b.poke(STATUS + 0x62, 0)
+        click(P6M_ICON, 2, 0)
+        for _ in range(120):
+            b.frames(50)
+            if b.peek(STATUS + 0x40) == ord("a"):
+                break
+        starts1 = b.peek(STATUS + 0x3E)
+        check(b.peek(STATUS + 0x40) == ord("a") and starts1 == starts0 + 1,
+              f"P6M.G6A ran from the desktop: at its alert (stage "
+              f"{chr(b.peek(STATUS + 0x40)) if b.peek(STATUS + 0x40) > 31 else 0}), "
+              f"programs started {starts0} -> {starts1}")
+        check((w16(STATUS + 0x42), w16(STATUS + 0x44)) == (26, 55),
+              f"...and did its sums across its banks ({w16(STATUS + 0x42)}, "
+              f"{w16(STATUS + 0x44)}; want 26, 55)")
+        b.poke(STATUS + 0x62, 1)
+        b.frames(300)
+        b.key("RETURN")
+        for _ in range(120):
+            b.frames(50)
+            if b.peek(STATUS + 0x3E) == starts1 + 1:
+                break
+        b.frames(3000)
+        starts2 = b.peek(STATUS + 0x3E)
+        check(b.peek(STATUS + 0x40) == ord("E") and starts2 == starts1 + 1
+              and b.peek(STATUS + 13) == 1,
+              f"it ended (stage {chr(b.peek(STATUS + 0x40)) if b.peek(STATUS + 0x40) > 31 else 0})"
+              f" and the desktop was started again ({starts1} -> {starts2}, CIO "
+              f"{b.peek(STATUS + 13)})")
+        for _ in range(100):                # polled, as above
+            ram = bytes(b.memdump(*SHARED))
+            if b"DISK D1:" in ram:
+                break
+            b.frames(100)
+        check(b"DISK D1:" in ram, "the desktop again built its desk: \"DISK D1:\" in its "
+                                  "memory (its resource found, on D1: again)")
+        pin = w16(sym("proc_input"))
+        check(pin != ptab and b.peek(sym("p6_nbanks")) == NBANKS,
+              f"the desktop again: {b.peek(sym('p6_nbanks'))} banks, the input its own "
+              f"(${pin:04X})")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
         check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
         b.screenshot(SHOT)

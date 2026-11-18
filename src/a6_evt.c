@@ -51,6 +51,7 @@
 #include "aes/proc.h"
 #include "sys/farmem.h"
 #include "sys/cio.h"
+#include "sys/gemdos.h"             /* gemdos_home */
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -144,11 +145,12 @@ static void acc_start(void)
  * at $C000 (src/app/crt6502m.s) gets the bank of each of its banks and
  * the addresses its _pcall needs. */
 /* in this bank, as src/sys/cio.c, their reader, is: resident memory has
- * not the bytes */
-static const char p6_file[] BANK_DATA("far") = "D1:P6PROG.G6A";
-static const char p6_file2[] BANK_DATA("far") = "D2:P6PROG.G6A"; /* the desktop's
-                                         * own disk (5c-3): D1: has no
-                                         * room beside A6 */
+ * not the bytes.  In src/a6_tree.c, which has no zeroed bank data: within
+ * one file cc6502 will not put both kinds in a bank's section. */
+#define P6_FILELEN 14
+extern const char a6_file1[P6_FILELEN], a6_file2[P6_FILELEN];
+#define p6_file  a6_file1
+#define p6_file2 a6_file2
 #define P6_MAX  0x4000u                 /* one bank */
 #define P6_NOMEM 0xC8                   /* no bank free: a6's own status */
 #define P6_BADF  0xC9                   /* not a .G6A */
@@ -293,13 +295,35 @@ static uint8_t prog_read(int16_t io, uint8_t own)
     return CIO_OK;
 }
 
+/* THE SHELL (step 5d): the program shel_write(SHW_EXEC) named, as CIO
+ * names it (src/sys6502/abistub6502.c writes it), and the one running.
+ * A program of several banks runs alone -- there is one RAM under the
+ * ROM -- so the desktop ends to run one and comes back when it ends, as
+ * the ST's single-tasking shell has it. */
+#define G6_RUNLEN 32
+SECTION("page5") char g6_run[G6_RUNLEN];
+BANK_DATA("far") static char g6_name[G6_RUNLEN];   /* what prog_load opens */
+BANK_DATA("far") static char g6_desk[G6_RUNLEN];   /* the desktop's file */
+BANK_DATA("far") static PROC *g6_cur;              /* the program running */
+BANK_DATA("far") static uint8_t g6_own, g6_isdesk;
+
 static uint8_t prog_load(uint8_t own)
 {
-    int16_t io = cio_open(p6_file, CIO_A_READ, 0);
-    uint8_t st;
+    int16_t io;
+    uint8_t st, i;
 
-    if (io < 0)
-        io = cio_open(p6_file2, CIO_A_READ, 0);
+    if (g6_name[0]) {
+        io = cio_open(g6_name, CIO_A_READ, 0);
+    } else {                            /* the first: D1:, else D2: */
+        io = cio_open(p6_file, CIO_A_READ, 0);
+        for (i = 0; i < sizeof p6_file; i++)
+            g6_desk[i] = p6_file[i];
+        if (io < 0) {
+            io = cio_open(p6_file2, CIO_A_READ, 0);
+            for (i = 0; i < sizeof p6_file2; i++)
+                g6_desk[i] = p6_file2[i];
+        }
+    }
     p6_nbanks = 0;
     if (io < 0) {
         io = -io;
@@ -325,10 +349,12 @@ static void prog_start(void)
     uint8_t st = prog_load(own);
 
     STATUS[13] = st;
+    STATUS[0x3E]++;                     /* programs started: test-d6 */
     if (st != CIO_OK) {
         STATUS[12] = 'H';               /* none */
         return;
     }
+    g6_own = own;
     p6_ven[5] = far_piece(p6_slot);     /* its veneer's bank byte */
     p = proc_new(prog_queue, ACC_MSGS);
     if (!p)
@@ -338,6 +364,7 @@ static void prog_start(void)
         return;
     }
     proc_name(p, "P6PROG");
+    g6_cur = p;
     ctx_switch(&p->p_ctx);
     p->p_stat = P_LIVE;
     STATUS[12] = 'R';
@@ -372,6 +399,57 @@ static void redraw(WORD wh, const GRECT *area)
     wm_lock(END_UPDATE);
 }
 
+/* A6 AS THE SHELL (step 5d): the desktop's host.  When the running
+ * program's context is done -- its main returned -- what it left goes:
+ * its far blocks, its record, its windows and locks (wm_new), its menu
+ * bar, its desk (which was in its RAM under the ROM, where the next one's
+ * data goes); then the program it asked for runs, or the desktop again
+ * when an application ends.  When the desktop ends asking for nothing,
+ * GEM is over: A6 waits. */
+static void host_next(void)
+{
+    PROC *p = g6_cur;
+    uint8_t i;
+
+    g6_cur = 0;
+    far_free_owner(g6_own);
+    proc_drop(p);
+    proc_input = proc_app;
+    wm_new();
+    mn_bar(0, FALSE);
+    gl_newdesk = 0;
+    gl_newroot = ROOT;
+    w_win(DESKWH)->w_owner = 0;
+    w_drawdesk(&gl_rscreen);
+    if (g6_run[0]) {                    /* what it asked for */
+        for (i = 0; i < G6_RUNLEN; i++)
+            g6_name[i] = g6_run[i];
+        g6_run[0] = 0;
+        g6_isdesk = 0;
+    } else if (!g6_isdesk) {            /* an application ended: the desktop */
+        for (i = 0; i < G6_RUNLEN; i++)
+            g6_name[i] = g6_desk[i];
+        g6_isdesk = 1;
+        gemdos_home();                  /* where the boot left the DOS, as the
+                                         * 65C816's shell has it: the program
+                                         * ran in its own directory, where the
+                                         * desktop's resource is not */
+    } else {
+        STATUS[12] = 'Q';               /* the desktop quit */
+        return;
+    }
+    prog_start();
+}
+
+static void host_loop(void)
+{
+    for (;;) {
+        ev_timer(100);
+        if (g6_cur && g6_cur->p_ctx.live == CTX_DONE)
+            host_next();
+    }
+}
+
 void a6_events(void)
 {
     static const MOBLK none = { 0, 0, 0, 0, 0 };
@@ -390,7 +468,9 @@ void a6_events(void)
         wm_delete(2);
         wm_close(1);
         wm_delete(1);
-        STATUS[12] = 1;
+        g6_isdesk = 1;
+        prog_start();
+        host_loop();                    /* never returns */
     }
     if (STATUS[12] == 1)
         prog_start();

@@ -123,6 +123,11 @@ static const OBDEF menu[21] BANK_DATA("far") = {
     {  6,  20,  20, G_BOX,    NONE,   NORMAL,   0x00FF1100UL,84,  0,  60,   6 },  /* 19 View */
     { 19,  -1,  -1, G_STRING, LASTOB, CHECKED,  0,            0,  0,  60,   6 },
 };
+/* A6's program: P6PROG.G6A on D1:, else on D2: (src/a6_evt.c) -- the
+ * desktop's own disk (5c-3), as D1: has no room beside A6 */
+const char a6_file1[14] BANK_DATA("far") = "D1:P6PROG.G6A";
+const char a6_file2[14] BANK_DATA("far") = "D2:P6PROG.G6A";
+
 static const char menu_str[] BANK_DATA("far") =
     "\0" "\0" "\0" " Desk \0" " File \0" " View \0" "\0" "\0"
     "  About gem4xe...\0" "--------------------\0" "1\0" "2\0" "3\0" "4\0" "5\0" "6\0"

@@ -518,8 +518,15 @@ static void win_sinfo(WNODE *pw)
  * 8-bit names, the Atari's $FF $FF. */
 static const char FAR win_exts[][4] = {
     "PRG", "G4A", "APP", "TOS", "TTP", "COM", "XEX", "EXE", "OBJ"
+#ifdef __CALYPSI_TARGET_6502__
+    , "G6A"                             /* a 6502 program (docs/6502.md, 5d) */
+#endif
 };
+#ifdef __CALYPSI_TARGET_6502__
+#define WIN_NEXTS  10
+#else
 #define WIN_NEXTS  9
+#endif
 #define WIN_TTP    4                    /* its index above: the one that asks */
 
 /* Which of win_exts[] the name ends in, or -1.  The name is the DOS's

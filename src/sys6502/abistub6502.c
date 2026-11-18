@@ -112,6 +112,10 @@ WORD     sh_desk_running(void) { return 0; }
 WORD     sh_environ(WORD how, WORD len, uint32_t buf) { (void)how; (void)len; (void)buf; return refused(); }
 void     sh_envrn(const char **ppath, const char *psrch) { (void)psrch; *ppath = 0; refused(); }
 WORD     sh_find(char *pspec) { (void)pspec; return refused(); }
+/* the program shel_write(SHW_EXEC) names, for A6's shell (src/a6_evt.c) */
+#define G6_RUNLEN 32
+extern char g6_run[G6_RUNLEN];
+
 /* THE SHELL BUFFER (step 5c-3): where the desktop keeps its DESKTOP.INF
  * text between programs, as src/aes/shel.c's sh_get and sh_put serve it --
  * here the far heap's, taken at the first call and kept as the system's
@@ -157,10 +161,31 @@ void     sh_read(char *pcmd, char *ptail) { pcmd[0] = 0; ptail[0] = 0; refused()
 void     sh_wdef(const char *lpcmd, const char *lpdir) { (void)lpcmd; (void)lpdir; refused(); }
 WORD     sh_write(WORD doex, WORD isgem, WORD isover, const char *pcmd, const char *ptail)
 {
-    (void)isgem; (void)isover; (void)pcmd; (void)ptail;
+    (void)isgem; (void)isover; (void)ptail;
     if (doex == 9)                      /* SWM_NEWMSG: what messages it takes;
                                          * A6 sends none of them (5c-3) */
         return 1;
+    if (doex == 1 && pcmd) {            /* SHW_EXEC: the program, for A6's
+                                         * shell (src/a6_evt.c, step 5d), as
+                                         * CIO names it; it runs when the
+                                         * caller's main returns */
+        uint16_t mark = pool_mark();
+        char *cio = pool_alloc(CIO_NAME_MAX + 1, 1);
+        uint8_t i;
+
+        if (!cio) {
+            pool_release(mark);
+            return refused();
+        }
+        gd_cioname(pcmd, cio);
+        for (i = 0; i < G6_RUNLEN - 1 && cio[i]; i++)
+            g6_run[i] = cio[i];
+        if (cio[i])
+            i = 0;                      /* too long for the slot: none */
+        g6_run[i] = 0;
+        pool_release(mark);
+        return (WORD)(i != 0);
+    }
     return refused();
 }
 
