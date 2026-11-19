@@ -41,7 +41,7 @@
 #include "cpx.h"
 #include "generalrsc.h"
 
-static OBJECT FAR *tree;
+static GEMTREE tree;
 static CPXINFO ginfo;
 
 /* Shown, so that OK can tell a typed field from an untouched one. */
@@ -95,42 +95,42 @@ static void gn_setdelay(LONG ms)
  * underscores marked.  So "25/12/26" is six digits here, and both
  * directions below work on those six.
  */
-static char FAR *gn_text(WORD ob)
+static FPTR(char) gn_text(WORD ob)
 {
-    TEDINFO FAR *ted = (TEDINFO FAR *)(uint32_t)tree[ob].ob_spec.index;
-    return (char FAR *)(uint32_t)ted->te_ptext;
+    FPTR(TEDINFO) ted = FP_OF(TEDINFO, (uint32_t)TGET(tree, ob, ob_spec.index));
+    return FP_OF(char, (uint32_t)FGET(TEDINFO, ted, te_ptext));
 }
 
-static void gn_put2(char FAR *p, WORD v)
+static void gn_put2(FPTR(char) p, WORD v)
 {
-    p[0] = (char)('0' + (v / 10) % 10);
-    p[1] = (char)('0' + v % 10);
+    FPUT(char, p, 0, (char)('0' + (v / 10) % 10));
+    FPUT(char, p, 1, (char)('0' + v % 10));
 }
 
-static WORD gn_get2(const char FAR *p)
+static WORD gn_get2(FPTR(const char) p)
 {
-    WORD a = p[0] - '0', b = p[1] - '0';
+    WORD a = FAT(char, p, 0) - '0', b = FAT(char, p, 1) - '0';
 
     if (a < 0 || a > 9 || b < 0 || b > 9)
         return -1;
     return (WORD)(a * 10 + b);
 }
 
-static void gn_same(char *dst, const char FAR *src, WORD n)
+static void gn_same(char *dst, FPTR(const char) src, WORD n)
 {
     WORD i;
 
     for (i = 0; i < n; i++)
-        dst[i] = src[i];
+        dst[i] = FAT(char, src, i);
     dst[n] = 0;
 }
 
-static WORD gn_differs(const char *was, const char FAR *now, WORD n)
+static WORD gn_differs(const char *was, FPTR(const char) now, WORD n)
 {
     WORD i;
 
     for (i = 0; i < n; i++)
-        if (was[i] != now[i])
+        if (was[i] != FAT(char, now, i))
             return 1;
     return 0;
 }
@@ -143,18 +143,18 @@ static WORD gn_differs(const char *was, const char FAR *now, WORD n)
 static void gn_show(void)
 {
     UWORD d = (UWORD)Tgetdate(), t = (UWORD)Tgettime();
-    char FAR *p = gn_text(GNDATE);
+    FPTR(char) p = gn_text(GNDATE);
 
     gn_put2(p + 0, (WORD)(d & 0x1F));               /* day */
     gn_put2(p + 2, (WORD)((d >> 5) & 0x0F));        /* month */
     gn_put2(p + 4, (WORD)((1980 + (d >> 9)) % 100));
-    p[6] = 0;
+    FPUT(char, p, 6, 0);
     gn_same(shown_date, p, 6);
 
     p = gn_text(GNTIME);
     gn_put2(p + 0, (WORD)((t >> 11) & 0x1F));       /* hour */
     gn_put2(p + 2, (WORD)((t >> 5) & 0x3F));        /* minute */
-    p[4] = 0;
+    FPUT(char, p, 4, 0);
     gn_same(shown_time, p, 4);
 }
 
@@ -162,8 +162,8 @@ static void gn_show(void)
  * not leave a good date half-applied. */
 static void gn_apply_clock(void)
 {
-    const char FAR *d = gn_text(GNDATE);
-    const char FAR *t = gn_text(GNTIME);
+    FPTR(const char) d = gn_text(GNDATE);
+    FPTR(const char) t = gn_text(GNTIME);
     WORD day, mon, yr, hh, mm;
 
     if (gn_differs(shown_date, d, 6)) {
@@ -223,34 +223,34 @@ static XCPB FAR *gn_xcpb;
 
 static void gn_restore(void)
 {
-    const char FAR *b;
+    FPTR(const char) b;
     WORD dc, mn;
 
     if (!gn_xcpb || !gn_xcpb->buffer)
         return;
-    b = (const char FAR *)gn_xcpb->buffer;
-    if ((b[0] & 0xFF) != GN_MARK)
+    b = FP_OF(const char, gn_xcpb->buffer);
+    if ((FAT(char, b, 0) & 0xFF) != GN_MARK)
         return;                         /* nothing has been saved yet */
-    dc = b[1] & 0xFF;
-    mn = b[2] & 0xFF;
+    dc = FAT(char, b, 1) & 0xFF;
+    mn = FAT(char, b, 2) & 0xFF;
     if (dc >= 0 && dc < N_DC)
         evnt_dclick(dc, 1);
     if (mn >= 0 && mn < N_MN)
         gn_setdelay(gn_ms[mn]);
-    gn_setlook((WORD)(b[3] == 1));
+    gn_setlook((WORD)(FAT(char, b, 3) == 1));
 }
 
 static void gn_remember(WORD dc, WORD mn, WORD look)
 {
-    char FAR *b;
+    FPTR(char) b;
 
     if (!gn_xcpb || !gn_xcpb->buffer || !gn_xcpb->CPX_Save)
         return;
-    b = (char FAR *)gn_xcpb->buffer;
-    b[0] = (char)GN_MARK;
-    b[1] = (char)dc;
-    b[2] = (char)mn;
-    b[3] = (char)look;
+    b = FP_OF(char, gn_xcpb->buffer);
+    FPUT(char, b, 0, (char)GN_MARK);
+    FPUT(char, b, 1, (char)dc);
+    FPUT(char, b, 2, (char)mn);
+    FPUT(char, b, 3, (char)look);
     gn_xcpb->CPX_Save((uint32_t)gn_xcpb);
 }
 
@@ -260,12 +260,12 @@ static void gn_remember(WORD dc, WORD mn, WORD look)
  * does.  The names are taken at cpx_init, beside the tree: at cpx_call
  * this runs in the panel's process, and rsrc_gaddr answered from the
  * PANEL's resource -- the button read "...not be read or written". */
-static char *gn_mnname[N_MN];
+static FPTR(char) gn_mnname[N_MN];  /* GENERAL.RSC's strings */
 
 static void gn_mnshow(WORD j)
 {
     if (j >= 0 && j < N_MN && gn_mnname[j])
-        tree[GNMNBTN].ob_spec.index = (int32_t)(uint32_t)gn_mnname[j];
+        TSET(tree, GNMNBTN, ob_spec.index, (int32_t)(uint32_t)gn_mnname[j]);
 }
 
 static void gn_mnpick(void)
@@ -276,15 +276,15 @@ static void gn_mnpick(void)
     objc_offset(tree, GNMNBTN, &x, &y);
     bt.g_x = x;
     bt.g_y = y;
-    bt.g_w = tree[GNMNBTN].ob_width;
-    bt.g_h = tree[GNMNBTN].ob_height;
-    world.g_x = tree[ROOT].ob_x;
-    world.g_y = tree[ROOT].ob_y;
-    world.g_w = tree[ROOT].ob_width;
-    world.g_h = tree[ROOT].ob_height;
+    bt.g_w = TGET(tree, GNMNBTN, ob_width);
+    bt.g_h = TGET(tree, GNMNBTN, ob_height);
+    world.g_x = TGET(tree, ROOT, ob_x);
+    world.g_y = TGET(tree, ROOT, ob_y);
+    world.g_w = TGET(tree, ROOT, ob_width);
+    world.g_h = TGET(tree, ROOT, ob_height);
     r = cpx_popup(gn_xcpb, gn_mnname, N_MN, gn_index(ms_now()), 3, &bt,
                   &world);
-    tree[GNMNBTN].ob_state = NORMAL;
+    TSET(tree, GNMNBTN, ob_state, NORMAL);
     if (r >= 0 && r < N_MN) {
         gn_setdelay(gn_ms[r]);
         gn_mnshow(r);
@@ -327,22 +327,22 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
         ms0 = set.mn_display;
     }
     for (i = 0; i < N_DC; i++)
-        tree[GNDC0 + i].ob_state = (UWORD)(i == dc0 ? SELECTED : NORMAL);
+        TSET(tree, GNDC0 + i, ob_state, (UWORD)(i == dc0 ? SELECTED : NORMAL));
     j = gn_index(ms0);
     gn_mnshow(j);
     look0 = gn_look();
     for (i = 0; i < N_LOOK; i++)
-        tree[GN3D0 + i].ob_state = (UWORD)(i == look0 ? SELECTED : NORMAL);
-    tree[GNOK].ob_state = NORMAL;
-    tree[GNCNCL].ob_state = NORMAL;
+        TSET(tree, GN3D0 + i, ob_state, (UWORD)(i == look0 ? SELECTED : NORMAL));
+    TSET(tree, GNOK, ob_state, NORMAL);
+    TSET(tree, GNCNCL, ob_state, NORMAL);
     gn_show();
 
     /* the whole work area, the panel's window being the frame: the panel
      * has cleared it, and moves tree[ROOT] with the window from here */
-    tree[ROOT].ob_x = pb->rect.g_x;
-    tree[ROOT].ob_y = pb->rect.g_y;
-    tree[ROOT].ob_width = pb->rect.g_w;
-    tree[ROOT].ob_height = pb->rect.g_h;
+    TSET(tree, ROOT, ob_x, pb->rect.g_x);
+    TSET(tree, ROOT, ob_y, pb->rect.g_y);
+    TSET(tree, ROOT, ob_width, pb->rect.g_w);
+    TSET(tree, ROOT, ob_height, pb->rect.g_h);
     objc_draw(tree, ROOT, MAX_DEPTH, pb->rect.g_x, pb->rect.g_y,
               pb->rect.g_w, pb->rect.g_h);
 
@@ -373,9 +373,9 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
             /* the look, at once, and this form in it to show it -- where
              * the window has it now, which a move may have changed */
             gn_setlook((WORD)(ob - GN3D0));
-            objc_draw(tree, ROOT, MAX_DEPTH, tree[ROOT].ob_x,
-                      tree[ROOT].ob_y, tree[ROOT].ob_width,
-                      tree[ROOT].ob_height);
+            objc_draw(tree, ROOT, MAX_DEPTH, TGET(tree, ROOT, ob_x),
+                      TGET(tree, ROOT, ob_y), TGET(tree, ROOT, ob_width),
+                      TGET(tree, ROOT, ob_height));
         }
     }
 
@@ -389,8 +389,8 @@ static SAVEDS void gn_cpx_call(uint32_t pbaddr)
         gn_setlook(look0);
     }
 
-    tree[GNOK].ob_state = NORMAL;
-    tree[GNCNCL].ob_state = NORMAL;
+    TSET(tree, GNOK, ob_state, NORMAL);
+    TSET(tree, GNCNCL, ob_state, NORMAL);
     if (gn_look() != look0) {
         /* everything on the screen was drawn in the other look: the
          * whole desktop is redrawn, every window with it */
@@ -423,11 +423,11 @@ CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
      * something nothing can take back. */
     if (!rsrc_load("GENERAL.RSC"))
         return (CPXINFO FAR *)0;        /* no dialog: decline to appear */
-    rsrc_gaddr(R_TREE, ADGENRL, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADGENRL, (GEMADDR *)&tree);
     if (!tree)
         return (CPXINFO FAR *)0;
     for (i = 0; i < N_MN; i++)
-        rsrc_gaddr(R_STRING, GNMNSTR0 + i, (void **)&gn_mnname[i]);
+        rsrc_gaddr(R_STRING, GNMNSTR0 + i, (GEMADDR *)&gn_mnname[i]);
 
     ginfo.cpx_call = gn_cpx_call;
     ginfo.cpx_close = gn_cpx_close;

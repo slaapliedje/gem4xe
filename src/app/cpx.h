@@ -314,7 +314,7 @@ typedef struct {
  * one-block ABI the callbacks have to keep (see CPXINFO below).  0 when
  * the panel has no Xform_do: an older one, which has no window to put a
  * form in, so the module has nothing to show and returns. */
-static __inline WORD cpx_xform_do(XCPB FAR *pb, OBJECT *tree, WORD edit,
+static __inline WORD cpx_xform_do(XCPB FAR *pb, GEMTREE tree, WORD edit,
                                   WORD *msg)
 {
     WORD i;
@@ -400,7 +400,7 @@ static __inline void cpx_mfsave(XCPB FAR *pb, WORD save)
 }
 
 /* The widgets (phase 138).  -1 from cpx_popup without a Popup. */
-static __inline WORD cpx_popup(XCPB FAR *pb, char **items, WORD n,
+static __inline WORD cpx_popup(XCPB FAR *pb, FPTR(char) *items, WORD n,
                                WORD dflt, WORD font, const GRECT *button,
                                const GRECT *world)
 {
@@ -416,7 +416,7 @@ static __inline WORD cpx_popup(XCPB FAR *pb, char **items, WORD n,
     return pb->pu_ret;
 }
 
-static __inline void cpx_sl_set(XCPB FAR *pb, OBJECT *tree, WORD base,
+static __inline void cpx_sl_set(XCPB FAR *pb, GEMTREE tree, WORD base,
                                 WORD slider)
 {
     pb->sl_tree = (uint32_t)tree;
@@ -424,7 +424,7 @@ static __inline void cpx_sl_set(XCPB FAR *pb, OBJECT *tree, WORD base,
     pb->sl_slider = slider;
 }
 
-static __inline void cpx_sl_size(XCPB FAR *pb, OBJECT *tree, WORD base,
+static __inline void cpx_sl_size(XCPB FAR *pb, GEMTREE tree, WORD base,
                                  WORD slider, WORD items, WORD visible,
                                  WORD dir, WORD minsize)
 {
@@ -439,7 +439,7 @@ static __inline void cpx_sl_size(XCPB FAR *pb, OBJECT *tree, WORD base,
 }
 
 /* Sl_x when dir is SL_HORIZONTAL, Sl_y when SL_VERTICAL */
-static __inline void cpx_sl_xy(XCPB FAR *pb, OBJECT *tree, WORD base,
+static __inline void cpx_sl_xy(XCPB FAR *pb, GEMTREE tree, WORD base,
                                WORD slider, WORD value, WORD min, WORD max,
                                WORD dir, void (*foo)(uint32_t pb))
 {
@@ -462,7 +462,7 @@ static __inline void cpx_sl_xy(XCPB FAR *pb, OBJECT *tree, WORD base,
         pb->Sl_y((uint32_t)pb);
 }
 
-static __inline void cpx_sl_arrow(XCPB FAR *pb, OBJECT *tree, WORD base,
+static __inline void cpx_sl_arrow(XCPB FAR *pb, GEMTREE tree, WORD base,
                                   WORD slider, WORD obj, WORD inc, WORD min,
                                   WORD max, WORD *var, WORD dir,
                                   void (*foo)(uint32_t pb))
@@ -481,7 +481,7 @@ static __inline void cpx_sl_arrow(XCPB FAR *pb, OBJECT *tree, WORD base,
 }
 
 /* Sl_dragx when dir is SL_HORIZONTAL, Sl_dragy when SL_VERTICAL */
-static __inline void cpx_sl_drag(XCPB FAR *pb, OBJECT *tree, WORD base,
+static __inline void cpx_sl_drag(XCPB FAR *pb, GEMTREE tree, WORD base,
                                  WORD slider, WORD min, WORD max, WORD *var,
                                  WORD dir, void (*foo)(uint32_t pb))
 {
@@ -503,7 +503,7 @@ static __inline void cpx_sl_drag(XCPB FAR *pb, OBJECT *tree, WORD base,
         pb->Sl_dragy((uint32_t)pb);
 }
 
-static __inline void cpx_rsh_obfix(XCPB FAR *pb, OBJECT *tree, WORD obj)
+static __inline void cpx_rsh_obfix(XCPB FAR *pb, GEMTREE tree, WORD obj)
 {
     if (!pb || !pb->rsh_obfix)
         return;

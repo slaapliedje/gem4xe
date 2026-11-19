@@ -28,7 +28,97 @@
 #include "mint/cookie.h"
 #include "cpanelrsc.h"
 
-static OBJECT *tree;
+/* ON THE 6502 THE MODULES ARE BUILT IN (docs/6502.md, step 5f).  There is
+ * no disk-loaded 6502 CPX and no accessory to hold the panel beside the
+ * desktop, so the panel is a program of its own, with General and Color
+ * linked in: their headers are mkcpx.py's, as C (build/cp6_*.h), the
+ * slot table is this program's, and opening a module is calling its
+ * cpx_init, renamed in the build (tools/bsp6502/rules.mk).  A module's
+ * settings file is not kept yet. */
+#ifdef __CALYPSI_TARGET_6502__
+#include "cp6_general.h"
+#include "cp6_color.h"
+#include <string.h>
+CPXINFO *general_cpx_init(XCPB *pb);
+CPXINFO *color_cpx_init(XCPB *pb);
+#define CP6_N 2
+static CPXSLOT cp6_slot[CP6_N];
+
+static LONG cp6_cpxfile(WORD op, WORD n, const char *name, void *buf);
+
+static WORD cp6_count(uint32_t *table, WORD *stride)
+{
+    static const char names[CP6_N][12] = { "GENERAL.CPX", "COLOR.CPX" };
+    static WORD done;
+    WORD k;
+
+    /* ONCE: the panel counts again at every open (cp_findcpx), and a
+     * built-in module, once initialised, stays -- run again, its
+     * rsrc_load failed and the panel said there was no memory */
+    *table = (uint32_t)(uint16_t)cp6_slot;
+    *stride = (WORD)sizeof(CPXSLOT);
+    if (done)
+        return CP6_N;
+    done = 1;
+    memcpy(&cp6_slot[0].hdr, cp6_general, sizeof(CPXHEAD));
+    memcpy(&cp6_slot[1].hdr, cp6_color, sizeof(CPXHEAD));
+    for (k = 0; k < CP6_N; k++) {
+        cp6_slot[k].info = 0;
+        memcpy(cp6_slot[k].file, names[k], sizeof names[k]);
+    }
+    /* each one's saved settings over its header's defaults, as the AES
+     * lays NAME.CFG over the buffer at boot */
+    (void)cp6_cpxfile(CF_READ, 64, "GENERAL.CFG", cp6_slot[0].hdr.buffer);
+    (void)cp6_cpxfile(CF_READ, 64, "COLOR.CFG", cp6_slot[1].hdr.buffer);
+    return CP6_N;
+}
+#define cpx_count(t, s)     cp6_count((t), (s))
+
+/* the panel's block is in the slot's first reserved bytes, as cpxmain.c
+ * reads it (src/app/cpxmain.c); 0 at boot */
+static LONG cp6_load(WORD i, WORD on)
+{
+    XCPB *pb = (XCPB *)(uint16_t)*(uint32_t *)cp6_slot[i].hdr.reserved;
+    CPXINFO *info;
+
+    if (i < 0 || i >= CP6_N)
+        return -1;
+    if (!on)
+        return 0;                       /* nothing to give back: built in */
+    /* A MODULE'S RESOURCE BECOMES THE CURRENT ONE: it shares the panel's
+     * process, and the AES answers rsrc_gaddr from the resource loaded
+     * last.  So the panel takes every string it needs at its start
+     * (cp_start: the words and, on the 6502, the alerts), and a module
+     * takes its own at cpx_init, as both already do. */
+    info = i == 0 ? general_cpx_init(pb) : color_cpx_init(pb);
+    cp6_slot[i].info = (uint32_t)(uint16_t)info;
+    return info ? 0 : -1;
+}
+#define Cpxload(i, on)      cp6_load((i), (on))
+/* THE SETTINGS FILES as plain files beside the panel: the 6502's GEMDOS
+ * has no CPXFILE (the 65C816's AES names and reads them, src/aes/shel.c),
+ * so a read and a write are Fopen and Fcreate in the directory the panel
+ * runs in, which is its own; the rest -- reload, rename, find -- is not
+ * here.  A function, called by the name: a macro answering -1 made
+ * cc6502 5.18 emit BIT #255, a 65C02 instruction, and stop. */
+static LONG cp6_cpxfile(WORD op, WORD n, const char *name, void *buf)
+{
+    LONG h, r;
+
+    if (op != CF_READ && op != CF_WRITE)
+        return -32;                     /* EINVFN, as GEMDOS answers it */
+    h = op == CF_WRITE ? Fcreate(name, 0) : Fopen(name, 0);
+    if (h < 0)
+        return h;
+    r = op == CF_WRITE ? Fwrite((WORD)h, n, buf) : Fread((WORD)h, n, buf);
+    Fclose((WORD)h);
+    return r;
+}
+#undef Cpxfile
+#define Cpxfile(op, n, a, b) cp6_cpxfile((op), (n), (const char *)(a), (void *)(b))
+#endif
+
+static GEMTREE tree;
 
 /* WHICH BANK THE RESOURCE LANDED IN, for a gate to read: 0 is the pool,
  * anything else is far memory.  Without this the claim that a large-data
@@ -138,28 +228,28 @@ static void cp_findcpx(void)
  * in CPANEL.RSC gives the structure and the words (tools/cpanelrsc.py). */
 static void cp_set(WORD ob, WORD x, WORD y, WORD w, WORD h)
 {
-    tree[ob].ob_x = x;
-    tree[ob].ob_y = y;
-    tree[ob].ob_width = w;
-    tree[ob].ob_height = h;
+    TSET(tree, ob, ob_x, x);
+    TSET(tree, ob, ob_y, y);
+    TSET(tree, ob, ob_width, w);
+    TSET(tree, ob, ob_height, h);
 }
 
 /* Hidden or shown.  Read-modify-write through a temporary: the compiler
  * has a fault in `p->a = p->a OP e` (tools/ccbug, B15). */
 static void cp_hide(WORD ob, WORD hide)
 {
-    UWORD f = tree[ob].ob_flags;
+    UWORD f = TGET(tree, ob, ob_flags);
 
     if (hide)
         f |= HIDETREE;
     else
         f &= (UWORD)~HIDETREE;
-    tree[ob].ob_flags = f;
+    TSET(tree, ob, ob_flags, f);
 }
 
-static ICONBLK FAR *cp_iconblk(WORD ob)
+static FPTR(ICONBLK) cp_iconblk(WORD ob)
 {
-    return (ICONBLK FAR *)(uint32_t)tree[ob].ob_spec.index;
+    return FP_OF(ICONBLK, (uint32_t)TGET(tree, ob, ob_spec.index));
 }
 
 static void cp_layout(void)
@@ -179,19 +269,19 @@ static void cp_layout(void)
     cp_set(CPLIST, 2, hs, lw, lh);
     for (k = 0; k < N_VIS; k++) {
         WORD box = CPSLOT0 + k * SLOT_OBS;
-        ICONBLK FAR *ib = cp_iconblk(box + 1);
+        FPTR(ICONBLK) ib = cp_iconblk(box + 1);
 
         cp_set(box, 1, 1 + k * sh, lw - 2 - sb, sh);
         cp_set(box + 1, 2, 2, iw, CP_ICONH + hchar);
-        ib->ib_xicon = (WORD)((UWORD)(iw - CP_ICONW) / 2);
-        ib->ib_yicon = 0;
-        ib->ib_wicon = CP_ICONW;
-        ib->ib_hicon = CP_ICONH;
-        ib->ib_xtext = 0;
-        ib->ib_ytext = CP_ICONH;
-        ib->ib_wtext = iw;
-        ib->ib_htext = hchar;
-        ib->ib_pmask = (LONG)(uint32_t)(UWORD FAR *)cp_mask;
+        FSET(ICONBLK, ib, ib_xicon, (WORD)((UWORD)(iw - CP_ICONW) / 2));
+        FSET(ICONBLK, ib, ib_yicon, 0);
+        FSET(ICONBLK, ib, ib_wicon, CP_ICONW);
+        FSET(ICONBLK, ib, ib_hicon, CP_ICONH);
+        FSET(ICONBLK, ib, ib_xtext, 0);
+        FSET(ICONBLK, ib, ib_ytext, CP_ICONH);
+        FSET(ICONBLK, ib, ib_wtext, iw);
+        FSET(ICONBLK, ib, ib_htext, hchar);
+        FSET(ICONBLK, ib, ib_pmask, (LONG)(uint32_t)(UWORD FAR *)cp_mask);
         cp_set(box + 2, iw + 2 + wchar, (WORD)((UWORD)(sh - hchar) / 2),
                CP_TCOLS * wchar, hchar);
     }
@@ -221,44 +311,43 @@ static void cp_fill(void)
         }
         {
             CPXSLOT FAR *sl = cpx_slot(cpx_table, cpx_stride, cpx_row[row]);
-            ICONBLK FAR *ib = cp_iconblk(box + 1);
+            FPTR(ICONBLK) ib = cp_iconblk(box + 1);
             UWORD ic = sl->hdr.i_info;
 
-            ib->ib_pdata = (LONG)(uint32_t)(UWORD FAR *)sl->hdr.icon;
-            ib->ib_ptext = (LONG)(uint32_t)(char FAR *)cpx_itext[row];
+            FSET(ICONBLK, ib, ib_pdata, (LONG)(uint32_t)(UWORD FAR *)sl->hdr.icon);
+            FSET(ICONBLK, ib, ib_ptext, (LONG)(uint32_t)(char FAR *)cpx_itext[row]);
             if (!ic)
                 ic = 0x1000;            /* black on white */
-            ib->ib_char = (WORD)ic;
+            FSET(ICONBLK, ib, ib_char, (WORD)ic);
         }
         /* ALL 24 BITS.  This panel is --data-model=large, so its own
          * strings are far; a 16-bit ob_spec here would name bank $00 and
          * draw whatever is at the same offset (tools/nearcast.py). */
-        tree[box + 2].ob_spec.index =
-            (int32_t)(uint32_t)(char FAR *)cpx_titles[row];
+        TSET(tree, box + 2, ob_spec.index, (int32_t)(uint32_t)(char FAR *)cpx_titles[row]);
         {
             /* as wide as its words, so that SELECTED inverts the title
              * and not a bar of blanks after it */
             WORD n = 0;
             while (n < CP_TCOLS && cpx_titles[row][n])
                 n++;
-            tree[box + 2].ob_width = (WORD)(n * wchar);
+            TSET(tree, box + 2, ob_width, (WORD)(n * wchar));
         }
         if (row == cp_sel)
             st = SELECTED;
-        tree[box + 1].ob_state = st;
-        tree[box + 2].ob_state = st;
+        TSET(tree, box + 1, ob_state, st);
+        TSET(tree, box + 2, ob_state, st);
         cp_hide(box, 0);
     }
     cp_hide(CPSBAR, cp_rows <= N_VIS);
     if (cp_rows > N_VIS) {
-        WORD th = tree[CPTRACK].ob_height;
+        WORD th = TGET(tree, CPTRACK, ob_height);
         WORD sh = (WORD)((LONG)th * N_VIS / cp_rows);
         WORD y;
 
         if (sh < hchar)
             sh = hchar;
         y = (WORD)((LONG)(th - sh) * cp_top / most);
-        cp_set(CPSLIDER, 0, y, tree[CPTRACK].ob_width, sh);
+        cp_set(CPSLIDER, 0, y, TGET(tree, CPTRACK, ob_width), sh);
     }
     cp_hide(CPEMPTY, cp_rows != 0);
 }
@@ -274,8 +363,8 @@ static void cp_gatexy(void)
         objc_offset(tree, box, &x, &y);
         cp_slotr[k][0] = x;
         cp_slotr[k][1] = y;
-        cp_slotr[k][2] = tree[box].ob_width;
-        cp_slotr[k][3] = tree[box].ob_height;
+        cp_slotr[k][2] = TGET(tree, box, ob_width);
+        cp_slotr[k][3] = TGET(tree, box, ob_height);
     }
 }
 
@@ -365,8 +454,8 @@ static void cp_drawlist(void)
     GRECT r;
 
     objc_offset(tree, CPLIST, &r.g_x, &r.g_y);
-    r.g_w = tree[CPLIST].ob_width;
-    r.g_h = tree[CPLIST].ob_height;
+    r.g_w = TGET(tree, CPLIST, ob_width);
+    r.g_h = TGET(tree, CPLIST, ob_height);
     cp_draw(CPLIST, MAX_DEPTH, &r);
 }
 
@@ -379,8 +468,8 @@ static void cp_drawslot(WORD k)
     if (k < 0 || k >= N_VIS)
         return;
     objc_offset(tree, CPSLOT0 + k * SLOT_OBS, &r.g_x, &r.g_y);
-    r.g_w = tree[CPSLOT0 + k * SLOT_OBS].ob_width;
-    r.g_h = tree[CPSLOT0 + k * SLOT_OBS].ob_height;
+    r.g_w = TGET(tree, CPSLOT0 + k * SLOT_OBS, ob_width);
+    r.g_h = TGET(tree, CPSLOT0 + k * SLOT_OBS, ob_height);
     cp_draw(CPLIST, MAX_DEPTH, &r);
 }
 
@@ -400,8 +489,8 @@ static void cp_place(void)
         return;
     wind_get(cp_wh, WF_WORKXYWH, &cp_work.g_x, &cp_work.g_y,
              &cp_work.g_w, &cp_work.g_h);
-    tree[CPROOT].ob_x = cp_work.g_x;
-    tree[CPROOT].ob_y = cp_work.g_y;
+    TSET(tree, CPROOT, ob_x, cp_work.g_x);
+    TSET(tree, CPROOT, ob_y, cp_work.g_y);
     cp_gatexy();
 }
 
@@ -521,16 +610,24 @@ static SAVEDS void cp_cpx_save(uint32_t xcpb)
  * reason: anything restated in a second place drifts. */
 typedef char cp_xalert_count_holds[(N_XALERT == XAL_NALERT) ? 1 : -1];
 
+#ifdef __CALYPSI_TARGET_6502__
+static FPTR(char) cp6_xal[N_XALERT];    /* CPANEL.RSC's alerts, at cp_start */
+#endif
+
 static SAVEDS void cp_gen_alert(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
-    char *str;
+    FPTR(char) str;                     /* the resource's */
 
     pb->ok = 0;
     if (pb->alert < 0 || pb->alert >= N_XALERT)
         return;
     str = 0;
-    rsrc_gaddr(R_STRING, CPXAL0 + pb->alert, (void **)&str);
+#ifdef __CALYPSI_TARGET_6502__
+    str = cp6_xal[pb->alert];           /* taken at cp_start: see cp6_load */
+#else
+    rsrc_gaddr(R_STRING, CPXAL0 + pb->alert, (GEMADDR *)&str);
+#endif
     if (!str)
         return;
     pb->ok = (WORD)(form_alert(1, str) == 1);
@@ -560,12 +657,12 @@ static SAVEDS void cp_gen_alert(uint32_t xcpb)
 static void cp_fit(void);
 
 /* The first EDITABLE field, as form_do's fm_inifld finds it. */
-static WORD cp_firstedit(OBJECT *t)
+static WORD cp_firstedit(GEMTREE t)
 {
     WORD i = 0;
 
     for (;;) {
-        UWORD f = t[i].ob_flags;
+        UWORD f = TGET(t, i, ob_flags);
 
         if ((f & EDITABLE) && !(f & HIDETREE))
             return i;
@@ -575,7 +672,7 @@ static WORD cp_firstedit(OBJECT *t)
     }
 }
 
-static void cp_formdraw(OBJECT *t, const GRECT *area)
+static void cp_formdraw(GEMTREE t, const GRECT *area)
 {
     GRECT r;
 
@@ -592,7 +689,7 @@ static void cp_formdraw(OBJECT *t, const GRECT *area)
 }
 
 /* the field's cursor, on or off, inside the screen lock */
-static void cp_cursor(OBJECT *t, WORD edit, WORD *idx, WORD kind)
+static void cp_cursor(GEMTREE t, WORD edit, WORD *idx, WORD kind)
 {
     if (!edit)
         return;
@@ -604,7 +701,7 @@ static void cp_cursor(OBJECT *t, WORD edit, WORD *idx, WORD kind)
 static SAVEDS void cp_xform_do(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
-    OBJECT *t = (OBJECT *)pb->xf_tree;
+    GEMTREE t = (GEMTREE)pb->xf_tree;
     WORD edit = 0, next, idx = 0, cont = 1, i;
     WORD msg[8], mx, my, mb, ks, kr, nc, nk, nb;
 
@@ -657,10 +754,10 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
                     wind_set(cp_wh, WF_CURRXYWH, msg[4], msg[5], msg[6], msg[7]);
                     cp_place();
                     /* through temporaries: B15, `p->a = p->a OP e` */
-                    v = (WORD)(t[ROOT].ob_x + cp_work.g_x - ox);
-                    t[ROOT].ob_x = v;
-                    v = (WORD)(t[ROOT].ob_y + cp_work.g_y - oy);
-                    t[ROOT].ob_y = v;
+                    v = (WORD)(TGET(t, ROOT, ob_x) + cp_work.g_x - ox);
+                    TSET(t, ROOT, ob_x, v);
+                    v = (WORD)(TGET(t, ROOT, ob_y) + cp_work.g_y - oy);
+                    TSET(t, ROOT, ob_y, v);
                 } else if (msg[0] == WM_SIZED) {
                     cp_fit();
                 } else if (msg[0] == WM_CLOSED) {
@@ -723,6 +820,10 @@ static SAVEDS void cp_xform_do(uint32_t xcpb)
  * each is for, and where it parts from XControl's).
  */
 #define CPX_TIME  30000L                /* XControl's timer, until asked */
+
+/* ON THE 6502 this file is three banks of a program (docs/6502.md, step
+ * 5f); BANK_TEXT is nothing on the 65C816.  The second starts here. */
+BANK_TEXT("pb3")
 
 static WORD  cp_emask;                  /* Set_Evnt_Mask: MU_M1 | MU_M2 */
 static MOBLK cp_em1, cp_em2;
@@ -820,16 +921,16 @@ static SAVEDS void cp_mfsave(uint32_t xcpb)
  */
 
 /* An object's rectangle on the screen, and a margin round it. */
-static void cp_obrect(OBJECT *t, WORD ob, WORD m, GRECT *r)
+static void cp_obrect(GEMTREE t, WORD ob, WORD m, GRECT *r)
 {
     objc_offset(t, ob, &r->g_x, &r->g_y);
     r->g_x = (WORD)(r->g_x - m);
     r->g_y = (WORD)(r->g_y - m);
-    r->g_w = (WORD)(t[ob].ob_width + 2 * m);
-    r->g_h = (WORD)(t[ob].ob_height + 2 * m);
+    r->g_w = (WORD)(TGET(t, ob, ob_width) + 2 * m);
+    r->g_h = (WORD)(TGET(t, ob, ob_height) + 2 * m);
 }
 
-static void cp_drawclip(OBJECT *t, WORD ob, const GRECT *r)
+static void cp_drawclip(GEMTREE t, WORD ob, const GRECT *r)
 {
     wind_update(BEG_UPDATE);
     objc_draw(t, ob, MAX_DEPTH, r->g_x, r->g_y, r->g_w, r->g_h);
@@ -839,7 +940,7 @@ static void cp_drawclip(OBJECT *t, WORD ob, const GRECT *r)
 static SAVEDS void cp_sl_size(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
-    OBJECT *t = (OBJECT *)pb->sl_tree;
+    GEMTREE t = (GEMTREE)pb->sl_tree;
     LONG ratio = 1000L, len;
     WORD base = pb->sl_base, sl = pb->sl_slider;
 
@@ -849,15 +950,15 @@ static SAVEDS void cp_sl_size(uint32_t xcpb)
             ratio = 1000L;
     }
     if (pb->sl_dir == SL_HORIZONTAL) {
-        len = ratio * t[base].ob_width / 1000L;
+        len = ratio * TGET(t, base, ob_width) / 1000L;
         if (len < pb->sl_minsize)
             len = pb->sl_minsize;
-        t[sl].ob_width = (WORD)len;
+        TSET(t, sl, ob_width, (WORD)len);
     } else {
-        len = ratio * t[base].ob_height / 1000L;
+        len = ratio * TGET(t, base, ob_height) / 1000L;
         if (len < pb->sl_minsize)
             len = pb->sl_minsize;
-        t[sl].ob_height = (WORD)len;
+        TSET(t, sl, ob_height, (WORD)len);
     }
 }
 
@@ -865,25 +966,25 @@ static SAVEDS void cp_sl_size(uint32_t xcpb)
  * bottom (XControl's).  Then the module's foo, every time. */
 static void cp_slplace(XCPB FAR *pb, WORD dir, WORD value)
 {
-    OBJECT *t = (OBJECT *)pb->sl_tree;
+    GEMTREE t = (GEMTREE)pb->sl_tree;
     WORD base = pb->sl_base, sl = pb->sl_slider;
     WORD min = pb->sl_min, max = pb->sl_max;
     LONG room, at = 0;
 
     if (dir == SL_HORIZONTAL) {
-        room = (LONG)t[base].ob_width - t[sl].ob_width;
+        room = (LONG)TGET(t, base, ob_width) - TGET(t, sl, ob_width);
         if (value == max)
             at = room;
         else if (max != min)
             at = (LONG)(value - min) * room / (LONG)(max - min);
-        t[sl].ob_x = (WORD)at;
+        TSET(t, sl, ob_x, (WORD)at);
     } else {
-        room = (LONG)t[base].ob_height - t[sl].ob_height;
+        room = (LONG)TGET(t, base, ob_height) - TGET(t, sl, ob_height);
         if (value == min)
             at = room;
         else if (max != min)
             at = (LONG)(value - max) * room / (LONG)(min - max);
-        t[sl].ob_y = (WORD)at;
+        TSET(t, sl, ob_y, (WORD)at);
     }
     if (pb->sl_foo)
         pb->sl_foo((uint32_t)pb);
@@ -907,7 +1008,7 @@ static SAVEDS void cp_sl_y(uint32_t xcpb)
  * the old thumb rubbed out by its background. */
 static void cp_slredraw(XCPB FAR *pb, const GRECT *old)
 {
-    OBJECT *t = (OBJECT *)pb->sl_tree;
+    GEMTREE t = (GEMTREE)pb->sl_tree;
     GRECT now, both;
 
     cp_obrect(t, pb->sl_slider, 3, &now);
@@ -943,13 +1044,13 @@ static WORD cp_button_down(void)
 static SAVEDS void cp_sl_arrow(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
-    OBJECT *t = (OBJECT *)pb->sl_tree;
+    GEMTREE t = (GEMTREE)pb->sl_tree;
     WORD FAR *var = (WORD FAR *)pb->sl_var;
     WORD obj = pb->sl_obj, first = 1;
     GRECT old, ob;
 
     if (obj > 0) {
-        t[obj].ob_state = SELECTED;
+        TSET(t, obj, ob_state, SELECTED);
         cp_obrect(t, obj, 2, &ob);
         cp_drawclip(t, ROOT, &ob);
     }
@@ -969,7 +1070,7 @@ static SAVEDS void cp_sl_arrow(uint32_t xcpb)
         first = 0;
     } while (cp_button_down());
     if (obj > 0) {
-        t[obj].ob_state = NORMAL;
+        TSET(t, obj, ob_state, NORMAL);
         cp_drawclip(t, ROOT, &ob);
     }
 }
@@ -978,7 +1079,7 @@ static SAVEDS void cp_sl_arrow(uint32_t xcpb)
  * where its middle is, rounded to the nearest step. */
 static void cp_sldrag(XCPB FAR *pb, WORD dir)
 {
-    OBJECT *t = (OBJECT *)pb->sl_tree;
+    GEMTREE t = (GEMTREE)pb->sl_tree;
     WORD FAR *var = (WORD FAR *)pb->sl_var;
     WORD base = pb->sl_base, sl = pb->sl_slider;
     WORD min = pb->sl_min, max = pb->sl_max;
@@ -996,10 +1097,10 @@ static void cp_sldrag(XCPB FAR *pb, WORD dir)
         LONG room, pos, v;
 
         if (dir == SL_HORIZONTAL) {
-            room = (LONG)t[base].ob_width - t[sl].ob_width;
+            room = (LONG)TGET(t, base, ob_width) - TGET(t, sl, ob_width);
             pos = (LONG)(mx - grab) - bx;
         } else {
-            room = (LONG)t[base].ob_height - t[sl].ob_height;
+            room = (LONG)TGET(t, base, ob_height) - TGET(t, sl, ob_height);
             pos = (LONG)(my - grab) - by;
         }
         if (pos < 0)
@@ -1044,7 +1145,7 @@ static const char cp_upa[] = "\001", cp_dna[] = "\002";
 
 /* What slot i shows, and its state, from the offset and the slot under
  * the pointer; then the whole menu drawn. */
-static void cp_pudraw(char **items, WORD n, WORD dflt, WORD k, WORD off,
+static void cp_pudraw(FPTR(char) *items, WORD n, WORD dflt, WORD k, WORD off,
                       WORD hot, const GRECT *box)
 {
     WORD i, scroll = n > PU_SLOTS;
@@ -1068,13 +1169,14 @@ static void cp_pudraw(char **items, WORD n, WORD dflt, WORD k, WORD off,
             st |= SELECTED;
         cp_pu[i].ob_state = st;
     }
-    objc_draw(cp_pu, ROOT, MAX_DEPTH, box->g_x, box->g_y, box->g_w, box->g_h);
+    objc_draw(TREE_OF(cp_pu), ROOT, MAX_DEPTH, box->g_x, box->g_y, box->g_w, box->g_h);
 }
 
 static SAVEDS void cp_popup(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
-    char **items = (char **)pb->pu_items;   /* far, as every pointer here */
+    FPTR(char) *items = (FPTR(char) *)pb->pu_items; /* far strings, as every
+                                             * pointer here */
     WORD n = pb->pu_n, dflt = pb->pu_default, scroll, off = 0;
     WORD w = 0, sh = (WORD)(hchar + 4), x, y, h, i, k, hot = -1;
     WORD mx, my, mb, ks, kr, nc, held, down, pick = -1, msg[8];
@@ -1092,9 +1194,9 @@ static SAVEDS void cp_popup(uint32_t xcpb)
     }
     for (i = 0; i < n; i++) {
         WORD len = 0;
-        const char FAR *s = items[i];
+        FPTR(const char) s = items[i];
 
-        while (s[len])
+        while (FAT(const char, s, len))
             len++;
         if ((WORD)((len + 1) * wchar) > w)
             w = (WORD)((len + 1) * wchar);
@@ -1251,7 +1353,7 @@ static SAVEDS void cp_rsh_obfix(uint32_t xcpb)
 {
     XCPB FAR *pb = (XCPB FAR *)xcpb;
 
-    rsrc_obfix((OBJECT *)pb->ob_tree, pb->ob_obj);
+    rsrc_obfix((GEMTREE)pb->ob_tree, pb->ob_obj);
 }
 
 /* ONE PARAMETER BLOCK, reused for every call, and it is the PANEL's --
@@ -1398,6 +1500,9 @@ static void cp_cpxdraw(CPXINFO FAR *info, const GRECT *area)
 }
 
 static void cp_close(void);
+
+/* ...and the third (the 6502's banks, as above). */
+BANK_TEXT("pb4")
 
 static void cp_drivecpx(CPXINFO FAR *info)
 {
@@ -1570,7 +1675,7 @@ static void cp_openrow(WORD row)
 
 /* ---- the window --------------------------------------------------------- */
 
-static char *cp_title;                  /* CPANEL.RSC's: WF_NAME keeps it */
+static FPTR(char) cp_title;              /* CPANEL.RSC's: WF_NAME keeps it */
 
 /* ---- the options' state (phase 140; the options themselves are below) */
 #define CP_NWORDS   (CPALRES - CPOPABOUT + 1)   /* the last word */
@@ -1580,8 +1685,8 @@ static char *cp_title;                  /* CPANEL.RSC's: WF_NAME keeps it */
 #define CP_INF      "CONTROL.INF"       /* beside the modules, through the
                                          * AES as NAME.CFG is (Cpxfile) */
 
-static OBJECT *cp_infot, *cp_setupt;
-static char *cp_words[CP_NWORDS];
+static GEMTREE cp_infot, cp_setupt;
+static FPTR(char) cp_words[CP_NWORDS];  /* CPANEL.RSC's strings */
 WORD cp_optpick = -1;                   /* the last option picked: a gate's */
 WORD cp_optn;                           /* ...and how many were offered */
 static char cp_ifile[14], cp_iver[6], cp_iid[5];
@@ -1624,23 +1729,27 @@ WORD cp_start(void)
 
     if (!rsrc_load("CPANEL.RSC"))
         return FALSE;
-    rsrc_gaddr(R_TREE, ADCPANEL, (void **)&tree);
-    rsrc_gaddr(R_STRING, CPWTITLE, (void **)&cp_title);
+    rsrc_gaddr(R_TREE, ADCPANEL, (GEMADDR *)&tree);
+    rsrc_gaddr(R_STRING, CPWTITLE, (GEMADDR *)&cp_title);
     if (!tree || !cp_title)
         return FALSE;
     acc_far = (WORD)(((uint32_t)tree) >> 16);
     graf_handle(&wchar, &hchar, &wb, &hb);
     for (i = 0; i < (WORD)(sizeof cp_mask / sizeof cp_mask[0]); i++)
         cp_mask[i] = 0xFFFF;
-    tree[CPTIME].ob_spec.index = (int32_t)(uint32_t)(char FAR *)cp_time;
-    tree[CPDATE].ob_spec.index = (int32_t)(uint32_t)(char FAR *)cp_date;
+    TSET(tree, CPTIME, ob_spec.index, (int32_t)(uint32_t)(char FAR *)cp_time);
+    TSET(tree, CPDATE, ob_spec.index, (int32_t)(uint32_t)(char FAR *)cp_date);
     cp_layout();
     /* the options' forms and words, now: taken later, in a module's
      * time, the words could be looked up in the wrong resource */
-    rsrc_gaddr(R_TREE, ADCPINFO, (void **)&cp_infot);
-    rsrc_gaddr(R_TREE, ADCPSETUP, (void **)&cp_setupt);
+    rsrc_gaddr(R_TREE, ADCPINFO, (GEMADDR *)&cp_infot);
+    rsrc_gaddr(R_TREE, ADCPSETUP, (GEMADDR *)&cp_setupt);
     for (i = 0; i < CP_NWORDS; i++)
-        rsrc_gaddr(R_STRING, CPOPABOUT + i, (void **)&cp_words[i]);
+        rsrc_gaddr(R_STRING, CPOPABOUT + i, (GEMADDR *)&cp_words[i]);
+#ifdef __CALYPSI_TARGET_6502__
+    for (i = 0; i < N_XALERT; i++)
+        rsrc_gaddr(R_STRING, CPXAL0 + i, (GEMADDR *)&cp6_xal[i]);
+#endif
     cp_readinf();
     return TRUE;
 }
@@ -1660,8 +1769,8 @@ void cp_open(void)
     cp_clock();
     cp_fill();
     wind_get(0, WF_WORKXYWH, &dx, &dy, &dw, &dh);
-    wind_calc(WC_BORDER, CP_KIND, 0, 0, tree[CPROOT].ob_width,
-              tree[CPROOT].ob_height, &bx, &by, &w, &h);
+    wind_calc(WC_BORDER, CP_KIND, 0, 0, TGET(tree, CPROOT, ob_width),
+              TGET(tree, CPROOT, ob_height), &bx, &by, &w, &h);
     /* Centred on the desk.  NOT `x = dw > w ? ... : dx` -- x was handed
      * to wind_calc by address, and a ?: joined into an address-taken
      * variable is wrong at every -O (B9, tools/ccbug): the window opened
@@ -1696,8 +1805,8 @@ static void cp_fit(void)
     if (cp_wh < 0)
         return;
     wind_get(cp_wh, WF_WORKXYWH, &x, &y, &w, &h);
-    wind_calc(WC_BORDER, CP_KIND, x, y, tree[CPROOT].ob_width,
-              tree[CPROOT].ob_height, &bx, &by, &w, &h);
+    wind_calc(WC_BORDER, CP_KIND, x, y, TGET(tree, CPROOT, ob_width),
+              TGET(tree, CPROOT, ob_height), &bx, &by, &w, &h);
     wind_set(cp_wh, WF_CURRXYWH, bx, by, w, h);
     cp_place();
 }
@@ -1728,16 +1837,16 @@ void cp_acclose(void)
  * area, drawn; then each end of it, as the object, or CP_CLOSER for the
  * window's closer (OK, XControl's rule) or CP_GONE for AC_CLOSE (Cancel).
  * Through the panel's Xform_do, as a module's form. */
-static void cp_formopen(OBJECT *ft)
+static void cp_formopen(GEMTREE ft)
 {
-    ft[ROOT].ob_x = cp_work.g_x;
-    ft[ROOT].ob_y = cp_work.g_y;
-    ft[ROOT].ob_width = cp_work.g_w;
-    ft[ROOT].ob_height = cp_work.g_h;
+    TSET(ft, ROOT, ob_x, cp_work.g_x);
+    TSET(ft, ROOT, ob_y, cp_work.g_y);
+    TSET(ft, ROOT, ob_width, cp_work.g_w);
+    TSET(ft, ROOT, ob_height, cp_work.g_h);
     cp_formdraw(ft, &cp_work);
 }
 
-static WORD cp_formnext(OBJECT *ft)
+static WORD cp_formnext(GEMTREE ft)
 {
     WORD msg[8], r;
 
@@ -1762,15 +1871,15 @@ static void cp_formdone(void)
     cp_draw(CPROOT, MAX_DEPTH, &cp_work);
 }
 
-static void cp_obgrect(OBJECT *t, WORD ob, GRECT *r)
+static void cp_obgrect(GEMTREE t, WORD ob, GRECT *r)
 {
     objc_offset(t, ob, &r->g_x, &r->g_y);
-    r->g_w = t[ob].ob_width;
-    r->g_h = t[ob].ob_height;
+    r->g_w = TGET(t, ob, ob_width);
+    r->g_h = TGET(t, ob, ob_height);
 }
 
 /* one object of a form again, with the margin a button's frame takes */
-static void cp_redrawob(OBJECT *t, WORD ob)
+static void cp_redrawob(GEMTREE t, WORD ob)
 {
     GRECT b;
 
@@ -1783,7 +1892,7 @@ static void cp_redrawob(OBJECT *t, WORD ob)
 }
 
 /* the panel's own pop-up, as a module's: through its block */
-static WORD cp_pick(char **items, WORD n, WORD dflt, OBJECT *t, WORD ob)
+static WORD cp_pick(FPTR(char) *items, WORD n, WORD dflt, GEMTREE t, WORD ob)
 {
     cp_xcpb.pu_items = (uint32_t)items;
     cp_xcpb.pu_n = n;
@@ -1798,9 +1907,9 @@ static WORD cp_pick(char **items, WORD n, WORD dflt, OBJECT *t, WORD ob)
     return cp_xcpb.pu_ret;
 }
 
-static void cp_spec(OBJECT *t, WORD ob, const char *s)
+static void cp_spec(GEMTREE t, WORD ob, FPTR(const char) s)
 {
-    t[ob].ob_spec.index = (int32_t)(uint32_t)(const char FAR *)s;
+    TSET(t, ob, ob_spec.index, (int32_t)(uint32_t)FP_OF(const char, s));
 }
 
 /* CPX INFO: what the picked module's header says -- its file, version,
@@ -1836,9 +1945,9 @@ static void cp_info(void)
     }
     cp_iid[4] = 0;
     f = sl->hdr.flags;
-    cp_spec(cp_infot, CIFILE, cp_ifile);
-    cp_spec(cp_infot, CIVER, cp_iver);
-    cp_spec(cp_infot, CIID, cp_iid);
+    cp_spec(cp_infot, CIFILE, FP_NEAR(const char, cp_ifile));
+    cp_spec(cp_infot, CIVER, FP_NEAR(const char, cp_iver));
+    cp_spec(cp_infot, CIID, FP_NEAR(const char, cp_iid));
     cp_spec(cp_infot, CIRES, CP_WORD(CPNO));
     if (f & CPX_RESIDENT)
         cp_spec(cp_infot, CIRES, CP_WORD(CPYES));
@@ -1847,7 +1956,7 @@ static void cp_info(void)
         cp_spec(cp_infot, CIBOOT, CP_WORD(CPYES));
     cp_formopen(cp_infot);
     (void)cp_formnext(cp_infot);        /* OK, the closer or AC_CLOSE */
-    cp_infot[CIOK].ob_state = NORMAL;
+    TSET(cp_infot, CIOK, ob_state, NORMAL);
     cp_formdone();
 }
 
@@ -1941,18 +2050,18 @@ static void cp_deactivate(void)
  * back and the folder read again */
 static void cp_activate(void)
 {
-    char *items[CP_NCPZ];
+    FPTR(char) items[CP_NCPZ];
     WORD n = 0, k;
 
     while (n < CP_NCPZ
            && Cpxfile(CF_FIND, n, "*.CPZ", cp_cpz[n]) == 0) {
-        items[n] = cp_cpz[n];
+        items[n] = FP_NEAR(char, cp_cpz[n]);
         n++;
     }
     if (!n)
         return;
     k = cp_pick(items, n, -1, tree, CPOPTS);
-    tree[CPOPTS].ob_state = NORMAL;
+    TSET(tree, CPOPTS, ob_state, NORMAL);
     if (k < 0)
         return;
     if (!cp_rename(cp_cpz[k], 'X')) {
@@ -1966,7 +2075,7 @@ static void cp_activate(void)
  * (or the closer) uses it, Cancel (or AC_CLOSE) does not. */
 static void cp_setup(void)
 {
-    char *ways[2];
+    FPTR(char) ways[2];
     WORD h12 = cp_hour12, r;
 
     if (!cp_setupt)
@@ -1983,20 +2092,20 @@ static void cp_setup(void)
             if (k >= 0)
                 h12 = k;
             cp_spec(cp_setupt, CSCLOCK, ways[h12]);
-            cp_setupt[CSCLOCK].ob_state = NORMAL;
+            TSET(cp_setupt, CSCLOCK, ob_state, NORMAL);
             cp_redrawob(cp_setupt, CSCLOCK);
             continue;
         }
         if (r == CSSAVE) {
             if (!cp_writeinf(h12))
                 cp_alert(XAL_FILE_ERR);
-            cp_setupt[CSSAVE].ob_state = NORMAL;
+            TSET(cp_setupt, CSSAVE, ob_state, NORMAL);
             cp_redrawob(cp_setupt, CSSAVE);
             continue;
         }
         if (r == CSRELOAD) {
             cp_reload();
-            cp_setupt[CSRELOAD].ob_state = NORMAL;
+            TSET(cp_setupt, CSRELOAD, ob_state, NORMAL);
             cp_redrawob(cp_setupt, CSRELOAD);
             continue;
         }
@@ -2004,9 +2113,9 @@ static void cp_setup(void)
             cp_hour12 = h12;
         break;
     }
-    cp_setupt[CSOK].ob_state = NORMAL;
-    cp_setupt[CSCANCEL].ob_state = NORMAL;
-    cp_setupt[CSRELOAD].ob_state = NORMAL;
+    TSET(cp_setupt, CSOK, ob_state, NORMAL);
+    TSET(cp_setupt, CSCANCEL, ob_state, NORMAL);
+    TSET(cp_setupt, CSRELOAD, ob_state, NORMAL);
     cp_clock();
     cp_formdone();
 }
@@ -2017,7 +2126,8 @@ static void cp_setup(void)
  * cp_optpick is the WORD's index in CPANEL.RSC, for a gate. */
 static void cp_options(void)
 {
-    char *items[7], probe[14];
+    FPTR(char) items[7];
+    char probe[14];
     WORD what[7], n = 0, k;
 
     what[n] = CPOPABOUT;
@@ -2040,7 +2150,7 @@ static void cp_options(void)
     }
     cp_optn = n;
     k = cp_pick(items, n, -1, tree, CPOPTS);
-    tree[CPOPTS].ob_state = NORMAL;
+    TSET(tree, CPOPTS, ob_state, NORMAL);
     cp_optpick = -1;
     if (k < 0)
         return;

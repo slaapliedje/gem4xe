@@ -38,7 +38,7 @@
 #define CL_MARK     0xC5        /* "a palette was saved here" */
 #define CL_BYTES    (N_PENS * 3 / 2)
 
-static OBJECT FAR *tree;
+static GEMTREE tree;
 static CPXINFO cinfo;
 static XCPB FAR *cl_xcpb;
 
@@ -89,18 +89,18 @@ static void cl_open(void)
 
 static void cl_restore(void)
 {
-    const uint8_t FAR *b;
+    FPTR(const uint8_t) b;
     WORD p, k, i;
 
     if (!cl_xcpb || !cl_xcpb->buffer)
         return;
-    b = (const uint8_t FAR *)cl_xcpb->buffer;
-    if (b[0] != CL_MARK)
+    b = FP_OF(const uint8_t, cl_xcpb->buffer);
+    if (FAT(const uint8_t, b, 0) != CL_MARK)
         return;                         /* nothing has been saved yet */
     for (p = 0; p < N_PENS; p++)
         for (k = 0; k < 3; k++) {
             WORD n = (WORD)(p * 3 + k);
-            UWORD byte = b[1 + (n >> 1)];
+            UWORD byte = FAT(const uint8_t, b, 1 + (n >> 1));
             /* UNSIGNED: a signed 16-bit >> 4 is B12 (tools/ccbug), which
              * sign-extends from the wrong bit -- 0xFF >> 4 was -1, and a
              * saved white came back at boot with no red */
@@ -112,7 +112,7 @@ static void cl_restore(void)
 
 static void cl_remember(void)
 {
-    uint8_t FAR *b;
+    FPTR(uint8_t) b;
     WORD p, k;
 
     if (!cl_xcpb || !cl_xcpb->buffer || !cl_xcpb->CPX_Save)
@@ -131,10 +131,10 @@ static void cl_remember(void)
             else
                 pack[n >> 1] |= (WORD)(v << 4);
         }
-    b = (uint8_t FAR *)cl_xcpb->buffer;
-    b[0] = CL_MARK;
+    b = FP_OF(uint8_t, cl_xcpb->buffer);
+    FPUT(uint8_t, b, 0, CL_MARK);
     for (p = 0; p < CL_BYTES; p++)
-        b[1 + p] = (uint8_t)pack[p];
+        FPUT(uint8_t, b, 1 + p, (uint8_t)pack[p]);
     cl_xcpb->CPX_Save((uint32_t)cl_xcpb);
 }
 
@@ -150,8 +150,8 @@ static void redraw(WORD ob)
     WORD x, y;
 
     objc_offset(tree, ob, &x, &y);
-    objc_draw(tree, ROOT, MAX_DEPTH, x, y, tree[ob].ob_width,
-              tree[ob].ob_height);
+    objc_draw(tree, ROOT, MAX_DEPTH, x, y, TGET(tree, ob, ob_width),
+              TGET(tree, ob, ob_height));
 }
 
 /* A TOUCHEXIT object makes form_do return while the button is still
@@ -168,10 +168,10 @@ static void wait_up(void)
 static void show_value(WORD c)
 {
     WORD b = (WORD)(CLCH0 + c * CH_STEP), l = lvl[sel][c];
-    char FAR *s = (char FAR *)(uint32_t)tree[b + CH_VALUE].ob_spec.index;
+    FPTR(char) s = FP_OF(char, (uint32_t)TGET(tree, b + CH_VALUE, ob_spec.index));
 
-    s[0] = (char)(l >= 10 ? '1' : ' ');
-    s[1] = (char)('0' + l % 10);
+    FPUT(char, s, 0, (char)(l >= 10 ? '1' : ' '));
+    FPUT(char, s, 1, (char)('0' + l % 10));
 }
 
 /* ...and its slider's thumb, sized and placed by the panel (phase 138:
@@ -207,7 +207,7 @@ static void show_all(void)
 {
     WORD c;
 
-    tree[CLMARK].ob_x = (WORD)(tree[CLSWBOX].ob_x + sel * tree[CLSW0].ob_width);
+    TSET(tree, CLMARK, ob_x, (WORD)(TGET(tree, CLSWBOX, ob_x) + sel * TGET(tree, CLSW0, ob_width)));
     for (c = 0; c < N_CHANNELS; c++)
         show_channel(c);
 }
@@ -230,16 +230,16 @@ static void draw_row(void)
     WORD x, y;
 
     objc_offset(tree, CLSWBOX, &x, &y);
-    objc_draw(tree, ROOT, MAX_DEPTH, x, y, tree[CLSWBOX].ob_width,
-              (WORD)(tree[CLSWBOX].ob_height * 2));
+    objc_draw(tree, ROOT, MAX_DEPTH, x, y, TGET(tree, CLSWBOX, ob_width),
+              (WORD)(TGET(tree, CLSWBOX, ob_height) * 2));
 }
 
 /* The whole form, where the window has it now (the panel moves tree[ROOT]
  * with the window, phase 136). */
 static void draw_all(void)
 {
-    objc_draw(tree, ROOT, MAX_DEPTH, tree[ROOT].ob_x, tree[ROOT].ob_y,
-              tree[ROOT].ob_width, tree[ROOT].ob_height);
+    objc_draw(tree, ROOT, MAX_DEPTH, TGET(tree, ROOT, ob_x), TGET(tree, ROOT, ob_y),
+              TGET(tree, ROOT, ob_width), TGET(tree, ROOT, ob_height));
 }
 
 static SAVEDS void cl_cpx_call(uint32_t pbaddr)
@@ -271,22 +271,22 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
             lvl[p][k] = to_level(rgb[k]);
         }
         if (p < npens)
-            tree[CLSW0 + p].ob_flags &= (UWORD)~HIDETREE;
+            TSET(tree, CLSW0 + p, ob_flags, TGET(tree, CLSW0 + p, ob_flags) & ((UWORD)~HIDETREE));
         else
-            tree[CLSW0 + p].ob_flags |= HIDETREE;
+            TSET(tree, CLSW0 + p, ob_flags, TGET(tree, CLSW0 + p, ob_flags) | (HIDETREE));
     }
     if (sel >= npens)
         sel = 0;
     show_all();
-    tree[CLRESET].ob_state = NORMAL;
-    tree[CLOK].ob_state = NORMAL;
-    tree[CLCNCL].ob_state = NORMAL;
+    TSET(tree, CLRESET, ob_state, NORMAL);
+    TSET(tree, CLOK, ob_state, NORMAL);
+    TSET(tree, CLCNCL, ob_state, NORMAL);
 
     /* the whole work area, which the panel has cleared */
-    tree[ROOT].ob_x = pb->rect.g_x;
-    tree[ROOT].ob_y = pb->rect.g_y;
-    tree[ROOT].ob_width = pb->rect.g_w;
-    tree[ROOT].ob_height = pb->rect.g_h;
+    TSET(tree, ROOT, ob_x, pb->rect.g_x);
+    TSET(tree, ROOT, ob_y, pb->rect.g_y);
+    TSET(tree, ROOT, ob_width, pb->rect.g_w);
+    TSET(tree, ROOT, ob_height, pb->rect.g_h);
     draw_all();
 
     for (;;) {
@@ -321,7 +321,7 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
                 if (p < npens)
                     set_pen(p);
             }
-            tree[CLRESET].ob_state = NORMAL;
+            TSET(tree, CLRESET, ob_state, NORMAL);
             show_all();
             draw_all();
             continue;
@@ -374,8 +374,8 @@ static SAVEDS void cl_cpx_call(uint32_t pbaddr)
         for (p = 0; p < npens; p++)
             vs_color(vh, p, was[p]);
     }
-    tree[CLOK].ob_state = NORMAL;
-    tree[CLCNCL].ob_state = NORMAL;
+    TSET(tree, CLOK, ob_state, NORMAL);
+    TSET(tree, CLCNCL, ob_state, NORMAL);
     /* the panel draws its list back over the form */
 }
 
@@ -393,7 +393,7 @@ CPX_ENTRY CPXINFO FAR *cpx_init(XCPB FAR *pb)
      * as the machine (src/aes/shel.c). */
     if (!rsrc_load("COLOR.RSC"))
         return (CPXINFO FAR *)0;
-    rsrc_gaddr(R_TREE, ADCOLOR, (void **)&tree);
+    rsrc_gaddr(R_TREE, ADCOLOR, (GEMADDR *)&tree);
     if (!tree)
         return (CPXINFO FAR *)0;
 

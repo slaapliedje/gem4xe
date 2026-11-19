@@ -122,7 +122,7 @@ static const char m35_done[] = "Done";
 static char m35_i0[] = "One", m35_i1[] = "Two", m35_i2[] = "Three",
             m35_i3[] = "Four", m35_i4[] = "Five", m35_i5[] = "Six",
             m35_i6[] = "Seven";
-static char *m35_items[7] = { m35_i0, m35_i1, m35_i2, m35_i3, m35_i4,
+static char FAR *m35_items[7] = { m35_i0, m35_i1, m35_i2, m35_i3, m35_i4,
                               m35_i5, m35_i6 };
 static WORD m35_pick;                   /* the Popup's item in force */
 static WORD m35_row;                    /* the slider's: the first row shown */

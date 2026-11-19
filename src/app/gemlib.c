@@ -1973,11 +1973,29 @@ WORD wind_calc_grect(WORD type, WORD kind, const GRECT *in, GRECT *out)
  * the AES addresses what it reads in place with 16 bits, so a string
  * that is NOT in bank $00 is a caller's bug, and a high word of zero
  * would hide it behind whatever happens to live at that offset. */
+#ifdef __CALYPSI_TARGET_6502__
+/* The words written here and not handed on to wind_set: as
+ * wind_set(handle, field, str >> 16, str, 0, 0), cc6502 5.18 moved the
+ * low word over the high and never moved the high one -- the swap of
+ * _Zp+4..5 and +6..7 lost a half -- and the title's address came out
+ * $6A5B6A5B (docs/6502.md, step 5f). */
+WORD wind_set_str(WORD handle, WORD field, uint32_t str)
+{
+    int_in[0] = handle;
+    int_in[1] = field;
+    int_in[2] = (WORD)(str >> 16);
+    int_in[3] = (WORD)str;
+    int_in[4] = 0;
+    int_in[5] = 0;
+    return aes(105, 6, 1, 0, 0);
+}
+#else
 WORD wind_set_str(WORD handle, WORD field, const char *str)
 {
     LONG a = (LONG)(uint32_t)(const char FAR *)str;
     return wind_set(handle, field, (WORD)((uint32_t)a >> 16), (WORD)a, 0, 0);
 }
+#endif
 
 WORD form_center_grect(GEMTREE tree, GRECT *r)
 {

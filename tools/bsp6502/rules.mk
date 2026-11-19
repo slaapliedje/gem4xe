@@ -394,11 +394,55 @@ build/a6d-boot.atr: build/a6.xex build/desktop.rsc build/deskicon.rsc build/pref
 test-d6: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_desk.py
 
-build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a
+build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a build/cpanel6.g6a build/cpanel.rsc \
+                    build/general.rsc build/color.rsc
 	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ P6PROG.G6A --sweep --compact \
-	    --add build/p6mprog.g6a P6M.G6A
+	    --add build/p6mprog.g6a P6M.G6A --add build/cpanel6.g6a CPANEL.G6A \
+	    --add build/cpanel.rsc CPANEL.RSC --add build/general.rsc GENERAL.RSC \
+	    --add build/color.rsc COLOR.RSC
+
+# ---- step 5f: the control panel as a 6502 program --------------------------
+# src/apps/cpanel.c with General and Color built in (src/apps/cpanel6.c is
+# its main): the panel's main and General in bank 1, the panel in banks
+# 2-4 (BANK_TEXT in the file), Color and the kit's gemlib.c in bank 5;
+# each module's cpx_init renamed, and
+# its header compiled in from its .cpxh (tools/mkcpx.py --c).  CPANEL.G6A
+# on the desktop's disk with its resources.
+C6P        = $(B6)/cp6
+C6P_BANKS  = --bank pb1=1 --bank pb2=2 --bank pb3=3 --bank pb4=4 --bank pb5=5
+C6P_UNITS  = cpanel6 cpanel general color gemlib
+C6P_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(C6P_UNITS:%=$(C6P)/bank/%.o)
+C6P_DEPS   = src/apps/cpanel.c src/apps/general.c src/apps/color.c src/apps/cpanel6.c src/app/cpx.h \
+             src/app/gemlib.c src/app/gem.h src/portab.h build/cpanelrsc.h build/generalrsc.h \
+             build/colorrsc.h build/cp6_general.h build/cp6_color.h
+build/cp6_general.h: src/apps/general.cpxh tools/mkcpx.py
+	python3 tools/mkcpx.py --c $< cp6_general $@
+build/cp6_color.h: src/apps/color.cpxh tools/mkcpx.py
+	python3 tools/mkcpx.py --c $< cp6_color $@
+$(C6P)/w/cpanel6.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#include "../../../../src/apps/cpanel6.c"\n' > $@
+$(C6P)/w/cpanel.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb2"\n#include "../../../../src/apps/cpanel.c"\n' > $@
+$(C6P)/w/general.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#define cpx_init general_cpx_init\n#include "../../../../src/apps/general.c"\n' > $@
+$(C6P)/w/color.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb5"\n#define cpx_init color_cpx_init\n#include "../../../../src/apps/color.c"\n' > $@
+$(C6P)/w/gemlib.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb5"\n#include "../../../../src/app/gemlib.c"\n' > $@
+$(C6P)/asm/%.s: $(C6P)/w/%.c $(C6P_DEPS)
+	@mkdir -p $(dir $@)
+	$(CC6) $(KITFLAGS6) -I build -I src/apps --no-cross-call -c $< -o $(C6P)/asm/$*.tmp --assembly-source=$@
+$(C6P)/cp6.idx: $(C6P_UNITS:%=$(C6P)/asm/%.s) tools/bsp6502/bankasm.py
+	python3 tools/bsp6502/bankasm.py --index $@ $(C6P_BANKS) $(C6P_UNITS:%=$(C6P)/asm/%.s)
+$(C6P)/bank/%.o: $(C6P)/asm/%.s $(C6P)/cp6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
+	@mkdir -p $(dir $@) $(C6P)/basm
+	python3 tools/bsp6502/bankasm.py $< $(C6P)/basm/$*.b.s --tu $* $(C6P_BANKS) \
+	    --index $(C6P)/cp6.idx --trampoline _pcall --switch-in-bank
+	python3 tools/bsp6502/bankcheck.py --asm $(C6P)/basm/$*.b.s $(C6P_BANKS) --index $(C6P)/cp6.idx
+	$(AS6) --core 6502 $(C6P)/basm/$*.b.s -o $@
+build/cpanel6.elf: $(C6P_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
+	$(LN6) src/app/gemappm6502.scm $(C6P_OBJ) \
+	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/cpanel6.map > /dev/null
+	python3 tools/bsp6502/bankcheck.py build/cpanel6.map --elf $@ || { rm -f $@; exit 1; }
+build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py
+	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
 
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.

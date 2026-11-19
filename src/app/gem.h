@@ -1365,7 +1365,11 @@ WORD wind_calc_grect(WORD type, WORD kind, const GRECT *in, GRECT *out);
  * pointer, or a hand-built call with 0 in the high word) names bank $00
  * and is the silent half of the truncation class tools/nearcast.py
  * guards -- see docs/phase47.md. */
+#ifdef __CALYPSI_TARGET_6502__
+WORD wind_set_str(WORD handle, WORD field, uint32_t str);  /* near or far */
+#else
 WORD wind_set_str(WORD handle, WORD field, const char *str);
+#endif
 WORD form_center_grect(GEMTREE tree, GRECT *r);
 WORD form_dial_grect(WORD flag, const GRECT *little, const GRECT *big);
 WORD objc_draw_grect(GEMTREE tree, WORD start, WORD depth, const GRECT *r);
@@ -1678,6 +1682,7 @@ void Ptermres(LONG keep, WORD code);
  * them (GEMLIB_DEFS). */
 #if defined(__CALYPSI_TARGET_6502__) && !defined(GEMLIB_DEFS)
 #define form_alert(d, s)        (form_alert)((d), FAR_ARG(s))
+#define wind_set_str(h, f, s)   (wind_set_str)((h), (f), FAR_ARG(s))
 #define shel_get(b, n)          (shel_get)(FAR_ARG(b), (n))
 #define shel_put(d, n)          (shel_put)(FAR_ARG(d), (n))
 #define Dsetpath(p)             (Dsetpath)(FAR_ARG(p))

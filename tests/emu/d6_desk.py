@@ -34,6 +34,7 @@ DISK = os.path.abspath(os.path.join(ROOT, "build", "a6d-boot.atr"))
 DESK = os.path.abspath(os.path.join(ROOT, "build", "a6d-desk.atr"))
 MAP = os.path.abspath(os.path.join(ROOT, "build", "a6.map"))
 DMAP = os.path.abspath(os.path.join(ROOT, "build", "desk6.map"))
+CMAP = os.path.abspath(os.path.join(ROOT, "build", "cpanel6.map"))
 SHOT = os.path.abspath(os.path.join(ROOT, "build", "d6.png"))
 STATUS = 0x0600
 SHARED = (0xD800, 0x2600)           # a program's RAM under the ROM
@@ -45,7 +46,11 @@ VIEW_CLOSE = (17, 19)               # the viewer's close box
 VIEW_LEN = 16384 - (64 + 4 + 48)    # deskcmd.c: CMD_BUF - CMD_TEXT
 D2_ICON = (114, 28)                 # DISK D2:, the second
 D2_FULL = (240, 42)                 # its window's full box, where it opens
-P6M_ICON = (196, 48)                # P6M.G6A, third in the full window
+P6M_ICON = (196, 100)               # P6M.G6A, seventh in the full window
+CPANEL_ICON = (114, 46)             # CPANEL.G6A, second
+GENERAL = (96, 56)                  # the panel's first slot: General
+GENERAL_OK = (116, 133)             # its form's OK
+PANEL_CLOSE = (67, 23)              # the panel window's closer
 NBANKS = 8
 
 
@@ -65,6 +70,7 @@ def main(argv):
     def sym(n, t=None):
         return int(re.search(rf"^\s+{n} = ([0-9a-f]+)\s*$", t or text, re.M).group(1), 16)
     dtext = open(DMAP).read()
+    ctext = open(CMAP).read()
 
     d1 = [e for e in Dos2(ATRImage.load(DISK)).entries() if e.in_use and e.nameable]
     want_info = f" {sum(e.count for e in d1) * 125} bytes used in {len(d1)} items.".encode()
@@ -98,6 +104,10 @@ def main(argv):
     def dw16(n):                        # a desktop variable, under the ROM
         rom_out()
         return w16(sym(n, dtext))
+
+    def cw16(n):                        # the control panel's
+        rom_out()
+        return w16(sym(n, ctext))
     try:
         b.frames(500)
         for _ in range(0, 9000, 50):
@@ -226,6 +236,70 @@ def main(argv):
         check(pin != ptab and b.peek(sym("p6_nbanks")) == NBANKS,
               f"the desktop again: {b.peek(sym('p6_nbanks'))} banks, the input its own "
               f"(${pin:04X})")
+        # THE CONTROL PANEL (step 5f): CPANEL.G6A from D2:'s window, which
+        # the desktop restored -- General and Color built in -- General
+        # opened and OK'd (its settings saved, as a plain file here), and
+        # the panel closed: the desktop again
+        # D2:'s window comes back with the desktop, read from the disk
+        # again; clicked before it is, the double-click met an empty desk
+        # (one run in three, the panel never started)
+        for _ in range(100):
+            ram = shared()
+            if b"CPANEL.G6A" in ram and re.search(rb" bytes used in 8 items\.", ram):
+                break
+            b.frames(100)
+        b.frames(500)
+        check(b"CPANEL.G6A" in ram, "D2:'s window is back, listing CPANEL.G6A")
+        starts3 = b.peek(STATUS + 0x3E)
+        click(CPANEL_ICON, 2, 0)
+        for _ in range(150):
+            b.frames(100)
+            if b.peek(STATUS + 0x3E) == starts3 + 1 and cw16("cp6_runs") == 1:
+                break
+        b.frames(2000)
+        runs, rows = cw16("cp6_runs"), cw16("cp_rows")
+        check(b.peek(STATUS + 0x3E) == starts3 + 1 and runs == 1 and rows == 2,
+              f"CPANEL.G6A ran from the desktop: its window up ({runs}), listing {rows} "
+              f"modules; want 1, 2 (General, Color)")
+        # SELECTED, THEN RETURN, not a double-click: a press that lands
+        # while the panel is between its waits -- its clock's tick, every
+        # second -- is counted as one click, as GEM counts it, and one run
+        # in a suite's worth opened nothing.  The keyboard has no window.
+        click(GENERAL, 1, 1000)
+        b.key("RETURN")
+        for _ in range(100):
+            b.frames(100)
+            if cw16("cp_opens") == 1:
+                break
+        b.frames(3000)
+        check(cw16("cp_opens") == 1, f"General, selected, opened with Return "
+                                     f"(cp_opens {cw16('cp_opens')})")
+        click(GENERAL_OK, 1, 4000)
+        click(PANEL_CLOSE, 1, 0)
+        for _ in range(150):
+            b.frames(100)
+            if b.peek(STATUS + 0x3E) == starts3 + 2:
+                break
+        for _ in range(100):
+            ram = shared()
+            if b"DISK D1:" in ram:
+                break
+            b.frames(100)
+        check(b.peek(STATUS + 0x3E) == starts3 + 2 and b"DISK D1:" in ram,
+              f"the panel closed and the desktop came back "
+              f"({starts3} -> {b.peek(STATUS + 0x3E)} programs started)")
+        # General's OK saved its settings: GENERAL.CFG beside the panel on
+        # D2:, which the desktop's window, read again as it came back,
+        # counts -- eight files on the disk, and now a ninth
+        info = None
+        for _ in range(100):
+            m = re.search(rb" \d+ bytes used in (\d+) items\.", shared())
+            if m and m.group(1) == b"9":
+                info = m.group(0)
+                break
+            b.frames(100)
+        check(info is not None, f"General's settings were saved: D2:'s window counts 9 "
+                                f"items, GENERAL.CFG among them ({info!r})")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
         check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
         b.screenshot(SHOT)
