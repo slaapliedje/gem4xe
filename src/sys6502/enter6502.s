@@ -37,6 +37,7 @@
               .public b6_DeallocStackRestore, b6_DeallocStack, b6_RestoreRegisters
               .public b6_DecVspY0, b6_DecVsp, b6_IncVsp, b6_DecVsp16, b6_IncVsp16
               .public b6_LoadVspEA, b6_LoadVfpEA, b6_AllocStackVLA, b6_DeallocStackVLA
+              .public b6_UDivMod16, b6_DivMod16
 
 FirstSave:    .equ    _Zp + 24        ; the callee-saved pseudo-registers
 NSAVE:        .equ    24              ; _Zp24-47
@@ -387,3 +388,124 @@ b6_DeallocStackVLA:
               adc     zp:_Zp+1
               sta     zp:_Vsp+1
               rts
+
+;;; ---------------------------------------------------------------------------
+;;; b6_UDivMod16 / b6_DivMod16: 16-bit division (speed 7), the runtime's
+;;; contract -- the dividend in _Zp0-1 and the divisor in _Zp10-11; the
+;;; quotient comes back in _Zp0-1 and the remainder in _Zp2-3 -- and the
+;;; unsigned one keeps Y (the signed one carries its signs across it
+;;; there).  Shift and subtract, as any, but most of the AES's divisors
+;;; are a byte (a character's width, a half), so with the divisor under
+;;; 256 the remainder is A alone, and with the dividend under 256 too
+;;; there are 8 steps, not 16: ~190 or ~450 cycles where the runtime's
+;;; were ~950 every time.  A divisor of 0 gives what the runtime's does,
+;;; a quotient of $FFFF and the dividend as the remainder.  Unlike the
+;;; runtime's, a divisor over $8000 is right: its remainder's 17th bit is
+;;; not dropped.  tests/host/test_div6502.py runs both on a 6502 model
+;;; against Python's arithmetic.
+;;; ---------------------------------------------------------------------------
+b6_UDivMod16:
+              lda     zp:_Zp+11
+              bne     40$             ; a divisor of two bytes
+              lda     zp:_Zp+10
+              beq     40$             ; 0: the long way's answer
+              lda     #0
+              ldx     zp:_Zp+1
+              bne     20$
+              ldx     #8              ; a byte by a byte: 8 steps
+10$:          asl     zp:_Zp          ; the next bit out, a 0 in for the
+              rol     a               ; quotient's
+              bcs     11$             ; nine bits: more than the divisor
+              cmp     zp:_Zp+10
+              bcc     12$
+11$:          sbc     zp:_Zp+10       ; (carry set)
+              inc     zp:_Zp          ; the quotient's bit
+12$:          dex
+              bne     10$
+              beq     30$
+20$:          ldx     #16             ; two bytes by a byte
+21$:          asl     zp:_Zp
+              rol     zp:_Zp+1
+              rol     a
+              bcs     22$
+              cmp     zp:_Zp+10
+              bcc     23$
+22$:          sbc     zp:_Zp+10
+              inc     zp:_Zp
+23$:          dex
+              bne     21$
+30$:          sta     zp:_Zp+2        ; the remainder, a byte
+              stx     zp:_Zp+3        ; (X = 0)
+              rts
+40$:          lda     #0              ; the long way: the remainder in
+              sta     zp:_Zp+2        ; _Zp2-3
+              sta     zp:_Zp+3
+              ldx     #16
+41$:          asl     zp:_Zp
+              rol     zp:_Zp+1
+              rol     zp:_Zp+2
+              rol     zp:_Zp+3
+              bcs     42$             ; seventeen bits: more than it
+              lda     zp:_Zp+2
+              cmp     zp:_Zp+10
+              lda     zp:_Zp+3
+              sbc     zp:_Zp+11
+              bcc     43$
+42$:          lda     zp:_Zp+2        ; (carry set)
+              sbc     zp:_Zp+10
+              sta     zp:_Zp+2
+              lda     zp:_Zp+3
+              sbc     zp:_Zp+11
+              sta     zp:_Zp+3
+              inc     zp:_Zp
+43$:          dex
+              bne     41$
+              rts
+
+;;; signed: C's, the quotient toward 0 and the remainder the dividend's
+;;; sign.  Y bit 0 is the quotient's sign, bit 7 the remainder's.
+b6_DivMod16:
+              ldy     #0
+              lda     zp:_Zp+11
+              bpl     1$
+              sec                     ; the divisor made positive
+              lda     #0
+              sbc     zp:_Zp+10
+              sta     zp:_Zp+10
+              lda     #0
+              sbc     zp:_Zp+11
+              sta     zp:_Zp+11
+              ldy     #1
+1$:           lda     zp:_Zp+1
+              bpl     2$
+              sec                     ; ...and the dividend
+              lda     #0
+              sbc     zp:_Zp
+              sta     zp:_Zp
+              lda     #0
+              sbc     zp:_Zp+1
+              sta     zp:_Zp+1
+              tya
+              eor     #0x81
+              tay
+2$:           jsr     b6_UDivMod16
+              tya
+              lsr     a
+              bcc     3$
+              sec                     ; the quotient negated
+              lda     #0
+              sbc     zp:_Zp
+              sta     zp:_Zp
+              lda     #0
+              sbc     zp:_Zp+1
+              sta     zp:_Zp+1
+3$:           tya
+              bpl     4$
+              sec                     ; the remainder negated
+              lda     #0
+              sbc     zp:_Zp+2
+              sta     zp:_Zp+2
+              lda     #0
+              sbc     zp:_Zp+3
+              sta     zp:_Zp+3
+4$:           rts

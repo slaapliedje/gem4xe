@@ -1049,6 +1049,107 @@ void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
 }
 #endif
 
+#ifdef __CALYPSI_TARGET_6502__
+/* THE VDI'S LINE ACROSS OR DOWN, on the 6502: dev_antic.c's
+ * dev_style_line, under the name the 6502's builds give it (their device
+ * prefix is and_), here beside the assembly it ends in.  Every such line
+ * the VDI draws comes here, solid ones too (vdi.c's draw_line).  In
+ * dev_antic.c's bank it was two calls into this one, and a frame that
+ * kept the line across them, ~1,500 cycles a line before a pixel
+ * (speed 7); here the line goes straight into an_fr or an_vl and nothing
+ * is kept across a call.  The order, the clip and the style's anchor are
+ * vdi.c's order, clip_rect and style_anchor, the same answers. */
+#include "../vdi/vdi.h"         /* vwk: the mode, the pen and the clip */
+
+BANK_DATA("antic") static uint16_t an_sl_rows[16];  /* rows[y & 15] */
+extern const uint8_t an_rev4[16];  /* a nibble backwards: antic6502.s */
+
+/* the clip, as the limits of the screen and vwk's clip together: kept
+ * here, not in locals, which leaves this few enough that cc6502 needs no
+ * frame for it */
+BANK_DATA("antic") static int16_t an_sl_l, an_sl_t, an_sl_r, an_sl_b;
+
+void and_style_line(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
+                    uint16_t mask)
+{
+    int16_t from, a, z;
+    uint8_t lo, hi, n, back;
+
+    an_fr.mode = an_vl.mode = (int16_t)(vwk.wrt_mode + 1);
+    an_fr.pen = an_vl.pen = (uint8_t)(vwk.line_color ? 1 : 0);
+    if (an_fr.mode == 1 /* MD_REPLACE */ && !an_fr.pen)
+        mask = 0xFFFF;                  /* every pixel pen 0 */
+    an_sl_l = 0;
+    an_sl_t = 0;
+    an_sl_r = AN_W - 1;
+    an_sl_b = AN_H - 1;
+    if (vwk.clip) {
+        if (vwk.xmn_clip > 0) an_sl_l = vwk.xmn_clip;
+        if (vwk.ymn_clip > 0) an_sl_t = vwk.ymn_clip;
+        if (vwk.xmx_clip < AN_W - 1) an_sl_r = vwk.xmx_clip;
+        if (vwk.ymx_clip < AN_H - 1) an_sl_b = vwk.ymx_clip;
+    }
+    if (y1 == y2) {
+        from = x1;
+        back = (uint8_t)(x2 < x1);
+    } else {
+        from = y1;
+        back = (uint8_t)(y2 < y1);
+    }
+    /* the anchor: the mask rotated right by from; going back, reversed
+     * and rotated one place more */
+    if (mask != 0xFFFF && mask != 0x0000) {
+        lo = (uint8_t)mask;
+        hi = (uint8_t)(mask >> 8);
+        if (back) {
+            uint8_t rl = (uint8_t)((an_rev4[hi & 15] << 4) | an_rev4[hi >> 4]);
+            uint8_t rh = (uint8_t)((an_rev4[lo & 15] << 4) | an_rev4[lo >> 4]);
+            lo = rl;
+            hi = rh;
+            from++;
+        }
+        n = (uint8_t)from;
+        if (n & 8) {                    /* eight places: the bytes swap */
+            uint8_t sw = lo;
+            lo = hi;
+            hi = sw;
+        }
+        for (n &= 7; n; n--) {          /* right one place, round */
+            uint8_t c = (uint8_t)(lo & 1);
+            lo = (uint8_t)((lo >> 1) | (hi << 7));
+            hi = (uint8_t)((hi >> 1) | (c << 7));
+        }
+        mask = (uint16_t)(((uint16_t)hi << 8) | lo);
+    }
+    if (y1 == y2) {
+        if (x1 <= x2) { a = x1; z = x2; } else { a = x2; z = x1; }
+        if (y1 < an_sl_t || y1 > an_sl_b || z < an_sl_l || a > an_sl_r)
+            return;
+        an_fr.x1 = a < an_sl_l ? an_sl_l : a;
+        an_fr.x2 = z > an_sl_r ? an_sl_r : z;
+        an_fr.y1 = y1;
+        an_fr.y2 = y1;
+        if (mask == 0xFFFF) {
+            an_fr.rows = 0;
+        } else {
+            an_sl_rows[y1 & 15] = mask;
+            an_fr.rows = an_sl_rows;
+        }
+        if (an_frect6())
+            an_fill_c();
+        return;
+    }
+    if (y1 <= y2) { a = y1; z = y2; } else { a = y2; z = y1; }
+    if (x1 < an_sl_l || x1 > an_sl_r || z < an_sl_t || a > an_sl_b)
+        return;
+    an_vl.x = x1;
+    an_vl.y1 = a < an_sl_t ? an_sl_t : a;
+    an_vl.y2 = z > an_sl_b ? an_sl_b : z;
+    an_vl.mask = mask;
+    an_vl6();
+}
+#endif
+
 /* ---- vro_cpyfm, screen to screen -------------------------------------- */
 
 /* A screen byte by row and column, or 0 off the screen.  A FUNCTION, and

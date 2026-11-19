@@ -1394,6 +1394,15 @@ static void draw_line(WORD x1, WORD y1, WORD x2, WORD y2)
                : line_styles[(vwk.line_index >= 1 && vwk.line_index <= 6)
                              ? vwk.line_index : 1];
 
+#ifdef __CALYPSI_TARGET_6502__
+    /* solid ones too: the device orders and clips them in its own bank
+     * (dev_antic.c), where the three calls below were each a call into
+     * another (speed 7) */
+    if (y1 == y2 || x1 == x2) {
+        dev_style_line(x1, y1, x2, y2, mask);
+        return;
+    }
+#endif
     if ((y1 == y2 || x1 == x2) && mask != 0xFFFF) {
         dev_style_line(x1, y1, x2, y2, mask);
         return;

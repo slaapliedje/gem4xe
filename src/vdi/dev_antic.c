@@ -66,6 +66,11 @@ void dev_patt_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
 /* A styled horizontal or vertical line.  The mask arrives anchored to
  * the screen's 16-pixel grid, so a horizontal line IS a patterned span
  * of one row and a vertical one is the same mask indexed by y. */
+#ifdef __CALYPSI_TARGET_6502__
+/* ON THE 6502 this is antic.c's and_style_line, beside the assembly it
+ * ends in (speed 7). */
+void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask);
+#else
 void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
 {
     WORD mode = (WORD)(vwk.wrt_mode + 1);
@@ -100,6 +105,7 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
     antic_vline((int16_t)x1, (int16_t)a, (int16_t)b, bits,
                 (int16_t)mode, pen);
 }
+#endif
 
 /* Nothing is precomputed here, so there is nothing to throw away. */
 void dev_invalidate(void)
@@ -156,6 +162,19 @@ void dev_font_changed(void)
 void dev_raster_1bpp(far_src8 bits, uint16_t stride,
                      WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg);
+
+/* GEM's replace in pen 0 puts pen 0 on the clear bits AND the set ones:
+ * the whole cell.  The ANTIC primitive's replace takes the other pen for a
+ * clear bit, which would draw the letter inverted, so an unclipped run in
+ * pen 0 is a solid rectangle instead.  Answers 1 when it drew. */
+static int text_pen0(WORD mode, WORD x, WORD cy, WORD n)
+{
+    if (mode != MD_REPLACE || vwk.text_color)
+        return 0;
+    antic_fill_rect(x, cy, (int16_t)(x + n * FONT_W - 1),
+                    (int16_t)(cy + FONT_H - 1), 0, MD_REPLACE, 0);
+    return 1;
+}
 
 void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
 {
@@ -215,6 +234,8 @@ void dev_glyph(WORD ch, WORD cx, WORD cy, WORD overlay)
          * (docs/phase55.md). */
         int16_t c = (int16_t)ch;
 
+        if (text_pen0(mode, cx, cy, 1))
+            return;
         antic_text(vdi_font, &c, 1, (int16_t)cx, (int16_t)cy, (int16_t)mode,
                    (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H, 0);
     }
@@ -227,6 +248,8 @@ void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
 {
     WORD mode = (WORD)(vwk.wrt_mode + 1);
 
+    if (text_pen0(mode, x, cy, n))
+        return;
     antic_text(vdi_font, (const int16_t *)chars, (uint16_t)n,
                (int16_t)x, (int16_t)cy, (int16_t)mode,
                (uint8_t)(vwk.text_color ? 1 : 0), FONT_W, FONT_H,

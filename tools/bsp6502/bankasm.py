@@ -227,12 +227,13 @@ def runtime_fixes(lines):
 # --fast-frames (speed 4): cc6502's frame and stack helpers sent to
 # src/sys6502/enter6502.s's, which move _Vsp without holding interrupts
 # off and save the pseudo-registers in an unrolled run.  A build that asks
-# for it links enter6502s.o.
+# for it links enter6502s.o.  Since speed 7 the 16-bit divisions go there
+# too: a divisor of a byte takes a short way (tests/host/test_div6502.py).
 FAST_FRAMES = ("_AllocStackSave", "_AllocStackLarge", "_DeallocStackLarge",
                "_DeallocStackRestore", "_DeallocStack", "_RestoreRegisters",
                "_AllocStack", "_DecVspY0", "_DecVsp16", "_DecVsp", "_IncVsp16",
                "_IncVsp", "_LoadVspEA", "_LoadVfpEA", "_AllocStackVLA",
-               "_DeallocStackVLA")
+               "_DeallocStackVLA", "_UDivMod16", "_DivMod16")
 FRAME_TOKEN = re.compile(r"(?<![\w`])(" + "|".join(FAST_FRAMES) + r")(?![\w`])")
 
 

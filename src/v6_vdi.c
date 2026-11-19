@@ -228,6 +228,46 @@ int main(void)
     rect(V_PLINE, 300, 47, 205, 47);
     set1(VSL_COLOR, 1);
     set1(VSL_TYPE, 1);
+    /* solid lines in every mode and both pens, across the box's edge,
+     * which the 6502 sends the styled lines' way (dev_style_line, speed
+     * 7); then lines solid and styled, both ways, cut by a clip and
+     * wholly outside it (above the dialog, which would cover them) */
+    {
+        static const uint8_t sl[][6] = {   /* mode, pen, x1, y1, x2, y2 */
+            { MD_XOR,   1, 190, 25, 215, 25 }, { MD_XOR,   1, 195, 15, 195, 65 },
+            { MD_TRANS, 0, 185, 28, 210, 28 }, { MD_TRANS, 0, 198, 10, 198, 70 },
+            { MD_TRANS, 1, 205, 30, 185, 30 }, { MD_TRANS, 1, 203, 66, 203, 12 },
+            { MD_ERASE, 1, 180, 33, 212, 33 }, { MD_ERASE, 1, 192, 12, 192, 66 },
+            { MD_ERASE, 0, 180, 35, 212, 35 }, { MD_ERASE, 0, 189, 12, 189, 66 },
+        };
+        static const uint8_t cl[][5] = {   /* style, x1, y1, x2, y2 */
+            { 7, 90, 70, 150, 70 }, { 7, 150, 72, 90, 72 },
+            { 7, 105, 60, 105, 98 }, { 7, 110, 98, 110, 60 },
+            { 1, 90, 75, 150, 75 }, { 1, 120, 50, 120, 98 },
+            { 7, 90, 95, 150, 95 }, { 1, 150, 60, 150, 90 },
+            { 7, 60, 63, 99, 63 },
+        };
+        WORD k;
+
+        for (k = 0; k < (WORD)(sizeof sl / sizeof sl[0]); k++) {
+            set1(VSWR_MODE, sl[k][0]);
+            set1(VSL_COLOR, sl[k][1]);
+            rect(V_PLINE, sl[k][2], sl[k][3], sl[k][4], sl[k][5]);
+        }
+        set1(VSWR_MODE, MD_REPLACE);
+        set1(VSL_COLOR, 1);
+        set1(VSL_UDSTY, (WORD)0xF0C9);
+        ptsin[0] = 100; ptsin[1] = 64; ptsin[2] = 140; ptsin[3] = 92;
+        intin[0] = 1;
+        call(VS_CLIP, 2, 1);
+        for (k = 0; k < (WORD)(sizeof cl / sizeof cl[0]); k++) {
+            set1(VSL_TYPE, cl[k][0]);
+            rect(V_PLINE, cl[k][1], cl[k][2], cl[k][3], cl[k][4]);
+        }
+        intin[0] = 0;
+        call(VS_CLIP, 0, 1);
+        set1(VSL_TYPE, 1);
+    }
 
     /* text in the modes that read the screen (an_put_row_s, speed 4),
      * over the boxes at the top, from x not on a byte: transparent,
@@ -241,6 +281,24 @@ int main(void)
     set1(VSWR_MODE, MD_XOR);
     text(1, 70, "I");
     set1(VSWR_MODE, MD_REPLACE);
+    /* text in pen 0: GEM's replace is a cell all pen 0 */
+    set1(VST_COLOR, 0);
+    text(150, 40, "R0");
+    set1(VST_EFFECTS, 1);               /* thickened: a cell at a time */
+    text(100, 22, "B0");
+    set1(VST_EFFECTS, 0);
+    ptsin[0] = 172; ptsin[1] = 20; ptsin[2] = 190; ptsin[3] = 60;
+    intin[0] = 1;
+    call(VS_CLIP, 2, 1);
+    text(168, 50, "C0");
+    intin[0] = 0;
+    call(VS_CLIP, 0, 1);
+    set1(VSWR_MODE, MD_TRANS);
+    text(30, 58, "T0");
+    set1(VSWR_MODE, MD_ERASE);
+    text(120, 58, "E0");
+    set1(VSWR_MODE, MD_REPLACE);
+    set1(VST_COLOR, 1);
 
     /* a round trip through a far form at another bit alignment (copy_rows
      * on the 6502, speed 4: the row shifted in assembly, its edges merged

@@ -38,7 +38,7 @@
               .extern pr_x1, pr_y1, pr_x0, pr_y0
               .public an_fill6, an_rect6, an_cblk6, an_cpaint6, an_vline6
               .public an_pack6_s, an_put_row_s, an_shl6, an_text6, an_shl6a
-              .public an_frect6, an_vl6
+              .public an_frect6, an_vl6, an_rev4
               .extern an_fr, an_vl
 
 FR_SCREEN:    .equ    0x8100          ; AN_SCREEN, src/antic/antic.h
@@ -1118,6 +1118,12 @@ an_shl6a:     sta     zp:_Zp+3        ; n
 ;;;
 ;;; row in _Zp0-1, n in A, off in _Zp2.
 ;;; ---------------------------------------------------------------------------
+;;; a nibble read backwards: antic.c's and_style_line reverses a line
+;;; style with it (speed 7).  Here because a constant table in the bank's
+;;; data section would share it with the variables there.
+an_rev4:      .byte   0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe
+              .byte   0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf
+
               .section dev,text
 an_shl6:      sta     zp:_Zp+3        ; n
 1$:           ldy     zp:_Zp+3        ; row[n] first: its top bit into C

@@ -40,7 +40,7 @@ from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
                     VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT, V_PLINE,
                     VSL_TYPE, VSL_UDSTY, V_ESCAPE, ESC_XLINE,
-                    VSL_COLOR)
+                    VSL_COLOR, VST_EFFECTS)
 
 FIS_SOLID, FIS_USER, MD_REPLACE, MD_TRANS, MD_XOR, MD_ERASE = 1, 4, 1, 2, 3, 4
 PAT = (0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
@@ -117,6 +117,31 @@ SCRIPT = [
     (V_PLINE, (300, 47, 205, 47), ()),
     (VSL_COLOR, (), (1,)),
     (VSL_TYPE, (), (1,)),
+    # solid lines in every mode and both pens (dev_style_line, speed 7),
+    # then lines cut by a clip and wholly outside it
+    (VSWR_MODE, (), (MD_XOR,)), (VSL_COLOR, (), (1,)), (V_PLINE, (190, 25, 215, 25), ()),
+    (VSWR_MODE, (), (MD_XOR,)), (VSL_COLOR, (), (1,)), (V_PLINE, (195, 15, 195, 65), ()),
+    (VSWR_MODE, (), (MD_TRANS,)), (VSL_COLOR, (), (0,)), (V_PLINE, (185, 28, 210, 28), ()),
+    (VSWR_MODE, (), (MD_TRANS,)), (VSL_COLOR, (), (0,)), (V_PLINE, (198, 10, 198, 70), ()),
+    (VSWR_MODE, (), (MD_TRANS,)), (VSL_COLOR, (), (1,)), (V_PLINE, (205, 30, 185, 30), ()),
+    (VSWR_MODE, (), (MD_TRANS,)), (VSL_COLOR, (), (1,)), (V_PLINE, (203, 66, 203, 12), ()),
+    (VSWR_MODE, (), (MD_ERASE,)), (VSL_COLOR, (), (1,)), (V_PLINE, (180, 33, 212, 33), ()),
+    (VSWR_MODE, (), (MD_ERASE,)), (VSL_COLOR, (), (1,)), (V_PLINE, (192, 12, 192, 66), ()),
+    (VSWR_MODE, (), (MD_ERASE,)), (VSL_COLOR, (), (0,)), (V_PLINE, (180, 35, 212, 35), ()),
+    (VSWR_MODE, (), (MD_ERASE,)), (VSL_COLOR, (), (0,)), (V_PLINE, (189, 12, 189, 66), ()),
+    (VSWR_MODE, (), (MD_REPLACE,)), (VSL_COLOR, (), (1,)), (VSL_UDSTY, (), (0xF0C9,)),
+    (VS_CLIP, (100, 64, 140, 92), (1,)),
+    (VSL_TYPE, (), (7,)), (V_PLINE, (90, 70, 150, 70), ()),
+    (VSL_TYPE, (), (7,)), (V_PLINE, (150, 72, 90, 72), ()),
+    (VSL_TYPE, (), (7,)), (V_PLINE, (105, 60, 105, 98), ()),
+    (VSL_TYPE, (), (7,)), (V_PLINE, (110, 98, 110, 60), ()),
+    (VSL_TYPE, (), (1,)), (V_PLINE, (90, 75, 150, 75), ()),
+    (VSL_TYPE, (), (1,)), (V_PLINE, (120, 50, 120, 98), ()),
+    (VSL_TYPE, (), (7,)), (V_PLINE, (90, 95, 150, 95), ()),
+    (VSL_TYPE, (), (1,)), (V_PLINE, (150, 60, 150, 90), ()),
+    (VSL_TYPE, (), (7,)), (V_PLINE, (60, 63, 99, 63), ()),
+    (VS_CLIP, (), (0,)),
+    (VSL_TYPE, (), (1,)),
     (VSWR_MODE, (), (MD_TRANS,)),       # text that reads the screen
     (V_GTEXT, (23, 33), tuple(b"TRANS 1")),
     (VSWR_MODE, (), (MD_XOR,)),
@@ -126,6 +151,20 @@ SCRIPT = [
     (VSWR_MODE, (), (MD_XOR,)),
     (V_GTEXT, (1, 70), tuple(b"I")),
     (VSWR_MODE, (), (MD_REPLACE,)),
+    (VST_COLOR, (), (0,)),              # text in pen 0
+    (V_GTEXT, (150, 40), tuple(b"R0")),
+    (VST_EFFECTS, (), (1,)),            # thickened: a cell at a time
+    (V_GTEXT, (100, 22), tuple(b"B0")),
+    (VST_EFFECTS, (), (0,)),
+    (VS_CLIP, (172, 20, 190, 60), (1,)),
+    (V_GTEXT, (168, 50), tuple(b"C0")),
+    (VS_CLIP, (), (0,)),
+    (VSWR_MODE, (), (MD_TRANS,)),
+    (V_GTEXT, (30, 58), tuple(b"T0")),
+    (VSWR_MODE, (), (MD_ERASE,)),
+    (V_GTEXT, (120, 58), tuple(b"E0")),
+    (VSWR_MODE, (), (MD_REPLACE,)),
+    (VST_COLOR, (), (1,)),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]
