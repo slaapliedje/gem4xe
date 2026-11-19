@@ -22,7 +22,7 @@
 ;;;   $C012  g6_l_tab   the address of b6_portb, PORTB per bank index
 ;;;   $C014  g6_l_kind  'P' PORTB's banks, 'A' an Axlon's ($CFFF)
 ;;;   $C015  g6_l_fbase b6_far_base: far bank k piece p is bank index
-;;;                     b6_far_base + (k-1)*4 + p (src/app/farm6502.c)
+;;;                     b6_far_base + (k-1)*4 + p (src/app/farm6502.s)
 ;;;
 ;;; start writes the two addresses into _pcall's own instructions, so a
 ;;; cross-bank call costs no indirection.  It keeps the system's _Vsp in

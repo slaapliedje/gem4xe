@@ -267,22 +267,31 @@ void dev_raster_1bpp(far_src8 bits, uint16_t stride,
     if (xl > xr || w <= 0)
         return;
 
+#ifdef __CALYPSI_TARGET_6502__
+    /* THE 6502: the source is an address that may be in a PORTB bank,
+     * so the bytes of the row this draws come into a near buffer first
+     * -- from the byte its first bit is in, to one past the last, which
+     * antic_raster_row may read -- after a zero byte it may also read
+     * (speed 4).  The row's address steps by the stride: a multiply a
+     * row was ~700 cycles. */
+    uint8_t near_buf[AN_STRIDE + 3];
+    uint8_t *near_row = near_buf + 1;
+    uint16_t s0 = (uint16_t)(sx + (xl - dx));
+    uint16_t nb = (uint16_t)((((s0 & 7) + (uint16_t)(xr - xl)) >> 3) + 2);
+    far_src8 src = bits + (uint16_t)sy * stride + (s0 >> 3);
+#endif
+
     for (r = 0; r < h; r++) {
         WORD y = (WORD)(dy + r);
 #ifdef __CALYPSI_TARGET_6502__
-        /* THE 6502: the source is an address that may be in a PORTB bank,
-         * so the bytes of the row this draws come into a near buffer
-         * first -- from the byte its first bit is in, to one past the
-         * last, which antic_raster_row may read (an_src8). */
-        uint8_t near_row[AN_STRIDE + 2];
-        uint16_t s0 = (uint16_t)(sx + (xl - dx));
-
+        if (r)
+            src += stride;
         if (y < 0 || y >= AN_H)
             continue;
         if (vwk.clip && (y < vwk.ymn_clip || y > vwk.ymx_clip))
             continue;
-        far_get(near_row, bits + (uint16_t)(sy + r) * stride + (s0 >> 3),
-                (uint16_t)((((s0 & 7) + (uint16_t)(xr - xl)) >> 3) + 2));
+        near_buf[0] = 0;
+        far_get(near_row, src, nb);
         antic_raster_row(near_row, (uint16_t)(s0 & 7),
                          (int16_t)xl, (int16_t)xr, (int16_t)y,
                          (int16_t)mode, pen, pap);
@@ -464,6 +473,11 @@ static void row_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
  * screen to memory and back at 650-750 ms for 64x32.  The same form both
  * ends keeps the pixel path, which knows which way an overlap runs. */
 #define ROW_MAX 48                      /* a screen row is 41 at most */
+#ifdef __CALYPSI_TARGET_6502__
+void    an_shl6(uint8_t *row, uint8_t n, uint8_t off);      /* antic6502.s */
+uint8_t far_put_edge(uint8_t n, uint32_t dst, const uint8_t *row,
+                     uint16_t masks);                       /* far6502.s */
+#endif
 
 static WORD copy_rows(const RFORM *src, WORD sx1, WORD sy1,
                       const RFORM *dst, WORD dx1, WORD dy1, WORD w, WORD h)
@@ -509,13 +523,30 @@ static WORD copy_rows(const RFORM *src, WORD sx1, WORD sy1,
             want = (uint16_t)(src->stride - sb);
         row[0] = 0;
         row[want + lead] = 0;
+#ifdef __CALYPSI_TARGET_6502__
+        /* THE 6502 (speed 4): the source row in by far_get, near or far;
+         * the shift in assembly; and the edges merged and the row put in
+         * one far_put_edge, which reads the two end bytes where they are
+         * mapped -- a menu's save was four calls, a byte loop in C and
+         * two one-byte far reads a row.  A row across a 16 KB piece
+         * comes back undone, for the general way below. */
+        far_get(row + lead, sa, want);
+        if (off)
+            an_shl6(row, (uint8_t)n, off);
+        if (far_put_edge((uint8_t)n, da, row, (uint16_t)(lm | ((uint16_t)rm << 8)))) {
+            sa += src->stride;
+            da += dst->stride;
+            continue;
+        }
+#else
         row_io(sa, row + lead, want, 0);
-        row_io(da, &e0, 1, 0);
-        row_io(da + n - 1, &e1, 1, 0);
         for (i = 0; i < n; i++)         /* in place: row[i + 1] is still
                                          * the source when row[i] is made */
             if (off)
                 row[i] = (uint8_t)((row[i] << off) | (row[i + 1] >> (8 - off)));
+#endif
+        row_io(da, &e0, 1, 0);
+        row_io(da + n - 1, &e1, 1, 0);
         row[0] = (uint8_t)((e0 & (uint8_t)~lm) | (row[0] & lm));
         row[n - 1] = (uint8_t)((e1 & (uint8_t)~rm) | (row[n - 1] & rm));
         row_io(da, row, n, 1);

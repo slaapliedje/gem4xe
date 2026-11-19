@@ -34,7 +34,7 @@
               .extern _Zp, b6_cur, b6_count, b6_portb, b6_far_base, b6_far_bad
               .public far_read8, far_write8, far_rd16, far_rd32, far_wr16, far_wr32
               .public b6sw_fmap, b6sw_unmap            ; bank switches: bank6502.s's patch
-              .public far_get, far_put, far_fill, far_strget
+              .public far_get, far_put, far_fill, far_strget, far_put_edge
               .public ob_rd16, ob_rd32, ob_wr16
 
 PORTB:        .equ    0xd301
@@ -437,6 +437,45 @@ far_put:      jsr     fa_from0
               lda     zp:_Zp+7
               sta     zp:_Zp+17
               jmp     putcore
+
+;;; far_put_edge(n A, dst _Zp0-3, row _Zp4-5, masks _Zp6-7) -- a form's
+;;; row of n bytes (1-48) out to dst, near or far, its first byte merged
+;;; under the mask in _Zp6 and its last under _Zp7: what dst holds outside
+;;; them stays (src/vdi/dev_antic.c, copy_rows).  The edges are read in
+;;; place while the piece is mapped, not with a far_get each.  A row that
+;;; crosses a 16 KB piece is not done -- A = 0, and the C does it the long
+;;; way -- else A = 1.  The row's two end bytes are left merged.
+far_put_edge: sta     zp:_Zp+22       ; n
+              jsr     fa_from0
+              lda     zp:_Zp+22
+              sta     zp:_Zp+16
+              lda     #0
+              sta     zp:_Zp+17
+              jsr     piece
+              lda     zp:_Zp+18       ; all of it in this piece?
+              cmp     zp:_Zp+22
+              beq     10$
+              lda     #0
+              jmp     unmap
+10$:          ldy     #0              ; d ^ ((d ^ s) & m), first then last
+              lda     (_Zp+12),y
+              eor     (_Zp+4),y
+              and     zp:_Zp+6
+              eor     (_Zp+12),y
+              sta     (_Zp+4),y
+              ldy     zp:_Zp+22
+              dey
+              lda     (_Zp+12),y
+              eor     (_Zp+4),y
+              and     zp:_Zp+7
+              eor     (_Zp+12),y
+              sta     (_Zp+4),y
+20$:          lda     (_Zp+4),y       ; Y = n - 1 down
+              sta     (_Zp+12),y
+              dey
+              bpl     20$
+              lda     #1
+              jmp     unmap
 
 ;;; piece -- FA mapped (or taken as near) and this piece's count: the count
 ;;; left, or what remains of the 16 KB piece if that is less.  Near, all

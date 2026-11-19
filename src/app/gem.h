@@ -214,7 +214,7 @@ typedef void   *GEMADDR;
  * has none.  A program that is to build for both says what it does
  * through these, which on the 65C816 are the same expressions it would
  * have written (the object code does not change), and on the 6502 call
- * src/app/farm6502.c, which maps the far bank itself -- a program of
+ * src/app/farm6502.s, which maps the far bank itself -- a program of
  * several banks only (src/app/gemappm6502.scm): its helpers live in the
  * RAM under the ROM, outside the window they map.
  *

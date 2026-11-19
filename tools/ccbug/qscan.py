@@ -122,7 +122,6 @@ PER_FILE = {
     # 6502 GEMTREE, a far address, which no 65C816 build has
     "src/p6_prog.c": ["-D__CALYPSI_TARGET_6502__"],
     "src/p6m_prog.c": ["-D__CALYPSI_TARGET_6502__"],
-    "src/app/farm6502.c": ["-D__CALYPSI_TARGET_6502__"],
 }
 
 # -m32: four-byte pointers and longs, as the target's large data model

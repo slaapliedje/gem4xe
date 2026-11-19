@@ -1,11 +1,12 @@
-/* anpack6502.c -- antic_text's two helpers, in C, for the 6502 build.
+/* anpack6502.c -- antic_text's two helpers' arguments, for the 6502 build.
  *
- * The 65C816 build has them in assembler (src/antic/anpack.s, phase 146),
- * with the same names and the same direct-page arguments, which
- * src/antic/antic.c sets and calls.  On the 6502 the arguments are zero
- * page (TINY) and the code is the C antic.c had before phase 146 -- the
- * packer as it was, and the row put through AN_MIX's formula -- until a
- * 6502 assembler version earns its place on a bench (docs/6502.md).
+ * The 65C816 build has the helpers in assembler (src/antic/anpack.s,
+ * phase 146), with the same names and the same direct-page arguments,
+ * which src/antic/antic.c sets and calls.  On the 6502 the arguments are
+ * zero page (TINY), here, and the helpers are assembler too, in the antic
+ * bank (src/sys6502/antic6502.s, speed 4: a menu's text was most of its
+ * drawing in C).  The packer's C stays for a face in a PORTB bank, which
+ * the assembler hands here.
  */
 #include "portab.h"
 #include <stdint.h>
@@ -17,8 +18,9 @@ TINY uint16_t pr_buf, pr_scr, pr_last;
 TINY uint8_t pr_lm, pr_rm, pr_x1, pr_y1, pr_x0, pr_y0;
 
 /* One row of a run: `lead` zero bits, then six of each glyph (its bits
- * 7..2), MSB first, a last partial byte left-aligned. */
-void an_pack6_s(void)
+ * 7..2), MSB first, a last partial byte left-aligned -- from a face in a
+ * PORTB bank, read a byte at a time through far_read8. */
+void an_pack6_c(void)
 {
     const uint8_t *sr = (const uint8_t *)(uint16_t)ap_sr;
     uint8_t bank = (uint8_t)(ap_sr >> 16);      /* stored: b6scan's fault B */
@@ -42,33 +44,5 @@ void an_pack6_s(void)
     if (bits) {
         g = (uint8_t)(acc << (8 - bits));
         buf[k] = g;
-    }
-}
-
-/* The packed row onto the screen through the op:
- *     t1 = (d & x1) ^ y1,  t0 = (d & x0) ^ y0
- *     d' = (s & t1) | (~s & t0), kept inside the mask m. */
-void an_put_row_s(void)
-{
-    const uint8_t *buf = (const uint8_t *)pr_buf;
-    volatile uint8_t *p = (volatile uint8_t *)pr_scr;
-    uint16_t k;
-    uint8_t s, m, d, t1, t0, n;
-
-    for (k = 0; k <= pr_last; k++) {
-        s = buf[k];
-        m = 0xFF;
-        if (k == 0)
-            m = pr_lm;
-        if (k == pr_last)
-            m = (uint8_t)(m & pr_rm);
-        d = 0;
-        if (m != 0xFF || (pr_x1 | pr_x0))
-            d = p[k];
-        t1 = (uint8_t)((d & pr_x1) ^ pr_y1);
-        t0 = (uint8_t)((d & pr_x0) ^ pr_y0);
-        n = (uint8_t)((s & t1) | ((uint8_t)~s & t0));
-        n = (uint8_t)((d & (uint8_t)~m) | (n & m));
-        p[k] = n;
     }
 }

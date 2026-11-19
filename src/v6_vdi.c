@@ -170,6 +170,57 @@ int main(void)
     set1(VSWR_MODE, MD_REPLACE);
     set1(VSL_TYPE, 1);
 
+    /* text in the modes that read the screen (an_put_row_s, speed 4),
+     * over the boxes at the top, from x not on a byte: transparent,
+     * XOR, reverse transparent; and a glyph inside one byte */
+    set1(VSWR_MODE, MD_TRANS);
+    text(23, 33, "TRANS 1");
+    set1(VSWR_MODE, MD_XOR);
+    text(101, 45, "XOR WJ");
+    set1(VSWR_MODE, MD_ERASE);
+    text(61, 55, "ERASE");
+    set1(VSWR_MODE, MD_XOR);
+    text(1, 70, "I");
+    set1(VSWR_MODE, MD_REPLACE);
+
+    /* a round trip through a far form at another bit alignment (copy_rows
+     * on the 6502, speed 4: the row shifted in assembly, its edges merged
+     * where the far piece is mapped): the screen at x 37 into the form at
+     * x 3 and back, and a strip one byte wide the same way.  Done right,
+     * the screen is as it was -- what the model has; a wrong shift or a
+     * wrong edge shows, the form's other bytes being what far_alloc gave */
+    {
+        static MFDB frm;
+        static const WORD rt[2][8] = {
+            { 37, 22, 150, 57,   3, 2, 116, 37 },
+            { 165, 24, 168, 59,  2, 40, 5, 75 },
+        };
+        WORD k, j;
+
+        frm.fd_addr = far_alloc(40UL * 80);
+        frm.fd_w = 320;
+        frm.fd_h = 80;
+        frm.fd_wdwidth = 20;
+        frm.fd_nplanes = 1;
+        for (k = 0; k < 2; k++) {
+            for (j = 0; j < 8; j++)
+                ptsin[j] = rt[k][j];
+            intin[0] = 3;
+            contrl[7] = 0; contrl[8] = 0;
+            contrl[9] = (WORD)(uint16_t)&frm; contrl[10] = 0;
+            call(VRO_CPYFM, 4, 1);
+            for (j = 0; j < 4; j++) {
+                ptsin[j] = rt[k][j + 4];
+                ptsin[j + 4] = rt[k][j];
+            }
+            contrl[7] = (WORD)(uint16_t)&frm; contrl[8] = 0;
+            contrl[9] = 0; contrl[10] = 0;
+            call(VRO_CPYFM, 4, 1);
+        }
+        contrl[7] = 0; contrl[9] = 0;
+        STATUS[10] = (unsigned char)(frm.fd_addr >> 16);
+    }
+
     {
         volatile unsigned char *nm = (volatile unsigned char *)0x0630;
         WORD k;

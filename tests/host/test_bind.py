@@ -376,7 +376,7 @@ def decl_names(text):
     # tests/emu/p6_prog.py exercises them on the machine.
     return out - {"vdi_call", "aes_call", "dos_call",
                   "far_fetch", "far_store",
-                  # ...and its fa_* helpers (gem.h, src/app/farm6502.c)
+                  # ...and its fa_* helpers (gem.h, src/app/farm6502.s)
                   "fa_get", "fa_put", "fa_rd8", "fa_rd16", "fa_rd32",
                   "fa_wr8", "fa_wr16", "fa_wr32"}
 

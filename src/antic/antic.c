@@ -680,6 +680,10 @@ void an_pack6_s(void);
 extern TINY uint16_t pr_buf, pr_scr, pr_last;
 extern TINY uint8_t pr_lm, pr_rm, pr_x1, pr_y1, pr_x0, pr_y0;
 void an_put_row_s(void);
+#ifdef __CALYPSI_TARGET_6502__
+void an_text6(uint8_t rows);            /* src/sys6502/antic6502.s */
+void an_shl6a(uint8_t *row, uint8_t n, uint8_t off);       /* ...too */
+#endif
 
 static void an_pack6(uint8_t *buf, far_src8 sr,
                      const int16_t *chars, uint16_t n, uint16_t lead)
@@ -748,6 +752,19 @@ void antic_text(uint32_t face, const int16_t *chars, uint16_t n,
     pr_x0 = o.x0;
     pr_y0 = o.y0;
 
+#ifdef __CALYPSI_TARGET_6502__
+    /* the 6502: every row in assembly, the arguments set once (speed 4) */
+    if (!thick) {
+        ap_sr = (uint32_t)sr;
+        ap_chars = (uint16_t)chars;
+        ap_buf = (uint16_t)buf;
+        ap_n = n;
+        ap_lead = lead;
+        pr_scr = (uint16_t)p;
+        an_text6((uint8_t)h);
+        return;
+    }
+#endif
     for (row = 0; row < (uint16_t)h; row++) {
         if (thick) {
             /* THICKENED: the row ORed with itself one pixel right, the
@@ -805,6 +822,35 @@ void antic_raster_row(const uint8_t FAR_816 *row, uint16_t sbit,
     an_op(&o, mode, pen, pap);
     b1 = (uint16_t)x1 >> 3;
     b2 = (uint16_t)x2 >> 3;
+#ifdef __CALYPSI_TARGET_6502__
+    /* THE 6502 (speed 4): the row shifted into the screen's alignment in
+     * place, then put by antic_text's own row writer -- in C a 32x32
+     * icon's row was ~3,000 cycles, most of it an_src8.  Screen byte k
+     * takes the source from bit sbit - lead + 8k: a left shift by that,
+     * or for a negative start one byte earlier, which is why a caller
+     * here hands a row with a zero byte BEFORE it (dev_raster_1bpp,
+     * antic_copy).  The row is scratch: it comes back shifted. */
+    {
+        int16_t d = (int16_t)((int16_t)sbit - (int16_t)((uint16_t)x1 & 7));
+        uint8_t *base = (uint8_t *)row + (d < 0 ? -1 : 0);
+        uint8_t e = (uint8_t)(d & 7);
+
+        (void)t; (void)p; (void)b; (void)lead;
+        if (e)
+            an_shl6a(base, (uint8_t)(b2 - b1 + 1), e);
+        pr_buf = (uint16_t)base;
+        pr_scr = (uint16_t)(SCREEN + (uint16_t)y * AN_STRIDE + b1);
+        pr_last = (uint16_t)(b2 - b1);
+        pr_lm = an_left[(uint16_t)x1 & 7];
+        pr_rm = an_right[(uint16_t)x2 & 7];
+        pr_x1 = o.x1;
+        pr_y1 = o.y1;
+        pr_x0 = o.x0;
+        pr_y0 = o.y0;
+        an_put_row_s();
+        return;
+    }
+#endif
     /* The source bit that lands on the FIRST pixel of byte b1, which is
      * `lead` pixels left of x1.  Those pixels are outside the mask, so
      * what the source holds for them does not matter -- but it cannot be
@@ -1030,7 +1076,12 @@ void antic_copy(int16_t sx, int16_t sy, int16_t dx, int16_t dy,
      * Pixels whose source is off the screen read as 0, as get_pixel's
      * did. */
     {
+#ifdef __CALYPSI_TARGET_6502__
+        uint8_t buf0[AN_STRIDE + 3];    /* a zero byte before the row: */
+        uint8_t *buf = buf0 + 1;        /* antic_raster_row's, on the 6502 */
+#else
         uint8_t buf[AN_STRIDE + 2];
+#endif
         int16_t xl = dx, xr = (int16_t)(dx + w - 1), k, sb;
 
         if (xl < 0)
@@ -1056,6 +1107,9 @@ void antic_copy(int16_t sx, int16_t sy, int16_t dx, int16_t dy,
                 uint8_t v = an_byte_at(syy, (int16_t)(sb + k));
                 buf[k] = v;
             }
+#ifdef __CALYPSI_TARGET_6502__
+            buf0[0] = 0;                /* shifted, the last row left it */
+#endif
             antic_raster_row((const uint8_t FAR_816 *)buf,
                              (uint16_t)(s0 - (int16_t)(sb * 8)),
                              xl, xr, dyy, AN_MD_REPLACE, 1, 0);

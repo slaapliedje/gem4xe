@@ -19,6 +19,17 @@
 #include "../sys/farmem.h"
 #include "../sys/ctx.h"    /* whose a virtual workstation is */
 
+#if defined(__CALYPSI_TARGET_6502__) && defined(GEM4XE_BANKED)
+/* THE 6502: the fill patterns and the sine table in the banks of the one
+ * function that reads each -- pat_bits in vdi_a, Isin in vdi_b -- not in
+ * resident memory, which is the 6502 build's scarcest (834 bytes of it). */
+#pragma clang section rodata="vdi_a__bank"
+#include "fillpat.c"
+#pragma clang section rodata="vdi_b__bank"
+#include "sintbl.c"
+#pragma clang section rodata=""
+#endif
+
 /* The device this VDI is drawing on (vdidev.h).  The PROGRAM sets it
  * before vdi_init() and it does not move afterwards; every SCR_ and
  * FONT_ name in this file, and every dev_ call, is a read through it. */

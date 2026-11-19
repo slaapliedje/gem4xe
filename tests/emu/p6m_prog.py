@@ -27,7 +27,7 @@ loads it into three banks from the far heap.  The gate holds it to:
     and its alert, text under the ROM, answering Return with its default,
     2 -- with the second button only if the text was read whole;
   - its far memory (step 5c-2): a Malloc'd block written through gem.h's
-    FSET and fa_put (src/app/farm6502.c, which maps the far bank itself)
+    FSET and fa_put (src/app/farm6502.s, which maps the far bank itself)
     -- a record, one past the first 16 KB piece, 8 bytes across the
     boundary -- read back through FGET and fa_get, and through the
     system's far_fetch, which maps it its own way;
@@ -215,6 +215,9 @@ def main(argv):
         check(fr[:3] == [1, 1, 1],
               f"FGET read back what FSET put: record 0 {fr[0]}, record 1300 (past 16 KB) "
               f"{fr[1]}, 8 bytes across the piece boundary {fr[2]}; want 1, 1, 1")
+        check(b.peek(STATUS + 0xB3) == 1,
+              f"a word and two longs across the piece boundary read back "
+              f"({b.peek(STATUS + 0xB3)}), want 1")
         check(fr[3] == 1 and across == b"ABCDEFGH",
               f"...and the system's far_fetch saw them the same ({fr[3]}), the 8 bytes "
               f"{across!r}")

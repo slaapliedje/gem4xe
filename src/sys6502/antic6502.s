@@ -8,8 +8,13 @@
 ;;;   an_cblk6    the block under the pointer, saved or put back
 ;;;   an_cpaint6  the pointer itself (antic_cursor_paint)
 ;;;   an_vline6   a vertical line, styled (antic_vline)
+;;;   an_pack6_s  one row of a string's glyphs, packed (antic_text)
+;;;   an_put_row_s  ...and that row onto the screen through the op
+;;;   an_text6    every row of a string, the two above in turn
+;;;   an_shl6     a form's row shifted left (dev's bank: copy_rows)
+;;;   an_shl6a    the same, here (antic_raster_row: an icon's row)
 ;;;
-;;; All three IN THE ANTIC BANK, beside their callers: section `antic`,
+;;; All of them IN THE ANTIC BANK, beside their callers: section `antic`,
 ;;; which the link files put in that bank, so they cost no resident memory.
 ;;;
 ;;; ---- an_fill6 ---------------------------------------------------------
@@ -26,7 +31,11 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
               .extern _Zp
+              .extern ap_sr, ap_chars, ap_buf, ap_n, ap_lead, an_pack6_c
+              .extern pr_buf, pr_scr, pr_last, pr_lm, pr_rm
+              .extern pr_x1, pr_y1, pr_x0, pr_y0
               .public an_fill6, an_rect6, an_cblk6, an_cpaint6, an_vline6
+              .public an_pack6_s, an_put_row_s, an_shl6, an_text6, an_shl6a
 
               .section antic,text
 an_fill6:     tay
@@ -317,4 +326,292 @@ an_vline6:    ldy     #10
               sta     zp:_Zp+8
 7$:           dec     zp:_Zp+4
               bne     2$
+              rts
+
+;;; ---- an_pack6_s -------------------------------------------------------
+;;;   void an_pack6_s(void)       arguments in zero page, antic.c's an_pack6
+;;;
+;;; One row of a run of 6x6 glyphs into ap_buf: ap_lead (0-7) zero bits,
+;;; then bits 7..2 of each glyph's byte -- ap_sr plus the low byte of
+;;; ap_chars[i], i < ap_n -- MSB first, a last partial byte left-aligned
+;;; with zeros.  The byte being built is A with a SENTINEL bit below the
+;;; ones shifted in: when the sentinel comes out into the carry, A holds
+;;; eight and goes into the buffer, and a new sentinel starts the next.
+;;; A glyph row of nothing -- a space, the most of a menu's padding --
+;;; shifts zeros in without the glyph's own shifts.  ap_n is at most 53
+;;; (a string stops at the screen's 320 pixels), so the chars' byte index
+;;; stays under 256.  A face in a PORTB bank goes to the C
+;;; (src/sys6502/anpack6502.c, an_pack6_c): no font the system has is
+;;; one, and its bytes cannot be read with this bank mapped.
+;;;
+;;; In cc6502's C it was ~460 cycles a glyph, a third of a menu's drawing;
+;;; here ~90, ~50 a space.
+;;;   _Zp+0  the glyph's bits     _Zp+1  chars' byte index
+;;;   _Zp+2  glyphs left          Y      the output index
+;;; ---------------------------------------------------------------------------
+an_pack6_s:   lda     zp:ap_sr+2
+              ora     zp:ap_sr+3
+              beq     1$
+              jmp     an_pack6_c
+1$:           lda     zp:ap_n
+              sta     zp:_Zp+2
+              lda     #0
+              sta     zp:_Zp+1
+              tay
+              lda     #1              ; the sentinel, then the lead's zeros
+              ldx     zp:ap_lead
+              beq     3$
+2$:           asl     a
+              dex
+              bne     2$
+3$:           ldx     zp:_Zp+2
+              bne     39$
+              jmp     8$              ; no glyphs: the lead alone
+39$:          tax                     ; X: the byte being built
+4$:           sty     zp:_Zp+3        ; the next char, its low byte
+              ldy     zp:_Zp+1
+              lda     (ap_chars),y
+              iny
+              iny
+              sty     zp:_Zp+1
+              tay
+              lda     (ap_sr),y       ; the glyph's row
+              ldy     zp:_Zp+3
+              cmp     #0
+              beq     6$
+              sta     zp:_Zp+0
+              txa
+              asl     zp:_Zp+0
+              rol     a
+              bcc     20$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+20$:          asl     zp:_Zp+0
+              rol     a
+              bcc     21$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+21$:          asl     zp:_Zp+0
+              rol     a
+              bcc     22$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+22$:          asl     zp:_Zp+0
+              rol     a
+              bcc     23$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+23$:          asl     zp:_Zp+0
+              rol     a
+              bcc     24$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+24$:          asl     zp:_Zp+0
+              rol     a
+              bcc     25$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+25$:          jmp     7$
+6$:           txa                     ; nothing in it: six zeros
+              asl     a
+              bcc     30$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+30$:          asl     a
+              bcc     31$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+31$:          asl     a
+              bcc     32$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+32$:          asl     a
+              bcc     33$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+33$:          asl     a
+              bcc     34$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+34$:          asl     a
+              bcc     35$
+              sta     (ap_buf),y
+              iny
+              lda     #1
+35$:
+7$:           tax
+              dec     zp:_Zp+2
+              beq     71$
+              jmp     4$
+71$:          txa
+8$:           cmp     #1              ; the sentinel alone: nothing left
+              beq     9$
+10$:          asl     a               ; left-aligned: until the sentinel
+              bcc     10$             ; is out
+              sta     (ap_buf),y
+9$:           rts
+
+;;; ---- an_text6 ---------------------------------------------------------
+;;;   void an_text6(uint8_t rows)
+;;;
+;;; A string's rows, all of them: each packed (an_pack6_s) and put
+;;; (an_put_row_s), then the face a row on (+256) and the screen a line
+;;; (+40).  antic_text sets the arguments once; in C the loop around the
+;;; two was ~1,900 cycles a row.  The count rides the 6502's stack: the
+;;; packer may call C, which owns _Zp0-23.  rows in A, 1 or more.
+;;; ---------------------------------------------------------------------------
+an_text6:     pha
+              jsr     an_pack6_s
+              jsr     an_put_row_s
+              inc     zp:ap_sr+1
+              bne     1$
+              inc     zp:ap_sr+2
+              bne     1$
+              inc     zp:ap_sr+3
+1$:           lda     zp:pr_scr
+              clc
+              adc     #40
+              sta     zp:pr_scr
+              bcc     2$
+              inc     zp:pr_scr+1
+2$:           pla
+              sec
+              sbc     #1
+              bne     an_text6
+              rts
+
+;;; ---- an_put_row_s -----------------------------------------------------
+;;;   void an_put_row_s(void)     arguments in zero page, antic_text's
+;;;
+;;; pr_last + 1 bytes of pr_buf onto the screen at pr_scr, through the op
+;;; (AN_PUT's formula):
+;;;     t1 = (d & x1) ^ y1,  t0 = (d & x0) ^ y0
+;;;     d' = (s & t1) | (~s & t0)  =  t0 ^ ((t0 ^ t1) & s)
+;;; kept inside the mask: pr_lm on the first byte, pr_rm on the last, both
+;;; on one that is both.  The bytes between: with x1 and x0 both zero (a
+;;; replace) d' is (s & (y0 ^ y1)) ^ y0, the screen not read.  pr_last is
+;;; at most 40.  In C ~150 cycles a byte; here ~22 between for a replace,
+;;; ~48 for a mode that reads, ~70 an edge.
+;;;   _Zp+0  the mask  _Zp+1  d  _Zp+2  t1  _Zp+3  t0  _Zp+4  y0 ^ y1
+;;;   _Zp+5-6  x0 ^ x1, y0 ^ y1
+;;; ---------------------------------------------------------------------------
+an_put_row_s: ldy     #0
+              lda     zp:pr_last
+              bne     1$
+              lda     zp:pr_lm        ; one byte, both edges
+              and     zp:pr_rm
+              jmp     pr_one
+1$:           lda     zp:pr_lm
+              jsr     pr_one
+              iny
+              cpy     zp:pr_last
+              beq     9$
+              lda     zp:pr_x1
+              ora     zp:pr_x0
+              bne     5$
+              lda     zp:pr_y0        ; no read
+              eor     zp:pr_y1
+              sta     zp:_Zp+4
+2$:           lda     (pr_buf),y
+              and     zp:_Zp+4
+              eor     zp:pr_y0
+              sta     (pr_scr),y
+              iny
+              cpy     zp:pr_last
+              bne     2$
+              beq     9$
+5$:           lda     zp:pr_x0        ; read: x0 ^ x1 and y0 ^ y1, and
+              eor     zp:pr_x1        ; d' = (d & x0) ^ y0
+              sta     zp:_Zp+5        ;      ^ (((d & X) ^ Y) & s)
+              lda     zp:pr_y0
+              eor     zp:pr_y1
+              sta     zp:_Zp+6
+6$:           lda     (pr_scr),y
+              sta     zp:_Zp+1
+              and     zp:_Zp+5
+              eor     zp:_Zp+6
+              and     (pr_buf),y
+              sta     zp:_Zp+2
+              lda     zp:_Zp+1
+              and     zp:pr_x0
+              eor     zp:pr_y0
+              eor     zp:_Zp+2
+              sta     (pr_scr),y
+              iny
+              cpy     zp:pr_last
+              bne     6$
+9$:           lda     zp:pr_rm
+;;; one byte, Y its offset, A the mask
+pr_one:       sta     zp:_Zp+0
+              lda     (pr_scr),y
+              sta     zp:_Zp+1
+              and     zp:pr_x1
+              eor     zp:pr_y1
+              sta     zp:_Zp+2
+              lda     zp:_Zp+1
+              and     zp:pr_x0
+              eor     zp:pr_y0
+              sta     zp:_Zp+3
+              eor     zp:_Zp+2
+              and     (pr_buf),y
+              eor     zp:_Zp+3        ; d'
+              eor     zp:_Zp+1
+              and     zp:_Zp+0
+              eor     zp:_Zp+1        ; inside the mask
+              sta     (pr_scr),y
+              rts
+
+;;; ---- an_shl6a: an_shl6's twin in this bank, for antic_raster_row ------
+an_shl6a:     sta     zp:_Zp+3        ; n
+1$:           ldy     zp:_Zp+3
+              lda     (_Zp),y
+              asl     a
+              sta     (_Zp),y
+              dey
+2$:           lda     (_Zp),y
+              rol     a
+              sta     (_Zp),y
+              dey
+              bpl     2$
+              dec     zp:_Zp+2
+              bne     1$
+              rts
+
+;;; ---- an_shl6 ----------------------------------------------------------
+;;;   void an_shl6(uint8_t *row, uint8_t n, uint8_t off)
+;;;
+;;; row[i] = row[i] << off | row[i + 1] >> (8 - off), i < n, off 1-7: a
+;;; form's row moved left into the destination's bit positions
+;;; (src/vdi/dev_antic.c, copy_rows); row[n] is read, and shifted too, as
+;;; scratch.  The whole row one bit at a time, off times, from the end:
+;;; ~7 cycles a byte a bit, where cc6502's C was ~60 a byte.  In DEV'S
+;;; bank, beside copy_rows, not the antic bank: no veneer.
+;;;
+;;; row in _Zp0-1, n in A, off in _Zp2.
+;;; ---------------------------------------------------------------------------
+              .section dev,text
+an_shl6:      sta     zp:_Zp+3        ; n
+1$:           ldy     zp:_Zp+3        ; row[n] first: its top bit into C
+              lda     (_Zp),y
+              asl     a
+              sta     (_Zp),y
+              dey
+2$:           lda     (_Zp),y
+              rol     a
+              sta     (_Zp),y
+              dey
+              bpl     2$
+              dec     zp:_Zp+2
+              bne     1$
               rts

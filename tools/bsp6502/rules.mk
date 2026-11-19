@@ -49,8 +49,8 @@ BANKS6     = --bank vdi_a=1 --bank vdi_b=2 --bank vdi_c=3 --bank dev=4 --bank an
 
 V6_RES     = $(B6)/res/v6_vdi.o $(B6)/res/stub6502.o $(B6)/res/ciostub6502.o $(B6)/res/irqstub6502.o $(B6)/res/v6stub.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
-             $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
-             $(B6)/res/v6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/mul6502s.o
+             $(B6)/res/bank6502.o \
+             $(B6)/res/v6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/mul6502s.o $(B6)/res/enter6502s.o
 V6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf v6tree
 V6_PRE     = $(V6_UNITS:%=$(B6)/pre/%.o)
 V6_BANK    = $(V6_UNITS:%=$(B6)/bank/%.o)
@@ -87,7 +87,7 @@ $(B6)/w/graf.c:      ; @mkdir -p $(dir $@); printf '#pragma clang section text="
 $(B6)/w/v6tree.c:    ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/v6_tree.c"\n' > $@
 $(B6)/w/v6farmem.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/sys/farmem.c"\n' > $@
 
-$(B6)/pre/vdi.o:       $(B6)/w/vdi.c src/vdi/vdi.c $(HDRS6)
+$(B6)/pre/vdi.o:       $(B6)/w/vdi.c src/vdi/vdi.c src/vdi/fillpat.c src/vdi/sintbl.c $(HDRS6)
 $(B6)/pre/vdi.o:       EXTRA6 = --no-inline
 $(B6)/pre/dev_antic.o: $(B6)/w/dev_antic.c src/vdi/dev_antic.c $(HDRS6)
 $(B6)/pre/dev_antic.o: EXTRA6 = $(DEVANTIC6)
@@ -113,7 +113,7 @@ $(B6)/v6.idx: $(V6_PRE) tools/bsp6502/bankasm.py
 
 $(B6)/bank/%.o: $(B6)/pre/%.o $(B6)/v6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@)
-	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/asm/$*.b.s --tu $* $(BANKS6) --index $(B6)/v6.idx
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/asm/$*.b.s --tu $* $(BANKS6) --index $(B6)/v6.idx --fast-frames --fast-veneers
 	python3 tools/bsp6502/bankcheck.py --asm $(B6)/asm/$*.b.s $(BANKS6) --index $(B6)/v6.idx
 	$(AS6) --core 6502 $(B6)/asm/$*.b.s -o $@
 
@@ -143,9 +143,9 @@ test-v6: build/v6-boot.atr
 A6_BANKS6  = $(BANKS6) --bank wind=11 --bank wind_b=12 --bank menu=13 --bank menu_b=14 --bank evt=15 --bank ctl=16 --bank abi=17 --bank rsrc=18 --bank gemdos=19 --bank gemdos_b=20 --bank gdos=21
 A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
-             $(B6)/res/fillpat.o $(B6)/res/sintbl.o $(B6)/res/bank6502.o \
+             $(B6)/res/bank6502.o \
              $(B6)/res/a6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
-             $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o
+             $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o $(B6)/res/enter6502s.o
 A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc alert gemdos dos con clock
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
@@ -217,7 +217,7 @@ $(B6)/a6.idx: $(A6_PRE) tools/bsp6502/bankasm.py
 
 $(B6)/a6bank/%.o: $(B6)/pre/%.o $(B6)/a6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@) $(B6)/a6asm
-	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/a6asm/$*.b.s --tu $* $(A6_BANKS6) --index $(B6)/a6.idx --switch-in-bank
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/a6asm/$*.b.s --tu $* $(A6_BANKS6) --index $(B6)/a6.idx --switch-in-bank --fast-frames --fast-veneers
 	python3 tools/bsp6502/bankcheck.py --asm $(B6)/a6asm/$*.b.s $(A6_BANKS6) --index $(B6)/a6.idx
 	$(AS6) --core 6502 $(B6)/a6asm/$*.b.s -o $@
 
@@ -302,7 +302,7 @@ test-p6a: build/a6-boot.atr
 P6M        = $(B6)/p6m
 P6M_BANKS  = --bank pb1=1 --bank pb2=2 --bank pb3=3
 P6M_UNITS  = p6m_prog gemlib
-P6M_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(P6M_UNITS:%=$(P6M)/bank/%.o)
+P6M_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(P6M)/enter6502.o $(P6M_UNITS:%=$(P6M)/bank/%.o)
 $(P6M)/w/p6m_prog.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#include "../../../../src/p6m_prog.c"\n' > $@
 $(P6M)/w/gemlib.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb2"\n#include "../../../../src/app/gemlib.c"\n' > $@
 $(P6M)/pre/%.o: $(P6M)/w/%.c src/p6m_prog.c src/app/gemlib.c src/app/gem.h src/portab.h
@@ -313,17 +313,19 @@ $(P6M)/p6m.idx: $(P6M_UNITS:%=$(P6M)/pre/%.o) tools/bsp6502/bankasm.py
 $(P6M)/bank/%.o: $(P6M)/pre/%.o $(P6M)/p6m.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@) $(P6M)/basm
 	python3 tools/bsp6502/bankasm.py $(P6M)/asm/$*.s $(P6M)/basm/$*.b.s --tu $* $(P6M_BANKS) \
-	    --index $(P6M)/p6m.idx --trampoline _pcall --switch-in-bank
+	    --index $(P6M)/p6m.idx --trampoline _pcall --switch-in-bank --fast-frames
 	python3 tools/bsp6502/bankcheck.py --asm $(P6M)/basm/$*.b.s $(P6M_BANKS) --index $(P6M)/p6m.idx
 	$(AS6) --core 6502 $(P6M)/basm/$*.b.s -o $@
 # gem.h's fa_* (step 5c-2): in no bank -- they map the window -- so not
-# through bankasm, and into the shared RAM with the runtime.  The object
-# and the assembly (for make b6asm) in two runs: with --assembly-source
-# cc6502 5.18 writes the assembly and no object, exit status 0.
-$(P6M)/farm6502.o: src/app/farm6502.c src/app/gem.h src/portab.h
-	@mkdir -p $(dir $@) $(P6M)/asm
-	$(CC6) $(KITFLAGS6) -c $< -o $@
-	$(CC6) $(KITFLAGS6) -c $< -o $(P6M)/asm/farm6502.tmp --assembly-source=$(P6M)/asm/farm6502.s
+# through bankasm, and into the shared RAM with the runtime.  Assembly
+# since speed 4 (the C was a memcpy and a frame a field).
+$(P6M)/farm6502.o: src/app/farm6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+# cc6502's frame helpers, faster (bankasm --fast-frames): the system's
+$(P6M)/enter6502.o: src/sys6502/enter6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
 $(P6M)/crt6502m.o: src/app/crt6502m.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@
@@ -358,7 +360,7 @@ D6         = $(B6)/d6
 D6_BANKS   = --bank pb1=1 --bank pb2=2 --bank pb3=3 --bank pb4=4 --bank pb5=5 \
              --bank pb6=6 --bank pb7=7 --bank pb8=8
 D6_UNITS   = desktop deskobj deskfun deskwin deskcmd gemlib
-D6_OBJ     = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(D6_UNITS:%=$(D6)/bank/%.o)
+D6_OBJ     = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(P6M)/enter6502.o $(D6_UNITS:%=$(D6)/bank/%.o)
 D6_DEPS    = $(wildcard src/desk/*.c) src/desk/desk.h build/deskrsc.h src/app/gemlib.c src/app/gem.h src/portab.h
 $(D6)/w/desktop.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb1"\n#include "../../../../src/desk/desktop.c"\n' > $@
 $(D6)/w/deskobj.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="pb6"\n#include "../../../../src/desk/deskobj.c"\n' > $@
@@ -375,7 +377,7 @@ $(D6)/d6.idx: $(D6_UNITS:%=$(D6)/asm/%.s) tools/bsp6502/bankasm.py
 $(D6)/bank/%.o: $(D6)/asm/%.s $(D6)/d6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@) $(D6)/basm
 	python3 tools/bsp6502/bankasm.py $< $(D6)/basm/$*.b.s --tu $* $(D6_BANKS) \
-	    --index $(D6)/d6.idx --trampoline _pcall --switch-in-bank
+	    --index $(D6)/d6.idx --trampoline _pcall --switch-in-bank --fast-frames
 	python3 tools/bsp6502/bankcheck.py --asm $(D6)/basm/$*.b.s $(D6_BANKS) --index $(D6)/d6.idx
 	$(AS6) --core 6502 $(D6)/basm/$*.b.s -o $@
 build/desk6.elf: $(D6_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
@@ -413,7 +415,7 @@ build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a build/cpanel6.g6a build/cp
 C6P        = $(B6)/cp6
 C6P_BANKS  = --bank pb1=1 --bank pb2=2 --bank pb3=3 --bank pb4=4 --bank pb5=5
 C6P_UNITS  = cpanel6 cpanel general color gemlib
-C6P_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(C6P_UNITS:%=$(C6P)/bank/%.o)
+C6P_OBJ    = $(P6M)/crt6502m.o $(P6M)/gemabi6502.o $(P6M)/farm6502.o $(P6M)/enter6502.o $(C6P_UNITS:%=$(C6P)/bank/%.o)
 C6P_DEPS   = src/apps/cpanel.c src/apps/general.c src/apps/color.c src/apps/cpanel6.c src/app/cpx.h \
              src/app/gemlib.c src/app/gem.h src/portab.h build/cpanelrsc.h build/generalrsc.h \
              build/colorrsc.h build/cp6_general.h build/cp6_color.h
@@ -434,7 +436,7 @@ $(C6P)/cp6.idx: $(C6P_UNITS:%=$(C6P)/asm/%.s) tools/bsp6502/bankasm.py
 $(C6P)/bank/%.o: $(C6P)/asm/%.s $(C6P)/cp6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@) $(C6P)/basm
 	python3 tools/bsp6502/bankasm.py $< $(C6P)/basm/$*.b.s --tu $* $(C6P_BANKS) \
-	    --index $(C6P)/cp6.idx --trampoline _pcall --switch-in-bank
+	    --index $(C6P)/cp6.idx --trampoline _pcall --switch-in-bank --fast-frames
 	python3 tools/bsp6502/bankcheck.py --asm $(C6P)/basm/$*.b.s $(C6P_BANKS) --index $(C6P)/cp6.idx
 	$(AS6) --core 6502 $(C6P)/basm/$*.b.s -o $@
 build/cpanel6.elf: $(C6P_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
@@ -599,6 +601,10 @@ $(B6)/res/mul6502s.o: src/sys6502/mul6502.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@
 $(B6)/res/irq6502s.o: src/sys6502/irq6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+# cc6502's frame helpers, faster: in place of clib's enter.o and stack.o
+$(B6)/res/enter6502s.o: src/sys6502/enter6502.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@
 

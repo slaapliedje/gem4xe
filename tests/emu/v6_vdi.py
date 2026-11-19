@@ -41,7 +41,7 @@ from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT, V_PLINE,
                     VSL_TYPE, VSL_UDSTY)
 
-FIS_SOLID, FIS_USER, MD_REPLACE, MD_XOR = 1, 4, 1, 3
+FIS_SOLID, FIS_USER, MD_REPLACE, MD_TRANS, MD_XOR, MD_ERASE = 1, 4, 1, 2, 3, 4
 PAT = (0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
        0x1248, 0x8421, 0xAA55, 0x55AA, 0xE007, 0x07E0, 0x9009, 0x6FF6)
 BANKS_NEEDED = 10
@@ -80,6 +80,15 @@ SCRIPT = [
     (V_PLINE, (315, 37, 315, 120), ()),
     (VSWR_MODE, (), (MD_REPLACE,)),
     (VSL_TYPE, (), (1,)),
+    (VSWR_MODE, (), (MD_TRANS,)),       # text that reads the screen
+    (V_GTEXT, (23, 33), tuple(b"TRANS 1")),
+    (VSWR_MODE, (), (MD_XOR,)),
+    (V_GTEXT, (101, 45), tuple(b"XOR WJ")),
+    (VSWR_MODE, (), (MD_ERASE,)),
+    (V_GTEXT, (61, 55), tuple(b"ERASE")),
+    (VSWR_MODE, (), (MD_XOR,)),
+    (V_GTEXT, (1, 70), tuple(b"I")),
+    (VSWR_MODE, (), (MD_REPLACE,)),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]
@@ -138,6 +147,8 @@ def main(argv):
         far = b.peek(STATUS + 9)
         check(far >= 1, f"the far heap has {far} far bank(s) of 64 KB, want at least one")
 
+        fb = b.peek(STATUS + 10)
+        check(fb >= 1, f"the round-trip form is in far memory: bank {fb}")
         tree = int.from_bytes(bytes(b.memdump(0x0650, 4)), "little")
         check(tree >> 16 >= 1, f"the tree is in far memory: ${tree:06X}, bank {tree >> 16}")
         good = b.peek(0x0655)

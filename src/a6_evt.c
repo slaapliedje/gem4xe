@@ -323,7 +323,7 @@ static uint8_t prog_read(int16_t io, uint8_t own)
         lb[0x12] = (uint8_t)(uint16_t)b6_portb;
         lb[0x13] = (uint8_t)((uint16_t)b6_portb >> 8);
         lb[0x14] = b6_kind;
-        lb[0x15] = b6_far_base;         /* src/app/farm6502.c */
+        lb[0x15] = b6_far_base;         /* src/app/farm6502.s */
     }
     return CIO_OK;
 }

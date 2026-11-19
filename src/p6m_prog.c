@@ -26,7 +26,7 @@
  *            buffer in the RAM under the ROM, copied to $0680-$0691
  *
  * and its far memory through gem.h's FGET/FSET and fa_* (step 5c-2,
- * src/app/farm6502.c), read back both through them and through the
+ * src/app/farm6502.s), read back both through them and through the
  * system's far_fetch, which maps the far heap its own way:
  *
  *   $06A0-3  Malloc(20000)'s far address
@@ -39,6 +39,8 @@
  *            the far block (gem.h's FA_PARAM: a far address, as it is)
  *   $06B1    1 if they are the bytes the near Fread read
  *   $06B2    Mfree's answer for the block, by its far address (low byte)
+ *   $06B3    1 if a word and two longs written across the boundary read
+ *            back, as values and as bytes
  *
  * Every pointer it hands the system is to the RAM under the ROM -- its
  * parameter arrays, the file's name, the buffer, the alert's text -- so
@@ -161,6 +163,29 @@ void far_mem(void)
         if (got[k] != across[k])
             ok = 0;
     STATUS[0xA6] = ok;
+
+    /* single values across the boundary (fa_wr16/32 and fa_rd16/32 split
+     * over two pieces, speed 4): a word at edge + 3, longs at edge + 1
+     * and edge + 3, each read back as a value and as bytes */
+    {
+        uint8_t b4[4];
+
+        ok = 1;
+        fa_wr16(edge + 3u, 0xBEEF);
+        fa_get(b4, edge + 3u, 2);
+        if (fa_rd16(edge + 3u) != 0xBEEF || b4[0] != 0xEF || b4[1] != 0xBE)
+            ok = 0;
+        fa_wr32(edge + 1u, 0x11223344L);
+        fa_get(b4, edge + 1u, 4);
+        if (fa_rd32(edge + 1u) != 0x11223344L || b4[0] != 0x44 || b4[3] != 0x11)
+            ok = 0;
+        fa_wr32(edge + 3u, 0xCAFEF00DL);
+        fa_get(b4, edge + 3u, 4);
+        if (fa_rd32(edge + 3u) != 0xCAFEF00DL || b4[0] != 0x0D || b4[3] != 0xCA)
+            ok = 0;
+        STATUS[0xB3] = ok;
+        fa_put(edge, across, 8);        /* as it was, for far_fetch below */
+    }
 
     /* the system's view: far_fetch, gate 'F' (src/sys/abi.c) */
     ok = 1;

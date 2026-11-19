@@ -224,6 +224,22 @@ def runtime_fixes(lines):
     return [FIX_TOKEN.sub(lambda m: RUNTIME_FIX[m.group(1)], ln) for ln in lines]
 
 
+# --fast-frames (speed 4): cc6502's frame and stack helpers sent to
+# src/sys6502/enter6502.s's, which move _Vsp without holding interrupts
+# off and save the pseudo-registers in an unrolled run.  A build that asks
+# for it links enter6502s.o.
+FAST_FRAMES = ("_AllocStackSave", "_AllocStackLarge", "_DeallocStackLarge",
+               "_DeallocStackRestore", "_DeallocStack", "_RestoreRegisters",
+               "_AllocStack", "_DecVspY0", "_DecVsp16", "_DecVsp", "_IncVsp16",
+               "_IncVsp", "_LoadVspEA", "_LoadVfpEA", "_AllocStackVLA",
+               "_DeallocStackVLA")
+FRAME_TOKEN = re.compile(r"(?<![\w`])(" + "|".join(FAST_FRAMES) + r")(?![\w`])")
+
+
+def fast_frames(lines):
+    return [FRAME_TOKEN.sub(lambda m: "b6" + m.group(1), ln) for ln in lines]
+
+
 # A NAME as6502 CANNOT READ BACK.  cc6502 names a string literal after its
 # text, in backquotes -- "\\*.*" is `_StringLiteral_\*.*` -- and its own
 # --assembly-source writes the backslash as it is, which as6502 then
@@ -294,6 +310,8 @@ def main(argv):
     banks, _ = parse_banks(argv[3:])
     ext = read_index(argv[argv.index("--index") + 1]) if "--index" in argv else {}
     lines = bank_data(runtime_fixes(quoted_names(read_source(src))), banks)
+    if "--fast-frames" in argv:
+        lines = fast_frames(lines)
     if "--switch-in-bank" in argv:
         lines = switch_in_bank(lines, banks)
     lines = localise_tails(lines, banks)
@@ -422,10 +440,26 @@ def main(argv):
         final.append(f"              .word   {target(f)}")
         final.append(f"              .byte   {fbank(f)}")
     # a bank's veneers in the bank: _bcall reads the veneer before it maps
-    # the target's bank, so the caller's bank may hold it
+    # the target's bank, so the caller's bank may hold it.  --fast-veneers
+    # (the system's, speed 4): the veneer loads what _bcall would have read
+    # from after its JSR -- A kept in bc_a, the target in bc_t, the bank in
+    # X -- and jumps into _bcall past that reading (_bcall_go): 15 bytes in
+    # the caller's bank, not 6, and ~34 cycles a call fewer
+    fastv = "--fast-veneers" in argv and tramp == "_bcall"
+    if fastv and bank_veneers:
+        final.append("              .extern bc_a, bc_t, _bcall_go")
     for (f, k), (v, sect) in sorted(bank_veneers.items()):
         final.append(f"              .section {sect},text")
         final.append(f"              .public {v}")
+        if fastv:
+            final.append(f"{v}:          sta     zp:bc_a")
+            final.append(f"              lda     #.byte0 {target(f)}")
+            final.append(f"              sta     zp:bc_t")
+            final.append(f"              lda     #.byte1 {target(f)}")
+            final.append(f"              sta     zp:bc_t+1")
+            final.append(f"              ldx     #{fbank(f)}")
+            final.append(f"              jmp     _bcall_go")
+            continue
         final.append(f"{v}:          jsr     {tramp}")
         final.append(f"              .word   {target(f)}")
         final.append(f"              .byte   {fbank(f)}")

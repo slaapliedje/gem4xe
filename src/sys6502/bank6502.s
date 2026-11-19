@@ -38,6 +38,7 @@
               .public b6_cur, b6_count, b6_portb, bc_t, b6_kind, b6_sites
               .public b6sw_call, b6sw_ret, b6sw_sel, b6sw_main
               .public b6init_lo, b6init_hi
+              .public bc_a, _bcall_go
 
 PORTB:        .equ    0xd301
 AXLON:        .equ    0xcfff          ; an Axlon's bank register (write only)
@@ -89,7 +90,10 @@ _bcall:       sta     bc_a
               iny
               lda     (bc_p),y
               tax                     ; the bank to go to
-              lda     b6_cur          ; the caller's, on the 6502 stack under
+;;; a bank's own veneer comes in here (tools/bsp6502/bankasm.py
+;;; --fast-veneers): A in bc_a, the callee in bc_t, its bank in X, and on
+;;; the stack only the return into the veneer's caller
+_bcall_go:    lda     b6_cur          ; the caller's, on the 6502 stack under
               pha                     ; the return into the caller
               stx     b6_cur
 b6sw_call:       lda     b6_portb,x

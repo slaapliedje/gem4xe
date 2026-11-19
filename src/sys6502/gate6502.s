@@ -24,7 +24,11 @@
 ;;; the P the CPU pushed, copied from the stack: a PHP would push B set,
 ;;; and the XL OS reads that as a BRK -- and g6_iret puts back PORTB, X
 ;;; and A before its RTI.  With the ROM in, the CPU takes the ROM's
-;;; vectors and none of this runs.
+;;; vectors and none of this runs.  The pointer sampler's timer and the
+;;; keyboard -- ~500 IRQs a second, all gem4xe's own -- skip the ROM:
+;;; g6_irq hands them straight to src/sys6502/irq6502.s (irq6_take),
+;;; which is resident and ends in its own RTI; the ROM's round trip cost
+;;; ~130 cycles of each (step 6a).
 ;;;
 ;;; THE PROGRAM'S START, p6_ven: a veneer in RAM, to $4003 -- the JMP in
 ;;; the program's header (src/app/crt6502.s) -- in a bank written into its
@@ -34,7 +38,7 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
               .extern _Zp, _bcall, b6_cur, gem_pb, gem_which, gem_bank6
-              .extern gem_entry__b
+              .extern gem_entry__b, irq6_take, irq6_mask
               .public g6_gate, p6_ven, g6_nmi, g6_reset, g6_irq
 
 PORTB:        .equ    0xd301
@@ -75,7 +79,13 @@ g6_nmi:       pha
               pha
               jmp     (0xfffa)        ; the ROM's, now it is in
 g6_irq:       pha
-              txa
+              lda     0xd20e          ; IRQST: 0 = pending
+              eor     #0xff
+              and     0x10            ; POKMSK
+              and     irq6_mask       ; timer 1 or a key, while ours:
+              beq     1$              ; served without the ROM (step 6a)
+              jmp     irq6_take
+1$:           txa
               pha
               lda     PORTB
               pha

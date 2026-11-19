@@ -38,7 +38,7 @@
               .extern irq_prev_lo, irq_prev_hi, irq_pend, irq_tmp
               .extern irq_tq, irq_tq_head, irq_tq_tail, irq6_last
               .public irq6_vbi, irq6_irq, irq6_old_vbi, irq6_old_irq
-              .public irq6_hook, irq6_unhook
+              .public irq6_hook, irq6_unhook, irq6_take, irq6_mask
 
 NMIRES:       .equ    0xd40f
 IRQST:        .equ    0xd20e          ; read: 0 = pending
@@ -56,6 +56,10 @@ SETVBV:       .equ    0xe45c
               .section zdata, bss
 irq6_old_vbi: .space  2               ; what VVBLKI held: SYSVBV
 irq6_old_irq: .space  2               ; what VIMIRQ held: the OS's dispatch
+;;; the IRQs src/sys6502/gate6502.s's g6_irq takes straight here with the
+;;; ROM out: timer 1 and the keyboard while hooked, none while not (the
+;;; OS has the keyboard back then)
+irq6_mask:    .space  1
 
               .section code
 ;;; ---------------------------------------------------------------------------
@@ -101,11 +105,12 @@ irq6_irq:     pha
               eor     #0xff
               and     POKMSK
               and     #0x41           ; timer 1, keyboard
-              bne     10$
+              bne     irq6_take
               pla                     ; not ours: on, as it came
               jmp     (irq6_old_irq)
 
-10$:          sta     irq_pend
+;;; g6_irq comes in here, A pushed, A the pending bits that are ours
+irq6_take:    sta     irq_pend
               eor     #0xff
               and     POKMSK
               sta     IRQEN           ; those latches low ...
@@ -228,6 +233,8 @@ irq6_hook:    lda     VVBLKI
               sta     VIMIRQ
               lda     #.byte1 irq6_irq
               sta     VIMIRQ+1
+              lda     #0x41
+              sta     irq6_mask
               lda     POKMSK
               ora     #0x41           ; timer 1, and the keyboard the OS had
               sta     POKMSK
@@ -238,6 +245,8 @@ irq6_hook:    lda     VVBLKI
 ;;; irq6_unhook -- timer 1 off, the vectors as they were.
 irq6_unhook:  php
               sei
+              lda     #0
+              sta     irq6_mask
               lda     POKMSK
               and     #0xfe
               sta     POKMSK

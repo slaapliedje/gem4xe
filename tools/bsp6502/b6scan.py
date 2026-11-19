@@ -81,7 +81,7 @@ FILES = ["src/vdi/vdi.c", "src/vdi/dev_antic.c", "src/antic/antic.c", "src/vdi/f
          "src/sys6502/*.c", "src/v6_*.c", "src/f6_*.c", "src/a6_*.c", "src/c6_*.c", "src/i6_*.c",
          "src/aes/*.c", "src/sys/abi.c", "src/sys/cio.c", "src/p6_prog.c", "src/p6m_prog.c", "src/app/gemlib.c",
          "src/sys/gemdos.c", "src/sys/dos.c", "src/sys/con.c", "src/sys/clock.c",   # 5b-4
-         "src/desk/*.c", "src/app/farm6502.c"]                                  # 5c-2
+         "src/desk/*.c"]                                  # 5c-2
 PER_FILE = {
     "src/vdi/dev_antic.c": ["-DGEM4XE_DEV_IMPL", "-DGEM4XE_DEV_PREFIX=and_",
                             "-DGEM4XE_DEV_ANTIC"],
@@ -89,7 +89,6 @@ PER_FILE = {
     # a program built with the kit (docs/6502.md, step 5): its headers
     "src/p6_prog.c": ["-Isrc/app"],
     "src/p6m_prog.c": ["-Isrc/app"],
-    "src/app/farm6502.c": ["-Isrc/app"],
     "src/desk/deskobj.c": ["-Isrc/app", "-Ibuild"],
     "src/desk/deskcmd.c": ["-Isrc/app", "-Ibuild"],
     "src/desk/desktop.c": ["-Isrc/app", "-Ibuild"],

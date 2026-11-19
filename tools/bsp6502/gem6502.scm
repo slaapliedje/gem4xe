@@ -26,9 +26,9 @@
     ;; the page after ANTIC's screen, which ends at $9F00
     (memory ScreenTail (address (#x9f00 . #x9fff)) (type ram) (section zwin))
     (memory Bank1 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store1)
-            (section vdi_a))
+            (section vdi_a vdi_a__bank))
     (memory Bank2 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store2)
-            (section vdi_b))
+            (section vdi_b vdi_b__bank))
     (memory Bank3 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store3)
             (section vdi_c))
     (memory Bank4 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store4)
