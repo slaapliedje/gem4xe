@@ -39,7 +39,8 @@ from anticref import AN_W, AN_H              # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
                     VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT, V_PLINE,
-                    VSL_TYPE, VSL_UDSTY, V_ESCAPE, ESC_XLINE)
+                    VSL_TYPE, VSL_UDSTY, V_ESCAPE, ESC_XLINE,
+                    VSL_COLOR)
 
 FIS_SOLID, FIS_USER, MD_REPLACE, MD_TRANS, MD_XOR, MD_ERASE = 1, 4, 1, 2, 3, 4
 PAT = (0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
@@ -75,7 +76,27 @@ SCRIPT = [
     (VR_RECFL, (9, 156, 197, 175), ()),
     (VR_RECFL, (203, 156, 206, 165), ()),
     (VR_RECFL, (212, 156, 219, 165), ()),
+    (VSWR_MODE, (), (MD_XOR,)),         # the pattern in the other modes
+    (VR_RECFL, (149, 160, 230, 170), ()),
+    (VSWR_MODE, (), (MD_TRANS,)),
+    (VR_RECFL, (250, 156, 280, 170), ()),
+    (VSWR_MODE, (), (MD_ERASE,)),
+    (VR_RECFL, (255, 160, 275, 175), ()),
+    (VSWR_MODE, (), (MD_REPLACE,)),
+    (VSF_COLOR, (), (0,)),
+    (VR_RECFL, (284, 156, 300, 175), ()),
+    (VSF_COLOR, (), (1,)),
     (VSF_INTERIOR, (), (FIS_SOLID,)),
+    (VR_RECFL, (233, 20, 236, 40), ()),     # solid: one odd byte
+    (VSWR_MODE, (), (MD_TRANS,)),
+    (VR_RECFL, (252, 40, 240, 20), ()),
+    (VSF_COLOR, (), (0,)),
+    (VR_RECFL, (243, 25, 247, 35), ()),
+    (VSF_COLOR, (), (1,)),
+    (VSWR_MODE, (), (MD_XOR,)),         # off two edges of the screen
+    (VR_RECFL, (-8, -4, 12, 6), ()),
+    (VR_RECFL, (300, 185, 330, 200), ()),
+    (VSWR_MODE, (), (MD_REPLACE,)),
     (VSL_TYPE, (), (7,)),               # styled vertical lines (an_vline6)
     (VSL_UDSTY, (), (0xF0C9,)),
     (V_PLINE, (310, 21, 310, 187), ()),
@@ -86,6 +107,15 @@ SCRIPT = [
     (V_ESCAPE, (130, 181, 200, 181, 200, 190, 131, 190, 131, 181), (), None,
      ESC_XLINE),
     (VSWR_MODE, (), (MD_REPLACE,)),
+    (VSL_UDSTY, (), (0xF0C9,)),         # styled, in pen 0: all pen 0
+    (VSL_COLOR, (), (0,)),
+    (V_PLINE, (305, 21, 305, 187), ()),
+    (V_PLINE, (205, 45, 300, 45), ()),
+    (VSL_COLOR, (), (1,)),
+    (V_PLINE, (205, 47, 300, 47), ()),
+    (VSL_COLOR, (), (0,)),
+    (V_PLINE, (300, 47, 205, 47), ()),
+    (VSL_COLOR, (), (1,)),
     (VSL_TYPE, (), (1,)),
     (VSWR_MODE, (), (MD_TRANS,)),       # text that reads the screen
     (V_GTEXT, (23, 33), tuple(b"TRANS 1")),

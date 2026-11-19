@@ -163,8 +163,33 @@ int main(void)
         rect(VR_RECFL, 9, 156, 197, 175);
         rect(VR_RECFL, 203, 156, 206, 165);
         rect(VR_RECFL, 212, 156, 219, 165);
+        /* ...and the pattern in the other modes and pens (an_frect6,
+         * speed 6): XOR over what is there, from an odd byte; transparent
+         * and erase, which go to the C; replace in pen 0 */
+        set1(VSWR_MODE, MD_XOR);
+        rect(VR_RECFL, 149, 160, 230, 170);
+        set1(VSWR_MODE, MD_TRANS);
+        rect(VR_RECFL, 250, 156, 280, 170);
+        set1(VSWR_MODE, MD_ERASE);
+        rect(VR_RECFL, 255, 160, 275, 175);
+        set1(VSWR_MODE, MD_REPLACE);
+        set1(VSF_COLOR, 0);
+        rect(VR_RECFL, 284, 156, 300, 175);
+        set1(VSF_COLOR, 1);
         set1(VSF_INTERIOR, FIS_SOLID);
     }
+    /* solid: one byte, an odd one; transparent in both pens, corners
+     * given the wrong way round; XOR off two edges of the screen */
+    rect(VR_RECFL, 233, 20, 236, 40);
+    set1(VSWR_MODE, MD_TRANS);
+    rect(VR_RECFL, 252, 40, 240, 20);
+    set1(VSF_COLOR, 0);
+    rect(VR_RECFL, 243, 25, 247, 35);
+    set1(VSF_COLOR, 1);
+    set1(VSWR_MODE, MD_XOR);
+    rect(VR_RECFL, -8, -4, 12, 6);
+    rect(VR_RECFL, 300, 185, 330, 200);
+    set1(VSWR_MODE, MD_REPLACE);
 
     /* vertical lines in a user style (an_vline6, speed 3): the style
      * anchored to the screen's rows across many wraps, from rows that are
@@ -191,6 +216,17 @@ int main(void)
         contrl[5] = 0;
         set1(VSWR_MODE, MD_REPLACE);
     }
+    /* ...and in pen 0, replace: every pixel pen 0, the clear bits too
+     * (the style again: ESC_XLINE leaves it solid) */
+    set1(VSL_UDSTY, (WORD)0xF0C9);
+    set1(VSL_COLOR, 0);
+    rect(V_PLINE, 305, 21, 305, 187);
+    rect(V_PLINE, 205, 45, 300, 45);
+    set1(VSL_COLOR, 1);
+    rect(V_PLINE, 205, 47, 300, 47);
+    set1(VSL_COLOR, 0);
+    rect(V_PLINE, 300, 47, 205, 47);
+    set1(VSL_COLOR, 1);
     set1(VSL_TYPE, 1);
 
     /* text in the modes that read the screen (an_put_row_s, speed 4),

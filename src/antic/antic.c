@@ -441,10 +441,52 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
 void an_fill6(volatile uint8_t *q, uint8_t n, uint8_t f, uint8_t g);
 void an_rect6(const uint8_t *a);
 void an_vline6(const uint8_t *a);
+
+/* ON THE 6502 a rectangle is the assembly's (an_frect6,
+ * src/sys6502/antic6502.s) from the clipping on, for every op it can do
+ * by constants or XOR -- which is all but a pattern in transparent or
+ * erase -- and its arguments come through this, in the bank: the setup
+ * in C was ~2,000 cycles a rectangle, most of a one-pixel line's time
+ * (docs/6502.md, "Speed 6").  an_frect6 answers 0 if it drew it. */
+typedef struct {
+    int16_t x1, y1, x2, y2;
+    const uint16_t *rows;
+    int16_t mode;
+    uint8_t pen;
+} AN_FR;
+BANK_DATA("antic") AN_FR an_fr;
+uint8_t an_frect6(void);
 #endif
+#ifdef __CALYPSI_TARGET_6502__
+void an_fill_c(void);
+
 void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
                      const uint16_t *rows, int16_t mode, uint8_t pen)
 {
+    an_fr.x1 = x1;
+    an_fr.y1 = y1;
+    an_fr.x2 = x2;
+    an_fr.y2 = y2;
+    an_fr.rows = rows;
+    an_fr.mode = mode;
+    an_fr.pen = pen;
+    if (an_frect6())
+        an_fill_c();
+}
+
+/* what an_frect6 leaves: a pattern in transparent or erase, and a mode
+ * that is none of the four */
+void an_fill_c(void)
+{
+    int16_t x1 = an_fr.x1, y1 = an_fr.y1, x2 = an_fr.x2, y2 = an_fr.y2;
+    const uint16_t *rows = an_fr.rows;
+    int16_t mode = an_fr.mode;
+    uint8_t pen = an_fr.pen;
+#else
+void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
+                     const uint16_t *rows, int16_t mode, uint8_t pen)
+{
+#endif
     uint8_t t;                          /* AN_PUT's scratch */
     volatile uint8_t *p;
     AN_OP o;
@@ -488,52 +530,6 @@ void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
     p = SCREEN + (uint16_t)y1 * AN_STRIDE + b1;
     ev = 0xFF;
     od = 0xFF;
-#ifdef __CALYPSI_TARGET_6502__
-    if (how == 0) {
-        /* ON THE 6502 the whole rectangle in assembly (an_rect6,
-         * src/sys6502/antic6502.s): each pattern row's two values worked
-         * out here once, by the parity of the offset from b1, not of the
-         * screen byte, so the assembly need not know b1. */
-        uint8_t a[10], vt[32];
-        uint16_t i, j, n = rows ? 16 : 1, pu;
-
-        /* only the pattern rows the rectangle has: a styled line is one
-         * (dev_style_line), and sixteen of these were most of its time */
-        if (rows && (uint16_t)(y2 - y1) < 15)
-            n = (uint16_t)(y2 - y1 + 1);
-        for (j = 0; j < n; j++) {
-            i = rows ? (uint16_t)((y1 + j) & 15) : 0;
-            if (rows) {
-                pr = rows[i];
-                ev = (uint8_t)(pr >> 8);
-                od = (uint8_t)pr;
-            }
-            ve = AN_MIX(o, 0, ev, 0xFF);
-            vo = AN_MIX(o, 0, od, 0xFF);
-            if (b1 & 1) {
-                vt[i] = vo;
-                vt[i + 16] = ve;
-            } else {
-                vt[i] = ve;
-                vt[i + 16] = vo;
-            }
-        }
-        pu = (uint16_t)p;
-        a[0] = (uint8_t)pu;
-        a[1] = (uint8_t)(pu >> 8);
-        a[2] = (uint8_t)(y2 - y1 + 1);
-        a[3] = (uint8_t)last;
-        a[4] = lm;
-        a[5] = rm;
-        a[6] = (uint8_t)(y1 & 15);
-        a[7] = rows ? 15 : 0;
-        pu = (uint16_t)vt;
-        a[8] = (uint8_t)pu;
-        a[9] = (uint8_t)(pu >> 8);
-        an_rect6(a);
-        return;
-    }
-#endif
 
     for (y = (uint16_t)y1; y <= (uint16_t)y2; y++) {
         if (rows) {
@@ -990,6 +986,30 @@ void antic_patt_span(int16_t x1, int16_t x2, int16_t y, uint16_t patrow,
 
 /* A vertical line, one screen byte a row.  It used to call the whole
  * patterned span for every pixel. */
+#ifdef __CALYPSI_TARGET_6502__
+/* ON THE 6502 all of it in assembly (an_vl6, src/sys6502/antic6502.s),
+ * the arguments through this, as antic_fill_rect's (speed 6) */
+typedef struct {
+    int16_t x, y1, y2;
+    uint16_t mask;
+    int16_t mode;
+    uint8_t pen;
+} AN_VL;
+BANK_DATA("antic") AN_VL an_vl;
+void an_vl6(void);
+
+void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
+                 int16_t mode, uint8_t pen)
+{
+    an_vl.x = x;
+    an_vl.y1 = y1;
+    an_vl.y2 = y2;
+    an_vl.mask = mask;
+    an_vl.mode = mode;
+    an_vl.pen = pen;
+    an_vl6();
+}
+#else
 void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
                  int16_t mode, uint8_t pen)
 {
@@ -1019,30 +1039,6 @@ void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
      * every row, and the zoom box's outlines spent most of their time in
      * it (docs/6502.md, speed 3) */
     probe = (uint16_t)(0x8000u >> (y1 & 15));
-#ifdef __CALYPSI_TARGET_6502__
-    /* ON THE 6502 every row in assembly (an_vline6): the op for the one
-     * pixel as an AND and an XOR each way, worked out here once */
-    if (y1 <= y2) {
-        uint8_t a[11];
-        uint16_t pu = (uint16_t)p;
-        uint8_t nm = (uint8_t)~m;
-
-        a[0] = (uint8_t)pu;
-        a[1] = (uint8_t)(pu >> 8);
-        a[2] = (uint8_t)(y2 - y1 + 1);
-        a[3] = (uint8_t)mask;
-        a[4] = (uint8_t)(mask >> 8);
-        a[5] = (uint8_t)probe;
-        a[6] = (uint8_t)(probe >> 8);
-        a[7] = (uint8_t)(o.x1 | nm);
-        a[8] = (uint8_t)(o.y1 & m);
-        a[9] = (uint8_t)(o.x0 | nm);
-        a[10] = (uint8_t)(o.y0 & m);
-        an_vline6(a);
-    }
-    (void)t;
-    return;
-#endif
     for (y = y1; y <= y2; y++) {
         AN_PUT(p, o, (mask & probe) ? 0xFF : 0x00, m, t);
         p += AN_STRIDE;
@@ -1051,6 +1047,7 @@ void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
             probe = 0x8000u;
     }
 }
+#endif
 
 /* ---- vro_cpyfm, screen to screen -------------------------------------- */
 

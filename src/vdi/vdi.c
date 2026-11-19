@@ -207,11 +207,36 @@ UWORD pat_bits(WORD r)
  * mask reversed and then rotated right by `from + 1`.  Same answers, bit
  * for bit: tests/host/test_style.py holds the rotation to the old loop,
  * and test-m3's styled lines hold this C to the model. */
+#ifdef __CALYPSI_TARGET_6502__
+/* ON THE 6502 a variable shift is a loop, and the two of them here
+ * were ~1,400 cycles a styled line (speed 6): eight places are a byte
+ * swap, and the rest one place at a time, at most seven */
+static UWORD rotr16(UWORD v, UWORD n)
+{
+    if (n & 8)
+        v = (UWORD)((v << 8) | (v >> 8));
+    for (n &= 7; n; n--)
+        v = (UWORD)((v >> 1) | ((v & 1) ? 0x8000u : 0));
+    return v;
+}
+
+/* ...and the mask read backwards a nibble at a time */
+static const uint8_t rev4[16] = {
+    0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
+    0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF
+};
+
+static uint8_t rev8(uint8_t b)
+{
+    return (uint8_t)((rev4[b & 15] << 4) | rev4[b >> 4]);
+}
+#else
 static UWORD rotr16(UWORD v, UWORD n)
 {
     n &= 15;
     return n ? (UWORD)((v >> n) | (v << (16 - n))) : v;
 }
+#endif
 
 UWORD style_anchor(UWORD mask, WORD from, WORD dir)
 {
@@ -222,11 +247,16 @@ UWORD style_anchor(UWORD mask, WORD from, WORD dir)
         return mask;                    /* solid or empty: no phase to set */
     if (dir > 0)
         return rotr16(mask, (UWORD)from);
+#ifdef __CALYPSI_TARGET_6502__
+    (void)b;
+    r = (UWORD)(((UWORD)rev8((uint8_t)mask) << 8) | rev8((uint8_t)(mask >> 8)));
+#else
     r = 0;                              /* the mask read backwards */
     for (b = 0; b < 16; b++) {
         r = (UWORD)((r << 1) | (mask & 1));
         mask >>= 1;
     }
+#endif
     return rotr16(r, (UWORD)(from + 1));
 }
 

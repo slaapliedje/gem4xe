@@ -24,13 +24,13 @@
 
 void dev_fill_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
 {
-    antic_rect_mode((int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2,
+    antic_fill_rect((int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2, 0,
                     1 /* MD_REPLACE */, (uint8_t)(pen ? 1 : 0));
 }
 
 void dev_xor_rect(WORD x1, WORD y1, WORD x2, WORD y2)
 {
-    antic_rect_mode((int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2,
+    antic_fill_rect((int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2, 0,
                     3 /* MD_XOR */, 1);
 }
 
@@ -46,6 +46,15 @@ void dev_patt_rect(WORD x1, WORD y1, WORD x2, WORD y2, WORD pen)
     uint16_t rows[16];
     WORD r;
 
+    /* GEM'S REPLACE: a set bit is the pen and a clear one pen 0 -- so in
+     * pen 0 the whole rectangle is pen 0.  antic.c's replace takes the
+     * OTHER pen for a clear bit, which is the same thing only in pen 1
+     * (tools/vdiref.py's _paint_pixel; test-v6 draws it). */
+    if (mode == MD_REPLACE && !pen) {
+        antic_fill_rect((int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2,
+                        0, MD_REPLACE, 0);
+        return;
+    }
     /* The pattern's rows once, not once a scanline: every one repeats
      * within sixteen, and pat_bits takes a screen row. */
     for (r = 0; r < 16; r++)
@@ -64,6 +73,8 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
     UWORD bits;
     WORD a, b;
 
+    if (mode == MD_REPLACE && !pen)
+        mask = 0xFFFF;                  /* every pixel pen 0: dev_patt_rect */
     if (y1 == y2) {
         bits = style_anchor(mask, x1, (x2 >= x1) ? 1 : -1);
         a = x1;  b = x2;  order(&a, &b);
