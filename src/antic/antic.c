@@ -440,6 +440,7 @@ void antic_span(int16_t x1, int16_t x2, int16_t y, int16_t mode, uint8_t pen)
 #ifdef __CALYPSI_TARGET_6502__
 void an_fill6(volatile uint8_t *q, uint8_t n, uint8_t f, uint8_t g);
 void an_rect6(const uint8_t *a);
+void an_vline6(const uint8_t *a);
 #endif
 void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
                      const uint16_t *rows, int16_t mode, uint8_t pen)
@@ -899,6 +900,7 @@ void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
     AN_OP o;
     int16_t y;
     uint8_t m;
+    uint16_t probe;                     /* the style's bit for this row */
 
     if (x < 0 || x >= AN_W)
         return;
@@ -912,12 +914,43 @@ void antic_vline(int16_t x, int16_t y1, int16_t y2, uint16_t mask,
     an_op_pen(&o, mode, pen);
     m = (uint8_t)(0x80 >> (x & 7));
     p = SCREEN + (uint16_t)y1 * AN_STRIDE + ((uint16_t)x >> 3);
+    /* the style is anchored to the screen's grid, as a horizontal one
+     * is: pixel y takes bit 15 - (y & 15), which is the bit `probe` holds
+     * -- moved one place a row and not shifted to afresh: `mask >> (15 -
+     * (y & 15))` was a loop of up to fifteen 16-bit shifts on the 6502,
+     * every row, and the zoom box's outlines spent most of their time in
+     * it (docs/6502.md, speed 3) */
+    probe = (uint16_t)(0x8000u >> (y1 & 15));
+#ifdef __CALYPSI_TARGET_6502__
+    /* ON THE 6502 every row in assembly (an_vline6): the op for the one
+     * pixel as an AND and an XOR each way, worked out here once */
+    if (y1 <= y2) {
+        uint8_t a[11];
+        uint16_t pu = (uint16_t)p;
+        uint8_t nm = (uint8_t)~m;
+
+        a[0] = (uint8_t)pu;
+        a[1] = (uint8_t)(pu >> 8);
+        a[2] = (uint8_t)(y2 - y1 + 1);
+        a[3] = (uint8_t)mask;
+        a[4] = (uint8_t)(mask >> 8);
+        a[5] = (uint8_t)probe;
+        a[6] = (uint8_t)(probe >> 8);
+        a[7] = (uint8_t)(o.x1 | nm);
+        a[8] = (uint8_t)(o.y1 & m);
+        a[9] = (uint8_t)(o.x0 | nm);
+        a[10] = (uint8_t)(o.y0 & m);
+        an_vline6(a);
+    }
+    (void)t;
+    return;
+#endif
     for (y = y1; y <= y2; y++) {
-        /* the style is anchored to the screen's grid, as a horizontal
-         * one is: pixel y takes bit 15 - (y & 15) */
-        uint8_t bit = (uint8_t)((mask >> (15 - (y & 15))) & 1);
-        AN_PUT(p, o, bit ? 0xFF : 0x00, m, t);
+        AN_PUT(p, o, (mask & probe) ? 0xFF : 0x00, m, t);
         p += AN_STRIDE;
+        probe >>= 1;
+        if (!probe)
+            probe = 0x8000u;
     }
 }
 

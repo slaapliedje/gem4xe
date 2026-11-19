@@ -145,7 +145,7 @@ class SharedTail(unittest.TestCase):
     from a JSR, or a JMP between two of bank 1's instructions, is refused
     as a call into bank 2."""
 
-    def scan(self, op, target, h_at=0x4002):
+    def scan(self, op, target, h_at=0x4002, f_defs=()):
         sys.path.insert(0, TOOLS)
         import bankcheck
         sys.path.remove(TOOLS)
@@ -161,7 +161,7 @@ class SharedTail(unittest.TestCase):
             mem[0x14000 + k] = v
         frags = {
             "f": dict(name="f", section="bank1", bank="Store1", run=(0x4000, 0x4004),
-                      store=(0x10000, 0x10004)),
+                      store=(0x10000, 0x10004), defs=list(f_defs)),
             "g": dict(name="g", section="bank1", bank="Store1", run=(0x4005, 0x4008),
                       store=(0x10005, 0x10008)),
             "p": dict(name="p", section="bank2", bank="Store2", run=(0x4000, h_at - 1),
@@ -179,6 +179,12 @@ class SharedTail(unittest.TestCase):
         bad = self.scan(0x20, 0x4002)
         self.assertEqual(len(bad), 1, bad)
         self.assertIn("a function in Store2", bad[0])
+
+    def test_jsr_to_a_label_the_fragment_defines_passes(self):
+        # an assembly file's section is one fragment with several entry
+        # points: an_cpaint6 inside an_fill6's fragment, at an address
+        # where another bank's function starts (speed 3)
+        self.assertEqual(self.scan(0x20, 0x4002, f_defs=(0x4000, 0x4002)), [])
 
     def test_jmp_between_instructions_is_refused(self):
         # bank 2's function at $4003, the middle of LDA #0 in bank 1

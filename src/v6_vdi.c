@@ -158,6 +158,18 @@ int main(void)
         set1(VSF_INTERIOR, FIS_SOLID);
     }
 
+    /* vertical lines in a user style (an_vline6, speed 3): the style
+     * anchored to the screen's rows across many wraps, from rows that are
+     * not a multiple of 16; in replace, where a clear bit draws pen 0, and
+     * in XOR, where it leaves the pixel */
+    set1(VSL_TYPE, 7);
+    set1(VSL_UDSTY, (WORD)0xF0C9);
+    rect(V_PLINE, 310, 21, 310, 187);
+    set1(VSWR_MODE, MD_XOR);
+    rect(V_PLINE, 315, 37, 315, 120);
+    set1(VSWR_MODE, MD_REPLACE);
+    set1(VSL_TYPE, 1);
+
     {
         volatile unsigned char *nm = (volatile unsigned char *)0x0630;
         WORD k;

@@ -104,6 +104,8 @@ for op in (0x00, 0x40, 0x60):                   # BRK as one, RTI, RTS
 LEN[0x20] = 3
 
 
+DEF = re.compile(r"^\s+\w+ = ([0-9a-f]{4,5})\s*$")
+
 def parse(text):
     """Fragments by (unit, index): name, section, bank, run and store ranges,
     and referrers."""
@@ -131,7 +133,7 @@ def parse(text):
             if u:
                 key = (u.group(2), u.group(3))
                 j += 1
-        refs, mode = [], None
+        refs, defs, mode = [], [], None
         while j < len(lines) and lines[j].strip() and not HEAD.match(lines[j]):
             t = lines[j].strip()
             if MORE.match(lines[j]):
@@ -142,9 +144,14 @@ def parse(text):
                 r = REF.match(lines[j])
                 if r:
                     refs.append((r.group(3), r.group(4), (r.group(1) or "").strip()))
+            elif mode == "Defines":
+                d = DEF.match(lines[j])
+                if d:
+                    defs.append(int(d.group(1), 16))
             j += 1
         if key:
             frags[key] = {"name": name, "section": sect, "bank": bank, "refs": refs,
+                          "defs": defs,
                           "run": (int(p.group(1), 16), int(p.group(2), 16)) if p else None,
                           "store": (int(s.group(1), 16), int(s.group(2), 16)) if s else None}
         i = j
@@ -215,6 +222,11 @@ def check_code(frags, mem):
     for f in frags.values():
         if f["bank"] and f["run"]:
             starts.setdefault(f["bank"], set()).add(f["run"][0])
+            # and every label it defines: an assembly file's section is ONE
+            # fragment, and its other entry points (an_cpaint6 after
+            # an_fill6) are starts as much as the first -- until one landed
+            # where another bank's function starts, this was not missed
+            starts[f["bank"]].update(a for a in f.get("defs", ()) if f["run"][0] <= a <= f["run"][1])
             spans.setdefault(f["bank"], []).append(f["run"])
             if not BANK_VENEER.search(f["name"]) and not f["section"].endswith(BANK_DATA_SECT):
                 insns.setdefault(f["bank"], set()).update(boundaries(f, mem))

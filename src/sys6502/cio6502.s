@@ -23,7 +23,7 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
 
-              .public cio_call, dsk_call
+              .public cio_call, dsk_call, cio_bank
               .public b6sw_cio            ; bank switches: bank6502.s's patch
               .extern _Zp, b6_cur, b6_portb
 
@@ -39,7 +39,10 @@ cio_call:     lda     zp:_Zp+0        ; 1..7
               asl     a
               tax
               jsr     rom_in
-              jsr     CIOV
+              lda     cio_bank        ; a bank for the call's buffer?
+              beq     1$
+              sta     PORTB           ; (its ROM bit set by the caller)
+1$:           jsr     CIOV
               jmp     back
 
 dsk_call:     jsr     rom_in
@@ -63,3 +66,4 @@ rom_in:       lda     PORTB
 
               .section zdata, bss
 cio_pb:       .space  1               ; PORTB before the call
+cio_bank:     .space  1               ; 0, or PORTB for the call (a6_evt.c)

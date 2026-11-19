@@ -7,6 +7,7 @@
 ;;;   an_rect6    a whole constant-op rectangle, every row (the same)
 ;;;   an_cblk6    the block under the pointer, saved or put back
 ;;;   an_cpaint6  the pointer itself (antic_cursor_paint)
+;;;   an_vline6   a vertical line, styled (antic_vline)
 ;;;
 ;;; All three IN THE ANTIC BANK, beside their callers: section `antic`,
 ;;; which the link files put in that bank, so they cost no resident memory.
@@ -25,7 +26,7 @@
               .rtmodel version, "1"
               .rtmodel cpu, "*"
               .extern _Zp
-              .public an_fill6, an_rect6, an_cblk6, an_cpaint6
+              .public an_fill6, an_rect6, an_cblk6, an_cpaint6, an_vline6
 
               .section antic,text
 an_fill6:     tay
@@ -266,3 +267,54 @@ an_cpaint6:   ldy     #10
               beq     33$
               jmp     10$             ; out of a branch's reach
 33$:          rts
+
+;;; ---- an_vline6 --------------------------------------------------------
+;;;   void an_vline6(const uint8_t *a)
+;;;
+;;; A one-pixel column, every row: antic_vline clips it and hands over
+;;;
+;;;   a[0-1]  the top row's byte          a[7]   AND for a set style bit
+;;;   a[2]    rows, 1-192                 a[8]   XOR for a set style bit
+;;;   a[3-4]  the style, 16 bits          a[9]   AND for a clear one
+;;;   a[5-6]  the top row's style bit     a[10]  XOR for a clear one
+;;;
+;;; A row is d = (d & AND) ^ XOR: AN_MIX for the one pixel, with the bits
+;;; outside the column ANDed by ones and XORed by nothing.  The style bit
+;;; moves down a place a row and wraps at 16.  In C a row was ~110
+;;; cycles, the most of it the style's shift; here ~40.
+;;; ---------------------------------------------------------------------------
+an_vline6:    ldy     #10
+1$:           lda     (_Zp),y
+              sta     _Zp+2,y
+              dey
+              bpl     1$
+              ldy     #0
+2$:           lda     zp:_Zp+5        ; the style bit of this row
+              and     zp:_Zp+7
+              bne     4$
+              lda     zp:_Zp+6
+              and     zp:_Zp+8
+              bne     4$
+              lda     (_Zp+2),y       ; clear
+              and     zp:_Zp+11
+              eor     zp:_Zp+12
+              sta     (_Zp+2),y
+              jmp     5$
+4$:           lda     (_Zp+2),y       ; set
+              and     zp:_Zp+9
+              eor     zp:_Zp+10
+              sta     (_Zp+2),y
+5$:           lda     zp:_Zp+2        ; the next row, 40 bytes on
+              clc
+              adc     #40
+              sta     zp:_Zp+2
+              bcc     6$
+              inc     zp:_Zp+3
+6$:           lsr     zp:_Zp+8        ; the style bit down one
+              ror     zp:_Zp+7
+              bcc     7$
+              lda     #0x80           ; out of the bottom: bit 15 again
+              sta     zp:_Zp+8
+7$:           dec     zp:_Zp+4
+              bne     2$
+              rts

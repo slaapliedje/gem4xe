@@ -45,6 +45,15 @@ static void gr_scale(WORD xdist, WORD ydist, WORD *pcnt, WORD *pxstep,
     dist = (WORD)((xdist + ydist) / 2);
     for (i = 0; dist; i++)
         dist = (WORD)(dist / 2);
+#ifdef __CALYPSI_TARGET_6502__
+    /* AT MOST THREE on the 6502: each box is nine VDI calls through the
+     * banks, 50,000 to 100,000 cycles, and a window's opening spent three
+     * of its eight seconds on the seven or eight a halving gives
+     * (docs/6502.md, speed 3).  The steps stay even: xs and ys below are
+     * the distance over the count. */
+    if (i > 3)
+        i = 3;
+#endif
     *pcnt = i;
     if (i != 0) {
         xs = (WORD)(xdist / i);

@@ -52,6 +52,7 @@
 #include "sys/farmem.h"
 #include "sys/cio.h"
 #include "sys/gemdos.h"             /* gemdos_home */
+#include "sys/dos.h"                /* dos.kind: prog_get's straight read */
 
 #define STATUS ((volatile unsigned char *)0x0600)
 
@@ -158,6 +159,7 @@ extern const char a6_file1[P6_FILELEN], a6_file2[P6_FILELEN];
 #define G6_BANKS 15                     /* the link block's g6_banks */
 #define G6_LINK  0xC000u
 static SECTION("bounce") uint8_t p6_buf[256];
+extern uint8_t cio_bank;                /* src/sys6502/cio6502.s */
 extern uint8_t b6_cur, b6_kind, b6_portb[];
 extern const uint8_t b6_far_base;       /* src/sys6502/farmem6502.c */
 /* the program's banks, for the gate to read (test-p6m): in page 5, as
@@ -165,13 +167,44 @@ extern const uint8_t b6_far_base;       /* src/sys6502/farmem6502.c */
 SECTION("page5") uint8_t p6_nbanks;
 SECTION("page5") uint32_t p6_banks[G6_BANKS];
 
-/* n bytes of the file to dst, far or under the ROM */
+/* n bytes of the file to dst, far or under the ROM.
+ *
+ * A FAR PIECE IS READ STRAIGHT INTO ITS BANK, up to 16 KB a call: CIO maps
+ * it in the window for the call (cio_bank, src/sys6502/cio6502.s) and puts
+ * gem4xe's back after.  Through the 256-byte buffer, each call was the OS's
+ * and the DOS's byte at a time -- a request that size never lets a DOS 2
+ * style DOS burst a sector -- and the desktop's 92 KB took 22 s to load
+ * with the disk itself instant; read straight in, 9.7 s from A6 to the desk
+ * drawn (docs/6502.md, speed 3).  NOT under SpartaDOS: SpartaDOS X can keep
+ * its buffers in a PORTB bank of its own and map it into the same window,
+ * and 3.x is left with it.  A RAM disk in extended memory (MyDOS's, DOS
+ * 2.5's) is a bank A6 owns already, which is a conflict without this.  The
+ * pieces under the ROM still come through the buffer: CIO has the ROM in. */
 static uint8_t prog_get(int16_t io, uint32_t dst, uint16_t n)
 {
     uint16_t k, got;
     uint8_t st;
 
     while (n) {
+        if (dst >= 0x10000ul && b6_kind != 'A'
+            && dos.kind != DOS_SDX && dos.kind != DOS_SPARTA) {
+            uint16_t off = (uint16_t)dst & 0x3FFFu;
+
+            k = (uint16_t)(0x4000u - off);
+            if (k > n)
+                k = n;
+            got = 0;
+            cio_bank = (uint8_t)(b6_portb[far_piece(dst)] | 1);
+            st = cio_read(io, (void *)(0x4000u + off), k, &got);
+            cio_bank = 0;
+            if (got != k)
+                return st == CIO_OK ? CIO_E_EOF : st;
+            if (st != CIO_OK && st != CIO_OK_EOF && st != CIO_E_EOF)
+                return st;
+            dst += got;
+            n = (uint16_t)(n - got);
+            continue;
+        }
         k = n > sizeof p6_buf ? (uint16_t)sizeof p6_buf : n;
         got = 0;
         st = cio_read(io, p6_buf, k, &got);

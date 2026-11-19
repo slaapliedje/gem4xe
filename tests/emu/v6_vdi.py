@@ -38,7 +38,8 @@ import m25_antic_vdi                        # noqa: E402  test-m25's tree
 from anticref import AN_W, AN_H              # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
-                    VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT)
+                    VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT, V_PLINE,
+                    VSL_TYPE, VSL_UDSTY)
 
 FIS_SOLID, FIS_USER, MD_REPLACE, MD_XOR = 1, 4, 1, 3
 PAT = (0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
@@ -72,6 +73,13 @@ SCRIPT = [
     (VR_RECFL, (203, 156, 206, 165), ()),
     (VR_RECFL, (212, 156, 219, 165), ()),
     (VSF_INTERIOR, (), (FIS_SOLID,)),
+    (VSL_TYPE, (), (7,)),               # styled vertical lines (an_vline6)
+    (VSL_UDSTY, (), (0xF0C9,)),
+    (V_PLINE, (310, 21, 310, 187), ()),
+    (VSWR_MODE, (), (MD_XOR,)),
+    (V_PLINE, (315, 37, 315, 120), ()),
+    (VSWR_MODE, (), (MD_REPLACE,)),
+    (VSL_TYPE, (), (1,)),
     (GSX_START,),
     (OBJC_DRAW, FULL, (0, 8)),
 ]
