@@ -111,6 +111,14 @@ int main(void)
     text(210, 150, "CLIPPED");
     intin[0] = 0;
     call(VS_CLIP, 0, 1);
+    /* ...and two rows through the cells: the raster's y clip
+     * (dev_raster_1bpp, speed 5) */
+    ptsin[0] = 20; ptsin[1] = 184; ptsin[2] = 120; ptsin[3] = 185;
+    intin[0] = 1;
+    call(VS_CLIP, 2, 1);
+    text(20, 188, "ROWS CUT");
+    intin[0] = 0;
+    call(VS_CLIP, 0, 1);
 
     STATUS[3] = '6';
     {
@@ -168,6 +176,21 @@ int main(void)
     set1(VSWR_MODE, MD_XOR);
     rect(V_PLINE, 315, 37, 315, 120);
     set1(VSWR_MODE, MD_REPLACE);
+    /* the AES's dotted XOR box in one call (ESC_XLINE, speed 5): each
+     * side's dots in its own position's phase */
+    {
+        static const WORD bx[10] = { 130, 181, 200, 181, 200, 190,
+                                     131, 190, 131, 181 };
+        WORD k;
+
+        set1(VSWR_MODE, MD_XOR);
+        for (k = 0; k < 10; k++)
+            ptsin[k] = bx[k];
+        contrl[5] = ESC_XLINE;
+        call(V_ESCAPE, 5, 0);
+        contrl[5] = 0;
+        set1(VSWR_MODE, MD_REPLACE);
+    }
     set1(VSL_TYPE, 1);
 
     /* text in the modes that read the screen (an_put_row_s, speed 4),

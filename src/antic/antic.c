@@ -495,9 +495,14 @@ void antic_fill_rect(int16_t x1, int16_t y1, int16_t x2, int16_t y2,
          * out here once, by the parity of the offset from b1, not of the
          * screen byte, so the assembly need not know b1. */
         uint8_t a[10], vt[32];
-        uint16_t i, n = rows ? 16 : 1, pu;
+        uint16_t i, j, n = rows ? 16 : 1, pu;
 
-        for (i = 0; i < n; i++) {
+        /* only the pattern rows the rectangle has: a styled line is one
+         * (dev_style_line), and sixteen of these were most of its time */
+        if (rows && (uint16_t)(y2 - y1) < 15)
+            n = (uint16_t)(y2 - y1 + 1);
+        for (j = 0; j < n; j++) {
+            i = rows ? (uint16_t)((y1 + j) & 15) : 0;
             if (rows) {
                 pr = rows[i];
                 ev = (uint8_t)(pr >> 8);
@@ -807,6 +812,53 @@ static uint8_t an_src8(const uint8_t FAR_816 *row, uint16_t b)
     lo = row[(uint16_t)(i + 1)];
     return (uint8_t)((uint8_t)(hi << sh) | (uint8_t)(lo >> (8 - sh)));
 }
+
+#ifdef __CALYPSI_TARGET_6502__
+/* A whole 1bpp raster, h rows from the far address src a stride apart,
+ * onto rows y.. of the screen at columns x1..x2: what dev_raster_1bpp
+ * did a row at a time through antic_raster_row, with the op, the edge
+ * masks and the alignment worked out ONCE (speed 5).  src is the byte
+ * the first pixel's bit is in, sbit that bit (0-7); the caller has
+ * clipped every row given.  An icon's row was ~2,700 cycles, most of it
+ * the call and its setup. */
+void antic_raster6(far_src8 src, uint16_t stride, uint16_t sbit,
+                   int16_t x1, int16_t x2, int16_t y, int16_t h,
+                   int16_t mode, uint8_t pen, uint8_t pap)
+{
+    uint8_t buf0[AN_STRIDE + 3];        /* a zero byte, then the row */
+    uint8_t *row = buf0 + 1;
+    AN_OP o;
+    uint16_t b1 = (uint16_t)x1 >> 3, b2 = (uint16_t)x2 >> 3;
+    int16_t d = (int16_t)((int16_t)sbit - (int16_t)((uint16_t)x1 & 7));
+    uint8_t *base = row + (d < 0 ? -1 : 0);
+    uint8_t e = (uint8_t)(d & 7);
+    uint8_t n = (uint8_t)(b2 - b1 + 1);
+    uint16_t nb = (uint16_t)(((sbit + (uint16_t)(x2 - x1)) >> 3) + 2);
+    uint16_t scr = (uint16_t)(SCREEN + (uint16_t)y * AN_STRIDE + b1);
+
+    if (x1 > x2 || h <= 0)
+        return;
+    an_op(&o, mode, pen, pap);
+    pr_last = (uint16_t)(b2 - b1);
+    pr_lm = an_left[(uint16_t)x1 & 7];
+    pr_rm = an_right[(uint16_t)x2 & 7];
+    pr_x1 = o.x1;
+    pr_y1 = o.y1;
+    pr_x0 = o.x0;
+    pr_y0 = o.y0;
+    pr_buf = (uint16_t)base;
+    do {
+        buf0[0] = 0;
+        far_get(row, src, nb);
+        if (e)
+            an_shl6a(base, n, e);
+        pr_scr = scr;
+        an_put_row_s();
+        src += stride;
+        scr = (uint16_t)(scr + AN_STRIDE);
+    } while (--h);
+}
+#endif
 
 void antic_raster_row(const uint8_t FAR_816 *row, uint16_t sbit,
                       int16_t x1, int16_t x2, int16_t y,

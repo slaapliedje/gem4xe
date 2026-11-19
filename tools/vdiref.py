@@ -40,6 +40,11 @@ VSC_FORM, V_SHOW_C, V_HIDE_C, VQ_MOUSE = 111, 122, 123, 124
 VSIN_MODE, VQIN_MODE, VEX_TIMV, VSL_UDSTY = 33, 115, 118, 113
 VEX_BUTV, VEX_MOTV = 125, 126
 VST_HEIGHT, VQT_ATTRIBUTES, V_ESCAPE = 12, 38, 5
+# gem4xe's own escape (contrl[5]): the AES's dotted XOR polyline in one
+# call, each segment's dots in the phase its own position gives -- the
+# AES's gsx_xline (src/aes/graf.c), which drew it a VSL_UDSTY and a
+# V_PLINE a segment and left the style solid
+ESC_XLINE = 0x4758
 VST_FONT, VST_LOAD_FONTS, VST_UNLOAD_FONTS, VQT_NAME = 21, 119, 120, 130
 VS_COLOR, VQ_COLOR, VST_ALIGNMENT = 14, 26, 39
 VST_EFFECTS, VST_POINT, VQT_EXTENT, VQT_WIDTH = 106, 107, 116, 117
@@ -1561,6 +1566,18 @@ class VDI:
             self._bitmap(ints)
         elif op == V_GTEXT:
             self._gtext(pts, ints)
+        elif op == V_ESCAPE and sub == ESC_XLINE:
+            hz, vt = (0x5555, 0xAAAA), (0x5555, 0xAAAA, 0xAAAA, 0x5555)
+            for i in range(len(pts) // 2 - 1):
+                x1, y1, x2, y2 = pts[i * 2:i * 2 + 4]
+                if x1 == x2:
+                    self.ud_ls = vt[(x1 & 1) | ((y1 & 1) << 1)]
+                else:
+                    self.ud_ls = hz[(y1 if x1 < x2 else y2) & 1]
+                self._line(x1, y1, x2, y2)
+                if LE_ARROWED in (self.line_beg, self.line_end):
+                    self._line_ends(list(pts[i * 2:i * 2 + 4]), 2)
+            self.ud_ls = 0xFFFF
         elif op == V_PLINE:
             for i in range(len(pts) // 2 - 1):
                 self._line(pts[i * 2], pts[i * 2 + 1],

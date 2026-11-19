@@ -34,11 +34,6 @@ void dev_xor_rect(WORD x1, WORD y1, WORD x2, WORD y2)
                     3 /* MD_XOR */, 1);
 }
 
-void dev_flush(void)
-{
-    /* nothing: the bytes are already on the screen */
-}
-
 /* A rectangle in the current pattern and writing mode.  Where the VBXE
  * device expands the pattern into VRAM once and lets the blitter walk
  * it, this one asks the VDI for a row per scanline and writes it -- the
@@ -268,34 +263,34 @@ void dev_raster_1bpp(far_src8 bits, uint16_t stride,
         return;
 
 #ifdef __CALYPSI_TARGET_6502__
-    /* THE 6502: the source is an address that may be in a PORTB bank,
-     * so the bytes of the row this draws come into a near buffer first
-     * -- from the byte its first bit is in, to one past the last, which
-     * antic_raster_row may read -- after a zero byte it may also read
-     * (speed 4).  The row's address steps by the stride: a multiply a
-     * row was ~700 cycles. */
-    uint8_t near_buf[AN_STRIDE + 3];
-    uint8_t *near_row = near_buf + 1;
-    uint16_t s0 = (uint16_t)(sx + (xl - dx));
-    uint16_t nb = (uint16_t)((((s0 & 7) + (uint16_t)(xr - xl)) >> 3) + 2);
-    far_src8 src = bits + (uint16_t)sy * stride + (s0 >> 3);
-#endif
+    /* THE 6502: the rows the screen and the clip rectangle keep, worked
+     * out here, and all of them drawn by one call (antic_raster6, speed
+     * 5), which fetches each from its bank into a near buffer */
+    {
+        WORD ylo = dy, yhi = (WORD)(dy + h - 1);
+        uint16_t s0 = (uint16_t)(sx + (xl - dx));
 
+        if (ylo < 0)
+            ylo = 0;
+        if (yhi >= AN_H)
+            yhi = AN_H - 1;
+        if (vwk.clip) {
+            if (ylo < vwk.ymn_clip)
+                ylo = vwk.ymn_clip;
+            if (yhi > vwk.ymx_clip)
+                yhi = vwk.ymx_clip;
+        }
+        (void)r;
+        if (ylo > yhi)
+            return;
+        antic_raster6(bits + (uint16_t)(sy + (ylo - dy)) * stride + (s0 >> 3),
+                      stride, (uint16_t)(s0 & 7), (int16_t)xl, (int16_t)xr,
+                      (int16_t)ylo, (int16_t)(yhi - ylo + 1),
+                      (int16_t)mode, pen, pap);
+    }
+#else
     for (r = 0; r < h; r++) {
         WORD y = (WORD)(dy + r);
-#ifdef __CALYPSI_TARGET_6502__
-        if (r)
-            src += stride;
-        if (y < 0 || y >= AN_H)
-            continue;
-        if (vwk.clip && (y < vwk.ymn_clip || y > vwk.ymx_clip))
-            continue;
-        near_buf[0] = 0;
-        far_get(near_row, src, nb);
-        antic_raster_row(near_row, (uint16_t)(s0 & 7),
-                         (int16_t)xl, (int16_t)xr, (int16_t)y,
-                         (int16_t)mode, pen, pap);
-#else
         const uint8_t FAR *row = bits + (uint16_t)(sy + r) * stride;
 
         if (y < 0 || y >= AN_H)
@@ -305,8 +300,8 @@ void dev_raster_1bpp(far_src8 bits, uint16_t stride,
         antic_raster_row(row, (uint16_t)(sx + (xl - dx)),
                          (int16_t)xl, (int16_t)xr, (int16_t)y,
                          (int16_t)mode, pen, pap);
-#endif
     }
+#endif
 }
 
 /* ---- the diagonal ------------------------------------------------------
@@ -734,7 +729,8 @@ const VDIDEV FAR_816 vdev_antic = {
     dev_palette_all,
     dev_palette_one,
     dev_invalidate,
-    dev_flush,
+    0,                  /* flush: nothing is queued, the bytes are on the
+                         * screen -- and vdi() skips a call it need not make */
     0,                  /* text_prefill: each byte is touched once anyway */
     dev_text_run,
     dev_raster_form,

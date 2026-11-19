@@ -134,6 +134,7 @@ static const char menu_str[] BANK_DATA("far") =
     "\0" "  Open\0" "  Quit\0" "\0" "  Icons";
 
 #define KINDS (NAME | CLOSER | FULLER | MOVER | INFO | SIZER)
+#define W2KIND (NAME | MOVER | CLOSER | UPARROW | DNARROW | VSLIDE)
 
 static void name(WORD wh, WORD field, const char *s)
 {
@@ -175,11 +176,19 @@ void a6_tree(void)
     STATUS[3] = 'c';
     wm_open(1, &r);
 
-    STATUS[0x61] = (unsigned char)wm_create(NAME | MOVER | CLOSER, &full);
+    STATUS[0x61] = (unsigned char)wm_create(W2KIND, &full);
     name(2, WF_NAME, "Second");
     r.g_x = 100; r.g_y = 70; r.g_w = 200; r.g_h = 100;
     STATUS[3] = 'd';
     wm_open(2, &r);
+    /* ITS SLIDER SET AFTER IT IS UP, as the desktop sets its own: the
+     * AES places only the elevator again and draws the bar only if that
+     * moved it (src/aes/wind.c, w_bldactive's cache, speed 5) -- and the
+     * gate's model draws the whole frame its way */
+    w[0] = 400;
+    wm_set(2, WF_VSLSIZ, w);
+    w[0] = 500;
+    wm_set(2, WF_VSLIDE, w);
 
     STATUS[3] = 'e';
     mn_bar(m, TRUE);

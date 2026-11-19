@@ -480,6 +480,17 @@ static void gsx_xline(WORD n, const WORD *pts)
     static const WORD verttbl[4] = { 0x5555, (WORD)0xAAAA, (WORD)0xAAAA, 0x5555 };
     WORD i, x1, y1, x2, y2, st, yl;
 
+#ifdef __CALYPSI_TARGET_6502__
+    /* ON THE 6502 the VDI does the loop below in one call (ESC_XLINE,
+     * speed 5): each VDI call is ~1,300 cycles before it draws a pixel */
+    (void)hztltbl; (void)verttbl; (void)x1; (void)y1; (void)x2; (void)y2;
+    (void)st; (void)yl;
+    for (i = 0; i < 2 * n; i++)
+        ptsin[i] = pts[i];
+    contrl[5] = ESC_XLINE;
+    gsx_call(V_ESCAPE, n, 0);
+    return;
+#endif
     for (i = 1; i < n; i++) {
         x1 = pts[0];  y1 = pts[1];
         x2 = pts[2];  y2 = pts[3];

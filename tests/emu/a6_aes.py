@@ -43,7 +43,8 @@ import devref                               # noqa: E402
 from aesref import (Layout, Obj, NIL, LASTOB, NONE, NORMAL, DISABLED,  # noqa: E402
                     CHECKED, G_BOX, G_IBOX, G_TITLE, G_STRING, NAME, CLOSER,
                     FULLER, MOVER, INFO, SIZER, WF_NEWDESK, WF_NAME, WF_INFO,
-                    WIND_CREATE, WIND_OPEN, WIND_SET, MENU_BAR)
+                    WIND_CREATE, WIND_OPEN, WIND_SET, MENU_BAR, UPARROW,
+                    DNARROW, VSLIDE, WF_VSLSIZ, WF_VSLIDE)
 from m4_aes import PRELUDE                  # noqa: E402
 from anticref import AN_W, AN_H              # noqa: E402
 
@@ -118,9 +119,11 @@ def model():
         wset(1, WF_NAME, 0, L2.text("First")),
         wset(1, WF_INFO, 0, L2.text("a window on a 6502")),
         (WIND_OPEN, (), (1,) + W1),
-        (WIND_CREATE, (), (NAME | MOVER | CLOSER,) + full),
+        (WIND_CREATE, (), (NAME | MOVER | CLOSER | UPARROW | DNARROW | VSLIDE,) + full),
         wset(2, WF_NAME, 0, L2.text("Second")),
         (WIND_OPEN, (), (2,) + W2),
+        wset(2, WF_VSLSIZ, 400),        # the elevator placed again, alone
+        wset(2, WF_VSLIDE, 500),
         (MENU_BAR, (), (1,)),
     ]
     mem.update(L2.mem)

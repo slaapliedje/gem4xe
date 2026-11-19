@@ -3144,7 +3144,35 @@ static void vdi_vsl_udsty(void)
 /* Escape.  Only sub-opcodes 2 and 3 matter to the AES (leave and enter the
  * alpha cursor when switching between text and graphics); this driver is
  * always graphical, so they are genuine no-ops rather than stubs. */
-static void vdi_v_escape(void) { }
+/* gem4xe's own, ESC_XLINE: ptsin's contrl[1] points as gsx_xline drew
+ * them, a VSL_UDSTY and a V_PLINE a segment and the style left solid --
+ * the same writes to the workstation, in the same order, from one call. */
+#ifdef __CALYPSI_TARGET_6502__
+static void vdi_v_escape(void)
+{
+    static const UWORD hz[2] = { 0x5555, 0xAAAA };
+    static const UWORD vt[4] = { 0x5555, 0xAAAA, 0xAAAA, 0x5555 };
+    WORD i, n = contrl[1], x1, y1, x2, y2;
+    const WORD *p = ptsin;
+
+    if (contrl[5] != ESC_XLINE)
+        return;
+    for (i = 1; i < n; i++, p += 2) {
+        x1 = p[0];  y1 = p[1];
+        x2 = p[2];  y2 = p[3];
+        if (x1 == x2)
+            vwk.ud_ls = vt[(x1 & 1) | ((y1 & 1) << 1)];
+        else
+            vwk.ud_ls = hz[((x1 < x2) ? y1 : y2) & 1];
+        draw_line(x1, y1, x2, y2);
+        if (vwk.line_beg == LE_ARROWED || vwk.line_end == LE_ARROWED)
+            line_ends((WORD *)p, 2);
+    }
+    vwk.ud_ls = 0xFFFF;
+}
+#else
+static void vdi_v_escape(void) { }  /* gsx_xline draws its own there */
+#endif
 
 /* vst_height.  This driver has one fixed 8x8 font, so the requested height is
  * ignored and the actual cell is reported -- which is exactly what the VDI
@@ -3517,7 +3545,13 @@ void vdi(void)
     /* The workstation the call names, unless the call opens one.  A
      * handle that is not open gets nothing done and nothing back, as
      * in the donor's screen(). */
-    if (op != V_OPNWK && op != V_OPNVWK && !vwk_select(contrl[6]))
+    if (op != V_OPNWK && op != V_OPNVWK
+#ifdef __CALYPSI_TARGET_6502__
+        && !(contrl[6] - 1 == vwk_cur && vwk.handle)  /* current: vwk_select's
+                                                       * own first answer, without
+                                                       * the call (speed 5) */
+#endif
+        && !vwk_select(contrl[6]))
         return;
     if (op >= 1 && op < 1 + N1)
         jmptb1[op - 1]();
@@ -3529,8 +3563,10 @@ void vdi(void)
      * Now a call's blits go as one list: the queue drains itself before any
      * CPU access to VRAM and when it is full (src/vbxe/vbxe.c), so the
      * order is the program's, and this is what makes the screen complete
-     * when the call returns.  A no-op on the other two devices. */
-    dev_flush();
+     * when the call returns.  The other two devices have none (0), and
+     * on the 6502 calling an empty one was a bank call every VDI call. */
+    if (dev_flush)
+        dev_flush();
 }
 
 void vdi_init(void)

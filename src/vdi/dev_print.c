@@ -292,7 +292,6 @@ void dev_cursor_show(WORD cx, WORD cy)  { (void)cx; (void)cy; }
 void dev_cursor_hide(void)              { }
 void dev_cursor_discard(void)           { }
 void dev_invalidate(void)               { }
-void dev_flush(void)                    { }
 void dev_palette_all(const uint8_t *rgb)             { (void)rgb; }
 void dev_palette_one(WORD pen, const uint8_t *rgb)   { (void)pen; (void)rgb; }
 
@@ -518,7 +517,7 @@ const VDIDEV FAR_816 vdev_print = {
     dev_palette_all,
     dev_palette_one,
     dev_invalidate,
-    dev_flush,
+    0,                  /* flush: none */
     0,                  /* text_prefill */
     0,                  /* text_run */
     dev_raster_form,

@@ -39,7 +39,7 @@ from anticref import AN_W, AN_H              # noqa: E402
 from vdiref import (V_OPNWK, V_CLRWK, WORK_IN, VSF_COLOR,   # noqa: E402
                     VSF_INTERIOR, VSWR_MODE, VST_COLOR, VR_RECFL, V_GTEXT,
                     VS_CLIP, VRO_CPYFM, VST_HEIGHT, VSF_UDPAT, V_PLINE,
-                    VSL_TYPE, VSL_UDSTY)
+                    VSL_TYPE, VSL_UDSTY, V_ESCAPE, ESC_XLINE)
 
 FIS_SOLID, FIS_USER, MD_REPLACE, MD_TRANS, MD_XOR, MD_ERASE = 1, 4, 1, 2, 3, 4
 PAT = (0xF00F, 0x0FF0, 0x8001, 0x7FFE, 0xC3A5, 0x3C5A, 0xFF00, 0x00FF,
@@ -62,6 +62,9 @@ SCRIPT = [
     (VS_CLIP, (213, 140, 244, 160), (1,)),
     (V_GTEXT, (210, 150), tuple(ord(c) for c in "CLIPPED")),
     (VS_CLIP, (), (0,)),
+    (VS_CLIP, (20, 184, 120, 185), (1,)),   # two rows through the cells:
+    (V_GTEXT, (20, 188), tuple(b"ROWS CUT")),   # the raster's y clip
+    (VS_CLIP, (), (0,)),
     (VRO_CPYFM, (21, 21, 120, 58, 203, 75, 302, 112), (6,)),
     (VRO_CPYFM, (21, 21, 120, 58, 203, 115, 302, 152), (1,)),
     (VST_HEIGHT, (0, 8), ()),
@@ -78,6 +81,10 @@ SCRIPT = [
     (V_PLINE, (310, 21, 310, 187), ()),
     (VSWR_MODE, (), (MD_XOR,)),
     (V_PLINE, (315, 37, 315, 120), ()),
+    (VSWR_MODE, (), (MD_REPLACE,)),
+    (VSWR_MODE, (), (MD_XOR,)),         # the AES's dotted box (ESC_XLINE)
+    (V_ESCAPE, (130, 181, 200, 181, 200, 190, 131, 190, 131, 181), (), None,
+     ESC_XLINE),
     (VSWR_MODE, (), (MD_REPLACE,)),
     (VSL_TYPE, (), (1,)),
     (VSWR_MODE, (), (MD_TRANS,)),       # text that reads the screen

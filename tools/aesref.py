@@ -5922,7 +5922,8 @@ def resume(v, a, script, plan=None, base=0):
             if steps:
                 raise ValueError(f"record {i} (op {op}) is a VDI call: "
                                  f"it cannot take a plan")
-            v.call(op, pts, ints, rec[3] if len(rec) > 3 else None)
+            v.call(op, pts, ints, rec[3] if len(rec) > 3 else None,
+                   sub=rec[4] if len(rec) > 4 else 0)
             results.append(v.result())
     if plan:
         raise ValueError(f"plan for records that do not exist: "

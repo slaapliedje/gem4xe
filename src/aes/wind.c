@@ -37,6 +37,7 @@
 #include "proc.h"
 #include "../sys/farmem.h"
 #include "../sys/zwin.h"
+#include <string.h>
 
 #define DROP_SHADOW_SIZE    2
 
@@ -810,7 +811,11 @@ static void w3_bldactive(const WINDOW *pw, WORD istop, WORD kind, GRECT t)
  * the window's current rectangle and its kind.  An untopped window gets
  * a disabled title and no arrows, slides or sizer (flat; the 3D frame
  * draws them all, w3_bldactive). */
+#ifdef __CALYPSI_TARGET_6502__
+static void w_bldfull(WORD w_handle)
+#else
 void w_bldactive(WORD w_handle)
+#endif
 {
     WORD istop, kind;
     WORD havevbar, havehbar;
@@ -928,6 +933,113 @@ void w_bldactive(WORD w_handle)
             OB_OR(W_ACTIVE, W_SIZER, ob_spec, 0x06000000UL);
     }
 }
+
+#ifdef __CALYPSI_TARGET_6502__
+/* THE FRAME AS LAST BUILT, AND FOR WHAT (6502 only, speed 5).  W_ACTIVE
+ * is far there, and laying it out is ~90 far writes a w_adjust and most
+ * of a fifth of a second; a window's opening built it five times, four
+ * of them for the desktop setting its sliders one after another.  So the
+ * build is kept with everything it is made from -- the window, whether
+ * it is on top, its kind, rectangle, name and information line, the look
+ * -- and done again only when one of those changes.  When only a slider
+ * did, its elevator alone is placed again, and the answer says whether
+ * that moved it: wm_set draws the bar only then (a position of 0 is
+ * stored as 1, and is drawn the same).  Nothing else writes the tree's
+ * geometry: ctrl.c changes gadgets' states, which the build never
+ * touched but the name's, and that follows the top window, which is in
+ * the key. */
+typedef struct {
+    WORD wh, top, kind, td, gnd;
+    GRECT r;
+    uint32_t nm, inf;
+} WAKEY;
+BANK_DATA("wind_b") static WAKEY wa_key;
+BANK_DATA("wind_b") static WORD wa_sl[4];   /* hslide, hslsiz, vslide, vslsiz */
+static uint8_t wa_ok;                /* resident: wm_init, in bank wind, clears it */
+
+/* The elevator of the bar `vert` says placed again from the window's
+ * slider words, as w_bldvbar/w_bldhbar and their 3D twins place it;
+ * TRUE if it moved or changed size. */
+static WORD w_elev(const WINDOW *pw, WORD vert)
+{
+    WORD len, sl, ss, mn, size, posn, x, y, w, h, el;
+
+    if (vert) {
+        len = OB_GET(W_ACTIVE, W_VSLIDE, ob_height);
+        sl = pw->w_vslide;  ss = pw->w_vslsiz;  mn = gl_hbox;  el = W_VELEV;
+    } else {
+        len = OB_GET(W_ACTIVE, W_HSLIDE, ob_width);
+        sl = pw->w_hslide;  ss = pw->w_hslsiz;  mn = gl_wbox;  el = W_HELEV;
+    }
+    if (ss == -1) {
+        size = mn;
+    } else {
+        size = mul_div_round(len, ss, 1000);
+        if (size < mn)
+            size = mn;
+    }
+    posn = mul_div_round((WORD)(len - size), sl, 1000);
+    if (gl_3d) {
+        if (vert) {
+            x = ADJ3DSTD;  y = (WORD)(posn + ADJ3DSTD);
+            w = gl_wbox;   h = (WORD)(size - 2 * ADJ3DSTD - 1);
+        } else {
+            x = (WORD)(posn + ADJ3DSTD);  y = ADJ3DSTD;
+            w = (WORD)(size - 2 * ADJ3DSTD - 1);  h = gl_hbox;
+        }
+    } else if (vert) {
+        x = 0;  y = posn;  w = gl_wbox;  h = size;
+    } else {
+        x = posn;  y = 0;  w = size;  h = gl_hbox;
+    }
+    if (OB_GET(W_ACTIVE, el, ob_x) == x && OB_GET(W_ACTIVE, el, ob_y) == y &&
+        OB_GET(W_ACTIVE, el, ob_width) == w && OB_GET(W_ACTIVE, el, ob_height) == h)
+        return FALSE;
+    OB_SET(W_ACTIVE, el, ob_x, x);
+    OB_SET(W_ACTIVE, el, ob_y, y);
+    OB_SET(W_ACTIVE, el, ob_width, w);
+    OB_SET(W_ACTIVE, el, ob_height, h);
+    return TRUE;
+}
+
+WORD w_bldactive(WORD w_handle)
+{
+    WINDOW *pw;
+    WAKEY k;
+    WORD ch = FALSE, bars;
+
+    if (w_handle == NIL)
+        return FALSE;
+    pw = w_win(w_handle);
+    memset(&k, 0, sizeof k);            /* the padding compares too */
+    k.wh = w_handle;
+    k.top = (WORD)(gl_wtop == w_handle);
+    k.kind = (WORD)pw->w_kind;
+    k.td = gl_3d;
+    k.gnd = gl_3d ? ob_3dground() : 0;
+    w_getsize(WS_CURR, w_handle, &k.r);
+    k.nm = pw->w_pname;
+    k.inf = pw->w_pinfo;
+    if (!wa_ok || memcmp(&k, &wa_key, sizeof k) != 0) {
+        w_bldfull(w_handle);
+        wa_key = k;
+        wa_ok = TRUE;
+        ch = TRUE;
+    } else {
+        /* the elevators are in the tree only where w_bldfull put them */
+        bars = (WORD)(gl_3d || k.top);
+        if (bars && (k.kind & HSLIDE) &&
+            (pw->w_hslide != wa_sl[0] || pw->w_hslsiz != wa_sl[1]))
+            ch |= w_elev(pw, FALSE);
+        if (bars && (k.kind & VSLIDE) &&
+            (pw->w_vslide != wa_sl[2] || pw->w_vslsiz != wa_sl[3]))
+            ch |= w_elev(pw, TRUE);
+    }
+    wa_sl[0] = pw->w_hslide;  wa_sl[1] = pw->w_hslsiz;
+    wa_sl[2] = pw->w_vslide;  wa_sl[3] = pw->w_vslsiz;
+    return ch;
+}
+#endif
 
 /* Draw obj of window wh's frame (the whole frame for W_BOX), clipped to
  * the window's true rectangle, or to the current clip plus the shadow. */
@@ -1264,6 +1376,9 @@ void wm_init(void)
     }
     w_nilit(NUM_ELEM, W_ACTIVE);
     OB_SET(W_ACTIVE, ROOT, ob_state, SHADOWED);
+#ifdef __CALYPSI_TARGET_6502__
+    wa_ok = FALSE;                      /* the tree is new: nothing built */
+#endif
 
     /* the desktop owns the whole screen below the menu bar */
     po = get_orect();
@@ -1789,7 +1904,12 @@ WORD wm_set(WORD w_handle, WORD w_field, WORD *pinwds)
 
     /* a slider is redrawn at once where it is drawn: on the top window,
      * or on any window with the 3D frame, which draws them all */
-    if ((w_handle == gl_wtop || gl_3d) && (which == W_HSLIDE || which == W_VSLIDE))
+    if ((w_handle == gl_wtop || gl_3d) && (which == W_HSLIDE || which == W_VSLIDE)
+        && (pwin->w_flags & VF_ISOPEN)
+#ifdef __CALYPSI_TARGET_6502__
+        && w_bldactive(w_handle)        /* ...and only if its elevator moved */
+#endif
+        )
         do_cpwalk = TRUE;
     if (do_cpwalk)
         w_cpwalk(w_handle, which, MAX_DEPTH, TRUE);

@@ -359,8 +359,8 @@ typedef struct {
     void (*invalidate)(void);
 
     /* Whatever the device has queued, done and on the screen.  A blit list
-     * started and waited for on VBXE; nothing at all on ANTIC, where the
-     * write WAS the drawing. */
+     * started and waited for on VBXE; 0 on ANTIC, where the write WAS the
+     * drawing, and on the page -- vdi() calls it only if it is there. */
     void (*flush)(void);
 
     /* Does v_gtext paint a replace-mode string's background ONCE, for the

@@ -264,6 +264,11 @@ UWORD style_anchor(UWORD mask, WORD from, WORD dir);
 #define VR_RECFL     114
 #define VRT_CPYFM    121
 #define V_ESCAPE       5
+/* ...and gem4xe's own escape (contrl[5]): the AES's dotted XOR polyline,
+ * every segment in the dot phase its own position gives (src/aes/graf.c,
+ * gsx_xline), in ONE call instead of two a segment and a third after --
+ * the 6502's zoom box was most of a window's opening in VDI calls. */
+#define ESC_XLINE      0x4758
 #define V_CHOICE      30
 #define V_STRING      31
 #define VSIN_MODE     33

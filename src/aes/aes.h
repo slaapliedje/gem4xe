@@ -869,7 +869,11 @@ void wm_init(void);
 void w_drawdesk(const GRECT *pc);
 void w_getsize(WORD which, WORD w_handle, GRECT *pt);
 void w_setsize(WORD which, WORD w_handle, const GRECT *pt);
+#ifdef __CALYPSI_TARGET_6502__
+WORD w_bldactive(WORD w_handle);        /* TRUE if the tree changed (wind.c) */
+#else
 void w_bldactive(WORD w_handle);
+#endif
 void w_cpwalk(WORD wh, WORD obj, WORD depth, WORD usetrue);
 void w_update(WORD bottom, GRECT *pt, WORD top, WORD moved);
 WORD wm_create(WORD kind, const GRECT *pt);
