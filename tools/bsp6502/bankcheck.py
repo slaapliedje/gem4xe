@@ -182,6 +182,24 @@ def check_map(frags):
     return bad
 
 
+def check_pool(frags):
+    """Section b6init, the load-time code, is the 6502's pool after main
+    (src/sys6502/abistub6502.c), from its .sectionStart to its .sectionEnd:
+    if the linker puts its parts apart, whatever lands between them is
+    pooled over -- live code, written over by the first GEMDOS call that
+    takes a slice (test-d6's Show hung so).  Nothing else may be inside."""
+    parts = [f["run"] for f in frags.values() if f["section"] == "b6init" and f["run"]]
+    if not parts:
+        return []
+    lo, hi = min(a for a, _ in parts), max(b for _, b in parts)
+    return [f"{f['name'] or 'a fragment'} ({f['section']}) at ${f['run'][0]:04X}-"
+            f"${f['run'][1]:04X} is between b6init's parts (${lo:04X}-${hi:04X}), "
+            f"which the pool takes after main"
+            for f in frags.values()
+            if f["section"] != "b6init" and f["run"] and not f["bank"]
+            and f["run"][0] <= hi and f["run"][1] >= lo]
+
+
 def load_elf(path):
     """Address -> bytes: run addresses below $10000, store addresses above."""
     d = open(path, "rb").read()
@@ -365,6 +383,7 @@ def main(argv):
         bad.append(f"{truncated} reference list(s) cut short ('... N more'): link with "
                    f"--verbose so the map lists them whole")
     bad += check_map(frags)
+    bad += check_pool(frags)
     scanned = 0
     if "--elf" in argv:
         more, scanned = check_code(frags, load_elf(argv[argv.index("--elf") + 1]))

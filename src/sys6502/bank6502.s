@@ -37,7 +37,7 @@
               .public b6_probe, b6_sel, b6_main, b6_next, _bcall, b6_report
               .public b6_cur, b6_count, b6_portb, bc_t, b6_kind, b6_sites
               .public b6sw_call, b6sw_ret, b6sw_sel, b6sw_main
-              .public b6init_lo, b6init_hi
+              .public b6init_lo, b6init_hi, b6_stop
               .public bc_a, _bcall_go
 
 PORTB:        .equ    0xd301
@@ -401,6 +401,7 @@ nobank:       lda     #.byte0 nomsg
               ldx     #.byte1 nomsg
               ldy     #nomsg_len
 ;;; stop -- the message at X:A, Y bytes, on E:, and back to DOS
+b6_stop:
 stop:         sta     0x344
               stx     0x345
               sty     0x348

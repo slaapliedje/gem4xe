@@ -51,6 +51,21 @@ Checks what would fail silently: a segment in the window that is not a
 bank's, a bank stored where no bank number goes, and the trampoline's
 JMP (bc_t) on a page's last byte, which the 6502 reads wrongly.
 
+--pack writes each bank packed (tools/mkxex.py's format, G4Z): its
+window segments as one image, gaps zero, cut into chunks that fit
+$8000-$9EFF -- ANTIC's screen-to-be, which nothing in the file loads
+into -- each a segment there then INITAD b6_unz (src/sys6502/g6z6502.s),
+which unpacks it into the window:
+
+        b6_next = n, INITAD b6_sel
+        $8000: where (a word), how many (a word), the packed bytes
+        INITAD b6_unz                ...again for each chunk of the bank
+
+Each chunk is decoded again here, by tools/mkxex.py's decoder, and must
+give the bank back.  A floppy's serial bus is slow enough that half the
+bytes are worth the 6502's 70 cycles a byte; a hard disk is not, so the
+choice is the build's (docs/6502.md, "Disk").
+
 And writes b6_sites: the address of every bank switch (each public
 label b6sw_*, checked to be LDA b6_portb,X/Y then STA PORTB), which
 src/sys6502/bank6502.s rewrites to STA $CFFF on an Axlon's machine.
@@ -61,11 +76,14 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from elfsym import Elf  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import mkxex  # noqa: E402
 
 STORE = 0x10000
 BANK = 0x4000
 WIN_LO, WIN_HI = 0x4000, 0x7FFF
 INITAD, RUNAD = 0x02E2, 0x02E0
+STAGE, STAGE_END = 0x8000, 0x9EFF       # src/sys6502/g6z6502.s's B6_STAGE
 
 
 def segments(data):
@@ -164,6 +182,23 @@ def g6a(elf, out):
     return 0
 
 
+def packed(bodies, unz, n):
+    """A bank's window segments packed: the segments --pack writes."""
+    lo = min(a for a, _ in bodies)
+    img = bytearray(max(a + len(b) for a, b in bodies) - lo)
+    for a, b in bodies:
+        img[a - lo:a - lo + len(b)] = b
+    out, back, last, dst = bytearray(), bytearray(), 0, lo
+    for count, data in mkxex.chunks(bytes(img), STAGE_END + 1 - STAGE - 4):
+        last = mkxex.decode(data, count, back, last)
+        out += seg(STAGE, struct.pack("<HH", dst, count) + data)
+        out += seg(INITAD, struct.pack("<H", unz))
+        dst += count
+    if back != img:
+        raise SystemExit(f"mkxex6502: --pack: bank {n} does not decode to itself")
+    return out
+
+
 SITES = 15                              # src/sys6502/bank6502.s's B6_SITES
 
 
@@ -206,6 +241,8 @@ def main(argv):
         i = argv.index("--bank")
         extra.append(argv[i + 1])
         del argv[i:i + 2]
+    pack = "--pack" in argv
+    argv = [a for a in argv if a != "--pack"]
     argv = [a for a in argv if a != "--report"] + (["--report"] if "--report" in argv else [])
     if len(argv) not in (3, 4):
         print(__doc__)
@@ -254,6 +291,11 @@ def main(argv):
         if not body_of:
             raise SystemExit(f"mkxex6502: --bank {n}: {path} has nothing in the window")
         banks[n] = body_of
+    if pack:
+        for a, body in resident:
+            if a <= STAGE_END and a + len(body) > STAGE:
+                raise SystemExit(f"mkxex6502: --pack: resident segment ${a:04X}+{len(body)} "
+                                 f"is in the staging buffer ${STAGE:04X}-${STAGE_END:04X}")
     out = bytearray(b"\xff\xff")
     for a, body in sorted(resident):
         out += seg(a, body)
@@ -266,8 +308,11 @@ def main(argv):
         out += seg(INITAD, struct.pack("<H", sel))
         if "--report" in argv:          # the bank is in the window
             out += seg(INITAD, struct.pack("<H", addr("b6_report")))
-        for a, body in sorted(banks[n]):
-            out += seg(a, body)
+        if pack:
+            out += packed(banks[n], addr("b6_unz"), n)
+        else:
+            for a, body in sorted(banks[n]):
+                out += seg(a, body)
         if "--report" in argv:          # ...and its code went in
             out += seg(INITAD, struct.pack("<H", addr("b6_report")))
     out += seg(INITAD, struct.pack("<H", addr("b6_main")))

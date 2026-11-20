@@ -145,7 +145,8 @@ A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/bank6502.o \
              $(B6)/res/a6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
-             $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o $(B6)/res/enter6502s.o
+             $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o $(B6)/res/enter6502s.o \
+             $(B6)/res/g6z6502.o
 A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc alert gemdos dos con clock
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
@@ -250,8 +251,9 @@ build/p6prog.elf: $(P6_OBJ) src/app/gemapp6502.scm
 	$(LN6) src/app/gemapp6502.scm $(P6_OBJ) \
 	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/p6prog.map > /dev/null
 
-build/a6.xex: build/a6.elf tools/bsp6502/mkxex6502.py tools/bsp6502/elfsym.py
-	python3 tools/bsp6502/mkxex6502.py $< $@
+# packed (--pack, docs/6502.md "Disk"): its banks unpacked as they load
+build/a6.xex: build/a6.elf tools/bsp6502/mkxex6502.py tools/bsp6502/elfsym.py tools/mkxex.py
+	python3 tools/bsp6502/mkxex6502.py --pack $< $@
 
 build/p6prog.g6a: build/p6prog.elf tools/bsp6502/mkxex6502.py
 	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
@@ -605,6 +607,10 @@ $(B6)/res/irq6502s.o: src/sys6502/irq6502.s
 	$(AS6) --core 6502 $< -o $@
 # cc6502's frame helpers, faster: in place of clib's enter.o and stack.o
 $(B6)/res/enter6502s.o: src/sys6502/enter6502.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+# the G4Z unpacker, and the load-time hook that uses it (mkxex6502.py --pack)
+$(B6)/res/g6z6502.o: src/sys6502/g6z6502.s
 	@mkdir -p $(dir $@)
 	$(AS6) --core 6502 $< -o $@
 
