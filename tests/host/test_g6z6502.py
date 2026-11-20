@@ -43,14 +43,29 @@ AS, LN = (os.path.join(CAL, "bin", x) for x in ("as6502", "ln6502"))
 STUB = """
               .rtmodel version, "1"
               .rtmodel cpu, "*"
-              .public _Zp, b6_stop, stopped
+              .public _Zp, b6_stop, stopped, fmap, unmap, mapped
               .section registers,bss
 _Zp:          .space  48
               .section b6keep,noinit
 stopped:      .space  1
+mapped:       .space  1               ; fmap's bank byte, 0 after unmap
               .section code
 b6_stop:      lda     #0x5a           ; the load stopped
               sta     stopped
+              rts
+fmap:         lda     zp:_Zp+2,x      ; far6502.s's, for one piece: FW
+              sta     mapped
+              lda     zp:_Zp+0,x
+              sta     zp:_Zp+12
+              lda     zp:_Zp+1,x
+              and     #0x3f
+              ora     #0x40
+              sta     zp:_Zp+13
+              rts
+unmap:        pha                     ; keeps A
+              lda     #0
+              sta     mapped
+              pla
               rts
 """
 SCM = """
@@ -107,6 +122,7 @@ class G6z6502(unittest.TestCase):
                for m in re.finditer(r"^\s+(\w+) = ([0-9a-f]{4})\s*$", text, re.M)}
         cls.entry, cls.zp = sym["g6z_unpack"], sym["_Zp"]
         cls.unz, cls.stopped = sym["b6_unz"], sym["stopped"]
+        cls.far, cls.mapped = sym["g6z_far"], sym["mapped"]
         e = open(os.path.join(d, "t.elf"), "rb").read()
         img = bytearray(0x10000)
         phoff, = struct.unpack_from("<I", e, 28)
@@ -250,6 +266,56 @@ class G6z6502(unittest.TestCase):
         for k, img in enumerate(want, 1):
             self.assertEqual(banks[k], img, "bank %d" % k)
         self.assertLess(len(xex), sum(len(w.rstrip(b"\0")) for w in want) * 0.6)
+
+    def test_g6a_banks_unpack_in_place(self):
+        """each packed bank of a .G6A, read into its top, unpacked by
+        g6z_far from its start: what the ELF has, and the bank unmapped"""
+        done = 0
+        for name in ("desk6", "cpanel6", "p6mprog"):
+            path = os.path.join(ROOT, "build", name + ".g6a")
+            if not os.path.exists(path):
+                continue
+            g = open(path, "rb").read()
+            n, np, fl = g[3], g[4], g[5]
+            if not fl & 1:
+                continue
+            at = 6 + 4 * np
+            lens = struct.unpack_from("<%dH" % n, g, at)
+            outs = struct.unpack_from("<%dH" % n, g, at + 2 * n)
+            o = at + 4 * n + sum(struct.unpack_from("<H", g, 6 + 4 * k + 2)[0]
+                                 for k in range(np))
+            want = bank_images(name + ".elf")
+            for k in range(n):
+                data = g[o:o + lens[k]]
+                o += lens[k]
+                if lens[k] == outs[k]:
+                    continue
+                cpu = m6502.Cpu(bytearray(self.img))
+                cpu.m[0x8000 - lens[k]:0x8000] = data
+                z = self.zp
+                cpu.m[z:z + 8] = struct.pack("<IHH", 0x10000 + k * 0x4000,
+                                             lens[k], outs[k])
+                cpu.call(self.far)
+                self.assertEqual(cpu.a, 0, "%s bank %d: a bad stream" % (name, k + 1))
+                self.assertEqual(cpu.m[self.mapped], 0, "the bank left mapped")
+                self.assertEqual(bytes(cpu.m[0x4000:0x4000 + outs[k]]),
+                                 want[k][:outs[k]], "%s bank %d" % (name, k + 1))
+                done += 1
+            self.assertEqual(o, len(g), name + ": the file not read to its end")
+        if not done:
+            self.skipTest("no packed .G6A built")
+
+    def test_g6a_pack_refuses_what_overruns(self):
+        """a bank that would write over its packed bytes before reading
+        them is stored as it is"""
+        sys.path.insert(0, os.path.join(ROOT, "tools", "bsp6502"))
+        import mkxex6502
+        r = random.Random(6)
+        noise = bytes(r.randrange(256) for _ in range(8384))
+        self.assertIsNone(mkxex6502.pack_bank(bytes(8000) + noise))
+        p = mkxex6502.pack_bank(noise + bytes(8000))
+        self.assertIsNotNone(p)
+        self.assertGreaterEqual(p[1], 0)
 
 
 if __name__ == "__main__":

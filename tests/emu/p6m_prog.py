@@ -92,7 +92,7 @@ def main(argv):
 
     g6a = open(G6A, "rb").read()
     n, np = g6a[3], g6a[4]
-    want_rd = len(g6a) - (6 + 4 * np + 2 * n)
+    want_rd = len(g6a) - (6 + 4 * np + (4 if g6a[5] & 1 else 2) * n)
     if axlon:
         emu = launch(tag="p6m", memsize="128K", vbxe=False, rapidus=False,
                      extra_args=["--axlonmemsize", axlon])

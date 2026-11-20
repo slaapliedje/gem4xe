@@ -26,7 +26,8 @@
 ;;; caller's business, and a match reads only what this chunk's output or
 ;;; an earlier one put at lower addresses of the same space.
 ;;;
-;;; b6_unz, below, is the system file's use of it at load time.
+;;; g6z_far and b6_unz, below, are a program's banks' use of it and the
+;;; system file's, at load time.
 ;;;
 ;;; tests/host/test_g6z6502.py runs it on tests/host/m6502.py against
 ;;; tools/mkxex.py's packer and decoder, and counts its cycles.
@@ -34,8 +35,8 @@
 
               .rtmodel version, "1"
               .rtmodel cpu, "*"
-              .extern _Zp, b6_stop
-              .public g6z_unpack, b6_unz, B6_STAGE
+              .extern _Zp, b6_stop, fmap, unmap
+              .public g6z_unpack, g6z_far, b6_unz, B6_STAGE
 
 ZS:           .equ    _Zp+0           ; the packed stream
 ZD:           .equ    _Zp+2           ; the output
@@ -209,6 +210,42 @@ gamma:        lda     #0
               rol     zp:N+1
               bcc     2$              ; (always: a number fits sixteen bits)
 9$:           rts
+;;; g6z_far(piece _Zp0-3, packed _Zp4-5, count _Zp6-7) -- a program's bank,
+;;; its packed bytes read into its top (packed bytes up to its end), unpacked
+;;; in place from its start: count bytes (src/a6_evt.c, prog_read;
+;;; tools/bsp6502/mkxex6502.py --g6a --pack, which made sure no byte is
+;;; written before it is read).  A = 0, or 1 if the stream was bad.
+g6z_far:      ldx     #0
+              jsr     fmap            ; FW: the piece's first byte
+              sec                     ; the stream: FW + $4000 - packed
+              lda     #0
+              sbc     zp:_Zp+4
+              tay
+              lda     #0x40
+              sbc     zp:_Zp+5
+              clc
+              adc     zp:_Zp+13
+              sta     zp:_Zp+1
+              tya
+              clc
+              adc     zp:_Zp+12
+              sta     zp:_Zp+0
+              bcc     1$
+              inc     zp:_Zp+1
+1$:           lda     zp:_Zp+12       ; the output: FW
+              sta     zp:_Zp+2
+              lda     zp:_Zp+13
+              sta     zp:_Zp+3
+              lda     zp:_Zp+6        ; the count
+              sta     zp:_Zp+4
+              lda     zp:_Zp+7
+              sta     zp:_Zp+5
+              lda     #0              ; no offset yet
+              sta     zp:_Zp+6
+              sta     zp:_Zp+7
+              jsr     g6z_unpack
+              jmp     unmap
+
 ;;; ---------------------------------------------------------------------------
 ;;; b6_unz -- INITAD, after a segment at B6_STAGE: one packed chunk of a
 ;;; bank, unpacked into the window (tools/bsp6502/mkxex6502.py --pack).

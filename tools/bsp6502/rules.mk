@@ -252,6 +252,12 @@ build/p6prog.elf: $(P6_OBJ) src/app/gemapp6502.scm
 	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/p6prog.map > /dev/null
 
 # packed (--pack, docs/6502.md "Disk"): its banks unpacked as they load
+# tests/host/test_g6z6502.py reads these: built before the host tests,
+# or it compares a fresh a6.elf with a stale a6.xex (a suite did, once a
+# source was touched mid-run).  Only when cc6502 is here, as Makefile's
+# own test-host prerequisites are only when cc65816 is.
+test-host: $(if $(wildcard $(CC6)),build/a6.xex build/desk6.g6a build/cpanel6.g6a build/p6mprog.g6a)
+
 build/a6.xex: build/a6.elf tools/bsp6502/mkxex6502.py tools/bsp6502/elfsym.py tools/mkxex.py
 	python3 tools/bsp6502/mkxex6502.py --pack $< $@
 
@@ -338,8 +344,8 @@ build/p6mprog.elf: $(P6M_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
 	$(LN6) src/app/gemappm6502.scm $(P6M_OBJ) \
 	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/p6mprog.map > /dev/null
 	python3 tools/bsp6502/bankcheck.py build/p6mprog.map --elf $@ || { rm -f $@; exit 1; }
-build/p6mprog.g6a: build/p6mprog.elf tools/bsp6502/mkxex6502.py
-	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
+build/p6mprog.g6a: build/p6mprog.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
+	python3 tools/bsp6502/mkxex6502.py --g6a --pack $< $@
 build/a6m-boot.atr: build/a6.xex build/p6mprog.g6a build/p6prog.rsc
 	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
 	@rm -f $@
@@ -386,8 +392,8 @@ build/desk6.elf: $(D6_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
 	$(LN6) src/app/gemappm6502.scm $(D6_OBJ) \
 	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/desk6.map > /dev/null
 	python3 tools/bsp6502/bankcheck.py build/desk6.map --elf $@ || { rm -f $@; exit 1; }
-build/desk6.g6a: build/desk6.elf tools/bsp6502/mkxex6502.py
-	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
+build/desk6.g6a: build/desk6.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
+	python3 tools/bsp6502/mkxex6502.py --g6a --pack $< $@
 # D1: A6 and the desktop's resources; D2: the desktop itself -- a floppy
 # has not room for A6's 21 banks and its eight (A6 tries D2: after D1:)
 build/a6d-boot.atr: build/a6.xex build/desktop.rsc build/deskicon.rsc build/prefs.rsc
@@ -445,8 +451,8 @@ build/cpanel6.elf: $(C6P_OBJ) src/app/gemappm6502.scm tools/bsp6502/bankcheck.py
 	$(LN6) src/app/gemappm6502.scm $(C6P_OBJ) \
 	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/cpanel6.map > /dev/null
 	python3 tools/bsp6502/bankcheck.py build/cpanel6.map --elf $@ || { rm -f $@; exit 1; }
-build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py
-	python3 tools/bsp6502/mkxex6502.py --g6a $< $@
+build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
+	python3 tools/bsp6502/mkxex6502.py --g6a --pack $< $@
 
 # cc6502's generated assembly, for a call made with a scratch argument
 # (tools/bsp6502/b6asm.py): every banked unit's, so the programs first.

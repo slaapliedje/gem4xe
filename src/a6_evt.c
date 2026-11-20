@@ -131,7 +131,9 @@ static void acc_start(void)
 /* The program read into banks of its own.  A .G6A of format 1 is one
  * bank's bytes from $4000, header first (tools/bsp6502/mkxex6502.py
  * --g6a); format 2 (step 5c-1) is a header, the pieces that go into the
- * RAM under the OS ROM, and n banks.  Each bank is a far_alloc_piece
+ * RAM under the OS ROM, and n banks, which may be packed (--pack: the
+ * header's flags byte, then each bank read into its top and unpacked in
+ * place, docs/6502.md "Disk").  Each bank is a far_alloc_piece
  * block, the program's owner's -- taken from the heap as the 65C816
  * takes a program's memory, so a machine with more banks runs more
  * programs and none is set aside.  The file goes a piece at a time
@@ -160,12 +162,19 @@ extern const char a6_file1[P6_FILELEN], a6_file2[P6_FILELEN];
 #define G6_LINK  0xC000u
 static SECTION("bounce") uint8_t p6_buf[256];
 extern uint8_t cio_bank;                /* src/sys6502/cio6502.s */
+/* a bank's packed bytes, read into its top, unpacked from its start
+ * (src/sys6502/far6502.s): 0, or 1 if they were bad */
+extern uint8_t g6z_far(uint32_t piece, uint16_t packed, uint16_t count);
 extern uint8_t b6_cur, b6_kind, b6_portb[];
 extern const uint8_t b6_far_base;       /* src/sys6502/farmem6502.c */
 /* the program's banks, for the gate to read (test-p6m): in page 5, as
  * A6's other records are -- HiRam has not 61 bytes */
 SECTION("page5") uint8_t p6_nbanks;
 SECTION("page5") uint32_t p6_banks[G6_BANKS];
+
+/* THE READER IS IN BANK gdos, with GEMDOS's own reading: bank far, the
+ * rest of this file's, has no room for it since the banks were packed. */
+BANK_TEXT("gdos")
 
 /* n bytes of the file to dst, far or under the ROM.
  *
@@ -231,8 +240,8 @@ static uint8_t g6_room(uint16_t a, uint16_t n)
 
 static uint8_t prog_read(int16_t io, uint8_t own)
 {
-    uint8_t keep = far_owner, st, n, np, k;
-    uint16_t lens[G6_BANKS], at[2], len[2];
+    uint8_t keep = far_owner, st, n, np, k, packed;
+    uint16_t lens[G6_BANKS], outs[G6_BANKS], at[2], len[2];
     uint32_t slot;
     uint16_t got, total;
 
@@ -266,13 +275,15 @@ static uint8_t prog_read(int16_t io, uint8_t own)
     far_owner = keep;
     n = p6_buf[3];
     np = p6_buf[4];
-    if (p6_buf[2] != 2 || !n || n > G6_BANKS || np > 2)
+    packed = p6_buf[5];
+    if (p6_buf[2] != 2 || !n || n > G6_BANKS || np > 2 || packed > 1)
         return P6_BADF;
     if (b6_kind == 'A')
         return P6_NOROM;                /* the ROM stays in there: a6_tree.c */
     got = 0;
-    st = cio_read(io, p6_buf, (uint16_t)(np * 4u + n * 2u), &got);
-    if (got != np * 4u + n * 2u)
+    k = (uint8_t)(np * 4u + n * (packed ? 4u : 2u));
+    st = cio_read(io, p6_buf, k, &got);
+    if (got != k)
         return P6_BADF;
     for (k = 0; k < np; k++) {
         at[k] = (uint16_t)(p6_buf[k * 4] | (p6_buf[k * 4 + 1] << 8));
@@ -281,8 +292,15 @@ static uint8_t prog_read(int16_t io, uint8_t own)
             return P6_BADF;
     }
     for (k = 0; k < n; k++) {
-        lens[k] = (uint16_t)(p6_buf[np * 4 + k * 2] | (p6_buf[np * 4 + k * 2 + 1] << 8));
-        if (lens[k] > P6_MAX)
+        uint8_t *q = p6_buf + np * 4 + k * 2;
+
+        lens[k] = (uint16_t)(q[0] | (q[1] << 8));
+        outs[k] = lens[k];
+        if (packed) {
+            q += n * 2;
+            outs[k] = (uint16_t)(q[0] | (q[1] << 8));
+        }
+        if (lens[k] > P6_MAX || outs[k] > P6_MAX || lens[k] > outs[k])
             return P6_BADF;
     }
     far_owner = own;
@@ -303,9 +321,17 @@ static uint8_t prog_read(int16_t io, uint8_t own)
         total = (uint16_t)(total + len[k]);
     }
     for (k = 0; k < n; k++) {
-        st = prog_get(io, p6_banks[k], lens[k]);
-        if (st != CIO_OK)
-            return st;
+        if (lens[k] == outs[k]) {       /* as it is */
+            st = prog_get(io, p6_banks[k], lens[k]);
+            if (st != CIO_OK)
+                return st;
+        } else {                        /* packed: into its top, unpacked */
+            st = prog_get(io, p6_banks[k] + (P6_MAX - lens[k]), lens[k]);
+            if (st != CIO_OK)
+                return st;
+            if (g6z_far(p6_banks[k], lens[k], outs[k]))
+                return P6_BADF;
+        }
         total = (uint16_t)(total + lens[k]);
     }
     STATUS[14] = (unsigned char)total;
@@ -327,6 +353,8 @@ static uint8_t prog_read(int16_t io, uint8_t own)
     }
     return CIO_OK;
 }
+
+BANK_TEXT("far")
 
 /* THE SHELL (step 5d): the program shel_write(SHW_EXEC) named, as CIO
  * names it (src/sys6502/abistub6502.c writes it), and the one running.

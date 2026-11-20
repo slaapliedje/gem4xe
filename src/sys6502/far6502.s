@@ -36,6 +36,7 @@
               .public b6sw_fmap, b6sw_unmap            ; bank switches: bank6502.s's patch
               .public far_get, far_put, far_fill, far_strget, far_put_edge
               .public ob_rd16, ob_rd32, ob_wr16
+              .public fmap, unmap             ; for g6z6502.s's g6z_far
 
 PORTB:        .equ    0xd301
 
@@ -445,6 +446,7 @@ far_put:      jsr     fa_from0
 ;;; place while the piece is mapped, not with a far_get each.  A row that
 ;;; crosses a 16 KB piece is not done -- A = 0, and the C does it the long
 ;;; way -- else A = 1.  The row's two end bytes are left merged.
+
 far_put_edge: sta     zp:_Zp+22       ; n
               jsr     fa_from0
               lda     zp:_Zp+22

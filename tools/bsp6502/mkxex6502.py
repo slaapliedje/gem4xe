@@ -2,7 +2,7 @@
 """mkxex6502.py -- a banked 6502 link as an Atari binary file.
 
     python3 tools/bsp6502/mkxex6502.py IN.elf OUT.xex [--report] [--bank N=PROG.elf ...]
-    python3 tools/bsp6502/mkxex6502.py --g6a PROG.elf OUT.G6A
+    python3 tools/bsp6502/mkxex6502.py --g6a [--pack] PROG.elf OUT.G6A
 
 --g6a writes a separately linked program (src/app/gemapp6502.scm) as the
 file gem4xe reads into a program slot from a disk (docs/6502.md, step
@@ -16,10 +16,19 @@ A PROGRAM OF SEVERAL BANKS (src/app/gemappm6502.scm, docs/6502.md step
 its veneers, runtime and data in the RAM under the OS ROM.  Its .G6A:
 
     $00  "G6", 2, n          the magic, the format, its banks (1..15)
-    $04  p, 0                its pieces under the ROM (0..2)
+    $04  p, f                its pieces under the ROM (0..2), its flags
     $06  p x (addr, len)     each piece's address and length, two words
-         n x len             each bank's length, a word
+         n x len             each bank's length in the file, a word
+         n x out             if f bit 0: each bank's length unpacked
          the pieces' bytes, then the banks', in that order
+
+--pack (f bit 0) stores each bank as one G4Z chunk (tools/mkxex.py) when
+that is shorter and it can be unpacked IN PLACE: the loader reads the
+packed bytes into the top of the bank, $8000 - len up, and unpacks them
+from $4000 (src/sys6502/far6502.s, g6z_far), so no byte may be written
+before it is read.  Where it cannot, or packing gains nothing, the bank
+is stored as it is and its two lengths are equal.  The pieces under the
+ROM are not packed: 3-4 KB, through CIO's buffer.
 
 A piece may be in $C020-$CFFF or $D800-$FDFF and nowhere else -- not the
 chips, not the link block the loader fills at $C000, not the system's
@@ -108,7 +117,57 @@ G6_BANKS = 15
 G6_LINK = 0xC000                        # src/app/crt6502m.s's link block
 
 
-def g6a2(elf, out, segs):
+class _Src(bytes):
+    """A packed bank as decode reads it: how far it has read."""
+    def __new__(cls, b):
+        o = super().__new__(cls, b)
+        o.read = 0
+        return o
+
+    def __getitem__(self, k):
+        r = super().__getitem__(k)
+        e = (k.stop if isinstance(k, slice) else k + 1)
+        self.read = max(self.read, e)
+        return r
+
+
+class _InPlace(list):
+    """decode's output, written from $4000 below the packed bytes read at
+    base and up: each byte written must be over one already read."""
+    def __init__(self, src, base):
+        super().__init__()
+        self.src, self.base, self.margin = src, base, 1 << 16
+
+    def _at(self, end):
+        m = self.base + self.src.read - end
+        if m < self.margin:
+            self.margin = m
+
+    def append(self, v):
+        super().append(v)
+        self._at(len(self))
+
+    def __iadd__(self, more):
+        super().__iadd__(list(more))
+        self._at(len(self))
+        return self
+
+
+def pack_bank(img):
+    """(packed bytes, margin), or None: one chunk, unpacked in place."""
+    ch = mkxex.chunks(bytes(img), BANK)
+    if len(ch) != 1 or ch[0][0] != len(img) or len(ch[0][1]) >= len(img):
+        return None
+    data = ch[0][1]
+    src = _Src(data)
+    out = _InPlace(src, BANK - len(data))
+    mkxex.decode(src, len(img), out, 0)
+    if bytes(out) != bytes(img):
+        raise SystemExit("mkxex6502: --g6a --pack: a bank does not decode as it was")
+    return (data, out.margin) if out.margin >= 0 else None
+
+
+def g6a2(elf, out, segs, pack=False):
     """Format 2: see the head of the file."""
     banks, pieces = {}, []
     for a, body in sorted(segs):
@@ -149,22 +208,30 @@ def g6a2(elf, out, segs):
     if banks[1][:3] != b"G6\x02":
         raise SystemExit(f"mkxex6502: --g6a: {elf}: bank 1 does not start with its "
                          f"header (\"G6\", 2 at $4000)")
-    head = bytes([ord("G"), ord("6"), 2, n, len(pieces), 0])
+    store, notes = {}, []
+    for k in range(1, n + 1):
+        p = pack_bank(banks[k]) if pack else None
+        store[k] = p[0] if p else bytes(banks[k])
+        notes.append(f"{len(banks[k])}" + (f"->{len(p[0])} (margin {p[1]})" if p
+                                           else " raw" if pack else ""))
+    head = bytes([ord("G"), ord("6"), 2, n, len(pieces), 1 if pack else 0])
     head += b"".join(struct.pack("<HH", a, len(b)) for a, b in pieces)
-    head += b"".join(struct.pack("<H", len(banks[k])) for k in range(1, n + 1))
+    head += b"".join(struct.pack("<H", len(store[k])) for k in range(1, n + 1))
+    if pack:
+        head += b"".join(struct.pack("<H", len(banks[k])) for k in range(1, n + 1))
     data = head + b"".join(bytes(b) for _, b in pieces) + \
-        b"".join(bytes(banks[k]) for k in range(1, n + 1))
+        b"".join(store[k] for k in range(1, n + 1))
     open(out, "wb").write(data)
     print(f"{out}: format 2, {len(data)} bytes: {n} bank(s) of "
-          f"{', '.join(str(len(banks[k])) for k in range(1, n + 1))} bytes; under the ROM "
+          f"{', '.join(notes)} bytes; under the ROM "
           f"{', '.join(f'${a:04X}+{len(b)}' for a, b in pieces)}")
     return 0
 
 
-def g6a(elf, out):
+def g6a(elf, out, pack=False):
     _, segs = segments(open(elf, "rb").read())
     if any(a >= STORE or a >= 0xC000 for a, _ in segs):
-        return g6a2(elf, out, segs)
+        return g6a2(elf, out, segs, pack)
     img = bytearray()
     for a, body in sorted(segs):
         if not (WIN_LO <= a and a + len(body) - 1 <= WIN_HI):
@@ -235,6 +302,8 @@ def sites(segs, syms, addr, elf):
 def main(argv):
     if len(argv) == 4 and argv[1] == "--g6a":
         return g6a(argv[2], argv[3])
+    if len(argv) == 5 and argv[1:3] == ["--g6a", "--pack"]:
+        return g6a(argv[3], argv[4], True)
     extra = [a.split("=", 1)[1] for a in argv if a.startswith("--bank=")]
     argv = [a for a in argv if not a.startswith("--bank=")]
     while "--bank" in argv:
