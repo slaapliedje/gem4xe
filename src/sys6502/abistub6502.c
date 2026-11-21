@@ -95,7 +95,16 @@ void     pool_release(uint16_t mark)
  * separator (src/sys/gemdos.c). */
 void sh_cioname(const char *gem, char *cio) { gd_cioname(gem, cio); }
 
-uint16_t pool_room(void) { return (uint16_t)(POOL6_HI - pool_mark()); }
+/* The room for a block aligned to 2, which is how every caller asks for
+ * it (gemdos.c, rsrc.c: pool_alloc(room & ~1, 2)).  The pool starts where
+ * the linker put b6init, odd or even; counting the pad byte as room made
+ * that request one too big whenever the top and the end were both odd. */
+uint16_t pool_room(void)
+{
+    uint16_t at = (uint16_t)((pool_mark() + 1) & ~1u);
+
+    return at < POOL6_HI ? (uint16_t)(POOL6_HI - at) : 0;
+}
 
 /* the scrap directory (src/aes/scrap.c) */
 WORD sc_clear(void) { return refused(); }

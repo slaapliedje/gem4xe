@@ -125,8 +125,9 @@ b6init_hi:    .word   .sectionEnd b6init
 ;;; b6_probe -- INITAD, before any bank's segment.  Fills b6_portb and
 ;;; b6_count.  Uses nothing of the C runtime: none of it is set up yet.
 ;;;
-;;; Each candidate v: map it, write its own index to $4000 and a pattern to
-;;; $5000 and $7FFF, and read them back.  Then the main bank's $4000 is
+;;; Each candidate v: map it, write a pattern to $5000 and $7FFF and read it
+;;; back, check the resident sentinel, and only then write its own index to
+;;; $4000 and read it back.  Then the main bank's $4000 is
 ;;; checked for the main marker and every bank kept so far for its own
 ;;; index: a candidate that aliases one of them has overwritten it, and an
 ;;; earlier keeper overwritten means the earlier one is the duplicate --
@@ -151,15 +152,10 @@ b6_probe:     lda     PORTB
 20$:          jsr     cand            ; A = the PORTB value for k
               sta     pr_v
               sta     PORTB
-              ldx     pr_n            ; the index this one would get
-              inx
-              stx     0x4000
               lda     #0x5a
               sta     0x5000
               lda     #0xc3
               sta     0x7fff
-              cpx     0x4000
-              bne     40$
               lda     0x5000
               cmp     #0x5a
               bne     40$
@@ -171,6 +167,15 @@ b6_probe:     lda     PORTB
               bne     40$
               lda     sentinel+3
               cmp     #0x45
+              bne     40$
+;;; Only now the index: a candidate refused above may map a bank already
+;;; kept (on a board where bit 1 or 7 is not a bank bit, each bank answers
+;;; to BASIC or the self test on and off), and its index written there
+;;; would make the keeper look like a duplicate for dedup to drop.
+              ldx     pr_n            ; the index this one would get
+              inx
+              stx     0x4000
+              cpx     0x4000
               bne     40$
               lda     pr_m            ; main untouched?
               sta     PORTB
@@ -187,6 +192,8 @@ b6_probe:     lda     PORTB
               sta     pr_n
 40$:          lda     pr_m
               sta     PORTB
+              lda     #0xa5           ; main's marker again, in case the
+              sta     0x4000          ; candidate was main memory itself
               inc     pr_k
               lda     pr_k
               cmp     #BANKMAX

@@ -300,6 +300,13 @@ test-p6: build/a6-boot.atr
 test-p6a: build/a6-boot.atr
 	python3 tests/emu/p6_prog.py --axlon 4096K
 
+# ...and on each PORTB size the 6502 build serves: 320K (RAMBO and COMPY),
+# 576K and 1088K.  Every other gate is 1088K, where every free PORTB bit is
+# a bank bit; below that BASIC or the self test is not, and the probe must
+# refuse those candidates without spoiling a bank it kept.
+test-b6probe: build/a6-boot.atr
+	python3 tests/emu/b6_probe.py
+
 # ---- step 5c-1: a program of several banks (tests/emu/p6m_prog.py) ------
 # src/p6m_prog.c in three banks of its own (BANK_TEXT pb1..pb3) and the
 # kit's gemlib.c in bank 2, banked by bankasm.py with the program's own
@@ -459,7 +466,7 @@ build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf build/p6mprog.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-p6m test-p6ma test-d6 test-f6a b6asm
+.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;
