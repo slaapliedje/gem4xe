@@ -770,6 +770,21 @@ build/clock.rsc build/clockrsc.h: tools/clockrsc.py tools/rsc.py tools/aesref.py
 	@mkdir -p build
 	python3 tools/clockrsc.py build/clock.rsc build/clockrsc.h
 
+# MINES (src/apps/mines.c): the mine game, a window on the desktop.  The
+# field and its rules are src/apps/minefld.c, portable C that
+# tests/host/test_mines.py runs on the host against a model of its own.
+build/mines.rsc build/minesrsc.h: tools/minesrsc.py tools/rsc.py tools/aesref.py VERSION
+	@mkdir -p build
+	python3 tools/minesrsc.py build/mines.rsc build/minesrsc.h
+
+build/mines_host: src/apps/minefld.c src/apps/minefld.h tests/host/mines_host.c
+	@mkdir -p build
+	gcc -O1 -Wall -Wextra -I src/apps -o $@ src/apps/minefld.c tests/host/mines_host.c
+
+build/apps/mines.o build/apps/minefld.o: src/apps/minefld.h build/minesrsc.h
+MINES_OBJS = $(G4A_LIB) build/apps/mines.o build/apps/minefld.o
+$(eval $(call g4a,mines,$(MINES_OBJS),4608,256,1024,,))
+
 CALC_OBJS  = $(G4A_LIB) build/apps/calc.o build/apps/calcapp.o
 CLOCK_OBJS = $(G4A_LIB) build/apps/clock.o build/apps/clockapp.o
 $(eval $(call g4a,calc,$(CALC_OBJS),1536,256,512,,))
@@ -1300,7 +1315,8 @@ APP_FILES = --mkdir APPS \
             --add build/clock.g4a "APPS>CLOCK.PRG" --add build/clock.rsc "APPS>CLOCK.RSC"
 APP_DEPS  = build/calc.g4a build/calc.rsc build/clock.g4a build/clock.rsc \
             build/gemarc.g4a build/gemarc.rsc build/edit.g4a build/edit.rsc \
-            build/diskutil.g4a build/diskutil.rsc build/dup.g4a build/dup.rsc
+            build/diskutil.g4a build/diskutil.rsc build/dup.g4a build/dup.rsc \
+            build/mines.g4a build/mines.rsc
 # The gate accessory (src/m28_acc.c), in the system's own directory with
 # the extension the AES looks for there: an accessory is not in \APPS\
 # with the programs, because it is not one -- it is loaded once at
@@ -2065,7 +2081,7 @@ build/hello-boot.atr: build/hello.xex
 	@rm -f $@
 	python3 tools/mkdisk.py "$(SRC_DOS)" $< $@ HELLO.COM $(DISK_DENSITY)
 
-test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-m70 test-m71 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
+test: test-host check-cc mscan qscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m15 test-m15x test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-mydos test-m38 test-m39 test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-m70 test-m71 test-gemarc test-edit test-mines test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install g4bench test-sdx816 test-kmem test-vbxefeat test-gs1
 
 # GACS's engine on the 65816 -- the application gem4xe exists for, asked
 # whether it still compiles, links and computes there (docs/gacs.md).
@@ -2521,6 +2537,18 @@ build/dup-test.atr: build/gem.xex build/dup.g4a build/dup.rsc build/lang.rsc bui
 test-m65: build/dup-test.atr build/gem.sym
 	python3 tests/emu/m65_dup.py
 
+# MINES (src/apps/mines.c): the field's rules on the host, then the game
+# on the Atari -- won, lost, every square drawn as the field says, on the
+# VBXE and on ANTIC -- from an appliance floppy starting it.
+build/mines-test.atr: build/gem.xex build/mines.g4a build/mines.rsc build/lang.rsc build/gem4xe.cfg \
+                      build/816.com tools/mkfloppy.py tools/mkcf.py tools/atr.py build/fdos.elf build/fdboot.elf
+	@rm -f $@
+	python3 tools/mkfloppy.py $@ --app build/mines.g4a --add build/mines.rsc 'GEM>MINES.RSC'
+
+test-mines: build/mines_host build/mines-test.atr build/gem.sym build/minesrsc.h
+	python3 tests/host/test_mines.py
+	python3 tests/emu/mines.py
+
 # DUP's L and B (phase 166, docs/run8-plan.md step 5): a plain program and
 # BASIC run from DUP's menu, and DUP back after each.
 test-m71: build/dup-test.atr build/gem.sym
@@ -2940,4 +2968,4 @@ emu-stop:
 clean:
 	rm -rf build
 
-.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-m70 test-m71 test-gemarc test-edit test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
+.PHONY: all fonts sdk dist release diag readme served guide docs memcheck bench-desk bench-antic bench-boot g4bench test-m38 test-m39 gacs-check shots test test-host check-cc mscan qscan negyscan test-emu test-m1 test-m2 test-m3 test-m4 test-m5 test-m5p test-m6 test-m7 test-m8 test-m9 test-m10 test-m11 test-m12 test-m13 test-m14 test-m14x test-m14u test-m15 test-m15x test-m15u test-m15s test-m15d test-m15g test-m16 test-m17 test-m18 test-m19 test-m20 test-m21 test-m22 test-m23 test-m24 test-m25 test-m26 test-m27 test-m28 test-m29 test-m30 test-m31 test-m32 test-m32n test-m33 test-m34 test-m35 test-m36 test-m37 test-winbug test-mydos test-m40 test-m41 test-m42 test-m43 test-m44 test-m45 test-m46 test-m47 test-m48 test-m49 test-m50 test-m51 test-m52 test-m53 test-m54 test-m55 test-m56 test-m57 test-m58 test-m59 test-m60 test-m61 test-m62 test-m63 test-m64 test-m65 test-m66 test-m67 test-m68 test-m69 test-m70 test-m71 test-gemarc test-edit test-mines test-boot test-fdos test-fdosw test-fdosapp test-fdossh test-sdfs test-mkfs test-doscmd test-look test-install test-cf test-sd test-cf-dosclock test-cf-bankslow test-cf-firmware test-m11-os test-sdx816 test-kmem test-vbxefeat test-gs1 vstress sd demo movie bench emu-stop clean
