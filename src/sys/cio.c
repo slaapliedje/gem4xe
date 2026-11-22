@@ -9,11 +9,41 @@ uint8_t  cio_last;
 /* The name CIO reads, in bank $00: "D:" + name + EOL at most. */
 static char cio_name[CIO_NAME_MAX + 4];
 
+#ifdef __CALYPSI_TARGET_6502__
+/* THE SAMPLER IS SILENT FOR THE CALL, as src/sys/cio.s keeps it on the
+ * 65C816: timer 1 out of POKMSK and IRQEN before CIO or SIO has POKEY,
+ * back in POKMSK after, and armed by irq_pokey_resync only once it has
+ * reprogrammed the timer.  Left running, it stopped the desktop's load on
+ * MiSTer's Atari800 core every time -- the machine hung inside SIO and
+ * the core's drive was left with half a command frame -- where Altirra,
+ * with real serial timing or without, never minded.  The pointer stands
+ * still while the disk turns, as it does on the 65C816. */
+#define POKMSK (*(volatile uint8_t *)0x0010)
+#define IRQEN  (*(volatile uint8_t *)0xD20E)
+static void sampler_off(void)
+{
+    if (irq.how != IRQ_OFF) {
+        POKMSK &= (uint8_t)~1u;
+        IRQEN = POKMSK;
+    }
+}
+static void sampler_on(void)
+{
+    if (irq.how != IRQ_OFF)
+        POKMSK |= 1u;                   /* armed by irq_pokey_resync */
+}
+#else
+#define sampler_off()
+#define sampler_on()
+#endif
+
 static uint8_t call(int16_t iocb)
 {
     uint8_t st;
     cio_calls++;
+    sampler_off();
     st = (uint8_t)cio_call((uint16_t)iocb);
+    sampler_on();
     irq_pokey_resync();             /* SIO had POKEY; the sampler wants it back */
     cio_last = st;
     return st;
@@ -231,7 +261,9 @@ static uint8_t sio_devt(uint8_t dev, uint8_t unit, uint8_t cmd, uint8_t dir,
     w = (volatile uint16_t *)DCB_DAUX1;
     *w = aux;
     cio_calls++;
+    sampler_off();
     st = (uint8_t)dsk_call(0);
+    sampler_on();
     irq_pokey_resync();             /* and arms timer 1 again (cio.s) */
     return st;
 }

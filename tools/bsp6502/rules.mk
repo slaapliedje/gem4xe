@@ -411,6 +411,10 @@ build/a6d-boot.atr: build/a6.xex build/desktop.rsc build/deskicon.rsc build/pref
 test-d6: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_desk.py
 
+# the sampler silent through SIO (src/sys/cio.c), with real serial timing
+test-d6sio: build/a6d-boot.atr build/a6d-desk.atr
+	python3 tests/emu/d6_sio.py
+
 build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a build/cpanel6.g6a build/cpanel.rsc \
                     build/general.rsc build/color.rsc
 	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
@@ -466,7 +470,7 @@ build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf build/p6mprog.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-f6a b6asm
+.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-d6sio test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;

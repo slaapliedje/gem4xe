@@ -9,7 +9,11 @@ refuse.  It once wrote a refused candidate's index into a bank already
 kept, and so found one bank on a 130XE.
 
 Boots build/a6-boot.atr on each size and reads b6_count once the probe
-has run.  The program needs 16 banks and stops without them, and under
+has run.  Every size boots with BASIC in, as an XL/XE does without OPTION
+held.  The resident link has data at $A000-$BFFF, so
+tools/bsp6502/mkxex6502.py's first segment puts BASIC out (PORTB bit 1,
+BASICF) before anything else loads; without it the load stops before the
+probe on every size here.  So BASICF ($03F8) must also be set.  The program needs 16 banks and stops without them, and under
 --siopatch that stop and the self test it leads to come before the first
 look, so a 130XE (4 banks) cannot be read this way; it is the board in
 Calypsi-6502-Atari's own probe gate.  Before the fix 320K found one bank
@@ -21,12 +25,13 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-from a8test.launcher import launch          # noqa: E402
+import a8test.launcher as L                 # noqa: E402
 
 DISK = os.path.abspath(os.path.join(ROOT, "build", "a6-boot.atr"))
 MAP = os.path.abspath(os.path.join(ROOT, "build", "a6.map"))
 # memsize: PORTB banks (main memory not counted)
 SIZES = [("320K", 16), ("320KCOMPY", 16), ("576K", 32), ("1088K", 64)]
+BASICF = 0x03F8
 
 
 def main():
@@ -36,9 +41,10 @@ def main():
         return int(re.search(rf"^\s+{n} = ([0-9a-f]+)\s*$", text, re.M).group(1), 16)
     count, kind = sym("b6_count"), sym("b6_kind")
     fails = []
-    print("gem4xe-b6probe: the 6502 bank probe on each PORTB size")
+    print("gem4xe-b6probe: the 6502 bank probe on each PORTB size, BASIC in at boot")
+    L.BASE_ARGS = ["--basic" if a == "--nobasic" else a for a in L.BASE_ARGS]
     for mem, want in SIZES:
-        emu = launch(tag=f"b6probe{mem}", memsize=mem, vbxe=False, rapidus=False,
+        emu = L.launch(tag=f"b6probe{mem}", memsize=mem, vbxe=False, rapidus=False,
                      extra_args=["--disk", DISK])
         b = emu.bridge
         try:
@@ -51,11 +57,12 @@ def main():
                     got = b.peek(count)
                     break
             mode = b.cmd("HWSTATE")["cpu"]["mode"]
+            basicf = b.peek(BASICF)
         finally:
             emu.stop()
-        ok = seen and got == want and mode == "6502"
+        ok = seen and got == want and mode == "6502" and basicf != 0
         print(f"  {'ok' if ok else 'FAIL'}: {mem}: {got if seen else 'no probe'} "
-              f"banks, want {want} (CPU {mode})")
+              f"banks, want {want} (CPU {mode}); BASICF ${basicf:02X}, want non-zero")
         if not ok:
             fails.append(mem)
     print(f"gem4xe-b6probe: {'PASS' if not fails else 'FAIL ' + ' '.join(fails)}")

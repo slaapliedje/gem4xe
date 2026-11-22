@@ -47,6 +47,7 @@ where its header says and knows nothing of banks, so the file says it
 with INITAD, which the loader calls as soon as the segment that sets it
 is in (src/sys6502/bank6502.s):
 
+    $0400 + INITAD               BASIC off (PORTB bit 1, BASICF)
     the resident segments
     INITAD b6_probe              which PORTB values are banks
     for each bank n:
@@ -92,6 +93,15 @@ STORE = 0x10000
 BANK = 0x4000
 WIN_LO, WIN_HI = 0x4000, 0x7FFF
 INITAD, RUNAD = 0x02E2, 0x02E0
+# BASIC OFF before anything loads: the resident link has data at
+# $A000-$BFFF, which is BASIC's ROM on an XL/XE booted without OPTION.
+# PORTB bit 1 set takes it out, and BASICF ($03F8) non-zero keeps it out
+# across a warm start.  In the cassette buffer, which nothing loads into:
+#   LDA PORTB / ORA #2 / STA PORTB / LDA #1 / STA BASICF / RTS
+NOBASIC_AT = 0x0400
+NOBASIC = bytes([0xAD, 0x01, 0xD3, 0x09, 0x02, 0x8D, 0x01, 0xD3,
+                 0xA9, 0x01, 0x8D, 0xF8, 0x03, 0x60])
+NOBASIC_END = NOBASIC_AT + len(NOBASIC) - 1
 STAGE, STAGE_END = 0x8000, 0x9EFF       # src/sys6502/g6z6502.s's B6_STAGE
 
 
@@ -365,7 +375,13 @@ def main(argv):
             if a <= STAGE_END and a + len(body) > STAGE:
                 raise SystemExit(f"mkxex6502: --pack: resident segment ${a:04X}+{len(body)} "
                                  f"is in the staging buffer ${STAGE:04X}-${STAGE_END:04X}")
+    for a, body in resident:
+        if a <= NOBASIC_END and a + len(body) > NOBASIC_AT:
+            raise SystemExit(f"mkxex6502: resident segment ${a:04X}+{len(body)} is where "
+                             f"the BASIC-off code goes, ${NOBASIC_AT:04X}-${NOBASIC_END:04X}")
     out = bytearray(b"\xff\xff")
+    out += seg(NOBASIC_AT, NOBASIC)
+    out += seg(INITAD, struct.pack("<H", NOBASIC_AT))
     for a, body in sorted(resident):
         out += seg(a, body)
     out += seg(INITAD, struct.pack("<H", addr("b6_probe")))

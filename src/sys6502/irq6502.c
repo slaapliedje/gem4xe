@@ -93,12 +93,11 @@ uint8_t irq_install(void)
 
 /* After CIO (src/sys/cio.c): SIO has had POKEY -- AUDCTL for its linked
  * channels, SKCTL for the serial port -- and timer 1 is set to count from
- * the sampler's divisor again: src/sys/irq.c's, as the 6502 has it.  The
- * XL OS's own SIO does not need it -- it leaves channel 1 alone and
- * timer 1 in POKMSK (irq6_hook put it there), and test-p6 passes with
- * this turned off, with real serial timing and without -- so it is kept
- * for the SIO drivers that are not the OS's (a high-speed one in a DOS
- * or a PBI ROM), which nothing here tests. */
+ * the sampler's divisor again: src/sys/irq.c's, as the 6502 has it.
+ * cio.c took timer 1 out of POKMSK and IRQEN for the call and has put it
+ * back in POKMSK; the IRQEN store here, after STIMER, is what arms it.
+ * Running through SIO, the sampler hung the desktop's load on MiSTer's
+ * Atari800 core (cio.c says how); Altirra never showed it. */
 #define SKCTL   (*(volatile uint8_t *)0xD20F)
 
 void irq_pokey_resync(void)
