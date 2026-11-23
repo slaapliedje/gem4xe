@@ -14,7 +14,11 @@ Checked here, from the source:
     screen -- and only bootinfo.c sets CHBASE ($D409): a new one must be
     added here with its address held to the rule;
   - that no 6502 link map (tools/bsp6502/*.scm) puts memory in
-    $8000-$9EFF, where the display list and screen are.
+    $8000-$9EFF, where the display list and screen are -- but the VBXE
+    device's own (docs/6502.md, step 6): $9000-$9EFF, sections named vb*
+    and the linker's ivbdata only, which run only when the VBXE and not
+    ANTIC is the screen; $8000-$8FFF is the VBXE's MEMAC window then, and
+    stays empty.
 
 G4ROOT points the test at another tree (how it was made to fail).
 """
@@ -26,6 +30,7 @@ import unittest
 ROOT = os.environ.get("G4ROOT") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 WINDOW = (0x4000, 0x8000)              # [lo, hi)
 DISPLAY = (0x8000, 0x9F00)             # the display list and the screen
+VBXE_ONLY = (0x9000, 0x9F00)           # the VBXE device's, in a6.scm only
 # the 6502 maps of programs that drive the ANTIC device; atari-banked.scm
 # is the throwaway probe map, whose Screen holds nothing
 MAPS = ("a6", "c6", "f6", "i6", "gem6502", "atari-banked")
@@ -48,13 +53,17 @@ def overlaps(lo, hi, rng):
 
 
 def memories(text):
-    """[(name, lo, hi_exclusive, has_section)] for every (memory ...)."""
+    """[(name, lo, hi_exclusive, sections)] for every (memory ...): the
+    names its (section ...) lists, empty when it lists none."""
     out = []
     for m in re.finditer(r"\(memory\s+([\w-]+)\s+\(address\s+\(#x([0-9a-fA-F]+)\s*\.\s*#x([0-9a-fA-F]+)\)\)", text):
         rest = text[m.end():]
         nxt = re.search(r"\(memory\s", rest)
         body = rest[:nxt.start()] if nxt else rest
-        out.append((m.group(1), int(m.group(2), 16), int(m.group(3), 16) + 1, "(section" in body))
+        sect = re.search(r"\(section\s+([^)]*)\)", body)
+        names = [re.sub(r"[()]", "", w) for w in sect.group(1).split()] if sect else []
+        names = [w for w in names if not w.startswith("#")]
+        out.append((m.group(1), int(m.group(2), 16), int(m.group(3), 16) + 1, names))
     return out
 
 
@@ -90,15 +99,21 @@ class AnticOutsideWindow(unittest.TestCase):
                          "a new CHBASE writer: check its font is outside $4000-$7FFF, then add it here")
 
     def test_6502_maps_leave_the_display_alone(self):
-        seen = 0
+        seen = vbxe = 0
         for m in MAPS:
             text = read(f"tools/bsp6502/{m}.scm")
-            for name, lo, hi, placed in memories(text):
+            for name, lo, hi, sects in memories(text):
                 seen += 1
-                if overlaps(lo, hi, DISPLAY):
-                    self.assertFalse(placed or m != "atari-banked",
-                                     f"{m}.scm's {name} ${lo:04X}-${hi - 1:04X} is over the ANTIC display")
+                if not overlaps(lo, hi, DISPLAY):
+                    continue
+                if m == "a6" and VBXE_ONLY[0] <= lo and hi <= VBXE_ONLY[1] and sects \
+                        and all(re.match(r"i?vb", w) for w in sects):
+                    vbxe += 1
+                    continue
+                self.assertFalse(sects or m != "atari-banked",
+                                 f"{m}.scm's {name} ${lo:04X}-${hi - 1:04X} is over the ANTIC display")
         self.assertGreater(seen, 20, "the maps' memories were not read")
+        self.assertEqual(vbxe, 2, "a6.scm's VbxeOv and VbxeRam were not both seen")
 
 
 if __name__ == "__main__":

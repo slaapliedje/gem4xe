@@ -19,7 +19,11 @@ D1:.  The gate holds it to:
     sectors times 125 -- which says the listing went through Fsfirst and
     Fsnext into the far DTA and the FNODEs and was counted from there.
 
-    python3 tests/emu/d6_desk.py [--shot]
+With --vbxe (make test-d6v, docs/6502.md step 6) the machine has a VBXE,
+which A6 takes as its screen: the same desktop at 640x240 in colour, the
+same steps and checks, clicked where that screen puts things (VBXE_AT).
+
+    python3 tests/emu/d6_desk.py [--vbxe] [--shot]
 """
 import os
 import re
@@ -52,10 +56,21 @@ GENERAL = (96, 56)                  # the panel's first slot: General
 GENERAL_OK = (116, 133)             # its form's OK
 PANEL_CLOSE = (67, 23)              # the panel window's closer
 NBANKS = 8
+# ...and where the VBXE's 640x240 screen with its 8x8 cell puts them,
+# found from its screenshots (the trash and the desk's cells move with
+# the cell; the windows open where the desktop lays them out)
+VBXE_AT = dict(
+    D1_ICON=(48, 30), D1_CLOSE=(24, 52), AUTORUN=(69, 90), SHOW=(244, 144),
+    VIEW_CLOSE=(20, 20), D2_ICON=(154, 30), D2_FULL=(314, 52), P6M_ICON=(54, 92),
+    CPANEL_ICON=(154, 50), GENERAL=(240, 76), GENERAL_OK=(274, 189), PANEL_CLOSE=(196, 44),
+)
 
 
 def main(argv):
     keep = "--shot" in argv
+    vbxe = "--vbxe" in argv
+    if vbxe:
+        globals().update(VBXE_AT)
     fails = []
 
     def check(cond, msg):
@@ -64,7 +79,8 @@ def main(argv):
             fails.append(msg)
         return cond
 
-    print("gem4xe-d6: the desktop on a stock 6502, and a program from it")
+    what = "on a stock 6502" + (" with a VBXE" if vbxe else "")
+    print(f"gem4xe-d6: the desktop {what}, and a program from it")
     text = open(MAP).read()
 
     def sym(n, t=None):
@@ -75,7 +91,7 @@ def main(argv):
     d1 = [e for e in Dos2(ATRImage.load(DISK)).entries() if e.in_use and e.nameable]
     want_info = f" {sum(e.count for e in d1) * 125} bytes used in {len(d1)} items.".encode()
 
-    emu = launch(tag="d6", memsize="1088K", vbxe=False, rapidus=False,
+    emu = launch(tag="d6v" if vbxe else "d6", memsize="1088K", vbxe=vbxe, rapidus=False,
                  extra_args=["--disk", DISK])
     b = emu.bridge
     b.mount(1, DESK)
@@ -120,6 +136,9 @@ def main(argv):
 
         stuck = b.peek(STATUS + 4)
         check(not stuck, f"nothing stopped at $0604 ({chr(stuck) if stuck else 'none'})")
+        scr = chr(b.peek(STATUS + 5) or 32)
+        check(scr == ("V" if vbxe else "A"), f"the screen A6 chose is {scr!r} at $0605 "
+                                            f"(V the VBXE, A ANTIC)")
         rd, slot, nb = b.peek(STATUS + 13), b.peek(STATUS + 12), b.peek(sym("p6_nbanks"))
         check(rd == 1 and nb == NBANKS and slot == ord("R"),
               f"it was read (CIO {rd}) into {nb} banks and its first turn ended "
@@ -252,6 +271,16 @@ def main(argv):
         check(b"CPANEL.G6A" in ram, "D2:'s window is back, listing CPANEL.G6A")
         starts3 = b.peek(STATUS + 0x3E)
         click(CPANEL_ICON, 2, 0)
+        # ONCE MORE if it only selected the icon: on the VBXE the 6502
+        # draws the selection slowly enough that the second press can come
+        # while the desktop is still at it, and is one more click, not a
+        # double one (a person clicks again too)
+        for _ in range(30):
+            b.frames(100)
+            if b.peek(STATUS + 0x3E) == starts3 + 1:
+                break
+        else:
+            click(CPANEL_ICON, 2, 0)
         for _ in range(150):
             b.frames(100)
             if b.peek(STATUS + 0x3E) == starts3 + 1 and cw16("cp6_runs") == 1:
@@ -307,7 +336,7 @@ def main(argv):
         emu.stop()
     if not fails and not keep and os.path.exists(SHOT):
         os.remove(SHOT)
-    print(f"gem4xe-d6: {'PASS' if not fails else 'FAIL'} -- the desktop on a stock 6502, "
+    print(f"gem4xe-d6: {'PASS' if not fails else 'FAIL'} -- the desktop {what}, "
           f"{len(fails)} problem(s)")
     return 1 if fails else 0
 

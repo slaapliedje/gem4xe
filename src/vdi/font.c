@@ -27,7 +27,15 @@
  * is read off `vdev` rather than chosen here, because both faces are in
  * the image and which screen came up is not decided until the program
  * starts. */
+#ifdef __CALYPSI_TARGET_6502__
+/* ...except the 6502's VBXE face, which is far and so cannot be in the
+ * device's table, whose face is a near pointer there: src/vdi/dev_vbxe.c's
+ * vbd_select6 copies it out of its bank and says where. 0 for ANTIC. */
+SECTION("zwin") uint32_t vdi_face_far;  /* LowRam: HiRam is full */
+#define vdi_face (vdi_face_far ? vdi_face_far : (uint32_t)vdev->font_face)
+#else
 #define vdi_face (vdev->font_face)
+#endif
 #include "sys/cio.h"
 #include "sys/farmem.h"
 

@@ -22,6 +22,8 @@
 #include "sys/irq.h"
 #include "sys/dos.h"                /* dos_ident */
 #include "sys/gemdos.h"             /* gemdos_init */
+#include "vbxe/vbxe.h"              /* step 6: the VBXE screen */
+#include "antic/antic.h"            /* antic_suspend */
 #include <string.h>
 
 void a6_tree(void);
@@ -211,10 +213,27 @@ void a6_boot(void)
     dos_ident();                        /* as src/gem.c: first */
     farmem_probe();
     STATUS[9] = (unsigned char)farmem.banks;
-    vdev = &vdev_antic;
+    /* WHICH SCREEN (docs/6502.md, step 6), as src/gem.c's AUTO: the VBXE
+     * when there is one, 640 by 240 -- its XDL in VRAM, ANTIC's DMA off
+     * the bus -- and ANTIC otherwise, whose screen is then where the
+     * VBXE device's statics would be ($9000-$9EFF, tools/bsp6502/a6.scm):
+     * nothing of the VBXE's runs after this on that machine. */
+    if (vbxe_detect()) {
+        vdev = vbd_select6(VB_WIDE_NORMAL, 0);
+        vram_fill(VR_XDL, 0x00, 0x1000);
+        vbxe_xdl_hr(VR_SCREEN0, (uint16_t)vdev->h, 0, VB_WIDE_NORMAL);
+        antic_suspend();
+        STATUS[5] = 'V';
+    } else {
+        vdev = &vdev_antic;
+        STATUS[5] = 'A';
+    }
     STATUS[3] = '1';
     vdi_font_default();
     vdi_init();
+    dev_clear_screen();                 /* as src/gem.c: ANTIC's start
+                                           cleared its own, a VBXE's VRAM
+                                           is whatever it was */
     STATUS[3] = '2';
 
     proc_init(proc_store);

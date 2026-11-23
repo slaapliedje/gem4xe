@@ -23,6 +23,13 @@
 
 #include "portab.h"
 
+/* The 6502's VBXE device (docs/6502.md, step 6) keeps its window-safe
+ * data with the rest of its statics, at $9000-$9EFF: the ANTIC screen's
+ * place, free when the VBXE is the screen. */
+#ifdef GEM4XE_VBRAM
+#define ZWIN SECTION("vbram")
+#else
 #define ZWIN SECTION("zwin")
+#endif
 
 #endif

@@ -4,7 +4,8 @@
 ;;; An XL/XE with BASIC off and a PORTB expansion.  Resident -- always
 ;;; mapped -- is $2000-$3FFF and $A000-$BFFF; $4000-$7FFF is the window;
 ;;; $8000-$9EFF is ANTIC's display list and screen (src/antic/antic.h),
-;;; which nothing here may take.  Below $2000 is the DOS's.
+;;; which nothing here may take -- but the VBXE device's own, below, which
+;;; runs only when ANTIC's screen is not there.  Below $2000 is the DOS's.
 ;;;
 ;;; EACH BANK IS A MEMORY of its own at $4000-$7FFF, scattered to a store
 ;;; address the loader reads its bank number from: bank n at
@@ -88,6 +89,30 @@
             (section gemdos_b gemdos_b__bank))
     (memory Bank21 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store21)
             (section gdos gdos__bank))
+    ;; THE VBXE DEVICE (docs/6502.md, step 6): src/vdi/dev_vbxe.c in three
+    ;; banks (its BANK_TEXT cuts), src/vbxe/vbxe.c in the third; the
+    ;; device's one table and the 8x8 face (src/vdi/font8x8.c, compiled
+    ;; into vbx_b__bank) in the second, beside the code that copies them out
+    (memory Bank22 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store22)
+            (section vbx_a vbx_a__bank))
+    (memory Bank23 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store23)
+            (section vbx_b vbx_b__bank))
+    (memory Bank24 (address (#x4000 . #x7fff)) (type rom) (scatter-to Store24)
+            (section vbx_c vbx_c__bank))
+    ;; ...and its resident part at $9000-$9EFF: ANTIC's screen when ANTIC
+    ;; is the screen, nothing's when the VBXE is -- whose MEMAC window is
+    ;; $8000-$8FFF (src/vbxe/vbxe.h).  Only the VBXE device's code runs
+    ;; with these, so an ANTIC screen over them costs nothing.  VbxeOv,
+    ;; its resident veneers and constants, is LOADED, after the banks,
+    ;; whose loading stages through $8000-$9EFF (mkxex6502.py); VbxeRam
+    ;; is its statics (GEM4XE_VBRAM, the wrappers' pragmas in rules.mk).
+    ;; Its initialised statics (vbdata) take their values at start-up from
+    ;; ivbdata (the linker names it so), which VbxeOv holds: it is loaded before the
+    ;; program starts, and read once, then.  (With no room for them the
+    ;; linker put the values in a bank's spare, to be copied from a bank
+    ;; that is not mapped then.)
+    (memory VbxeOv (address (#x9000 . #x93ff)) (type rom) (section vbveneer vbconst ivbdata))
+    (memory VbxeRam (address (#x9400 . #x9eff)) (type ram) (section vbram vbdata))
     (memory Store1 (address (#x10000 . #x13fff)) (section Store1))
     (memory Store2 (address (#x14000 . #x17fff)) (section Store2))
     (memory Store3 (address (#x18000 . #x1bfff)) (section Store3))
@@ -109,6 +134,9 @@
     (memory Store19 (address (#x58000 . #x5bfff)) (section Store19))
     (memory Store20 (address (#x5c000 . #x5ffff)) (section Store20))
     (memory Store21 (address (#x60000 . #x63fff)) (section Store21))
+    (memory Store22 (address (#x64000 . #x67fff)) (section Store22))
+    (memory Store23 (address (#x68000 . #x6bfff)) (section Store23))
+    (memory Store24 (address (#x6c000 . #x6ffff)) (section Store24))
     (block cstack (size #x400))
     (block heap (size #x10))
     (block stack (size #x100))

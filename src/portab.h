@@ -105,10 +105,12 @@ void irq_sei(void);
 #define FAR_816
 #define NEAR
 /* Zero page for the system's own (GEM4XE_BANKED, tools/bsp6502/rules.mk)
+ * -- but not the VBXE device's (GEM4XE_VBRAM, docs/6502.md step 6), whose
+ * statics all go to $9000-$9EFF, which zero page has no room for;
  * and nothing in a PROGRAM, which shares the system's zero page and owns
  * only the pseudo-registers: the desktop's TINY viewer variables landed
  * on the system's $B6-$C5 (docs/6502.md, 5d). */
-#ifdef GEM4XE_BANKED
+#if defined(GEM4XE_BANKED) && !defined(GEM4XE_VBRAM)
 #define TINY         __attribute__((zpage))
 #else
 #define TINY

@@ -220,8 +220,9 @@ static UWORD rotr16(UWORD v, UWORD n)
     return v;
 }
 
-/* ...and the mask read backwards a nibble at a time */
-static const uint8_t rev4[16] = {
+/* ...and the mask read backwards a nibble at a time -- in this bank
+ * (vdi_a, style_anchor's), not resident, where 16 bytes is a lot */
+static const uint8_t rev4[16] BANK_DATA("vdi_a") = {
     0x0, 0x8, 0x4, 0xC, 0x2, 0xA, 0x6, 0xE,
     0x1, 0x9, 0x5, 0xD, 0x3, 0xB, 0x7, 0xF
 };

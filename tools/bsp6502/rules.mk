@@ -140,14 +140,14 @@ test-v6: build/v6-boot.atr
 # in wind's, BANK_DATA), menu.c in two (menu, menu_b), the events, the
 # processes and appl in evt, the control manager in ctl.  Its bank objects
 # are its own (build/b6502/a6bank/): a program's index names its banks.
-A6_BANKS6  = $(BANKS6) --bank wind=11 --bank wind_b=12 --bank menu=13 --bank menu_b=14 --bank evt=15 --bank ctl=16 --bank abi=17 --bank rsrc=18 --bank gemdos=19 --bank gemdos_b=20 --bank gdos=21
+A6_BANKS6  = $(BANKS6) --bank wind=11 --bank wind_b=12 --bank menu=13 --bank menu_b=14 --bank evt=15 --bank ctl=16 --bank abi=17 --bank rsrc=18 --bank gemdos=19 --bank gemdos_b=20 --bank gdos=21 --bank vbx_a=22 --bank vbx_b=23 --bank vbx_c=24
 A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/muldiv6502.o $(B6)/res/font6x6.o \
              $(B6)/res/bank6502.o \
              $(B6)/res/a6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
              $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o $(B6)/res/enter6502s.o \
              $(B6)/res/g6z6502.o
-A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc alert gemdos dos con clock
+A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc alert gemdos dos con clock dev_vbxe vbxe vbfont
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
 
@@ -156,7 +156,7 @@ $(B6)/res/a6_aes.o: src/a6_aes.c $(HDRS6)
 	$(CC6) $(CFLAGS6) -I src/aes -I src/sys -c $< -o $@
 $(B6)/res/a6farmem6502.o: src/sys6502/farmem6502.c $(HDRS6)
 	@mkdir -p $(dir $@)
-	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=21 -c $< -o $@
+	$(CC6) $(CFLAGS6) -DB6_CODE_BANKS=24 -c $< -o $@
 
 $(B6)/w/wind.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="wind"\n#include "../../../src/aes/wind.c"\n' > $@
 $(B6)/w/menu.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="menu"\n#include "../../../src/aes/menu.c"\n' > $@
@@ -183,6 +183,23 @@ $(B6)/w/gemdos.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="gem
 $(B6)/w/dos.c:    ; @mkdir -p $(dir $@); printf '#pragma clang section text="gdos"\n#include "../../../src/sys/dos.c"\n' > $@
 $(B6)/w/con.c:    ; @mkdir -p $(dir $@); printf '#pragma clang section text="gdos"\n#include "../../../src/sys/con.c"\n' > $@
 $(B6)/w/clock.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="gdos"\n#include "../../../src/sys/clock.c"\n' > $@
+# THE VBXE DEVICE (docs/6502.md, step 6): three banks of its own, its
+# statics at $9000-$9EFF (VbxeRam in a6.scm: bss and data by the pragma,
+# TINY and ZWIN by GEM4XE_VBRAM), its constants and resident veneers in
+# VbxeOv there (rodata by the pragma; the veneers by bankasm's
+# --veneer-section), and the 8x8 face in its third bank
+$(B6)/w/dev_vbxe.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="vbx_a" bss="vbram" data="vbdata" rodata="vbconst"\n#include "../../../src/vdi/dev_vbxe.c"\n' > $@
+$(B6)/w/vbxe.c:     ; @mkdir -p $(dir $@); printf '#pragma clang section text="vbx_c" bss="vbram" data="vbdata" rodata="vbconst"\n#include "../../../src/vbxe/vbxe.c"\n' > $@
+$(B6)/w/vbfont.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="vbx_b" rodata="vbx_b__bank"\n#include "../../../src/vdi/font8x8.c"\n' > $@
+$(B6)/pre/dev_vbxe.o: $(B6)/w/dev_vbxe.c src/vdi/dev_vbxe.c src/vbxe/vbxe.h $(HDRS6)
+$(B6)/pre/vbxe.o:     $(B6)/w/vbxe.c src/vbxe/vbxe.c src/vbxe/vbxe.h $(HDRS6)
+$(B6)/pre/dev_vbxe.o: EXTRA6 = -DGEM4XE_VBRAM -DGEM4XE_DEV_IMPL -DGEM4XE_DEV_PREFIX=vbd_
+$(B6)/pre/vbxe.o:     EXTRA6 = -DGEM4XE_VBRAM -I src/vbxe
+$(B6)/pre/vbfont.o:   $(B6)/w/vbfont.c src/vdi/font8x8.c
+$(B6)/pre/dev_vbxe.o $(B6)/pre/vbxe.o $(B6)/pre/vbfont.o:
+	@mkdir -p $(dir $@) $(B6)/asm
+	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \
+	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
 $(B6)/w/a6tree.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/a6_tree.c"\n' > $@
 $(B6)/pre/wind.o:   $(B6)/w/wind.c src/aes/wind.c build/gemdata.h $(HDRS6)
 $(B6)/pre/menu.o:   $(B6)/w/menu.c src/aes/menu.c build/gemdata.h $(HDRS6)
@@ -218,7 +235,8 @@ $(B6)/a6.idx: $(A6_PRE) tools/bsp6502/bankasm.py
 
 $(B6)/a6bank/%.o: $(B6)/pre/%.o $(B6)/a6.idx tools/bsp6502/bankasm.py tools/bsp6502/bankcheck.py
 	@mkdir -p $(dir $@) $(B6)/a6asm
-	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/a6asm/$*.b.s --tu $* $(A6_BANKS6) --index $(B6)/a6.idx --switch-in-bank --fast-frames --fast-veneers
+	python3 tools/bsp6502/bankasm.py $(B6)/asm/$*.s $(B6)/a6asm/$*.b.s --tu $* $(A6_BANKS6) --index $(B6)/a6.idx --switch-in-bank --fast-frames --fast-veneers \
+	    $(if $(filter dev_vbxe vbxe,$*),--veneer-section vbveneer)
 	python3 tools/bsp6502/bankcheck.py --asm $(B6)/a6asm/$*.b.s $(A6_BANKS6) --index $(B6)/a6.idx
 	$(AS6) --core 6502 $(B6)/a6asm/$*.b.s -o $@
 
@@ -276,6 +294,12 @@ build/a6-boot.atr: build/a6.xex build/p6prog.g6a build/p6prog.rsc
 
 test-a6: build/a6-boot.atr
 	python3 tests/emu/a6_aes.py
+
+# step 6: the same on a VBXE machine, which A6 takes as its screen --
+# src/vdi/dev_vbxe.c in banks 22-24, its statics at $9000 -- every pixel
+# of the 640x240 screen held to the models on devref's VBXE
+test-a6v: build/a6-boot.atr
+	python3 tests/emu/a6_aes.py --vbxe
 
 # ---- step 4e: the input poll and the event loop (tests/emu/a6_evt.py) ------
 # The same program, told to go on: src/a6_evt.c (banked, `far`) installs
@@ -411,6 +435,10 @@ build/a6d-boot.atr: build/a6.xex build/desktop.rsc build/deskicon.rsc build/pref
 test-d6: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_desk.py
 
+# step 6: the same desktop on a VBXE machine, 640x240 in colour
+test-d6v: build/a6d-boot.atr build/a6d-desk.atr
+	python3 tests/emu/d6_desk.py --vbxe
+
 # the sampler silent through SIO (src/sys/cio.c), with real serial timing
 test-d6sio: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_sio.py
@@ -470,7 +498,7 @@ build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf build/p6mprog.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-d6sio test-f6a b6asm
+.PHONY: test-a6 test-a6v test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-d6v test-d6sio test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;

@@ -434,8 +434,12 @@ def main(argv):
     final.append("")
     final.append(";;; veneers (tools/bsp6502/bankasm.py)")
     final.append(f"              .extern {tramp}")
+    # --veneer-section: where this file's resident veneers go, `veneer`
+    # (resident memory) unless it says: the VBXE device's go to $9000,
+    # with its statics (docs/6502.md, step 6)
+    vsect = argv[argv.index("--veneer-section") + 1] if "--veneer-section" in argv else "veneer"
     for f, v in sorted(veneer_for.items()):
-        final.append("              .section veneer")
+        final.append(f"              .section {vsect}")
         final.append(f"              .public {v}")
         final.append(f"{v}:          jsr     {tramp}")
         final.append(f"              .word   {target(f)}")

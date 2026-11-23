@@ -103,6 +103,10 @@ NOBASIC = bytes([0xAD, 0x01, 0xD3, 0x09, 0x02, 0x8D, 0x01, 0xD3,
                  0xA9, 0x01, 0x8D, 0xF8, 0x03, 0x60])
 NOBASIC_END = NOBASIC_AT + len(NOBASIC) - 1
 STAGE, STAGE_END = 0x8000, 0x9EFF       # src/sys6502/g6z6502.s's B6_STAGE
+# THE VBXE DEVICE'S RESIDENT PART (docs/6502.md, step 6; VbxeOv in
+# tools/bsp6502/a6.scm): in the staging buffer, so loaded LAST, after
+# every bank has been staged through it and unpacked
+LATE, LATE_END = 0x9000, 0x9EFF
 
 
 def segments(data):
@@ -370,6 +374,8 @@ def main(argv):
         if not body_of:
             raise SystemExit(f"mkxex6502: --bank {n}: {path} has nothing in the window")
         banks[n] = body_of
+    late = [(a, body) for a, body in resident if LATE <= a and a + len(body) - 1 <= LATE_END]
+    resident = [(a, body) for a, body in resident if (a, body) not in late]
     if pack:
         for a, body in resident:
             if a <= STAGE_END and a + len(body) > STAGE:
@@ -400,6 +406,8 @@ def main(argv):
                 out += seg(a, body)
         if "--report" in argv:          # ...and its code went in
             out += seg(INITAD, struct.pack("<H", addr("b6_report")))
+    for a, body in sorted(late):        # the staging buffer is done with
+        out += seg(a, body)
     out += seg(INITAD, struct.pack("<H", addr("b6_main")))
     if "--report" in argv:              # ...and again: every bank went in
         out += seg(INITAD, struct.pack("<H", addr("b6_report")))
@@ -407,6 +415,7 @@ def main(argv):
     open(argv[2], "wb").write(out)
     sizes = ", ".join(f"bank {n} {sum(len(b) for _, b in banks[n])}" for n in sorted(banks))
     print(f"{argv[2]}: {len(out)} bytes; resident {sum(len(b) for _, b in resident)}"
+          f"{f' (+{sum(len(b) for _, b in late)} late)' if late else ''}"
           f"{'; ' + sizes if sizes else ''}; entry ${entry:04X}")
     return 0
 

@@ -28,7 +28,13 @@ memory, BASIC off.  The gate checks:
     the rectangle lists that decide what of the first is drawn, and the
     menu bar.
 
-    python3 tests/emu/a6_aes.py [--shot]
+With --vbxe (make test-a6v, docs/6502.md step 6) the same machine has a
+VBXE, which A6 takes as its screen: the same calls, the same trees, on
+the VBXE device -- src/vdi/dev_vbxe.c in three banks of its own -- and
+every one of the 153,600 pixels of the 640x240 screen held to the same
+models on tools/devref.py's VBXE, colour for colour.
+
+    python3 tests/emu/a6_aes.py [--vbxe] [--shot]
 """
 import copy
 import os
@@ -40,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from a8test.launcher import launch          # noqa: E402
 import aesref                               # noqa: E402
 import devref                               # noqa: E402
+import vbxeref                              # noqa: E402
 from aesref import (Layout, Obj, NIL, LASTOB, NONE, NORMAL, DISABLED,  # noqa: E402
                     CHECKED, G_BOX, G_IBOX, G_TITLE, G_STRING, NAME, CLOSER,
                     FULLER, MOVER, INFO, SIZER, WF_NEWDESK, WF_NAME, WF_INFO,
@@ -98,7 +105,7 @@ def wset(wh, field, *words):
     return (WIND_SET, (), (wh, field) + tuple(words) + (0,) * (4 - len(words)))
 
 
-def model():
+def model(mkdev=devref.Antic):
     """src/a6_tree.c's calls, in its order, on test-m8's and test-m9's
     models: tools/vdiref.py and tools/aesref.py on tools/devref.py's ANTIC.
     wind_create's full size is the desk's work area, gl_rfull, which the
@@ -110,7 +117,7 @@ def model():
     mem = dict(L.mem)
     mem.update(L2.mem)
     probe = aesref.run(PRELUDE, copy.deepcopy(objs), dict(mem),
-                       dev=devref.Antic())[1]
+                       dev=mkdev())[1]
     f = probe.gl_rfull
     full = (f.x, f.y, f.w, f.h)
     script = PRELUDE + [
@@ -128,12 +135,13 @@ def model():
     ]
     mem.update(L2.mem)
     v, a, res = aesref.run(script, objs, mem, trees={L2.base: objs2}, home=L.base,
-                           dev=devref.Antic())
+                           dev=mkdev())
     return v.dev, res, len(PRELUDE)
 
 
 def main(argv):
     keep = "--shot" in argv
+    vbxe = "--vbxe" in argv
     fails = []
 
     def check(cond, msg):
@@ -142,9 +150,10 @@ def main(argv):
             fails.append(msg)
         return cond
 
-    print("gem4xe-a6: the AES on one process, on a stock 6502")
-    dev, res, pre = model()
-    emu = launch(tag="a6", memsize="1088K", vbxe=False, rapidus=False,
+    what = "on a stock 6502" + (" with a VBXE" if vbxe else "")
+    print(f"gem4xe-a6: the AES on one process, {what}")
+    dev, res, pre = model(devref.Vbxe if vbxe else devref.Antic)
+    emu = launch(tag="a6v" if vbxe else "a6", memsize="1088K", vbxe=vbxe, rapidus=False,
                  extra_args=["--disk", DISK])
     b = emu.bridge
     try:
@@ -165,6 +174,9 @@ def main(argv):
             return 1
         cpu = b.cmd("HWSTATE")["cpu"]["mode"]
         check(cpu == "6502", f"the CPU is a 6502 ({cpu})")
+        scr = chr(b.peek(STATUS + 5) or 32)
+        check(scr == ("V" if vbxe else "A"), f"the screen A6 chose is {scr!r} at $0605 "
+                                            f"(V the VBXE, A ANTIC)")
         banks = b.peek(STATUS + 8)
         check(banks >= BANKS_NEEDED, f"the probe found {banks} banks; {BANKS_NEEDED} "
                                      f"are needed")
@@ -177,34 +189,46 @@ def main(argv):
 
         b.frames(20)
         b.screenshot(SHOT)
-        from PIL import Image
-        im = Image.open(SHOT).convert("RGB")
-        px = im.load()
-        seen = {px[SHOT_X0 + x, SHOT_Y0 + y] for y in range(AN_H) for x in range(AN_W)}
-        if not check(len(seen) == 2, f"the playfield holds {len(seen)} colours, want 2"):
-            return 1
-        clear = next((x, y) for y in range(AN_H) for x in range(AN_W) if not dev.bit(x, y))
-        setpx = next((x, y) for y in range(AN_H) for x in range(AN_W) if dev.bit(x, y))
-        bg = px[SHOT_X0 + clear[0], SHOT_Y0 + clear[1]]
-        fg = px[SHOT_X0 + setpx[0], SHOT_Y0 + setpx[1]]
-        check(bg != fg, f"pen 0 {bg} and pen 1 {fg} differ")
-        bad, first = 0, []
-        for y in range(AN_H):
-            for x in range(AN_W):
-                exp = fg if dev.bit(x, y) else bg
-                if px[SHOT_X0 + x, SHOT_Y0 + y] != exp:
-                    bad += 1
-                    if len(first) < 4:
-                        first.append((x, y, dev.bit(x, y)))
-        check(not bad, f"{AN_W * AN_H - bad:,} of {AN_W * AN_H:,} pixels as the model has "
-                       f"them; first differing (x, y, wanted) {first}")
+        if vbxe:
+            rgb = dev.to_rgb()
+            bad, shown = vbxeref.compare_to_shot(rgb, SHOT)
+            n = len(rgb) * len(rgb[0])
+            check(not bad, f"{n - bad:,} of {n:,} pixels as the model has them; "
+                           f"first differing (x, y, wanted, got) {shown[:3]}")
+        else:
+            antic_pixels(b, dev, check)
     finally:
         emu.stop()
     if not fails and not keep and os.path.exists(SHOT):
         os.remove(SHOT)
     print(f"gem4xe-a6: {'PASS' if not fails else 'FAIL'} -- the AES on one process, "
-          f"on a stock 6502, {len(fails)} problem(s)")
+          f"{what}, {len(fails)} problem(s)")
     return 1 if fails else 0
+
+
+def antic_pixels(b, dev, check):
+    """The ANTIC screen, two colours, against the model's bits."""
+    from PIL import Image
+    im = Image.open(SHOT).convert("RGB")
+    px = im.load()
+    seen = {px[SHOT_X0 + x, SHOT_Y0 + y] for y in range(AN_H) for x in range(AN_W)}
+    if not check(len(seen) == 2, f"the playfield holds {len(seen)} colours, want 2"):
+        return
+    clear = next((x, y) for y in range(AN_H) for x in range(AN_W) if not dev.bit(x, y))
+    setpx = next((x, y) for y in range(AN_H) for x in range(AN_W) if dev.bit(x, y))
+    bg = px[SHOT_X0 + clear[0], SHOT_Y0 + clear[1]]
+    fg = px[SHOT_X0 + setpx[0], SHOT_Y0 + setpx[1]]
+    check(bg != fg, f"pen 0 {bg} and pen 1 {fg} differ")
+    bad, first = 0, []
+    for y in range(AN_H):
+        for x in range(AN_W):
+            exp = fg if dev.bit(x, y) else bg
+            if px[SHOT_X0 + x, SHOT_Y0 + y] != exp:
+                bad += 1
+                if len(first) < 4:
+                    first.append((x, y, dev.bit(x, y)))
+    check(not bad, f"{AN_W * AN_H - bad:,} of {AN_W * AN_H:,} pixels as the model has "
+                   f"them; first differing (x, y, wanted) {first}")
 
 
 if __name__ == "__main__":

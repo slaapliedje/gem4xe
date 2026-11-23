@@ -69,6 +69,9 @@ REF = re.compile(r"^\s+(\S+ )?\((.+?) unit (\d+) section index (\d+)\)\s*$")
 MORE = re.compile(r"^\s+\.\.\. \d+ more\s*$")
 CODE_SECTIONS = {"code", "startup"}
 VENEER = "veneer"
+# resident veneers placed elsewhere by bankasm's --veneer-section: the
+# VBXE device's, at $9000 (docs/6502.md, step 6)
+VENEERS = {VENEER, "vbveneer"}
 # a veneer in a bank, for that bank's calls (tools/bsp6502/bankasm.py):
 # its .word and .byte are data, and it refers to another bank on purpose
 BANK_VENEER = re.compile(r"__v\d+$")
@@ -170,7 +173,7 @@ def check_map(frags):
                 bad.append(f"{f['name'] or key} ({b}): referred to by an unknown fragment "
                            f"{rname or (u, x)}")
                 continue
-            if r["bank"] == b or r["section"] == VENEER or BANK_VENEER.search(r["name"]):
+            if r["bank"] == b or r["section"] in VENEERS or BANK_VENEER.search(r["name"]):
                 continue
             if r["bank"] is None and r["section"] not in CODE_SECTIONS:
                 outside = [frags.get((uu, xx)) for uu, xx, _ in r["refs"]]
@@ -330,7 +333,7 @@ def check_asm(path, banks, ext=None):
         if lab:
             in_veneer = bool(BANK_VENEER.search(lab.group(1)))
         r = ASM_REF.match(ln)
-        if not r or sect == "veneer" or in_veneer:
+        if not r or sect in VENEERS or in_veneer:
             continue
         here = sect_bank(banks, sect)
         if sect and sect.endswith(BANK_DATA_SECT):

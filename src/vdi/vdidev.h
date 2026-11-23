@@ -450,6 +450,12 @@ extern const VDIDEV FAR_816 vdev_vbxe_tab[3][3];
  * it.  A POINTER, so `vdev = vdev_vbxe` where it used to be `&vdev_vbxe`. */
 extern const VDIDEV FAR_816 *const vdev_vbxe;
 extern const VDIDEV FAR_816 vdev_antic;
+/* The 6502's VBXE screen (docs/6502.md, step 6): one table, made in near
+ * memory for the width (VB_WIDE_*) and height (0 240, 1 224, 2 200)
+ * chosen, the face copied to far memory; what it answers is vdev.  The
+ * 6502's only (src/vdi/dev_vbxe.c), declared for both so a host's parse
+ * of src/a6_tree.c (make qscan) sees it. */
+const VDIDEV FAR_816 *vbd_select6(uint8_t width, uint8_t hidx);
 /* ...and the page, which is a device open BESIDE one of those rather
  * than instead of it: a workstation carries its own (src/vdi/vdi.h). */
 extern const VDIDEV FAR_816 vdev_print;

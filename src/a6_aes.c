@@ -16,7 +16,8 @@
  * multiply (src/sys6502/mul6502.s, step 4e).
  *
  * STATUS at $0600: 'A' '6' as it starts, 'K' at $0602 when done, how far
- * it got at $0603; the banks found at $0608, the far banks at $0609;
+ * it got at $0603; the screen at $0605, 'V' the VBXE and 'A' ANTIC (step
+ * 6, src/a6_tree.c); the banks found at $0608, the far banks at $0609;
  * a6_tree's at $065C-$0661 (src/a6_tree.c).  1 at $0606 starts the
  * event loop (src/a6_evt.c, step 4e), which says so at $0607.
  */

@@ -22,6 +22,27 @@
 #include <string.h>
 #include "font.h"
 
+#ifdef __CALYPSI_TARGET_6502__
+/* THE 6502 (docs/6502.md, step 6).  This file runs in banks of the PORTB
+ * window, and its statics are at $9000-$9EFF -- the ANTIC screen's place,
+ * free when the VBXE is the screen (tools/bsp6502/a6.scm, GEM4XE_VBRAM).
+ * A 6502 reads far memory only through the far_* helpers, so what the
+ * 65C816 reads in place with a long load comes in a row at a time:
+ *
+ *   fc_row   a row of the face, 256 bytes (the font's expansion, text)
+ *   r1_row   a row of a one-plane source, the bytes raster_1bpp reads
+ *
+ * and a near pointer a far address is made of by NEAR_SRC8. */
+static uint8_t fc_row[256];
+#define R1_ROW_MAX 88                   /* TR_CELLS + 3: the widest row read */
+static uint8_t r1_row[R1_ROW_MAX];
+#define NEAR_SRC8(p)   ((far_src8)(uint16_t)(p))
+#define FC_ROW(row)    (far_get(fc_row, vdi_font + (uint32_t)(row) * FONT_STRIDE, 256), \
+                        (const uint8_t *)fc_row)
+#else
+#define NEAR_SRC8(p)   (p)
+#endif
+
 /* The VDI's pen order into this device's hardware indices; the table is
  * below, with the reason it exists. */
 #define HW(pen) ((WORD)map_col[(pen) & 0x0F])
@@ -397,12 +418,22 @@ void dev_style_line(WORD x1, WORD y1, WORD x2, WORD y2, UWORD mask)
 static TINY uint32_t tr_buf;            /* TR_CELLS * FONT_H, far */
 #define TR_CELLS 85                     /* the widest screen's 84, and one */
 
+#ifdef __CALYPSI_TARGET_6502__
+/* THE 6502's is near, with the rest of this file's statics: the run is
+ * built a byte at a time, and a far byte is a call */
+static uint8_t tr_near[TR_CELLS * FONT_H];
+#endif
+
 static void tr_take(void)
 {
+#ifdef __CALYPSI_TARGET_6502__
+    tr_buf = (uint32_t)(uint16_t)tr_near;
+#else
     if (!tr_buf) {
         tr_buf = far_alloc((uint32_t)TR_CELLS * FONT_H);
         far_keep(tr_buf);
     }
+#endif
 }
 
 void dev_invalidate(void)
@@ -720,8 +751,12 @@ void dev_font_changed(void)
     for (page = 0; page < 2; page++) {
         volatile uint8_t *p = vram_win(VR_FONT + (uint32_t)page * 0x1000);
         for (row = (WORD)(page * 4); row < (WORD)(page * 4 + 4); row++) {
+#ifdef __CALYPSI_TARGET_6502__
+            const uint8_t *sr = FC_ROW(row);
+#else
             const uint8_t FAR *sr =
                 (const uint8_t FAR *)(vdi_font + (uint32_t)row * FONT_STRIDE);
+#endif
             for (ch = 0; ch < 256; ch++) {
                 uint8_t b = sr[ch];
                 *p++ = nib2[(b >> 6) & 3];
@@ -739,8 +774,12 @@ void dev_font_changed(void)
         volatile uint8_t *p = vram_win(a);
         uint16_t left = (uint16_t)(MEMAC_WIN_SIZE - (a & (MEMAC_WIN_SIZE - 1)));
         for (row = 0; row < FONT_H; row++) {
+#ifdef __CALYPSI_TARGET_6502__
+            const uint8_t *sr = FC_ROW(row);
+#else
             const uint8_t FAR *sr =
                 (const uint8_t FAR *)(vdi_font + (uint32_t)row * FONT_STRIDE);
+#endif
             for (ch = 0; ch < 256; ch++) {
                 uint8_t b = sr[ch];
                 uint8_t out[FONT_OBYTES];
@@ -952,7 +991,8 @@ static const uint8_t bit_of[8] = {0x80, 0x40, 0x20, 0x10, 8, 4, 2, 1};
  * word from the compiler -- the desktop's icons drew as noise and every
  * address on the way in was correct.  Four bytes of direct page and a
  * long read per source byte; a 32-wide icon is four of those a row. */
-static const uint8_t FAR * TINY r1_s;  /* next source byte */
+/* FAR_816: near on the 6502, where it points into r1_row (above). */
+static const uint8_t FAR_816 * TINY r1_s;  /* next source byte */
 static volatile UWORD   * TINY r1_w;   /* next strip word  */
 static TINY UWORD r1_n;                /* bytes to go      */
 static TINY UWORD r1_b;                /* the source byte  */
@@ -1069,7 +1109,20 @@ static void edge_byte(WORD i, WORD in_even, WORD in_odd, volatile uint8_t *pv)
 /* source pixel p of a row, as 0 or 1 */
 #define SRC_BIT(row, p) (((row)[(UWORD)(p) >> 3] & bit_of[(p) & 7]) ? 1 : 0)
 
-static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
+#ifdef __CALYPSI_TARGET_6502__
+/* The row's bytes r1_lo_b .. r1_hi_b into r1_row, by far_get; the pointer
+ * answered is r1_row as if it were the row's byte 0 -- below r1_row by
+ * r1_lo_b, which only ever has the byte indices above it added. */
+static UWORD r1_lo_b, r1_nb;
+
+static const uint8_t *r1_row_in(far_src8 bits)
+{
+    far_get(r1_row, bits + r1_lo_b, r1_nb);
+    return r1_row - r1_lo_b;
+}
+#endif
+
+static void raster_1bpp(far_src8 bits, uint16_t stride,
                         WORD sx1, WORD sy1, WORD w, WORD h,
                         WORD dx1, WORD dy1, WORD mode, uint8_t fg, uint8_t bg)
 {
@@ -1119,6 +1172,20 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
     r1_rsh = (UWORD)(8 - sh);
     r1_lsh = (UWORD)sh;
     r1_tables(mode, fg, bg, (WORD)(first_part | last_part));
+#ifdef __CALYPSI_TARGET_6502__
+    /* the bytes each row reads: from the first pixel's (px_first's when a
+     * first part is built, sxf's otherwise) to one past the last's, which
+     * expand_shifted reads and uses only the high bits of */
+    {
+        UWORD lo = (UWORD)(first_part ? px_first : sxf) >> 3;
+        UWORD hi = (UWORD)((UWORD)px_last >> 3) + 1;
+
+        if (hi - lo + 1 > R1_ROW_MAX)   /* wider than any caller's row */
+            return;
+        r1_lo_b = lo;
+        r1_nb = (UWORD)(hi - lo + 1);
+    }
+#endif
 
     band = (WORD)(R1_ROW / (uint16_t)nb);       /* rows a band holds */
     if (band > 256)
@@ -1148,12 +1215,20 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
             blit_run();
         pv = vram_win(VR_STRIP);
         for (r = 0; r < rows; r++, bits += stride) {
+#ifdef __CALYPSI_TARGET_6502__
+            /* the bytes this row reads, from its first to one past its
+             * last (expand_shifted's), into near memory: R1ROW indexes
+             * them as the row itself, so the code below is the 65C816's */
+            const uint8_t *R1ROW = r1_row_in(bits);
+#else
+#define R1ROW bits
+#endif
             if (first_part) {
-                edge_byte(SRC_BIT(bits, px_first), 0, 1, pv);
+                edge_byte(SRC_BIT(R1ROW, px_first), 0, 1, pv);
                 pv++;
             }
             if (n8) {
-                r1_s = bits + ((UWORD)sxf >> 3);
+                r1_s = R1ROW + ((UWORD)sxf >> 3);
                 r1_w = (volatile UWORD *)pv;
                 r1_n = (UWORD)n8;
                 if (sh)
@@ -1164,22 +1239,25 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
             }
             if (rem & 2) {
                 WORD p = (WORD)(sxf + n8 * 8);
-                WORD i = (WORD)((SRC_BIT(bits, p) << 3) |
-                                (SRC_BIT(bits, p + 1) << 2) |
-                                (SRC_BIT(bits, p + 2) << 1) |
-                                 SRC_BIT(bits, p + 3));
+                WORD i = (WORD)((SRC_BIT(R1ROW, p) << 3) |
+                                (SRC_BIT(R1ROW, p + 1) << 2) |
+                                (SRC_BIT(R1ROW, p + 2) << 1) |
+                                 SRC_BIT(R1ROW, p + 3));
                 *(volatile UWORD *)pv = r1_v16[i];
                 pv += 2;
             }
             if (rem & 1) {
-                edge_byte((WORD)((SRC_BIT(bits, px_rem) << 1) |
-                                  SRC_BIT(bits, px_rem + 1)), 1, 1, pv);
+                edge_byte((WORD)((SRC_BIT(R1ROW, px_rem) << 1) |
+                                  SRC_BIT(R1ROW, px_rem + 1)), 1, 1, pv);
                 pv++;
             }
             if (last_part) {
-                edge_byte((WORD)(SRC_BIT(bits, px_last) << 1), 1, 0, pv);
+                edge_byte((WORD)(SRC_BIT(R1ROW, px_last) << 1), 1, 0, pv);
                 pv++;
             }
+#ifndef __CALYPSI_TARGET_6502__
+#undef R1ROW
+#endif
         }
         dst = SURF + scr_row(y) + (uint32_t)bx0;
         if (r1_kind == R1_TWO) {
@@ -1197,6 +1275,10 @@ static void raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
     }
 }
 
+/* THE 6502's second bank of this file, from here (docs/6502.md, step 6):
+ * nothing on the 65C816. */
+BANK_TEXT("vbx_b")
+
 /* A glyph the clipping rectangle or the screen cuts, or a writing mode the
  * two-blit path does not do (XOR, erase): its eight rows go through the same
  * 1bpp raster path as an icon.  Erase paints the text colour where the glyph
@@ -1207,9 +1289,8 @@ static void draw_glyph_cpu(WORD ch, WORD cx, WORD cy)
     WORD row, mode = (WORD)(vwk.wrt_mode + 1);
     uint8_t ink = (uint8_t)HW(vwk.text_color);
     for (row = 0; row < FONT_H; row++)
-        g[row] = *(const uint8_t FAR *)
-                  (vdi_font + (uint32_t)row * FONT_STRIDE + (ch & 0xFF));
-    raster_1bpp(g, 1, 0, 0, FONT_W, FONT_H, cx, cy, mode, ink,
+        g[row] = FAR_RD8(vdi_font + (uint32_t)row * FONT_STRIDE + (ch & 0xFF));
+    raster_1bpp(NEAR_SRC8(g), 1, 0, 0, FONT_W, FONT_H, cx, cy, mode, ink,
                 (uint8_t)(mode == MD_ERASE ? ink : HW(0)));
 }
 
@@ -1292,6 +1373,33 @@ void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
                       (WORD)(thick ? GLYPH_THICK : 0));
         return;
     }
+#ifdef __CALYPSI_TARGET_6502__
+    {
+        /* THE 6502: each glyph byte by far_read8 -- the face is far -- into
+         * the near buffer; no text_row (src/vdi/nibs.s is the 65C816's) */
+        uint8_t *p = tr_near;
+
+        for (r = 0; r < FONT_H; r++, p += stride) {
+            uint32_t f = vdi_font + (uint32_t)r * FONT_STRIDE;
+            UWORD carry = 0;
+
+            for (i = 0; i < n; i++) {
+                UWORD c = (UWORD)(chars[i] & 0xFF);
+                UWORD g = far_read8(f + c);
+
+                if (thick) {
+                    UWORD t = (UWORD)(g | (g >> 1) | carry);
+
+                    carry = (UWORD)((g & 1) << 7);
+                    g = t;
+                }
+                p[i] = (uint8_t)g;
+            }
+            if (thick)
+                p[n] = (uint8_t)carry;
+        }
+    }
+#else
     {
         uint8_t FAR *p = (uint8_t FAR *)tr_buf;
 
@@ -1324,13 +1432,14 @@ void dev_text_run(const WORD *chars, WORD n, WORD x, WORD cy)
                 p[n] = (uint8_t)carry;
         }
     }
-    raster_1bpp((const uint8_t FAR *)tr_buf, (uint16_t)stride, 0, 0,
+#endif
+    raster_1bpp((far_src8)tr_buf, (uint16_t)stride, 0, 0,
                 (WORD)(n * FONT_W + thick), FONT_H, x, cy, mode, ink,
                 (uint8_t)(mode == MD_ERASE ? ink : HW(0)));
 }
 
 /* vrt_cpyfm's one-plane expansion, with the pens mapped here. */
-void dev_raster_1bpp(const uint8_t FAR *bits, uint16_t stride,
+void dev_raster_1bpp(far_src8 bits, uint16_t stride,
                      WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
 {
@@ -1556,7 +1665,25 @@ static void span_io(uint32_t a, uint8_t *buf, uint16_t n, WORD put)
  * written. */
 #define ROW_CHUNK 24      /* on the stack, as ANTIC's is: LoRAM has no room */
 
+#ifdef __CALYPSI_TARGET_6502__
+/* THE 6502's, in C: src/vdi/nibs.s is the 65C816's.  The same contract --
+ * dst[j] = src[j] << 4 | src[j + 1] >> 4 for j < n, in place allowed with
+ * dst == src (each source byte is read before its destination is
+ * written).  Unsigned bytes, no signed shift (B12). */
+static void nib_shift(uint8_t *dst, const uint8_t *src, uint16_t n)
+{
+    uint8_t a = *src++;
+
+    while (n--) {
+        uint8_t b = *src++;
+
+        *dst++ = (uint8_t)((uint8_t)(a << 4) | (uint8_t)(b >> 4));
+        a = b;
+    }
+}
+#else
 void nib_shift(uint8_t *dst, const uint8_t *src, uint16_t n);   /* nibs.s */
+#endif
 
 /* Set around a copy_rows that combines its source with the destination,
  * nibble by nibble, rather than replacing it: vro_cpyfm's logic mode plus
@@ -1802,6 +1929,9 @@ static WORD rows_direct(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
  * any form in a program's memory, go by rows.  For a move the edge on
  * the side it moves towards goes first and the other last: each then
  * reads only pixels nothing has written yet. */
+/* ...and its third, which src/vbxe/vbxe.c shares. */
+BANK_TEXT("vbx_c")
+
 /* A LOGIC MODE BY THE BLITTER (phase 147): between two VRAM forms -- the
  * screen and the save buffer -- at the same parity.  The blitter takes the
  * source through an AND and an XOR mask and then copies it, or ANDs, ORs
@@ -1813,7 +1943,7 @@ static WORD rows_direct(uint32_t sb, uint16_t ss, WORD sx1, WORD sy1,
  * Per mode: the source's AND mask ($FF or $00), its XOR mask, the
  * blitter's mode, and 1 to invert before or 2 after. */
 #define ROPC(a, x, bm, inv) ((uint8_t)((a) | ((x) << 1) | ((bm) << 2) | ((inv) << 5)))
-static const uint8_t FAR rop_code[16] = {
+static const uint8_t FAR_816 rop_code[16] = {
     ROPC(0, 0, BLT_MODE_COPY, 0),       /*  0 all white: 0           */
     ROPC(1, 0, BLT_MODE_AND, 0),        /*  1 S and D                */
     ROPC(1, 0, BLT_MODE_AND, 1),        /*  2 S and not D            */
@@ -1930,7 +2060,7 @@ void dev_copy_form(const RFORM *src, WORD sx1, WORD sy1,
  * transparent, complemented in XOR; clear bits the background in
  * replace and erase.  Unsigned words for every value shifted right or
  * changed in place (B12, B21: tools/ccbug). */
-void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
+void dev_raster_form(const RFORM *dst, far_src8 bits,
                      uint16_t stride, WORD sx, WORD sy, WORD w, WORD h,
                      WORD dx, WORD dy, WORD mode, WORD ink, WORD bg)
 {
@@ -1939,7 +2069,7 @@ void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
     WORD r;
 
     for (r = 0; r < h; r++) {
-        const uint8_t FAR *row = bits + (uint16_t)(sy + r) * stride;
+        far_src8 row = bits + (uint16_t)(sy + r) * stride;
         uint32_t dr = dst->base + form_row((WORD)(dy + r), (WORD)dst->stride);
         WORD done = 0;
 
@@ -1952,7 +2082,7 @@ void dev_raster_form(const RFORM *dst, const uint8_t FAR *bits,
             dn = (UWORD)((UWORD)((x0 & 1) + n + 1) >> 1);
             span_io(dr + (UWORD)((UWORD)x0 >> 1), row_dst, dn, 0);
             for (k = 0; k < (UWORD)n; k++, d++, p++) {
-                UWORD set = (UWORD)(row[p >> 3] >> (7 - (p & 7))) & 1;
+                UWORD set = (UWORD)(FAR_IDX8(row, p >> 3) >> (7 - (p & 7))) & 1;
                 UWORD b = row_dst[d >> 1];
                 UWORD v = (d & 1) ? (b & 0x0F) : (b >> 4);
 
@@ -2084,6 +2214,14 @@ WORD dev_planes(void)
  * for both screens.
  */
 extern const uint8_t FAR font8x8[];
+/* The face the table carries.  On the 6502 none: the face is copied into
+ * far memory when the device is chosen (vbd_select6, below), and
+ * src/vdi/font.c takes it from there. */
+#ifdef __CALYPSI_TARGET_6502__
+#define VB_FACE 0
+#else
+#define VB_FACE font8x8
+#endif
 
 /* THE DEVICE, three times over, differing only in how many lines it
  * shows.  The height cannot simply be a variable: this table is
@@ -2103,7 +2241,7 @@ extern const uint8_t FAR font8x8[];
     (ww), (hh), (ww) / 2,       /* HR is 4bpp: two pixels to the byte */  \
     FONT_W, FONT_H,                                                       \
     FONT_TOP, FONT_ASCENT, FONT_HALF, FONT_DESCENT, FONT_BOTTOM,          \
-    FONT_POINT, font8x8,                                                  \
+    FONT_POINT, VB_FACE,                                                  \
                                                                           \
     dev_fill_rect,                                                        \
     dev_xor_rect,                                                         \
@@ -2150,6 +2288,49 @@ extern const uint8_t FAR font8x8[];
  * (src/vbxe/vbxe.h).  The heights are what GEM4XE.CFG's SCREENH has
  * always offered -- the BUFFER is VB_H lines whatever is shown, so only
  * the XDL and what this reports change. */
+#ifdef __CALYPSI_TARGET_6502__
+/* THE 6502 (docs/6502.md, step 6): ONE table, in this bank, and the one
+ * the screen has made of it in near memory when the screen is chosen --
+ * the nine would be 1.2 KB, and a table the VDI calls through must be
+ * near.  Only the size differs between them, and the face, which goes to
+ * far memory here: the 8x8 strip is in this bank too (src/vdi/font8x8.c,
+ * compiled into section vbx_b__bank), and a bank's data reaches far
+ * memory only by way of near, 256 bytes at a time through fc_row. */
+BANK_TEXT("vbx_b")                      /* the second bank has the room */
+static const VDIDEV vb_tmpl BANK_DATA("vbx_b") = VBXE_DEV(VB_W_NORMAL, VB_H);
+VDIDEV vdev_vbxe6;
+extern uint32_t vdi_face_far;           /* src/vdi/font.c */
+
+const VDIDEV *vbd_select6(uint8_t width, uint8_t hidx)
+{
+    WORD w = (WORD)(width == VB_WIDE_NORMAL ? VB_W_NORMAL
+                  : width == 0 ? VB_W_NARROW : VB_W_WIDE);
+    WORD k;
+
+    memcpy(&vdev_vbxe6, &vb_tmpl, sizeof vdev_vbxe6);
+    vdev_vbxe6.w = w;
+    vdev_vbxe6.h = (WORD)(hidx == 2 ? 200 : hidx == 1 ? 224 : VB_H);
+    vdev_vbxe6.stride = (WORD)((UWORD)w >> 1);
+    if (!vdi_face_far) {
+        uint32_t f = far_alloc(2048);
+
+        if (f) {
+            far_keep(f);
+            for (k = 0; k < 2048; k += 256) {
+                UWORD i;
+
+                /* the strip is this bank's (vbx_b__bank): a "far" read
+                 * of bank 0 reads it where the window has it now */
+                for (i = 0; i < 256; i++)
+                    fc_row[i] = FAR_IDX8(font8x8, (UWORD)k + i);
+                far_put(f + (uint16_t)k, fc_row, 256);
+            }
+            vdi_face_far = f;
+        }
+    }
+    return &vdev_vbxe6;
+}
+#else
 #define VBXE_DEVS(ww)  { VBXE_DEV(ww, VB_H), VBXE_DEV(ww, 224), VBXE_DEV(ww, 200) }
 const VDIDEV FAR_816 vdev_vbxe_tab[VB_WIDTHS][VB_HEIGHTS] = {
     VBXE_DEVS(VB_W_NARROW),
@@ -2159,3 +2340,4 @@ const VDIDEV FAR_816 vdev_vbxe_tab[VB_WIDTHS][VB_HEIGHTS] = {
 /* The one a runner that does not care means: the screen as it has always
  * been, 640 by 240. */
 const VDIDEV FAR_816 *const vdev_vbxe = &vdev_vbxe_tab[VB_WIDE_NORMAL][0];
+#endif
