@@ -147,7 +147,7 @@ A6_RES     = $(B6)/res/a6_aes.o $(B6)/res/stub6502.o $(B6)/res/anpack6502.o \
              $(B6)/res/a6farmem6502.o $(B6)/res/far6502s.o $(B6)/res/antic6502s.o $(B6)/res/gemdata.o $(B6)/res/ctx6502s.o \
              $(B6)/res/irq6502s.o $(B6)/res/mul6502s.o $(B6)/res/gate6502s.o $(B6)/res/cio6502s.o $(B6)/res/enter6502s.o \
              $(B6)/res/g6z6502.o
-A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio abi abistub rsrc alert gemdos dos con clock dev_vbxe vbxe vbfont
+A6_UNITS   = vdi dev_antic antic font pointer v6farmem objc graf wind menu event ctrl proc appl grlib form a6tree a6ctx a6irq a6evt a6cio a6cfg abi abistub rsrc alert gemdos dos con clock dev_vbxe vbxe vbfont
 A6_PRE     = $(A6_UNITS:%=$(B6)/pre/%.o)
 A6_BANK    = $(A6_UNITS:%=$(B6)/a6bank/%.o)
 
@@ -170,6 +170,7 @@ $(B6)/w/a6ctx.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="evt
 $(B6)/w/a6irq.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="evt"\n#include "../../../src/sys6502/irq6502.c"\n' > $@
 $(B6)/w/a6evt.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/a6_evt.c"\n' > $@
 $(B6)/w/a6cio.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/sys/cio.c"\n' > $@
+$(B6)/w/a6cfg.c:  ; @mkdir -p $(dir $@); printf '#pragma clang section text="far"\n#include "../../../src/a6_cfg.c"\n' > $@
 $(B6)/w/abi.c:    ; @mkdir -p $(dir $@); printf '#pragma clang section text="abi"\n#include "../../../src/sys/abi.c"\n' > $@
 $(B6)/w/abistub.c: ; @mkdir -p $(dir $@); printf '#pragma clang section text="abi"\n#include "../../../src/sys6502/abistub6502.c"\n' > $@
 $(B6)/w/rsrc.c:   ; @mkdir -p $(dir $@); printf '#pragma clang section text="rsrc"\n#include "../../../src/aes/rsrc.c"\n' > $@
@@ -214,6 +215,7 @@ $(B6)/pre/a6ctx.o:  $(B6)/w/a6ctx.c src/sys6502/ctx6502.c $(HDRS6)
 $(B6)/pre/a6irq.o:  $(B6)/w/a6irq.c src/sys6502/irq6502.c src/sys/irqclock.inc $(HDRS6)
 $(B6)/pre/a6evt.o:  $(B6)/w/a6evt.c src/a6_evt.c $(HDRS6)
 $(B6)/pre/a6cio.o:  $(B6)/w/a6cio.c src/sys/cio.c $(HDRS6)
+$(B6)/pre/a6cfg.o:  $(B6)/w/a6cfg.c src/a6_cfg.c $(HDRS6)
 $(B6)/pre/abi.o:    $(B6)/w/abi.c src/sys/abi.c $(HDRS6)
 $(B6)/pre/abistub.o: $(B6)/w/abistub.c src/sys6502/abistub6502.c $(HDRS6)
 $(B6)/pre/rsrc.o:   $(B6)/w/rsrc.c src/aes/rsrc.c build/gemdata.h $(HDRS6)
@@ -223,9 +225,9 @@ $(B6)/pre/dos.o:    $(B6)/w/dos.c src/sys/dos.c $(HDRS6)
 $(B6)/pre/con.o:    $(B6)/w/con.c src/sys/con.c $(HDRS6)
 $(B6)/pre/clock.o:  $(B6)/w/clock.c src/sys/clock.c $(HDRS6)
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/alert.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o: EXTRA6 = -I src/aes -I build -I src/sys
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/a6cfg.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/alert.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o: EXTRA6 = -I src/aes -I build -I src/sys
 $(B6)/pre/wind.o $(B6)/pre/menu.o $(B6)/pre/event.o $(B6)/pre/proc.o $(B6)/pre/appl.o \
-$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/alert.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o:
+$(B6)/pre/ctrl.o $(B6)/pre/grlib.o $(B6)/pre/form.o $(B6)/pre/a6tree.o $(B6)/pre/a6ctx.o $(B6)/pre/a6irq.o $(B6)/pre/a6evt.o $(B6)/pre/a6cio.o $(B6)/pre/a6cfg.o $(B6)/pre/abi.o $(B6)/pre/abistub.o $(B6)/pre/rsrc.o $(B6)/pre/alert.o $(B6)/pre/gemdos.o $(B6)/pre/dos.o $(B6)/pre/con.o $(B6)/pre/clock.o:
 	@mkdir -p $(dir $@) $(B6)/asm
 	$(CC6) $(CFLAGS6) --no-cross-call $(EXTRA6) -c $< -o $@ \
 	    --assembly-source=$(B6)/asm/$(notdir $(@:.o=.s))
@@ -294,6 +296,12 @@ build/a6-boot.atr: build/a6.xex build/p6prog.g6a build/p6prog.rsc
 
 test-a6: build/a6-boot.atr
 	python3 tests/emu/a6_aes.py
+
+# the pointer GEM4XE.CFG names (src/a6_cfg.c) and the sampler's rate for
+# it: an ST mouse at ~1 kHz with no file, a trak-ball at ~500 Hz in port 1
+# with one
+test-a6m: build/a6-boot.atr
+	python3 tests/emu/a6_mouse.py
 
 # step 6: the same on a VBXE machine, which A6 takes as its screen --
 # src/vdi/dev_vbxe.c in banks 22-24, its statics at $9000 -- every pixel
@@ -498,7 +506,7 @@ build/cpanel6.g6a: build/cpanel6.elf tools/bsp6502/mkxex6502.py tools/mkxex.py
 b6asm: build/a6.elf build/v6.elf build/c6.elf build/i6.elf build/p6mprog.elf
 	python3 tools/bsp6502/b6asm.py
 
-.PHONY: test-a6 test-a6v test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-d6v test-d6sio test-f6a b6asm
+.PHONY: test-a6 test-a6m test-a6v test-e6 test-e6n test-p6 test-p6a test-b6probe test-p6m test-p6ma test-d6 test-d6v test-d6sio test-f6a b6asm
 
 # ---- step 3a: the far heap (tests/emu/f6_far.py) ---------------------------
 # src/sys/farmem.c's allocator and src/f6_bank.c banked in section `far`;

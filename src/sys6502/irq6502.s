@@ -20,9 +20,9 @@
 ;;;                   VIMIRQ held with every register as it came.
 ;;;
 ;;; The fast path matters on a 1.79 MHz 6502: the sampler with a pointer
-;;; moving costs ~200 cycles a time, less with it still (the decode is
-;;; skipped when the port's lines are as they were), and the OS's own
-;;; dispatch would add more; src/sys6502/irq6502.c says what rate it runs.
+;;; moving costs ~200 cycles a time; with it still, A alone and no decode
+;;; (irq6_take); the OS's own dispatch would add more.
+;;; src/sys6502/irq6502.c says what rate it runs.
 ;;;
 ;;; The state is src/sys6502/irq6502.c's (the names src/sys/irq.h gives),
 ;;; resident, as all of this is: an interrupt arrives with any bank in the
@@ -39,6 +39,7 @@
               .extern irq_tq, irq_tq_head, irq_tq_tail, irq6_last
               .public irq6_vbi, irq6_irq, irq6_old_vbi, irq6_old_irq
               .public irq6_hook, irq6_unhook, irq6_take, irq6_mask
+              .public irq6_dlo, irq6_dhi
 
 NMIRES:       .equ    0xd40f
 IRQST:        .equ    0xd20e          ; read: 0 = pending
@@ -52,6 +53,7 @@ ATRACT:       .equ    0x004d
 VIMIRQ:       .equ    0x0216
 VVBLKI:       .equ    0x0222
 SETVBV:       .equ    0xe45c
+IRQ6_QSKIP:   .equ    2               ; src/sys/irq.h: a two-step jump
 
               .section zdata, bss
 irq6_old_vbi: .space  2               ; what VVBLKI held: SYSVBV
@@ -60,6 +62,12 @@ irq6_old_irq: .space  2               ; what VIMIRQ held: the OS's dispatch
 ;;; ROM out: timer 1 and the keyboard while hooked, none while not (the
 ;;; OS has the keyboard back then)
 irq6_mask:    .space  1
+
+;;; each axis's last direction, +1 or -1 (0: none yet), for a jump of two
+;;; (irq6_take); in the zero page, which costs the decode bytes it has not
+              .section zpage, bss
+irq6_dlo:     .space  1
+irq6_dhi:     .space  1
 
               .section code
 ;;; ---------------------------------------------------------------------------
@@ -110,22 +118,42 @@ irq6_irq:     pha
               jmp     (irq6_old_irq)
 
 ;;; g6_irq comes in here, A pushed, A the pending bits that are ours
+;;;
+;;; THE STILL POINTER COSTS ONLY A.  Most samples find the port as it was,
+;;; so that path touches no other register: the whole of PORTA is compared
+;;; with the last sample, both ports' lines, which needs neither ptr_port
+;;; nor a shift.  A line of the other port that moved costs one decode that
+;;; finds its own pair as it was, which counts nothing.  X and Y are saved
+;;; only by the decode and by the keyboard, which need them.
 irq6_take:    sta     irq_pend
               eor     #0xff
               and     POKMSK
               sta     IRQEN           ; those latches low ...
               lda     POKMSK
               sta     IRQEN           ; ... and armed again
+
+              lda     irq_pend        ; the keyboard: the raw code into the ring
+              and     #0x40
+              beq     10$
               txa
               pha
-              tya
-              pha
+              lda     KBCODE
+              ldx     irq_kb_tail
+              sta     irq_kb,x
+              inx
+              txa
+              and     #7
+              cmp     irq_kb_head
+              beq     5$              ; full: the newest is dropped
+              sta     irq_kb_tail
+5$:           inc     irq_kb_count
+              pla
+              tax
 
-              lda     irq_pend        ; timer 1: the pointer sampler
+10$:          lda     irq_pend        ; timer 1: the pointer sampler
               lsr     a
-              bcs     11$
-              jmp     40$
-11$:          inc     irq_timer
+              bcc     90$
+              inc     irq_timer
               bne     20$
               inc     irq_timer+1
               bne     20$
@@ -133,22 +161,32 @@ irq6_take:    sta     irq_pend
               bne     20$
               inc     irq_timer+3
 20$:          lda     irq_ptr_on
-              bne     22$
-              lda     #0xff           ; off: the next sample decodes, whatever
-              sta     irq6_last       ; the tables were rebuilt from
-              jmp     40$
-22$:          lda     PORTA
+              beq     80$
+              lda     PORTA
+              cmp     irq6_last       ; as last time: no line moved
+              bne     30$
+90$:          pla
+              rti
+
+80$:          lda     PORTA           ; off: unlike the next sample, so it
+              eor     #0xff           ; decodes, whatever the tables were
+              sta     irq6_last       ; rebuilt from
+              pla
+              rti
+
+30$:          sta     irq6_last       ; a line moved: decode
+              txa
+              pha
+              tya
+              pha
+              lda     irq6_last
               ldx     ptr_port        ; port 2 is the HIGH nibble
-              beq     21$
+              beq     31$
               lsr     a
               lsr     a
               lsr     a
               lsr     a
-21$:          and     #0x0f
-              cmp     irq6_last       ; as last time: no pair moved, and a
-              bne     23$             ; still pointer costs no decode
-              jmp     40$
-23$:          sta     irq6_last
+31$:          and     #0x0f
               tax
               lda     irq_plo,x       ; this axis's line pair, 0..3
               sta     irq_tmp
@@ -159,17 +197,25 @@ irq6_take:    sta     irq_pend
               asl     a
               sta     irq_prev_lo
               lda     irq_qtab,y
-              beq     30$
-              bmi     25$
-              inc     irq_qlo
-              bne     30$
-              inc     irq_qlo+1
-              jmp     30$
-25$:          lda     irq_qlo
-              bne     26$
-              dec     irq_qlo+1
-26$:          dec     irq_qlo
-30$:          lda     irq_phi,x
+              beq     40$             ; no count
+              cmp     #IRQ6_QSKIP
+              bne     32$
+              lda     zp:irq6_dlo     ; a jump of two: the way it last went
+              asl     a               ; +-1 -> +-2; none yet (0): none
+              beq     40$
+              bne     33$
+32$:          sta     zp:irq6_dlo     ; +-1: which way it goes
+33$:          ldy     #0              ; the delta's high byte
+              cmp     #0x80
+              bcc     34$
+              dey
+34$:          clc
+              adc     irq_qlo
+              sta     irq_qlo
+              tya
+              adc     irq_qlo+1
+              sta     irq_qlo+1
+40$:          lda     irq_phi,x
               sta     irq_tmp
               ora     irq_prev_hi
               tay
@@ -178,32 +224,25 @@ irq6_take:    sta     irq_pend
               asl     a
               sta     irq_prev_hi
               lda     irq_qtab,y
-              beq     40$
-              bmi     35$
-              inc     irq_qhi
-              bne     40$
-              inc     irq_qhi+1
-              jmp     40$
-35$:          lda     irq_qhi
-              bne     36$
-              dec     irq_qhi+1
-36$:          dec     irq_qhi
-
-40$:          lda     irq_pend        ; the keyboard: the raw code into the ring
-              and     #0x40
-              beq     90$
-              lda     KBCODE
-              ldx     irq_kb_tail
-              sta     irq_kb,x
-              inx
-              txa
-              and     #7
-              cmp     irq_kb_head
-              beq     45$             ; full: the newest is dropped
-              sta     irq_kb_tail
-45$:          inc     irq_kb_count
-
-90$:          pla
+              beq     50$             ; no count
+              cmp     #IRQ6_QSKIP
+              bne     42$
+              lda     zp:irq6_dhi     ; a jump of two: the way it last went
+              asl     a               ; +-1 -> +-2; none yet (0): none
+              beq     50$
+              bne     43$
+42$:          sta     zp:irq6_dhi     ; +-1: which way it goes
+43$:          ldy     #0              ; the delta's high byte
+              cmp     #0x80
+              bcc     44$
+              dey
+44$:          clc
+              adc     irq_qhi
+              sta     irq_qhi
+              tya
+              adc     irq_qhi+1
+              sta     irq_qhi+1
+50$:          pla
               tay
               pla
               tax

@@ -20,6 +20,7 @@
 #include "sys/farmem.h"
 #include "sys/hiprobe.h"           /* farmem_probe */
 #include "sys/irq.h"
+#include "vdi/pointer.h"             /* the kind a6_cfg_mouse names */
 #include "sys/dos.h"                /* dos_ident */
 #include "sys/gemdos.h"             /* gemdos_init */
 #include "vbxe/vbxe.h"              /* step 6: the VBXE screen */
@@ -307,6 +308,8 @@ static void ram_vectors(void)
 
 /* ... then, the context made, the AES as src/gem.c starts it, and the
  * screen test-a6 holds to the model. */
+uint8_t a6_cfg_mouse(void);             /* src/a6_cfg.c, banked */
+
 void a6_aes_up(void)
 {
     STATUS[3] = '3';
@@ -317,6 +320,21 @@ void a6_aes_up(void)
      * tick was taken for NTSC's 17 and every timer and the double-click
      * window ran 18% long (test-e6, step 4f). */
     irq_install();
+    /* THE POINTER (src/a6_cfg.c): GEM4XE.CFG's MOUSE=, an ST mouse if it
+     * names none.  A quadrature mouse is sampled twice as often: a
+     * transition the sampler misses can count backwards, where a
+     * trak-ball's or a tablet's only goes uncounted (src/sys/irq.h,
+     * IRQ6_DIV_QUAD).  The kind waits in ptr_state for a6_events'
+     * ptr_init. */
+    {
+        uint8_t kind = a6_cfg_mouse();
+
+        ptr_state.kind = kind;
+        if (kind == PTR_ST_MOUSE || kind == PTR_AMIGA_MOUSE) {
+            irq.timer_div = IRQ6_DIV_QUAD;
+            irq_pokey_resync();
+        }
+    }
     ram_vectors();
     STATUS[3] = '4';
     ev_init();

@@ -185,4 +185,16 @@ void    irq_remove(void);
  * them: after a CIO call, which lends POKEY to the OS (src/sys/cio.c). */
 void    irq_pokey_resync(void);
 
+/* A stock 6502's sampler (src/sys6502/irq6502.c): ~500 Hz, divisor 127,
+ * for a trak-ball, a tablet or a joystick, whose missed transition only
+ * goes uncounted; ~1 kHz for a quadrature mouse (ST, Amiga), where it
+ * can count backwards.  A6 sets this after irq_install (src/a6_tree.c).
+ * Measured by test-i6: 4.8% of the machine at 127 with the pointer
+ * still, 9.6% at 63. */
+#define IRQ6_DIV_QUAD  63
+/* ...and its decode counts a quadrature jump of two (both lines changed
+ * between samples) as two in the way that axis last went: lines_select
+ * marks those entries of irq_qtab with this (src/vdi/pointer.c). */
+#define IRQ6_QSKIP     2
+
 #endif /* GEM4XE_IRQ_H */

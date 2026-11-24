@@ -4,7 +4,8 @@
 build/a6-boot.atr is test-a6's program (src/a6_aes.c): the AES on one
 process, its desk, two windows and a menu bar drawn.  Told to go ($0606),
 it installs the interrupt handlers (src/sys6502/irq6502.s, step 4d),
-selects the CX80 trak-ball and runs an application's loop
+selects the CX80 trak-ball, which a GEM4XE.CFG on a copy of the disk
+names (MOUSE=TRAKBALL: no file is an ST mouse, src/a6_cfg.c), and runs an application's loop
 (src/a6_evt.c): evnt_multi for a key, a click and a message, every answer
 filed in a6_log.
 
@@ -50,13 +51,16 @@ gates drive it: JOY can only pulse a line once a frame.
 """
 import os
 import re
+import shutil
 import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from a8test.launcher import launch          # noqa: E402
+from atr import ATRImage, Dos2              # noqa: E402
 
-DISK = os.path.abspath(os.path.join(ROOT, "build", "a6-boot.atr"))
+BOOT = os.path.abspath(os.path.join(ROOT, "build", "a6-boot.atr"))
+TRAKBALL_CFG = b"MOUSE=TRAKBALL\r\n"
 MAP = os.path.join(ROOT, "build", "a6.map")
 STATUS = 0x0600
 VIMIRQ, VVBLKI = 0x0216, 0x0222
@@ -98,8 +102,13 @@ def main():
     std = "PAL" if pal else "NTSC"
     print(f"gem4xe-e6: the input poll, the event loop and a second process, on a stock 6502 ({std})")
     sym = symbols()
+    disk = os.path.abspath(os.path.join(ROOT, "build", f"a6-{'e6' if pal else 'e6n'}.atr"))
+    shutil.copyfile(BOOT, disk)
+    img = ATRImage.load(disk)
+    Dos2(img).add_file("GEM4XE.CFG", TRAKBALL_CFG)
+    img.save(disk)
     emu = launch(tag="e6" if pal else "e6n", memsize="1088K", vbxe=False, rapidus=False, pal=pal,
-                 extra_args=["--disk", DISK])
+                 extra_args=["--disk", disk])
     b = emu.bridge
 
     def word(a):
@@ -366,6 +375,7 @@ def main():
         check(over == 0, f"no context switch refused ({over})")
     finally:
         emu.stop()
+        os.remove(disk)
     print(f"gem4xe-e6: {'PASS' if not fails else 'FAIL'} -- the input poll, the event "
           f"loop and a second process, on a stock 6502 ({std}), {len(fails)} problem(s)")
     return 1 if fails else 0

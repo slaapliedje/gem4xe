@@ -14,7 +14,9 @@ build/i6-boot.atr carries src/i6_irq.c:
   the keyboard   one KEY becomes one entry in the handler's ring, with
                  KBCODE's value, and never reaches the OS's CH
   the pointer    the CX80 trak-ball, selected through src/vdi/pointer.c,
-                 counted by the handler while the runner polls nothing
+                 counted by the handler while the runner polls nothing;
+                 then an Amiga mouse, whose jumps of two (two transitions
+                 between samples) count two the way the axis last went
   the cost       loop turns per frame with and without the handlers, the
                  pointer still: printed, and held under 10% of the machine
   the way back   asked to, the runner removes them: both vectors as they
@@ -147,6 +149,38 @@ def main():
         dy = (word(sym["irq_qhi"]) - y0) & 0xFFFF
         check((dx, dy) == (20, 10), f"the trak-ball counted by the handler, the runner "
               f"polling nothing: +{dx} on x, +{dy} on y (want +20, +10)")
+
+        # -- a quadrature jump of two (src/vdi/pointer.c, IRQ6_QSKIP) ---------
+        # An Amiga mouse's x pair is lines 3 and 1, right and down, so the
+        # stick's states make all four: centre 3, down 2, downright 0,
+        # right 1.  Four steps of +1 (3, 2, 0, 1, 3), then four jumps of two
+        # between centre and downright, which the handler counts as two in
+        # the way x last went: +12.  Dropped, as the 65C816 does, +4.
+        b.joy(1, "centre")
+        b.frames(2)
+        b.poke(STATUS + 4, 2)
+        b.frames(10)
+        check(b.peek(STATUS + 5) == ord("M"), "the runner took an Amiga mouse")
+        x0, y0 = word(sym["irq_qlo"]), word(sym["irq_qhi"])
+        for d in ("down", "downright", "right", "centre",
+                  "downright", "centre", "downright", "centre"):
+            b.joy(1, d)
+            b.frames(2)
+        dx = (word(sym["irq_qlo"]) - x0) & 0xFFFF
+        dy = (word(sym["irq_qhi"]) - y0) & 0xFFFF
+        check((dx, dy) == (12, 0), f"four steps and four jumps of two: +{dx} on x, "
+              f"+{dy} on y (want +12, +0: each jump two the way x last went)")
+        # ...and back: four steps of -1 (3, 1, 0, 2, 3) and four jumps, -12
+        x0 = word(sym["irq_qlo"])
+        for d in ("right", "downright", "down", "centre",
+                  "downright", "centre", "downright", "centre"):
+            b.joy(1, d)
+            b.frames(2)
+        dx = (word(sym["irq_qlo"]) - x0) & 0xFFFF
+        dx = dx - 0x10000 if dx & 0x8000 else dx
+        check(dx == -12, f"the other way, four steps and four jumps: {dx:+d} on x "
+                         f"(want -12: the jumps follow the new direction)")
+        b.joy(1, "centre")
 
         # -- the cost ---------------------------------------------------------
         a, g = word(sym["turns_os"]), word(sym["turns_gem"])

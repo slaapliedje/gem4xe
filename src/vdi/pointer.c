@@ -183,6 +183,22 @@ static void lines_select(ptr_kind kind)
     }
     for (n = 0; n < 16; n++)
         irq_qtab[n] = tab[n];
+#ifdef __CALYPSI_TARGET_6502__
+    /* A STOCK 6502 samples a quadrature mouse ~1,000 times a second
+     * (IRQ6_DIV_QUAD, src/sys/irq.h), where the 65C816 manages 4,000, and
+     * a mouse moved briskly -- or MiSTer's, which steps its counts out
+     * back to back -- makes two transitions between samples.  Dropped,
+     * as qdec has it, the pointer loses them; so the four jumps of two
+     * are marked, and src/sys6502/irq6502.s counts them as two in the
+     * way that axis last went.  Only for the interrupt's decode: the
+     * polled path reads this table as counts. */
+    if (tab == qdec && irq.how != IRQ_OFF) {
+        irq_qtab[3] = IRQ6_QSKIP;
+        irq_qtab[6] = IRQ6_QSKIP;
+        irq_qtab[9] = IRQ6_QSKIP;
+        irq_qtab[12] = IRQ6_QSKIP;
+    }
+#endif
     /* Start from the lines as they are now, so the first sample is not
      * counted as a transition from zero. */
     n = (uint8_t)((ptr_port ? (PORTA >> 4) : PORTA) & 0x0F);

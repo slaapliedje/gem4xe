@@ -68,5 +68,10 @@ int main(void)
             irq_remove();
             STATUS[5] = 'X';
         }
+        if (STATUS[4] == 2) {           /* an Amiga mouse: its x pair is */
+            STATUS[4] = 0;              /* right and down, which a stick's */
+            ptr_init(PTR_AMIGA_MOUSE, 100, 100);    /* nine states reach */
+            STATUS[5] = 'M';
+        }
     }
 }

@@ -13,11 +13,12 @@
  * THE SAMPLER'S RATE.  The 65C816 at 20 MHz samples the pointer ~4,000
  * times a second (TIMER_DIV 15); src/sys/irq.c's own measurement says a
  * 1.79 MHz CPU cannot pay that, and grows the divisor in proportion: to
- * 127 for that CPU.  A stock 6502 is it, so the divisor is fixed at 127,
- * ~500 Hz.  Measured (tests/emu/i6_irq.py): at 63, ~1 kHz, the handler's
- * ~200 cycles a time took 17.6% of the machine, ANTIC's DMA and all.  The
- * handler also skips the decode when the port's lines are as they were,
- * which is every sample while the pointer is still.
+ * 127 for that CPU.  A stock 6502 is it, so the divisor is 127, ~500 Hz,
+ * and A6 halves it for a quadrature mouse (IRQ6_DIV_QUAD, src/sys/irq.h).
+ * Measured (tests/emu/i6_irq.py), the pointer still: 4.8% of the machine
+ * at 127 and 9.6% at 63.  Before the still path was cut to A alone
+ * (irq6502.s, irq6_take) 127 cost 6.3%, and 63 had once measured 17.6%,
+ * ANTIC's DMA and all.
  *
  * THE KEYBOARD is GEM's while this is installed: the handler takes every
  * key before the OS's dispatch sees it, so CH never fills and E: would
@@ -49,7 +50,8 @@ signed char irq_qtab[16];
 uint8_t  irq_prev_lo, irq_prev_hi;
 uint8_t  irq_pend;
 uint8_t  irq_tmp[2];                /* [0] the IRQ handler's, [1] the VBI's */
-uint8_t  irq6_last = 0xFF;          /* the port's lines at the last sample */
+uint8_t  irq6_last;                 /* PORTA, both ports, at the last sample:
+                                     * any start does, the first change decodes */
 uint8_t  irq_cio_swap;              /* nothing to swap around CIO here */
 
 /* src/sys6502/irq6502.s */

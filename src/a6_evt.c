@@ -518,7 +518,7 @@ void a6_events(void)
     WORD which, *r, i;
     GRECT area;
 
-    ptr_init(PTR_TRAKBALL, 160, 96);    /* the handlers are in: a6_aes_up */
+    ptr_init((ptr_kind)ptr_state.kind, 160, 96);    /* GEM4XE.CFG's: a6_aes_up */
     ratinit();                          /* the pointer on, and an arrow */
     gr_mouse(ARROW, 0);
     acc_start();

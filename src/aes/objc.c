@@ -1294,6 +1294,27 @@ static char to_upper(char ch)
 #define VALIDATE_f (&VALIDATE_F[3])         /* :?* omitted */
 #define VALIDATE_P ".?*a..zA..Z0..9_\\:\x80..\xff"
 #define VALIDATE_p (&VALIDATE_P[3])         /* .?* omitted */
+#define VALIDATE_9 "0..9"
+/* ON A BANKED 6502 the sets are this bank's own data: as literals they
+ * were resident, 89 bytes of memory that has none to spare, and only
+ * check() and instr() read them, both in objc_c (BANK_DATA, portab.h). */
+#if defined(__CALYPSI_TARGET_6502__) && defined(GEM4XE_BANKED)
+BANK_DATA("objc_c") static const char vs_N[] = VALIDATE_N;
+BANK_DATA("objc_c") static const char vs_n[] = VALIDATE_n;
+BANK_DATA("objc_c") static const char vs_F[] = VALIDATE_F;
+BANK_DATA("objc_c") static const char vs_P[] = VALIDATE_P;
+BANK_DATA("objc_c") static const char vs_9[] = VALIDATE_9;
+#undef VALIDATE_N
+#undef VALIDATE_n
+#undef VALIDATE_F
+#undef VALIDATE_P
+#undef VALIDATE_9
+#define VALIDATE_N vs_N
+#define VALIDATE_n vs_n
+#define VALIDATE_F vs_F
+#define VALIDATE_P vs_P
+#define VALIDATE_9 vs_9
+#endif
 
 static WORD check(char *in_char, char valchar)
 {
@@ -1301,7 +1322,7 @@ static WORD check(char *in_char, char valchar)
     const char *rstr = 0;
 
     switch (valchar) {
-    case '9': rstr = "0..9";     upcase = 0; break;
+    case '9': rstr = VALIDATE_9; upcase = 0; break;
     case 'A': rstr = VALIDATE_A; break;
     case 'N': rstr = VALIDATE_N; break;
     case 'a': rstr = VALIDATE_a; upcase = 0; break;
