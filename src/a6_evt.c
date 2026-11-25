@@ -402,8 +402,9 @@ static uint8_t prog_load(uint8_t own)
 }
 
 /* The program, if there is one: a process of its own, whose first turn
- * runs it to its first wait. */
-static void prog_start(void)
+ * runs it to its first wait.  What the read answered: CIO_OK, or why the
+ * program is not there. */
+static uint8_t prog_start(void)
 {
     PROC *p;
     uint8_t own = far_new_owner();
@@ -413,22 +414,23 @@ static void prog_start(void)
     STATUS[0x3E]++;                     /* programs started: test-d6 */
     if (st != CIO_OK) {
         STATUS[12] = 'H';               /* none */
-        return;
+        return st;
     }
     g6_own = own;
     p6_ven[5] = far_piece(p6_slot);     /* its veneer's bank byte */
     p = proc_new(prog_queue, ACC_MSGS);
     if (!p)
-        return;
+        return CIO_OK;
     if (!ctx_make(&p->p_ctx, (uint32_t)(uint16_t)p6_ven)) {
         proc_drop(p);
-        return;
+        return CIO_OK;
     }
     proc_name(p, "P6PROG");
     g6_cur = p;
     ctx_switch(&p->p_ctx);
     p->p_stat = P_LIVE;
     STATUS[12] = 'R';
+    return CIO_OK;
 }
 
 /* The inside of window wh, white, where it shows inside *area -- inside
@@ -458,6 +460,30 @@ static void redraw(WORD wh, const GRECT *area)
     gsx_sclip(&gl_rscreen);
     gsx_mon();
     wm_lock(END_UPDATE);
+}
+
+/* WHAT RUNS, UNTIL SOMETHING DOES.  An application that does not load
+ * gives way to the desktop, as the 65C816's shell has it (src/aes/shel.c,
+ * sh_ldapp); a desktop that does not load is read again a second later,
+ * and again, until it is.  A read can fail once and work the next time --
+ * MiSTer's emulated drive answered a directory with nothing and a load
+ * with 160 now and then -- and A6 waiting on nothing after one was a
+ * machine stopped with the hourglass up.  The second lets the drive, or
+ * the person with the disk, catch up. */
+static void host_run(void)
+{
+    uint8_t i;
+
+    while (prog_start() != CIO_OK) {
+        if (g6_isdesk) {
+            ev_timer(1000);
+        } else {
+            for (i = 0; i < G6_RUNLEN; i++)
+                g6_name[i] = g6_desk[i];
+            g6_isdesk = 1;
+            gemdos_home();
+        }
+    }
 }
 
 /* A6 AS THE SHELL (step 5d): the desktop's host.  When the running
@@ -499,7 +525,7 @@ static void host_next(void)
         STATUS[12] = 'Q';               /* the desktop quit */
         return;
     }
-    prog_start();
+    host_run();
 }
 
 static void host_loop(void)
@@ -530,7 +556,7 @@ void a6_events(void)
         wm_close(1);
         wm_delete(1);
         g6_isdesk = 1;
-        prog_start();
+        host_run();
         host_loop();                    /* never returns */
     }
     if (STATUS[12] == 1)

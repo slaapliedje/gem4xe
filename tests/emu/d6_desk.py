@@ -17,7 +17,10 @@ D1:.  The gate holds it to:
     with the count and the bytes of D1:'s files -- worked out here from
     the disk image itself, by GEMDOS's rule for a DOS 2 directory, its
     sectors times 125 -- which says the listing went through Fsfirst and
-    Fsnext into the far DTA and the FNODEs and was counted from there.
+    Fsnext into the far DTA and the FNODEs and was counted from there;
+  - a desktop that does not load is read again until it does (D2: empty
+    at the go, then the disk put in), and an application that does not
+    load gives way to the desktop.
 
 With --vbxe (make test-d6v, docs/6502.md step 6) the machine has a VBXE,
 which A6 takes as its screen: the same desktop at 640x240 in colour, the
@@ -94,7 +97,6 @@ def main(argv):
     emu = launch(tag="d6v" if vbxe else "d6", memsize="1088K", vbxe=vbxe, rapidus=False,
                  extra_args=["--disk", DISK])
     b = emu.bridge
-    b.mount(1, DESK)
 
     def w16(a):
         return b.peek(a) | (b.peek(a + 1) << 8)
@@ -132,6 +134,25 @@ def main(argv):
                 break
         b.poke(STATUS + 12, 2)              # the desktop, at the go
         b.poke(STATUS + 6, 1)
+        # A DESKTOP THAT DOES NOT LOAD IS READ AGAIN (src/a6_evt.c,
+        # host_run): D2: is empty at the go, so the desktop's first reads
+        # fail -- on MiSTer's drive one failed now and then, and A6 used
+        # to wait on nothing with the hourglass up -- and A6 must go on
+        # trying, a second apart, until the disk is in
+        for _ in range(100):
+            b.frames(100)
+            if b.peek(STATUS + 0x3E) >= 3:
+                break
+        tries, why = b.peek(STATUS + 0x3E), b.peek(STATUS + 13)
+        slot = b.peek(STATUS + 12)
+        check(tries >= 3 and slot == ord("H") and why != 1,
+              f"no desktop disk: A6 reads again, {tries} tries, the last "
+              f"'{chr(slot) if slot > 31 else slot}' with CIO {why}; want 3 or more, 'H'")
+        b.mount(1, DESK)
+        for _ in range(100):
+            b.frames(100)
+            if b.peek(STATUS + 12) == ord("R"):
+                break
         b.frames(3000)
 
         stuck = b.peek(STATUS + 4)
@@ -329,6 +350,41 @@ def main(argv):
             b.frames(100)
         check(info is not None, f"General's settings were saved: D2:'s window counts 9 "
                                 f"items, GENERAL.CFG among them ({info!r})")
+        # AN APPLICATION THAT DOES NOT LOAD GIVES WAY TO THE DESKTOP
+        # (host_run), as on the 65C816: the panel once more, and while it
+        # is up A6's next program is named as one D2: does not have.  When
+        # the panel ends, that load must fail and the desktop come back.
+        starts4 = b.peek(STATUS + 0x3E)
+        b.frames(3000)                      # the window's redraw over first
+        for _ in range(3):                  # a press while it is busy is lost
+            click(CPANEL_ICON, 2, 0)
+            for _ in range(30):
+                b.frames(100)
+                if b.peek(STATUS + 0x3E) == starts4 + 1:
+                    break
+            if b.peek(STATUS + 0x3E) == starts4 + 1:
+                break
+        check(b.peek(STATUS + 0x3E) == starts4 + 1,
+              f"CPANEL.G6A ran again ({starts4} -> {b.peek(STATUS + 0x3E)} programs started)")
+        b.frames(4000)                      # its window up
+        for i, c in enumerate(b"D2:NOSUCH.G6A\0"):
+            b.poke(sym("g6_run") + i, c)
+        click(PANEL_CLOSE, 1, 0)
+        for _ in range(100):
+            b.frames(100)
+            if b.peek(STATUS + 0x3E) >= starts4 + 3 and b.peek(STATUS + 12) == ord("R"):
+                break
+        for _ in range(100):
+            ram = shared()
+            if b"DISK D1:" in ram:
+                break
+            b.frames(100)
+        got = b.peek(STATUS + 0x3E) - starts4
+        check(got == 3 and b.peek(STATUS + 12) == ord("R") and b.peek(STATUS + 13) == 1
+              and b"DISK D1:" in ram,
+              f"a program that is not there: the desktop instead ({got} starts after the "
+              f"panel's, want 3: the panel, the missing one, the desktop; "
+              f"'{chr(b.peek(STATUS + 12))}', CIO {b.peek(STATUS + 13)})")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
         check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
         b.screenshot(SHOT)
