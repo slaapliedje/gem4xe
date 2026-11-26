@@ -453,7 +453,7 @@ def inputs(memo):
             unfull, scrolled, closed]
 
 
-def model(mark, brk, pointer, drvmap, cart=0):
+def model(mark, brk, pointer, drvmap, cart=0, machine=None):
     """The prelude and the desktop against the model: (v, a, want, d, memo).
     `brk` is the far heap (far_heap) before the shell reads the desktop's
     file to it."""
@@ -476,7 +476,7 @@ def model(mark, brk, pointer, drvmap, cart=0):
     g_link = symfile.load(DESK_SYM)["G"]
     memo = {}
     d = Desktop(v, a, mark, pl.pop("link_near"), pl.pop("near_size"),
-                g_link, drvmap, inputs(memo), cart=cart, **pl)
+                g_link, drvmap, inputs(memo), cart=cart, machine=machine, **pl)
     d.main()
     return v, a, want, d, memo
 
@@ -553,7 +553,14 @@ def main(argv):
         # The model, all the way through: the desktop's script, its plans
         # and its screens come out of it.
         pointer = (b.peek16(ptr), b.peek16(ptr + 2))
-        ref_v, ref_a, want, d, memo = model(mark, brk, pointer, drvmap, b.peek(syms["dos_cart"]))
+        # The machine the About box names (the cookies G4CP, G4VD, G4RM,
+        # src/sys/gemdos.c): what this gate booted -- a Rapidus and the
+        # VBXE -- and the memory the probe found, off the machine as the
+        # cartridge is (farmem.banks, 64 KB each, and the CPU's own 64).
+        check(b.peek(syms["rapidus"]) == 1, "the Rapidus was found, for G4CP")
+        machine = (2, 1, 64 + 64 * b.peek(syms["farmem"] + 3))
+        ref_v, ref_a, want, d, memo = model(mark, brk, pointer, drvmap, b.peek(syms["dos_cart"]),
+                                            machine=machine)
         script = d.script
         print(f"  the model's desktop: {len(script)} calls, waits at {d.waits}, "
               f"near ${d.near:04X}, G ${d.G:04X}, resource ${d.rsc_base:04X}, "

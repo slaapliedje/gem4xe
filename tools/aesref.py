@@ -706,6 +706,9 @@ class AES:
         # answers from what it found at boot (src/sys/dos.c dos_cart):
         # also read off the machine by the harness, as the drive map is
         self.dos_cart = 0
+        # ...and the machine, the cookies G4CP, G4VD and G4RM (gemdos.c):
+        # the processor, the screen and the memory in KB, likewise
+        self.machine = (1, 1, 1088)
         # ... and what its file calls see: where the far heap's first
         # Malloc lands (the gate derives it from the shell's brk), the
         # DTA's address and what the last search put in it, the
@@ -5771,6 +5774,9 @@ class AES:
                 return GD_EINVFN & 0xFFFFFFFF
             if long_(1) == 0x47344354:  # G4CT: written from the C's table,
                 return self.dos_cart    # which says the jar answers it so
+            for k, name in enumerate((0x47344350, 0x47345644, 0x4734524D)):
+                if long_(1) == name:    # G4CP, G4VD, G4RM
+                    return self.machine[k]
             return 0xFFFFFFFF           # not in the jar (GD_ERROR)
         raise ValueError(f"unknown GEMDOS function {fn:#x}")
 

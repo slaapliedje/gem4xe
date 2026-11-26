@@ -289,11 +289,14 @@ static void do_prefs(void)
 }
 /* -- the menu ---------------------------------------------------------- */
 
+void set_machine(void);
+
 static WORD do_deskmenu(WORD item)
 {
     GEMTREE tree = G.a_info;
 
     if (item == ABOUITEM) {
+        set_machine();                  /* what the system found */
         start_dialog(tree);
         form_do(tree, 0);
         TSET(tree, DEOK, ob_state, NORMAL);
@@ -1082,4 +1085,45 @@ int main(void)
     rsrc_free();
     appl_exit();
     return 0;
+}
+
+/* In a bank of its own on the 6502, where desktop.c's is full; nothing
+ * on the 65C816. */
+BANK_TEXT("pb6")
+/* What the system found, from its cookies (G4CP, G4VD, G4RM: gemdos.c),
+ * written over the About box's three blank values: a processor's name
+ * and a screen's from the resource's free strings, and the memory as a
+ * number of kilobytes and the resource's unit after it. */
+static void set_value(WORD obj, WORD stnum, UWORD kb)
+{
+    FPTR(char) d = FP_OF(char, (uint32_t)TGET(G.a_info, obj, ob_spec.index));
+    FPTR(const char) s;
+    char num[6];
+    WORD n = 0, k = 0;
+
+    if (kb) {
+        do {
+            num[k++] = (char)('0' + kb % 10);
+            kb /= 10;
+        } while (kb && k < 5);
+        while (k)
+            FPUT(char, d, n++, num[--k]);
+    }
+    rsrc_gaddr(R_STRING, stnum, (GEMADDR *)&s);
+    while (FDEREF(char, s) && n < DEVALUE)
+        FPUT(char, d, n++, FNEXT(char, s));
+    while (n <= DEVALUE)                /* the rest of the buffer, too */
+        FPUT(char, d, n++, 0);
+}
+
+void set_machine(void)
+{
+    LONG cpu = Ssystem(S_GETCOOKIE, G4CP_COOKIE, 0L);
+    LONG video = Ssystem(S_GETCOOKIE, G4VD_COOKIE, 0L);
+    LONG kb = Ssystem(S_GETCOOKIE, G4RM_COOKIE, 0L);
+
+    set_value(DECPU, cpu == G4CP_RAPIDUS ? STCPURAP
+                   : cpu == G4CP_65C816  ? STCPU816 : STCPU6502, 0);
+    set_value(DEVIDEO, video == G4VD_VBXE ? STVBXE : STANTIC, 0);
+    set_value(DEMEM, STKBYTES, kb > 0 && kb < 65536L ? (UWORD)kb : 0);
 }

@@ -77,7 +77,8 @@ from deskrsc import (ADMENU, ADDINFO, ADMKDBOX, ADDELDIA, ADFINFO,  # noqa: E402
                      DESKMENU, FILEMENU, ABOUITEM,
                      OPTNMENU, OPENITEM, SHOWITEM, NFOLITEM, DELTITEM,
                      CLOSITEM, CLSWITEM, QUITITEM, READITEM, SAVEITEM,
-                     DEVERSN, DEOK,
+                     DEVERSN, DEOK, DECPU, DEVIDEO, DEMEM, ABOUT_VALUE as DEVALUE,
+                     STCPU6502, STCPU816, STCPURAP, STANTIC, STVBXE, STKBYTES,
                      MKNAME, MKOK, CDTITLE, CDFILES, CDFOLDS, CDOK,
                      FITITLE, FINAME, FISIZE, FIDATE, FIFILES, FIFOLDS,
                      FIRDWR, FIRONLY, FIOK,
@@ -443,8 +444,12 @@ class Desktop:
 
     def __init__(self, v, a, mark, link_near, near_size, g_link, drvmap, inputs,
                  imbase=None, far_base=None, link_bank=2, rsc_far=None,
-                 dos_brk=None, deskicon=None, cart=0):
+                 dos_brk=None, deskicon=None, cart=0, machine=None):
         self.v, self.a = v, a
+        # the machine the About box shows, (G4CP, G4VD, G4RM): the gate
+        # says what it booted
+        if machine is not None:
+            a.machine = machine
         # what cartridge the machine found at boot: the gate reads it off
         # the machine (dos_cart), as it reads the drive map
         a.dos_cart = cart
@@ -2427,8 +2432,31 @@ class Desktop:
         if pd is not None and pd is not pw:
             self.win_rebld(pd)
 
+    def cookie(self, name):
+        io, _ = self.call(GEMDOS_OP + GD_SSYSTEM, (8, name & 0xFFFF, name >> 16, 0, 0))
+        return io[0] | (io[1] << 16)
+
+    def set_machine(self):
+        """What the system found, over the About box's three blank values
+        (desktop.c set_machine): G4CP, G4VD and G4RM, then each value's
+        free string."""
+        cpu = self.cookie(0x47344350)
+        video = self.cookie(0x47345644)
+        kb = self.cookie(0x4734524D)
+        if kb >= 0x80000000:
+            kb -= 1 << 32
+        for obj, st, n in ((DECPU, STCPURAP if cpu == 2 else STCPU816 if cpu == 1
+                            else STCPU6502, 0),
+                           (DEVIDEO, STVBXE if video == 1 else STANTIC, 0),
+                           (DEMEM, STKBYTES, kb if 0 < kb < 65536 else 0)):
+            spec = self.a.trees[self.a_info][obj].ob_spec
+            old = self.a.mem[spec]
+            text = (str(n) if n else "") + self.a.mem[self.rsrc_gaddr(R_STRING, st)].s
+            self.a.mem[spec] = Text(text[:DEVALUE], old.size)
+
     def do_deskmenu(self, item):
         if item == ABOUITEM:
+            self.set_machine()
             tree = self.a_info
             self.start_dialog(tree)
             self.call(FORM_DO, (ROOT,), tree=tree, steps=self.take_input("form_do"))

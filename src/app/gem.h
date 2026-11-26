@@ -1496,6 +1496,20 @@ LONG Ssystem(WORD mode, LONG arg1, LONG arg2);
 #define G4CT_CART    2
 #define SH_CARTRIDGE "CAR:"
 
+/* gem4xe's cookies G4CP, G4VD and G4RM: the machine as the system found it
+ * at boot, which the desktop's About box shows.  G4CP the processor gem4xe
+ * runs on (a Rapidus is a 65C816 with a board of its own); G4VD the screen
+ * the VDI drives; G4RM the memory gem4xe found, in KB, the 64 the CPU sees
+ * counted in. */
+#define G4CP_COOKIE  0x47344350L        /* 'G4CP' */
+#define G4CP_6502    0
+#define G4CP_65C816  1
+#define G4CP_RAPIDUS 2
+#define G4VD_COOKIE  0x47345644L        /* 'G4VD' */
+#define G4VD_ANTIC   0
+#define G4VD_VBXE    1
+#define G4RM_COOKIE  0x4734524DL        /* 'G4RM' */
+
 /* gem4xe's own (0x1F0): the DOS's command processor -- SpartaDOS X's, or
  * on G4DOS gem4xe's own commands (src/sys/doscmd.c) -- given `line`, run to completion with GEM's screen left as it is, and
  * every byte it printed caught in `out`, `max` bytes of it (a Malloc'd

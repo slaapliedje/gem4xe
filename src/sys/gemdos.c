@@ -24,10 +24,16 @@
 #include "config.h"
 #include "ctx.h"
 #include "../vdi/vdi.h"
+#include "../vdi/vdidev.h"      /* G4VD: the device in use */
 /* ...and the AES's processes, because a program's open files are its
  * own (gemdos_release).  aes.h brings WORD/UWORD/LONG with it, which
  * this file used to declare for itself. */
 #include "../aes/proc.h"
+#ifdef __CALYPSI_TARGET_6502__
+extern uint8_t b6_count;    /* the 16 KB banks found at load (bank6502.s) */
+#else
+#include "rapidus.h"        /* G4CP */
+#endif
 
 typedef int32_t  LONG;
 
@@ -1906,6 +1912,15 @@ static uint32_t gd_block(LONG a)
  *   G4CT  what cartridge there is (phase 165): 0 none, 1 the XL/XE's own
  *         BASIC, 2 a cartridge -- found at boot (src/sys/dos.c), for the
  *         desktop's icon
+ *   G4CP  the processor: 0 a 6502, 1 a 65C816, 2 a 65C816 on a Rapidus
+ *   G4VD  the screen the VDI drives: 0 ANTIC, 1 the VBXE -- read off the
+ *         device in use (vdidev.h), not kept a second time: ANTIC's is
+ *         the one with a single plane
+ *   G4RM  the memory gem4xe found, in KB, the CPU's own 64 counted in
+ *         (the boot screen's memory line, src/sys/bootinfo.c)
+ *
+ * The last three are for the desktop's About box, so a person can see
+ * what was detected.
  *
  * and never NVDI, MiNT or any other software gem4xe is not.  Ssystem(-1)
  * says the call is there; every other mode is EINVFN. */
@@ -1928,6 +1943,20 @@ static LONG gd_ssystem(WORD mode, LONG arg1, LONG arg2)
         v = GEM4XE_VERSION_NUM;
     else if (arg1 == 0x47344354L)                        /* G4CT */
         v = dos_cart;
+    else if (arg1 == 0x47344350L)                        /* G4CP */
+#ifdef __CALYPSI_TARGET_6502__
+        v = 0;
+#else
+        v = rapidus.present ? 2 : 1;
+#endif
+    else if (arg1 == 0x47345644L)                        /* G4VD */
+        v = vdev && dev_planes() > 1;  /* ANTIC's is one plane */
+    else if (arg1 == 0x4734524DL)                        /* G4RM */
+#ifdef __CALYPSI_TARGET_6502__
+        v = 64 + 16 * (LONG)b6_count;   /* every 16 KB bank found */
+#else
+        v = 64 + 64 * (LONG)farmem.banks;
+#endif
     else
         return GD_ERROR;                /* not in the jar */
     if (!arg2)

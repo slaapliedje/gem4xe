@@ -74,8 +74,12 @@ NOBS_MENU = 54
 # ADDINFO objects.  DEVERSN and DEOK moved down one when the gem4xe
 # version line went in; they are constants for exactly that reason, and
 # src/desk/desktop.c reads them out of the header this file generates.
-DEBOX, DETITLE, DEVERSN, DEOK = 0, 1, 6, 14
-NOBS_INFO = 15
+# The machine's three lines (DECPU, DEVIDEO, DEMEM) are filled in the
+# same way, from the system's cookies G4CP, G4VD and G4RM, when the box
+# is opened.
+DEBOX, DETITLE, DECPU, DEVIDEO, DEMEM, DEVERSN, DEOK = 0, 1, 4, 6, 8, 11, 19
+NOBS_INFO = 20
+ABOUT_VALUE = 16                # the machine's values, the NUL not counted
 
 # ADMKDBOX objects, the donor's names (desk_rsc.h)
 MKBOX, MKTITLE, MKNAME, MKOK, MKCNCL = 0, 1, 2, 3, 4
@@ -270,6 +274,18 @@ CART_LABEL = [
     (STBASIC, "STBASIC", "BASIC"),
     (STCART, "STCART", "CARTRIDGE"),
 ]
+# The About box's machine (DECPU, DEVIDEO, DEMEM): the processor by the
+# cookie G4CP's value, the screen by G4VD's, and the unit after G4RM's
+# number of kilobytes.
+STCPU6502, STCPU816, STCPURAP, STANTIC, STVBXE, STKBYTES = 32, 33, 34, 35, 36, 37
+MACHINE = [
+    (STCPU6502, "STCPU6502", "6502"),
+    (STCPU816, "STCPU816", "65C816"),
+    (STCPURAP, "STCPURAP", "65C816, Rapidus"),
+    (STANTIC, "STANTIC", "ANTIC"),
+    (STVBXE, "STVBXE", "VBXE"),
+    (STKBYTES, "STKBYTES", "K"),
+]
 
 # PREFS.RSC's second tree: the DOS command dialog, beside the chooser
 # for the same reason the chooser is there -- loaded only while it is
@@ -350,6 +366,7 @@ INDICES = [
     ("STNOPREF", STNOPREF), ("STCMDMEM", STCMDMEM),
     ("STDOCUMT", STDOCUMT), ("STPRNERR", STPRNERR), ("STINSELF", STINSELF),
     ("STNODISK", STNODISK), ("STBASIC", STBASIC), ("STCART", STCART),
+    *[(name, i) for i, name, _ in MACHINE],
     ("ADICNBOX", ADICNBOX), ("ICDRIVE", ICDRIVE), ("ICLABEL", ICLABEL),
     ("ICINST", ICINST), ("ICREMV", ICREMV), ("ICCNCL", ICCNCL),
     ("ADCNFBOX", ADCNFBOX), ("NCOLD", NCOLD), ("NCNEW", NCNEW),
@@ -384,6 +401,8 @@ INDICES = [
     ("SIZEITEM", SIZEITEM), ("DATEITEM", DATEITEM), ("NSRTITEM", NSRTITEM),
     ("FITITEM", FITITEM), ("IICNITEM", IICNITEM), ("IAPPITEM", IAPPITEM), ("IDSKITEM", IDSKITEM),
     ("PREFITEM", PREFITEM), ("READITEM", READITEM), ("SAVEITEM", SAVEITEM),
+    ("DECPU", DECPU), ("DEVIDEO", DEVIDEO), ("DEMEM", DEMEM),
+    ("DEVALUE", ABOUT_VALUE),
     ("DEVERSN", DEVERSN), ("DEOK", DEOK),
     ("ADMKDBOX", ADMKDBOX), ("MKNAME", MKNAME), ("MKOK", MKOK),
     ("MKCNCL", MKCNCL),
@@ -453,7 +472,7 @@ ACTIVE_W = 27                               # " Desk " to " Options " inclusive
 # for pixel would have to be told the date.  A version changes when
 # somebody decides it does.  The dist's own VERSION file carries this
 # number AND the date and commit, which is what a bug report wants.
-ABOUT_W, ABOUT_H = 40, 18
+ABOUT_W, ABOUT_H = 40, 20
 
 
 def _version():
@@ -472,17 +491,22 @@ VERSION_X = (ABOUT_W - len(VERSION_LINE)) // 2
 
 ABOUT = [
     ("gem4xe Desktop", 13, 1),
-    ("GEM for the Atari XL/XE with VBXE,", 3, 2),
-    ("Rapidus and Ultimate 1MB", 8, 3),
-    (VERSION_LINE, VERSION_X, 5),
-    ("AES version", 12, 6), ("0.00", 24, 6),           # DEVERSN, filled in
-    ("Based on EmuTOS, 'GPLed' GEM sources", 2, 7),
-    ("\xbd 1987 Digital Research, Inc.", 4, 8),
-    ("\xbd 1999 Caldera Thin Clients, Inc.", 3, 9),
-    ("\xbd 2001 Lineo, Inc.", 11, 10),
-    ("The EmuTOS development team", 6, 11),
-    ("gem4xe is distributed under the GPL", 2, 13),
-    ("See COPYING for the details", 6, 14),
+    ("GEM for the Atari XL/XE", 8, 2),
+    # what the system found (DECPU, DEVIDEO, DEMEM): the values are
+    # buffers the desktop fills from the free strings below, so they are
+    # as wide as the longest of those
+    ("CPU:", 9, 3), (" " * ABOUT_VALUE, 19, 3),
+    ("Graphics:", 9, 4), (" " * ABOUT_VALUE, 19, 4),
+    ("Memory:", 9, 5), (" " * ABOUT_VALUE, 19, 5),
+    (VERSION_LINE, VERSION_X, 7),
+    ("AES version", 12, 8), ("0.00", 24, 8),           # DEVERSN, filled in
+    ("Based on EmuTOS, 'GPLed' GEM sources", 2, 9),
+    ("\xbd 1987 Digital Research, Inc.", 4, 10),
+    ("\xbd 1999 Caldera Thin Clients, Inc.", 3, 11),
+    ("\xbd 2001 Lineo, Inc.", 11, 12),
+    ("The EmuTOS development team", 6, 13),
+    ("gem4xe is distributed under the GPL", 2, 15),
+    ("See COPYING for the details", 6, 16),
 ]
 
 # The two dialogs the file operations put up, in the donor's shape
@@ -569,6 +593,8 @@ def info_tree(r):
                  NORMAL, r.string("OK"), ch(16), ch(ABOUT_H - 2), ch(8), ch(1)))
     assert len(objs) == NOBS_INFO, (len(objs), NOBS_INFO)
     assert objs[DEVERSN][6].s == "0.00"
+    for o in (DECPU, DEVIDEO, DEMEM):
+        assert objs[o][6].s == " " * ABOUT_VALUE, o
     return r.tree(objs, look3d=True)
 
 
@@ -912,6 +938,9 @@ def build():
     for i, name, text in DISK_ALERT:
         assert r.free_string(text) == i, (name, i)
     for i, name, text in CART_LABEL:
+        assert r.free_string(text) == i, (name, i)
+    for i, name, text in MACHINE:
+        assert len(text) <= ABOUT_VALUE, name
         assert r.free_string(text) == i, (name, i)
     for ib, ig in IB_TABLE:
         (mask, data, char, xchar, ychar, xicon, yicon, wicon, hicon,
