@@ -96,7 +96,7 @@ PER_FILE = {
     "src/desk/deskwin.c": ["-Isrc/app", "-Ibuild"],
     "src/app/gemlib.c": ["-Isrc/app"],
 }
-INCS = ["src", "src/vdi", "src/aes", "build", "src/sys", "src/antic"]
+INCS = ["include", "src", "src/vdi", "src/aes", "build", "src/sys", "src/antic"]
 FLAGS = ["--target=msp430", "-fsyntax-only", "-std=gnu11", "-w", "-funsigned-char",
          "-ferror-limit=0", "-nostdinc", "-D__NATURAL_INT_SIZE__=8", "-D__CALYPSI__",
          "-D__CALYPSI_TARGET_6502__", "-DGEM4XE_BANKED", "-Xclang", "-ast-dump=json"]

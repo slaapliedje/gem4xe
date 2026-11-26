@@ -1,3 +1,4 @@
+;;; SPDX-License-Identifier: LGPL-2.1-or-later
 ;;; ---------------------------------------------------------------------------
 ;;; enter6502.s -- cc6502's frame helpers, faster (docs/6502.md, speed 4).
 ;;;

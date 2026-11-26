@@ -1,0 +1,131 @@
+# The gem4xe application kit, for the 6502: a program for a stock
+# Atari XL/XE (no accelerator) with at least 256 KB.
+#
+#     make -f Makefile.6502                       hello.g6a, from example/hello.c
+#     make -f Makefile.6502 APP=mine.c            mine.g6a
+#     make -f Makefile.6502 APP=mine.c SRCS="more.c draw.c"
+#     make -f Makefile.6502 APP=mine.c BANK_draw=3
+#     make -f Makefile.6502 clean
+#
+# Put it on the desktop disk with tools/install.py (README.md) and
+# double-click it: the desktop runs a .G6A as a program.
+#
+# THE SAME C AS THE 65C816's.  include/gem.h and lib/gemlib.c are shared:
+# a program that keeps its trees and the strings the AES reads in place
+# near, and reaches far memory through gem.h's fa_* accessors, builds for
+# both.  What differs is underneath, and this file does it.
+#
+# YOUR CODE GOES IN BANKS.  A 6502 sees 64 KB, and the system has most of
+# it, so a program's code lives in 16 KB banks shown one at a time in the
+# window at $4000-$7FFF.  Each C file goes WHOLE into one bank -- APP into
+# bank 1, lib/gemlib.c into bank 2, each of SRCS into bank 3 unless you
+# say otherwise -- and BANK_<name>=N moves file <name>.c to bank N
+# (1..8).  Inside a file, BANK_TEXT("pbN") before a function moves the
+# functions after it (include/portab.h).  A bank holds 16,384 bytes,
+# bank 1 a little less for the header; the link says when one is full.
+#
+# A CALL BETWEEN BANKS IS NOT A PLAIN JSR, and the compiler and linker do
+# not know that: Calypsi places the banks but calls into them with a
+# plain JSR, which lands in whatever bank is mapped.  So every C file is
+# compiled to assembly first, tools/bsp6502/bankasm.py rewrites every call
+# that crosses into a call through a veneer (its comment says how), and
+# tools/bsp6502/bankcheck.py refuses the result -- the assembly, then the
+# link map and the linked code itself -- if any call still crosses
+# without one.  A program that links here does not make a wrong call
+# between banks.  Do not bypass these steps with rules of your own.
+#
+# EVERYTHING ELSE -- the veneers, the C library, constants, your data,
+# the heap and the C stack -- is in the RAM under the OS ROM, $C020-$CFFF
+# and $D800-$FDFF (lib6502/gemappm6502.scm), shared with no other program
+# because only one runs at a time.  Your data is 9.5 KB less the stack
+# (STACK, 1 KB); a big table belongs in far memory (Malloc and fa_*).
+#
+# THREE SCANS of cc6502 5.18's own defects, which are ordinary C shapes
+# (doc/ccbug6.md):
+#
+#   make -f Makefile.6502 scan    b6scan: a byte the compiler widens wrong
+#                                 (needs clang on PATH); b6asm: a call
+#                                 whose argument shares the compiler's
+#                                 scratch, or a runtime helper that is
+#                                 wrong (the 16x16 multiply)
+#
+# Run it on new code.  Both have found real bugs in gem4xe that no test
+# had.
+#
+# THE C LIBRARY is Calypsi's clib-6502.a.  The 65C816 kit swaps in
+# lib/clib.c for the str*/mem* functions because Calypsi's come from
+# Apache NuttX, which cannot be linked into a GPLv2 program; this half
+# does not yet, so a GPL program built here carries that question.
+
+CALYPSI6 ?= $(HOME)/dev/toolchains/calypsi-6502
+APP      ?= example/hello.c
+SRCS     ?=
+NAME     ?= $(basename $(notdir $(APP)))
+STACK    ?= 1024
+
+CC6 = $(CALYPSI6)/bin/cc6502
+AS6 = $(CALYPSI6)/bin/as6502
+LN6 = $(CALYPSI6)/bin/ln6502
+CFLAGS6 = -O2 --core 6502 -I include -Werror=int-conversion --no-cross-call
+
+B = build/6502
+BANKS = --bank pb1=1 --bank pb2=2 --bank pb3=3 --bank pb4=4 \
+        --bank pb5=5 --bank pb6=6 --bank pb7=7 --bank pb8=8
+
+# Each C file a UNIT, named for its file, with its bank
+APPU  := $(basename $(notdir $(APP)))
+SRCU  := $(basename $(notdir $(SRCS)))
+UNITS := $(APPU) gemlib $(SRCU)
+BANK_$(APPU) ?= 1
+BANK_gemlib  ?= 2
+$(foreach u,$(SRCU),$(eval BANK_$(u) ?= 3))
+SRC_$(APPU)  := $(APP)
+SRC_gemlib   := lib/gemlib.c
+$(foreach s,$(SRCS),$(eval SRC_$(basename $(notdir $(s))) := $(s)))
+
+RUNTIME = $(B)/crt6502m.o $(B)/gemabi6502.o $(B)/farm6502.o $(B)/enter6502.o
+OBJS    = $(RUNTIME) $(UNITS:%=$(B)/bank/%.o)
+
+all: $(NAME).g6a
+
+# 1. Each unit as assembly, with its bank named first: a wrapper that
+#    sets the section and includes the source.  --no-cross-call: the
+#    optimiser's shared fragments go to section `code` whatever the
+#    pragma says -- out of your banks, into the scarce RAM under the ROM.
+$(B)/w/%.c:
+	@mkdir -p $(dir $@)
+	printf '#pragma clang section text="pb%s"\n#include "%s"\n' \
+	    '$(BANK_$*)' '$(abspath $(SRC_$*))' > $@
+$(B)/asm/%.s: $(B)/w/%.c include/gem.h include/portab.h
+	@mkdir -p $(dir $@) $(B)/pre
+	$(CC6) $(CFLAGS6) -c $< -o $(B)/pre/$*.o --assembly-source=$@
+# 2. Which bank every public function is in, read from all the units
+$(B)/prog.idx: $(UNITS:%=$(B)/asm/%.s)
+	python3 tools/bsp6502/bankasm.py --index $@ $(BANKS) $^
+# 3. Each unit's calls across banks through veneers, checked, assembled
+$(B)/bank/%.o: $(B)/asm/%.s $(B)/prog.idx
+	@mkdir -p $(dir $@) $(B)/basm
+	python3 tools/bsp6502/bankasm.py $< $(B)/basm/$*.b.s --tu $* $(BANKS) \
+	    --index $(B)/prog.idx --trampoline _pcall --switch-in-bank --fast-frames
+	python3 tools/bsp6502/bankcheck.py --asm $(B)/basm/$*.b.s $(BANKS) --index $(B)/prog.idx
+	$(AS6) --core 6502 $(B)/basm/$*.b.s -o $@
+$(B)/%.o: lib6502/%.s
+	@mkdir -p $(dir $@)
+	$(AS6) --core 6502 $< -o $@
+# 4. Linked, the map and the code checked again, packed as a .G6A
+$(B)/$(NAME).elf: $(OBJS) lib6502/gemappm6502.scm
+	$(LN6) lib6502/gemappm6502.scm $(OBJS) -o $@ $(CALYPSI6)/lib/clib-6502.a \
+	    --verbose --list-file $(B)/$(NAME).map > /dev/null
+	python3 tools/bsp6502/bankcheck.py $(B)/$(NAME).map --elf $@ || { rm -f $@; exit 1; }
+$(NAME).g6a: $(B)/$(NAME).elf
+	python3 tools/bsp6502/mkxex6502.py --g6a --pack $< $@
+
+scan: $(UNITS:%=$(B)/bank/%.o)
+	python3 tools/bsp6502/b6scan.py --root . $(APP) $(SRCS)
+	python3 tools/bsp6502/b6asm.py $(UNITS:%=$(B)/basm/%.b.s)
+
+clean:
+	rm -rf $(B) $(NAME).g6a
+
+.PHONY: all scan clean
+.SECONDARY:

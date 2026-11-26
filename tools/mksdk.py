@@ -94,6 +94,22 @@ MANIFEST = [
     ("example/acc.c",       "tools/sdk/acc.c"),       # a desk accessory
     ("example/cpx.c",       "tools/sdk/cpx.c"),       # a panel module
     ("example/cpx.cpxh",    "tools/sdk/cpx.cpxh"),    # ...and its header
+    # The 6502 half: the same include/ and lib/gemlib.c, built by
+    # Makefile.6502 through bankasm (cross-bank calls through veneers) and
+    # bankcheck (refuses any that are not).  README.md, "The 6502".
+    ("Makefile.6502",           "tools/sdk/Makefile.6502"),
+    ("lib6502/crt6502m.s",      "src/app/crt6502m.s"),
+    ("lib6502/gemabi6502.s",    "src/app/gemabi6502.s"),
+    ("lib6502/farm6502.s",      "src/app/farm6502.s"),     # gem.h's fa_*
+    ("lib6502/enter6502.s",     "src/sys6502/enter6502.s"),  # frame helpers
+    ("lib6502/gemappm6502.scm", "src/app/gemappm6502.scm"),
+    ("tools/bsp6502/bankasm.py",   "tools/bsp6502/bankasm.py"),
+    ("tools/bsp6502/bankcheck.py", "tools/bsp6502/bankcheck.py"),
+    ("tools/bsp6502/mkxex6502.py", "tools/bsp6502/mkxex6502.py"),
+    ("tools/bsp6502/elfsym.py",    "tools/bsp6502/elfsym.py"),
+    ("tools/bsp6502/b6scan.py",    "tools/bsp6502/b6scan.py"),
+    ("tools/bsp6502/b6asm.py",     "tools/bsp6502/b6asm.py"),
+    ("doc/ccbug6.md",              "tools/ccbug/b6/README.md"),  # cc6502's own
 ]
 
 

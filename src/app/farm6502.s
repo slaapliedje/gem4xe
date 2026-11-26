@@ -1,3 +1,4 @@
+;;; SPDX-License-Identifier: LGPL-2.1-or-later
 ;;; ---------------------------------------------------------------------------
 ;;; farm6502.s -- far memory for a 6502 program of several banks
 ;;; (docs/6502.md, step 5c-2; in assembly since speed 4): gem.h's fa_*.

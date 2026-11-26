@@ -94,6 +94,12 @@ ends with `Ptermres` and stays -- see "Starting at boot" below.
     tools/atr.py        the disk file systems install.py uses
     doc/ccbug.md        the compiler's defects, and the rules the
                         sources follow to avoid them.  READ THIS
+    Makefile.6502       the same program for a stock 6502 ("The 6502")
+    lib6502/            its start-up, call gates, far-memory accessors,
+                        frame helpers and the linker's rules
+    tools/bsp6502/      bankasm/bankcheck (calls between banks), the
+                        .G6A packer, and the two scans
+    doc/ccbug6.md       cc6502's own defects
     example/hello.c     a whole program, commented
     example/acc.c       a whole desk accessory, commented
     example/cpx.c       a whole control panel extension, commented
@@ -518,6 +524,49 @@ If your program has a resource, `rsrc_load("MINE.RSC")` reads it from
 the same disk, and it must be a real GEM `.RSC`: gem4xe's resource
 loader is the donor's, and the file's format is the ST's.
 
+## The 6502
+
+The same C builds for a **stock Atari XL/XE** -- no accelerator, no
+VBXE -- with `Makefile.6502`, into a `.G6A`:
+
+    make -f Makefile.6502                       example/hello.c  ->  hello.g6a
+    make -f Makefile.6502 APP=mine.c SRCS="draw.c io.c"
+    make -f Makefile.6502 APP=mine.c BANK_draw=3
+    make -f Makefile.6502 scan                  the compiler's known defects, looked for
+
+You need **Calypsi for the 6502** (`cc6502`, `as6502`, `ln6502`) 5.18,
+in `~/dev/toolchains/calypsi-6502` or named by `CALYPSI6`.  `scan` also
+needs `clang` on your `PATH`.
+
+What is the same: `include/gem.h` and `lib/gemlib.c`, the calls, and
+the rule that a tree or a string the AES reads in place is near.  Far
+memory is reached through `gem.h`'s `fa_*` accessors and `Malloc`, as
+on the 65C816.
+
+What differs (the top of `Makefile.6502` says it at length):
+
+- **Your code lives in 16 KB banks** shown one at a time at
+  `$4000-$7FFF`.  Each C file goes whole into one bank: `APP` into 1,
+  `lib/gemlib.c` into 2, each of `SRCS` into 3, and `BANK_<name>=N`
+  moves a file (1-8).  The link says when a bank is full.
+- **A call between banks goes through a veneer**, which the compiler
+  does not know about.  `tools/bsp6502/bankasm.py` rewrites every such
+  call, and `tools/bsp6502/bankcheck.py` refuses the build -- the
+  assembly, the link map and the linked code -- if any still crosses
+  without one.  Do not add rules that skip these two.
+- **Your data, the heap and the C stack** share 9.5 KB in the RAM under
+  the OS ROM (`lib6502/gemappm6502.scm`); `STACK` (1024) is the stack's
+  share.  A big table goes in far memory.
+- **Run `scan` on new code.**  cc6502 5.18 has defects of its own --
+  byte casts that widen wrong, a 16x16 multiply with its bytes swapped,
+  an argument that shares the compiler's scratch (`doc/ccbug6.md`) --
+  and each one is a silently wrong answer.
+
+A `.G6A` is a program: the desktop runs one from its icon.  The 6502
+desktop disk is MyDOS, with no folders, so give a bare name:
+
+    python3 tools/install.py desk.atr hello.g6a HELLO.G6A
+
 ## Licence
 
 **What your program links is LGPL-2.1-or-later** -- everything in
@@ -544,6 +593,11 @@ even a notice -- because they are there to be copied: start your
 program from one and it is yours.  The rest of the kit, `tools/` and
 `doc/`, is GPLv2 or later like gem4xe itself (`COPYING`); the tools are
 not linked into anything you build, so their licence stays with them.
+
+**The 6502 build links Calypsi's own C library** (`clib-6502.a`), whose
+string and memory functions come from Apache NuttX.  The 65C816 build
+avoids that with `lib/clib.c`; the 6502 build does not yet, so check its
+terms before you give a 6502 program out.
 
 gem4xe itself -- `GEM.COM`, the desktop, the accessories -- is GPLv2 or
 later.  The library was written for gem4xe rather than taken from
