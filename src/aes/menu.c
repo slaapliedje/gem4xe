@@ -1160,6 +1160,16 @@ WORD mn_barowner(void)
     return (gl_mntree && mn_barpd) ? proc_pid(mn_barpd) : -1;
 }
 
+#ifdef __CALYPSI_TARGET_6502__
+/* The bar's owner itself, for the menu's MN_SELECTED (ctrl.c).  A pid
+ * cannot name it on the 6502: a program A6 runs has its PROC outside
+ * proc_tab, so proc_pid of it is no number proc_of turns back. */
+PROC *mn_barproc(void)
+{
+    return gl_mntree ? mn_barpd : 0;
+}
+#endif
+
 void mn_bar(OBTREE tree, WORD showit)
 {
     if (showit) {

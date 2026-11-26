@@ -447,6 +447,12 @@ test-d6: build/a6d-boot.atr build/a6d-desk.atr
 test-d6v: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_desk.py --vbxe
 
+# the desktop's menus: a choice reaches the desktop and it acts on it
+test-n6: build/a6d-boot.atr build/a6d-desk.atr
+	python3 tests/emu/n6_menu.py
+test-n6v: build/a6d-boot.atr build/a6d-desk.atr
+	python3 tests/emu/n6_menu.py --vbxe
+
 # the sampler silent through SIO (src/sys/cio.c), with real serial timing
 test-d6sio: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_sio.py

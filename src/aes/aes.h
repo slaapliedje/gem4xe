@@ -767,6 +767,9 @@ void mn_start(void);             /* once per AES start: the registry cleared */
 WORD mn_register(WORD pid, uint32_t pstr);
 struct PROC *mn_owner(WORD id);  /* who registered that slot, or 0 */
 WORD mn_barowner(void);              /* menu_bar(0, -1): its pid, or -1 */
+#ifdef __CALYPSI_TARGET_6502__
+struct PROC *mn_barproc(void);   /* whose bar is shown, or 0 */
+#endif
 /* appl_search (AES 4, phase 124) */
 #define APP_FIRST       0
 #define APP_NEXT        1

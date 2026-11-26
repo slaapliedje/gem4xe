@@ -299,8 +299,23 @@ void hctl_rect(void)
      * they are what makes menu_attach usable.  A program with one tree
      * and no sub-menus reads msg[4] as it always did and these are
      * simply true; appl_getinfo(AES_MENU) says they are valid. */
+#ifdef __CALYPSI_TARGET_6502__
+    /* TO THE BAR'S OWNER, as the ROM sends it (GEMCTRL.C: gl_mnpid).
+     * proc_app is the AES's slot 0, which on the 65C816 is always the
+     * program whose bar it is; on the 6502 slot 0 is A6, and the desktop
+     * it runs is another process -- every menu choice went to A6, the
+     * title stayed selected and nothing happened (a real 600XL found it:
+     * no gate had chosen a desktop menu item on the 6502). */
+    {
+        PROC *to = mn_barproc();
+
+        ct_msgup(to ? to : proc_app, MN_SELECTED, title, item,
+                 (WORD)(UWORD)(mtree >> 16), (WORD)(UWORD)mtree, menu);
+    }
+#else
     ct_msgup(proc_app, MN_SELECTED, title, item,
              (WORD)(UWORD)(mtree >> 16), (WORD)(UWORD)mtree, menu);
+#endif
 }
 
 /* The menu taking the mouse (grabit) and giving it back.  While it has

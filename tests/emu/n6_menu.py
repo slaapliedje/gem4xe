@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""n6_menu.py -- make test-n6: the desktop's MENUS on a stock 6502.
+
+No gate chose a desktop menu item on the 6502 until a real 600XL did:
+the drop-down opened, the click closed it, the title stayed selected and
+nothing happened.  The AES sent MN_SELECTED to proc_app, its slot 0 --
+on the 65C816 always the program whose bar it is, on the 6502 A6, which
+runs the desktop as another process (src/aes/ctrl.c, hctl_rect).  The
+gate holds the desktop, loaded as test-d6 loads it, to:
+
+  - Desk > About gem4xe...: the desktop's own message buffer (G.g_rmsg,
+    in its RAM under the ROM) holds MN_SELECTED for DESKMENU/ABOUITEM;
+    the About box is drawn over the desk; Return closes it, and the desk
+    and the Desk title are back as they were -- the title put back is
+    the desktop's menu_tnormal, so it is the desktop having ACTED;
+  - View > Show as text, then Show as icons: G.g_iview goes 0 -> 1 -> 0,
+    a change only the desktop's own handler makes, and the View title is
+    put back each time;
+  - no call refused.
+
+G's offsets are read from desk.h's layout and checked first: g_desk must
+be the desk under the bar (0, hbox, the screen's width, the rest of its
+height), so a moved field fails here by name, not as a silent miss.
+
+With --vbxe (make test-n6v) the same on a VBXE machine, 640x240.
+
+    python3 tests/emu/n6_menu.py [--vbxe] [--shot]
+"""
+import os
+import re
+import sys
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+from a8test.launcher import launch          # noqa: E402
+
+DISK = os.path.abspath(os.path.join(ROOT, "build", "a6d-boot.atr"))
+DESK = os.path.abspath(os.path.join(ROOT, "build", "a6d-desk.atr"))
+MAP = os.path.abspath(os.path.join(ROOT, "build", "a6.map"))
+DMAP = os.path.abspath(os.path.join(ROOT, "build", "desk6.map"))
+RSCH = os.path.abspath(os.path.join(ROOT, "build", "deskrsc.h"))
+STATUS = 0x0600
+MN_SELECTED = 10
+# desk.h's DESKTOP_GLOBALS on the 6502: six 4-byte tree/far pointers,
+# then g_handle, g_wchar, g_hchar, g_wbox, g_hbox, g_desk ...
+G_HBOX, G_DESK, G_IVIEW, G_RMSG = 0x20, 0x22, 0x2E, 0x4C
+# where the screen puts things (screen pixels; found from screenshots)
+AT = dict(W=320, H=192, DESK_T=(14, 3), ABOUT=(30, 13), VIEW_T=(100, 3),
+          ICONS=(110, 11), TEXT=(110, 17), PARK=(200, 120),
+          TITLES=(0, 0, 180, 8), MIDDLE=(60, 60, 260, 140), OFF=(8, 24))
+VBXE_AT = dict(W=640, H=240, DESK_T=(30, 4), ABOUT=(50, 15), VIEW_T=(135, 4),
+               ICONS=(150, 15), TEXT=(150, 23), PARK=(400, 150),
+               TITLES=(0, 0, 360, 10), MIDDLE=(120, 70, 520, 170), OFF=(16, 0))
+
+
+def main(argv):
+    vbxe = "--vbxe" in argv
+    keep = "--shot" in argv
+    at = VBXE_AT if vbxe else AT
+    fails = []
+
+    def check(cond, msg):
+        print(f"  {'ok' if cond else 'FAIL'}: {msg}")
+        if not cond:
+            fails.append(msg)
+        return cond
+
+    what = "on a stock 6502" + (" with a VBXE" if vbxe else "")
+    print(f"gem4xe-n6: the desktop's menus {what}")
+    text = open(MAP).read()
+    dtext = open(DMAP).read()
+    rsch = open(RSCH).read()
+
+    def sym(n, t=None):
+        return int(re.search(rf"^\s+{n} = ([0-9a-f]+)\s*$", t or text, re.M).group(1), 16)
+
+    def rsc(n):
+        return int(re.search(rf"^#define {n}\s+(\d+)", rsch, re.M).group(1))
+    G = sym("G", dtext)
+    DESKMENU, VIEWMENU = rsc("DESKMENU"), rsc("VIEWMENU")
+    ABOUITEM, ICONITEM, TEXTITEM = rsc("ABOUITEM"), rsc("ICONITEM"), rsc("TEXTITEM")
+    shots = os.path.join(ROOT, "build", "n6v" if vbxe else "n6")
+    os.makedirs(shots, exist_ok=True)
+
+    emu = launch(tag="n6v" if vbxe else "n6", memsize="1088K", vbxe=vbxe, rapidus=False,
+                 extra_args=["--disk", DISK])
+    b = emu.bridge
+    ptr = sym("ptr_state")
+
+    def w16(a):
+        return b.peek(a) | (b.peek(a + 1) << 8)
+
+    def rom_out():                      # RAM under the ROM reads as RAM
+        for _ in range(50):             # only with the ROM out (d6_desk.py)
+            if not b.peek(0xD301) & 1:
+                return
+            b.frames(1)
+
+    def gw(off, n=1):
+        rom_out()
+        m = bytes(b.memdump(G + off, 2 * n))
+        return [m[2 * k] | m[2 * k + 1] << 8 for k in range(n)]
+
+    def move(xy):
+        b.poke(ptr, xy[0] & 0xFF)
+        b.poke(ptr + 1, xy[0] >> 8)
+        b.poke(ptr + 2, xy[1])
+        b.poke(ptr + 3, 0)
+        b.frames(40)
+
+    def click():                        # the ST mouse's button: port 2's trigger
+        b.joy(1, "centre", True)
+        b.frames(6)
+        b.joy(1, "centre", False)
+        b.frames(6)
+
+    def choose(title, item):
+        """Into the bar over the title (the drop-down opens on arrival),
+        down onto the item, a click; then the pointer off the bar."""
+        move(title)
+        b.frames(40)
+        move((item[0], title[1] + 4))
+        move(item)
+        click()
+        b.frames(300)
+        move(at["PARK"])
+        b.frames(300)
+
+    def region(name, tag):
+        """The screen's pixels in a rectangle, from a screenshot."""
+        from PIL import Image
+        path = os.path.join(shots, f"{tag}.png")
+        b.screenshot(path)
+        x0, y0, x1, y1 = at[name]
+        ox, oy = at["OFF"]
+        return bytes(Image.open(path).convert("L").crop((x0 + ox, y0 + oy, x1 + ox, y1 + oy)).tobytes())
+
+    def differ(a, c):
+        return sum(1 for p, q in zip(a, c) if p != q)
+    try:
+        b.mount(1, DESK)
+        b.frames(500)
+        for _ in range(0, 9000, 50):
+            b.frames(50)
+            if bytes(b.memdump(STATUS, 3)) == b"A6K" or b.peek(STATUS + 4):
+                break
+        b.poke(STATUS + 12, 2)              # the desktop, at the go
+        b.poke(STATUS + 6, 1)
+        for _ in range(300):
+            b.frames(100)
+            if b.peek(STATUS + 12) == ord('R'):
+                break
+        b.frames(2000)
+        if not check(b.peek(STATUS + 12) == ord('R') and b.peek(STATUS + 4) == 0,
+                     f"the desktop is up (stage {b.peek(STATUS + 12):#x}, stop {b.peek(STATUS + 4)})"):
+            return 1
+        hbox = gw(G_HBOX)[0]
+        desk = gw(G_DESK, 4)
+        if not check(desk == [0, hbox, at["W"], at["H"] - hbox],
+                     f"G's layout: g_desk {desk} is the desk under a {hbox}-line bar "
+                     f"(0, {hbox}, {at['W']}, {at['H'] - hbox})"):
+            return 1
+        move(at["PARK"])
+        b.frames(200)
+        titles0 = region("TITLES", "0-titles")
+        middle0 = region("MIDDLE", "0-middle")
+
+        # Desk > About gem4xe...
+        choose(at["DESK_T"], at["ABOUT"])
+        msg = gw(G_RMSG, 5)
+        check(msg[0] == MN_SELECTED and msg[3] == DESKMENU and msg[4] == ABOUITEM,
+              f"Desk > About: the desktop's message buffer holds MN_SELECTED "
+              f"(words {msg}; want {MN_SELECTED}, -, -, {DESKMENU}, {ABOUITEM})")
+        d = differ(region("MIDDLE", "1-about"), middle0)
+        check(d > 2000, f"...and the About box is drawn over the desk ({d} pixels changed)")
+        b.key_tap("RETURN")
+        b.frames(600)
+        d = differ(region("MIDDLE", "2-closed"), middle0)
+        check(d == 0, f"Return closes it: the desk is as it was ({d} pixels differ)")
+        d = differ(region("TITLES", "2-titles"), titles0)
+        check(d == 0, f"...and the Desk title is put back, by the desktop ({d} pixels differ)")
+
+        # View > Show as text, then Show as icons
+        v0 = gw(G_IVIEW)[0]
+        choose(at["VIEW_T"], at["TEXT"])
+        v1 = gw(G_IVIEW)[0]
+        d = differ(region("TITLES", "3-titles"), titles0)
+        check(v0 == 0 and v1 == 1 and d == 0,
+              f"View > Show as text: g_iview {v0} -> {v1} (want 0 -> 1), the title back ({d} pixels differ)")
+        choose(at["VIEW_T"], at["ICONS"])
+        v2 = gw(G_IVIEW)[0]
+        d = differ(region("TITLES", "4-titles"), titles0)
+        check(v2 == 0 and d == 0,
+              f"View > Show as icons: g_iview {v1} -> {v2} (want 0), the title back ({d} pixels differ)")
+
+        bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
+        check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
+    finally:
+        emu.stop()
+        if not keep and not fails:
+            for f in os.listdir(shots):
+                os.remove(os.path.join(shots, f))
+    word = "FAIL" if fails else "PASS"
+    print(f"gem4xe-n6: {word} -- the desktop's menus {what}, {len(fails)} problem(s)")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
