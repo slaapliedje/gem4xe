@@ -303,6 +303,11 @@ def launch(tag="run", extra_args=(), vbxe=True, rapidus=True, memsize="1088K",
             raise BridgeError(
                 f"asked for a plain 65C816 and got a {mode}: this build has no "
                 "--cpu switch (tools/altirra/altirra-sdl-cpu-highbanks.patch)")
+    if os.environ.get("GEM4XE_WARP") == "1":
+        # Unthrottled (System > Warp Speed).  FRAME pauses the machine
+        # when its count runs out, so a gate sees the same frames; it
+        # just stops waiting out each one at 50 Hz.
+        b.ok("WARP on")
     if vbxe and not b.cmd("DEVICE_GET vbxe").get("ok"):
         b.ok(f"DEVICE_SET vbxe on version={VBXE_VERSION} base=d600")
     if verify_kernel(b) is False and require_real_rom:
