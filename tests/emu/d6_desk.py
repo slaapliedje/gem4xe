@@ -26,7 +26,12 @@ With --vbxe (make test-d6v, docs/6502.md step 6) the machine has a VBXE,
 which A6 takes as its screen: the same desktop at 640x240 in colour, the
 same steps and checks, clicked where that screen puts things (VBXE_AT).
 
-    python3 tests/emu/d6_desk.py [--vbxe] [--shot]
+With --axlon SIZE (make test-d6a) the machine is a 64K XL with an Axlon
+of SIZE and no PORTB banks -- a 600XL with a SUBCart, which the desktop
+never reached until the Axlon's switches put the ROM in for themselves
+(ax_sw, src/sys6502/bank6502.s): the same steps on the Axlon's banks.
+
+    python3 tests/emu/d6_desk.py [--vbxe | --axlon 4096K] [--shot]
 """
 import os
 import re
@@ -69,9 +74,14 @@ VBXE_AT = dict(
 )
 
 
+class NoDesktop(Exception):
+    """The desktop did not start: the rest is not worth waiting for."""
+
+
 def main(argv):
     keep = "--shot" in argv
     vbxe = "--vbxe" in argv
+    axlon = argv[argv.index("--axlon") + 1] if "--axlon" in argv else None
     if vbxe:
         globals().update(VBXE_AT)
     fails = []
@@ -82,7 +92,8 @@ def main(argv):
             fails.append(msg)
         return cond
 
-    what = "on a stock 6502" + (" with a VBXE" if vbxe else "")
+    what = "on a stock 6502" + (" with a VBXE" if vbxe else "") \
+        + (f" (64K) with an Axlon of {axlon}" if axlon else "")
     print(f"gem4xe-d6: the desktop {what}, and a program from it")
     text = open(MAP).read()
 
@@ -94,8 +105,13 @@ def main(argv):
     d1 = [e for e in Dos2(ATRImage.load(DISK)).entries() if e.in_use and e.nameable]
     want_info = f" {sum(e.count for e in d1) * 125} bytes used in {len(d1)} items.".encode()
 
-    emu = launch(tag="d6v" if vbxe else "d6", memsize="1088K", vbxe=vbxe, rapidus=False,
-                 extra_args=["--disk", DISK])
+    if axlon:       # a launch at another size boots no --disk: the bridge does
+        emu = launch(tag="d6a", memsize="64K", vbxe=False, rapidus=False,
+                     extra_args=["--axlonmemsize", axlon])
+        emu.bridge.boot(DISK)
+    else:
+        emu = launch(tag="d6v" if vbxe else "d6", memsize="1088K", vbxe=vbxe,
+                     rapidus=False, extra_args=["--disk", DISK])
     b = emu.bridge
 
     def w16(a):
@@ -157,13 +173,18 @@ def main(argv):
 
         stuck = b.peek(STATUS + 4)
         check(not stuck, f"nothing stopped at $0604 ({chr(stuck) if stuck else 'none'})")
+        if axlon:
+            check(b.peek(sym("b6_kind")) == ord("A") and b.peek(sym("b6_count")) == 255,
+                  f"on the Axlon's banks: kind {chr(b.peek(sym('b6_kind')))!r}, "
+                  f"{b.peek(sym('b6_count'))} banks, want 'A', 255")
         scr = chr(b.peek(STATUS + 5) or 32)
         check(scr == ("V" if vbxe else "A"), f"the screen A6 chose is {scr!r} at $0605 "
                                             f"(V the VBXE, A ANTIC)")
         rd, slot, nb = b.peek(STATUS + 13), b.peek(STATUS + 12), b.peek(sym("p6_nbanks"))
-        check(rd == 1 and nb == NBANKS and slot == ord("R"),
-              f"it was read (CIO {rd}) into {nb} banks and its first turn ended "
-              f"({chr(slot) if slot > 31 else slot}); want 1, {NBANKS}, 'R'")
+        if not check(rd == 1 and nb == NBANKS and slot == ord("R"),
+                     f"it was read (CIO {rd}) into {nb} banks and its first turn ended "
+                     f"({chr(slot) if slot > 31 else slot}); want 1, {NBANKS}, 'R'"):
+            raise NoDesktop                 # every step after needs it
         pin, ptab = w16(sym("proc_input")), w16(sym("proc_tab"))
         check(pin != ptab, f"the input owner is the desktop's process (${pin:04X}), not "
                            f"A6's (${ptab:04X})")
@@ -387,6 +408,8 @@ def main(argv):
               f"'{chr(b.peek(STATUS + 12))}', CIO {b.peek(STATUS + 13)})")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))
         check(bad == 0, f"no call refused (gem_bad {bad}, last opcode {op:#x})")
+        b.screenshot(SHOT)
+    except NoDesktop:
         b.screenshot(SHOT)
     finally:
         emu.stop()

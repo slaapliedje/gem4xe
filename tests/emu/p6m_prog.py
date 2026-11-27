@@ -33,10 +33,12 @@ loads it into three banks from the far heap.  The gate holds it to:
     system's far_fetch, which maps it its own way;
   - it ran to its end, nothing stopped at $0604, no call refused.
 
-With --axlon SIZE (an Axlon on a 130XE): the other way round.  An
-Axlon's register at $CFFF is decoded only with the ROM in, so there the
-system keeps it in, and A6 refuses the program -- status $CA, nothing
-run, PORTB bit 0 still set.
+With --axlon SIZE (an Axlon on a 130XE): the same, all of it, on the
+Axlon's banks.  Its register at $CFFF is heard with the ROM in, so every
+switch -- the system's, _pcall's and fa_*'s -- goes through ax_sw
+(src/sys6502/bank6502.s), which puts the ROM in for the one write: the
+ROM is out, and the link block gives ax_sw's address.  Until 0.17 a
+program of several banks was refused there, and with it the desktop.
 
     python3 tests/emu/p6m_prog.py [--shot] [--axlon 4096K]
 """
@@ -66,7 +68,6 @@ OPS = (1 + 100) + (2 * 2) + (3 - 1)
 COUNT = 2 + 11 + 3 + 1              # chain+mul3, down2/down3 x11, ops, name3
 NAME = b"BANK THREE"
 ALERT_DEF = 2
-P6_NOROM = 0xCA                     # src/a6_evt.c: several banks, on an Axlon
 
 
 def main(argv):
@@ -138,14 +139,7 @@ def main(argv):
             until(ord("E"))
         b.frames(60)
         if axlon:
-            rd, pb = b.peek(STATUS + 13), b.peek(PORTB)
             check(b.peek(sym("b6_kind")) == ord("A"), "the probe took the Axlon's banks")
-            check(rd == P6_NOROM and b.peek(STATUS + 0x40) == 0,
-                  f"A6 refused it: status ${rd:02X}, want ${P6_NOROM:02X}; nothing ran "
-                  f"(stage {b.peek(STATUS + 0x40)})")
-            check(pb & 1, f"the OS ROM is in: PORTB ${pb:02X}")
-            check(not b.peek(STATUS + 4), "nothing stopped at $0604")
-            return finish(fails, keep)
 
         stuck = b.peek(STATUS + 4)
         check(not stuck, f"no stub that must not run was reached "
@@ -168,9 +162,10 @@ def main(argv):
         idx = [b.peek(G6_LINK + 1 + k) for k in range(n)]
         check(idx == want_idx, f"the link block names their bank indexes {idx}, "
                                f"want {want_idx}")
-        lk = (w16(G6_LINK + 0x10), w16(G6_LINK + 0x12), b.peek(G6_LINK + 0x14))
-        want_lk = (sym("b6_cur"), sym("b6_portb"), b.peek(sym("b6_kind")))
-        check(lk == want_lk, f"...and b6_cur, b6_portb, the kind: "
+        lk = (w16(G6_LINK + 0x10), w16(G6_LINK + 0x12), b.peek(G6_LINK + 0x14),
+              w16(G6_LINK + 0x16))
+        want_lk = (sym("b6_cur"), sym("b6_portb"), b.peek(sym("b6_kind")), sym("ax_sw"))
+        check(lk == want_lk, f"...and b6_cur, b6_portb, the kind, ax_sw: "
                              f"{tuple(hex(x) for x in lk)}, want "
                              f"{tuple(hex(x) for x in want_lk)}")
 

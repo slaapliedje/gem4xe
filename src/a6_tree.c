@@ -263,13 +263,9 @@ static void ram_vectors(void)
 {
     volatile uint16_t *v = (volatile uint16_t *)0xFFFAu;
 
-    /* NOT ON AN AXLON: its register at $CFFF is decoded only while the
-     * ROM is in (AltirraSDL's mmu.cpp enables the layer with the kernel,
-     * as the hardware does), so with the ROM out no bank would switch.
-     * There the ROM stays in, and a program of several banks is refused
-     * (src/a6_evt.c). */
-    if (b6_kind == 'A')
-        return;
+    /* On an Axlon too: its register at $CFFF is heard with the ROM in
+     * (AltirraSDL's MMU), so every Axlon switch puts the ROM in for its
+     * one write (ax_sw, src/sys6502/bank6502.s). */
     cpu_sei();
     NMIEN = 0;
     PORTB = (uint8_t)(PORTB & 0xFEu);
@@ -296,10 +292,14 @@ static void ram_vectors(void)
         }
         KEYDEF = KEYDEF_AT;
     }
+    /* Every bank's PORTB with the ROM bit clear.  On an Axlon only main's
+     * is a PORTB value -- its banks are the register's numbers, up to 255,
+     * and the table holds 65 (src/sys6502/bank6502.s) -- and a byte
+     * counter to b6_count = 255 never ends. */
     {
-        uint8_t i;
+        uint8_t i, n = b6_kind == 'A' ? 0 : b6_count;
 
-        for (i = 0; i <= b6_count; i++)
+        for (i = 0; i <= n; i++)
             b6_portb[i] = (uint8_t)(b6_portb[i] & 0xFEu);
     }
     NMIEN = 0x40;

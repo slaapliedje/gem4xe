@@ -16,8 +16,9 @@
 ;;; gemappm6502.scm), outside the window it maps; a near buffer handed to
 ;;; them must be outside it too -- a program's data and stack are.  The
 ;;; ROM is out throughout (b6_portb's values have bit 0 clear), and an
-;;; interrupt puts PORTB back as it found it.  A program of several banks
-;;; is refused on an Axlon (src/a6_evt.c), so PORTB is the register.
+;;; interrupt puts PORTB back as it found it.  On an Axlon the two
+;;; switches, fa_sw1 and fa_sw2, are made calls to the system's ax_sw at
+;;; the start (src/app/crt6502m.s): the bank index is the register's value.
 ;;;
 ;;; In C every field went through fa_get: a frame, the 32-bit arithmetic,
 ;;; a memcpy -- ~800 cycles for two bytes, and the desktop reads its window
@@ -41,6 +42,7 @@
               .extern _Zp, g6_l_tab, g6_l_cur, g6_l_fbase
               .public fa_get, fa_put, fa_rd8, fa_rd16, fa_rd32
               .public fa_wr8, fa_wr16, fa_wr32
+              .public fa_sw1, fa_sw2          ; switches: crt6502m.s's axpatch
 
 PORTB:        .equ    0xd301
 
@@ -67,7 +69,7 @@ fmap:         lda     g6_l_tab
               clc
               adc     g6_l_fbase
               tay
-              lda     (_Zp+20),y
+fa_sw1:       lda     (_Zp+20),y      ; (an Axlon: TYA, JSR ax_sw, NOP)
               sta     PORTB
               lda     zp:_Zp+0,x
               sta     zp:_Zp+12
@@ -90,7 +92,7 @@ unmap:        pha
               sta     zp:_Zp+20
               lda     g6_l_tab+1
               sta     zp:_Zp+21
-              lda     (_Zp+20),y
+fa_sw2:       lda     (_Zp+20),y
               sta     PORTB
               pla
               rts

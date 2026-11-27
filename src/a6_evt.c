@@ -157,7 +157,6 @@ extern const char a6_file1[P6_FILELEN], a6_file2[P6_FILELEN];
 #define P6_MAX  0x4000u                 /* one bank */
 #define P6_NOMEM 0xC8                   /* no bank free: a6's own status */
 #define P6_BADF  0xC9                   /* not a .G6A */
-#define P6_NOROM 0xCA                   /* several banks, on an Axlon */
 #define G6_BANKS 15                     /* the link block's g6_banks */
 #define G6_LINK  0xC000u
 static SECTION("bounce") uint8_t p6_buf[256];
@@ -166,6 +165,7 @@ extern uint8_t cio_bank;                /* src/sys6502/cio6502.s */
  * (src/sys6502/far6502.s): 0, or 1 if they were bad */
 extern uint8_t g6z_far(uint32_t piece, uint16_t packed, uint16_t count);
 extern uint8_t b6_cur, b6_kind, b6_portb[];
+extern void ax_sw(void);                /* src/sys6502/bank6502.s */
 extern const uint8_t b6_far_base;       /* src/sys6502/farmem6502.c */
 /* the program's banks, for the gate to read (test-p6m): in page 5, as
  * A6's other records are -- HiRam has not 61 bytes */
@@ -195,7 +195,7 @@ static uint8_t prog_get(int16_t io, uint32_t dst, uint16_t n)
     uint8_t st;
 
     while (n) {
-        if (dst >= 0x10000ul && b6_kind != 'A'
+        if (dst >= 0x10000ul
             && dos.kind != DOS_SDX && dos.kind != DOS_SPARTA) {
             uint16_t off = (uint16_t)dst & 0x3FFFu;
 
@@ -203,7 +203,9 @@ static uint8_t prog_get(int16_t io, uint32_t dst, uint16_t n)
             if (k > n)
                 k = n;
             got = 0;
-            cio_bank = (uint8_t)(b6_portb[far_piece(dst)] | 1);
+            cio_bank = b6_kind == 'A'      /* an Axlon: the bank's number */
+                ? far_piece(dst)
+                : (uint8_t)(b6_portb[far_piece(dst)] | 1);
             st = cio_read(io, (void *)(0x4000u + off), k, &got);
             cio_bank = 0;
             if (got != k)
@@ -278,8 +280,6 @@ static uint8_t prog_read(int16_t io, uint8_t own)
     packed = p6_buf[5];
     if (p6_buf[2] != 2 || !n || n > G6_BANKS || np > 2 || packed > 1)
         return P6_BADF;
-    if (b6_kind == 'A')
-        return P6_NOROM;                /* the ROM stays in there: a6_tree.c */
     got = 0;
     k = (uint8_t)(np * 4u + n * (packed ? 4u : 2u));
     st = cio_read(io, p6_buf, k, &got);
@@ -350,6 +350,8 @@ static uint8_t prog_read(int16_t io, uint8_t own)
         lb[0x13] = (uint8_t)((uint16_t)b6_portb >> 8);
         lb[0x14] = b6_kind;
         lb[0x15] = b6_far_base;         /* src/app/farm6502.s */
+        lb[0x16] = (uint8_t)(uint16_t)ax_sw;    /* an Axlon's switch */
+        lb[0x17] = (uint8_t)((uint16_t)ax_sw >> 8);
     }
     return CIO_OK;
 }

@@ -392,7 +392,7 @@ build/a6m-boot.atr: build/a6.xex build/p6mprog.g6a build/p6prog.rsc
 	    --add build/p6prog.rsc P6PROG.RSC
 test-p6m: build/a6m-boot.atr
 	python3 tests/emu/p6m_prog.py
-# ...and refused on an Axlon, whose $CFFF needs the ROM in
+# ...and on an Axlon, whose $CFFF needs the ROM in for each switch (ax_sw)
 test-p6ma: build/a6m-boot.atr
 	python3 tests/emu/p6m_prog.py --axlon 4096K
 
@@ -446,6 +446,10 @@ test-d6: build/a6d-boot.atr build/a6d-desk.atr
 # step 6: the same desktop on a VBXE machine, 640x240 in colour
 test-d6v: build/a6d-boot.atr build/a6d-desk.atr
 	python3 tests/emu/d6_desk.py --vbxe
+
+# and on a 64K XL with a 4 MB Axlon and nothing else: a 600XL with a SUBCart
+test-d6a: build/a6d-boot.atr build/a6d-desk.atr
+	python3 tests/emu/d6_desk.py --axlon 4096K
 
 # the desktop's menus: a choice reaches the desktop and it acts on it
 test-n6: build/a6d-boot.atr build/a6d-desk.atr

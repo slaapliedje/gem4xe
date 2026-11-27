@@ -38,7 +38,7 @@
               .public b6_cur, b6_count, b6_portb, bc_t, b6_kind, b6_sites
               .public b6sw_call, b6sw_ret, b6sw_sel, b6sw_main
               .public b6init_lo, b6init_hi, b6_stop
-              .public bc_a, _bcall_go
+              .public bc_a, _bcall_go, ax_sw
 
 PORTB:        .equ    0xd301
 AXLON:        .equ    0xcfff          ; an Axlon's bank register (write only)
@@ -109,6 +109,37 @@ b6sw_ret:        lda     b6_portb,x
               lda     bc_a
               rts                     ; to the veneer's caller
 bc_jmp:       jmp     (bc_t)
+
+;;; ax_sw -- an Axlon's bank A, mapped (patch's sites call it, and so does
+;;; a program's _pcall and fa_* -- src/app/crt6502m.s).  The register at
+;;; $CFFF is heard with the OS ROM in -- AltirraSDL's MMU enables it with
+;;; the kernel, and what a given board does with the ROM out is not known
+;;; -- so the ROM is put in for the one write and PORTB put back as it
+;;; was: the system runs with the ROM out on an Axlon too, as on PORTB's
+;;; banks.  Keeps A, X, Y and the flags.  An interrupt in the gap goes to
+;;; the ROM's handler, which is where g6_nmi and g6_irq send it anyway
+;;; (src/sys6502/gate6502.s); one that switches a bank itself does it
+;;; through here, on the stack, and puts b6_cur's back.  Resident, below
+;;; the window and outside the ROM, as every caller's return is not.
+ax_sw:        php
+              sei
+              pha                     ; the bank
+              txa
+              pha
+              tsx                     ; X at $0101,x, the bank at $0102,x
+              lda     PORTB
+              pha                     ; PORTB as it was
+              ora     #1
+              sta     PORTB           ; the ROM in: the register heard
+              lda     0x0102,x
+              sta     AXLON
+              pla
+              sta     PORTB
+              pla
+              tax
+              pla
+              plp
+              rts
 
 ;;; THE LOAD-TIME CODE -- the probe and the patch -- is in section b6init,
 ;;; which every link file puts in Low, below the window: a PORTB value tried
@@ -247,7 +278,7 @@ axprobe:      ldx     #255
 ;;; site (b6_sites, at the end of this file) is
 ;;;     lda b6_portb,x   (or ,y)     BD/B9 lo hi
 ;;;     sta PORTB                    8D 01 D3
-;;; and becomes TXA (or TYA), NOP, NOP, STA AXLON: the bank's number IS
+;;; and becomes TXA (or TYA), JSR ax_sw, NOP, NOP: the bank's number IS
 ;;; the register's value, and PORTB stays main's.  A site that is not that
 ;;; stops the load with a word on the screen, as a missing bank does.
 patch:        lda     #.byte0 b6_sites
@@ -284,17 +315,20 @@ patch:        lda     #.byte0 b6_sites
               bne     badsite
               ldy     #0
               txa
-              sta     (bc_t),y
-              lda     #0xea           ; NOP
+              sta     (bc_t),y        ; TXA / TYA
               iny
-              sta     (bc_t),y
-              iny
-              sta     (bc_t),y
-              ldy     #4
-              lda     #.byte0 AXLON
+              lda     #0x20           ; JSR ax_sw
               sta     (bc_t),y
               iny
-              lda     #.byte1 AXLON
+              lda     #.byte0 ax_sw
+              sta     (bc_t),y
+              iny
+              lda     #.byte1 ax_sw
+              sta     (bc_t),y
+              iny
+              lda     #0xea           ; NOP, NOP
+              sta     (bc_t),y
+              iny
               sta     (bc_t),y
               lda     bc_p
               clc

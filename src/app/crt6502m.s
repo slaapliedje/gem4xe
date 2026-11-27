@@ -23,9 +23,14 @@
 ;;;   $C014  g6_l_kind  'P' PORTB's banks, 'A' an Axlon's ($CFFF)
 ;;;   $C015  g6_l_fbase b6_far_base: far bank k piece p is bank index
 ;;;                     b6_far_base + (k-1)*4 + p (src/app/farm6502.s)
+;;;   $C016  g6_l_axsw  the address of ax_sw, an Axlon's switch: bank A
+;;;                     mapped, everything kept (src/sys6502/bank6502.s)
 ;;;
 ;;; start writes the two addresses into _pcall's own instructions, so a
-;;; cross-bank call costs no indirection.  It keeps the system's _Vsp in
+;;; cross-bank call costs no indirection; on an Axlon it also turns each
+;;; switch here and in farm6502.s -- a table load then STA PORTB -- into
+;;; TXA/TYA, JSR ax_sw, as the system patches its own (src/sys6502/
+;;; bank6502.s): the bank index IS the register's value.  It keeps the system's _Vsp in
 ;;; g6_sysvsp and runs on its own C stack, as crt6502.s does
 ;;; (gemabi6502.s swaps them around each call into the system).
 ;;;
@@ -42,16 +47,17 @@
 ;;; is in it (an interrupt is the system's; a process switch happens only
 ;;; inside a gate call), and a nested call is done with pc_t and pc_a
 ;;; before it makes its own.  ROM is out throughout: PORTB's values in
-;;; b6_portb have bit 0 clear, and on an Axlon PORTB is not written.
+;;; b6_portb have bit 0 clear, and on an Axlon ax_sw puts it back out.
 ;;; ---------------------------------------------------------------------------
               .rtmodel version, "1"
               .rtmodel cpu, "*"
               .extern _Zp, _Vsp, main, __initialize_sections
               .public __program_root_section, g6_sysvsp, _pcall
               .public g6_banks, g6_l_cur, g6_l_tab, g6_l_kind, g6_l_fbase
+              .public g6_l_axsw
+              .extern fa_sw1, fa_sw2
 
 PORTB:        .equ    0xd301
-AXLON:        .equ    0xcfff
 
               .section data_init_table
               .section cstack
@@ -62,6 +68,7 @@ g6_l_cur:     .space  2
 g6_l_tab:     .space  2
 g6_l_kind:    .space  1
 g6_l_fbase:   .space  1
+g6_l_axsw:    .space  2
 
 ;;; the header and start, one section fixed at $4000 in bank 1: a `root`
 ;;; section in a memory that is scattered to its store crashes the 5.18
@@ -85,11 +92,24 @@ start:        lda     zp:_Vsp+1       ; the system's: g6_sysvsp is bss,
               sta     pc_cur2+2
               lda     g6_l_tab
               sta     pc_tab1+1
-              sta     pc_tab2+1
               lda     g6_l_tab+1
               sta     pc_tab1+2
-              sta     pc_tab2+2
-              lda     #.byte0 (.sectionEnd cstack)
+              lda     g6_l_kind       ; an Axlon: every switch through
+              cmp     #'A'            ; ax_sw
+              bne     10$
+              ldx     #0x8a           ; _pcall's: LDA tab,X / STA PORTB
+              lda     #.byte0 pc_tab1
+              ldy     #.byte1 pc_tab1
+              jsr     axpatch
+              ldx     #0x98           ; fa_*'s: LDA (zp),Y / STA PORTB
+              lda     #.byte0 fa_sw1
+              ldy     #.byte1 fa_sw1
+              jsr     axpatch
+              ldx     #0x98
+              lda     #.byte0 fa_sw2
+              ldy     #.byte1 fa_sw2
+              jsr     axpatch
+10$:          lda     #.byte0 (.sectionEnd cstack)
               sta     zp:_Vsp
               lda     #.byte1 (.sectionEnd cstack)
               sta     zp:_Vsp+1
@@ -145,15 +165,37 @@ pc_cur1:      lda     0xffff          ; b6_cur: the caller's, kept on the
 pc_go:        jmp     (pc_t)
 pc_map:
 pc_cur2:      stx     0xffff          ; b6_cur
-              lda     g6_l_kind
-              cmp     #'A'
-              beq     pc_ax
 pc_tab1:      lda     0xffff,x        ; b6_portb: PORTB, the ROM bit clear
-              sta     PORTB
+              sta     PORTB           ; (an Axlon: TXA, JSR ax_sw, NOPs)
               rts
-pc_ax:
-pc_tab2:      lda     0xffff,x        ; an Axlon's bank number
-              sta     AXLON
+
+;;; axpatch -- the switch at Y:A, a table load (3 bytes for LDA abs,X; 2
+;;; for LDA (zp),Y) then STA PORTB, made X (TXA or TYA), JSR ax_sw, and
+;;; NOPs to the end.  In the shared RAM, as what it writes is.
+axpatch:      sta     zp:_Zp+20       ; _Zp20-21: a call's to destroy
+              sty     zp:_Zp+21
+              txa
+              ldy     #0
+              jsr     axput
+              lda     #0x20           ; JSR
+              jsr     axput
+              lda     g6_l_axsw
+              jsr     axput
+              lda     g6_l_axsw+1
+              jsr     axput
+              lda     #5              ; LDA (zp),Y is 2 bytes: 5 in all
+              cpx     #0x98
+              beq     20$
+              lda     #6              ; LDA abs,X is 3: 6 in all
+20$:          sta     pc_a
+30$:          cpy     pc_a
+              beq     40$
+              lda     #0xea           ; NOP
+              jsr     axput
+              jmp     30$
+40$:          rts
+axput:        sta     (_Zp+20),y      ; byte A at the site + Y, Y advanced
+              iny
               rts
 
               .section zdata, bss

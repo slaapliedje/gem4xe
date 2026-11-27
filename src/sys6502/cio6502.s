@@ -25,11 +25,12 @@
 
               .public cio_call, dsk_call, cio_bank
               .public b6sw_cio            ; bank switches: bank6502.s's patch
-              .extern _Zp, b6_cur, b6_portb
+              .extern _Zp, b6_cur, b6_portb, b6_kind
 
 CIOV:         .equ    0xe456
 SIOV:         .equ    0xe459
 PORTB:        .equ    0xd301
+AXLON:        .equ    0xcfff
 
               .section code
 cio_call:     lda     zp:_Zp+0        ; 1..7
@@ -41,7 +42,14 @@ cio_call:     lda     zp:_Zp+0        ; 1..7
               jsr     rom_in
               lda     cio_bank        ; a bank for the call's buffer?
               beq     1$
+              lda     b6_kind
+              cmp     #'A'
+              beq     2$
+              lda     cio_bank
               sta     PORTB           ; (its ROM bit set by the caller)
+              jmp     1$
+2$:           lda     cio_bank        ; an Axlon's bank number: the ROM
+              sta     AXLON           ; is in, so the register hears it
 1$:           jsr     CIOV
               jmp     back
 
@@ -55,7 +63,7 @@ b6sw_cio:        lda     b6_portb,x
               sta     PORTB
               lda     cio_pb          ; PORTB as it was: the ROM out again
               sta     PORTB           ; where it was out (on an Axlon the
-              rts                     ; patched store above was to $CFFF)
+              rts                     ; patched store above called ax_sw)
 ;;; the OS ROM in for the call: on a PORTB machine the system runs with it
 ;;; out (step 5c-1, src/sys6502/gate6502.s)
 rom_in:       lda     PORTB
@@ -66,4 +74,4 @@ rom_in:       lda     PORTB
 
               .section zdata, bss
 cio_pb:       .space  1               ; PORTB before the call
-cio_bank:     .space  1               ; 0, or PORTB for the call (a6_evt.c)
+cio_bank:     .space  1               ; 0, or PORTB (an Axlon: its bank) for the call (a6_evt.c)
