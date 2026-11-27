@@ -473,24 +473,29 @@ build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a build/cpanel6.g6a build/cp
 	    --add build/cpanel.rsc CPANEL.RSC --add build/general.rsc GENERAL.RSC \
 	    --add build/color.rsc COLOR.RSC
 
-# ---- the release pair: the same two floppies, starting by themselves ----
+# ---- the release floppy: G4DOS and the 6502 system, starting by itself ----
 # A gate pokes the go ($0606 = 1, src/a6_aes.c) and the desktop ($060C =
 # 2) in from the bridge; on a real machine nobody does, so the release
 # A6 carries them as one more load segment, $0606-$060C, ahead of its
-# RUNAD (the last 6 bytes).  The desktop floppy is the gates' own.
+# RUNAD (the last 6 bytes).  It goes on an SDFS floppy as GEM.COM, which
+# G4DOS boots (tools/mkfloppy.py --g6502), with the desktop beside it.
 build/a6auto.xex: build/a6.xex
 	python3 -c "import sys; d=open(sys.argv[1],'rb').read(); \
 	  assert d[-6:-2]==bytes([0xE0,2,0xE1,2]), 'no RUNAD at the end'; \
 	  open(sys.argv[2],'wb').write(d[:-6]+bytes([6,6,0x0C,6,1,0,0,0,0,0,2])+d[-6:])" $< $@
-build/gem6502-boot.atr: build/a6auto.xex build/desktop.rsc build/deskicon.rsc build/prefs.rsc
-	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+build/gem6502.atr: build/a6auto.xex build/desktop.rsc build/deskicon.rsc build/prefs.rsc \
+                   build/desk6.g6a build/p6mprog.g6a build/cpanel6.g6a build/cpanel.rsc \
+                   build/general.rsc build/color.rsc build/fdos.elf build/fdboot.elf \
+                   tools/mkfloppy.py tools/atr.py
 	@rm -f $@
-	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
-	    --add build/desktop.rsc DESKTOP.RSC --add build/deskicon.rsc DESKICON.RSC --add build/prefs.rsc PREFS.RSC
-build/gem6502-desk.atr: build/a6d-desk.atr
-	cp $< $@
-release6: build/gem6502-boot.atr build/gem6502-desk.atr
+	python3 tools/mkfloppy.py $@ --g6502
+release6: build/gem6502.atr
 .PHONY: release6
+
+# that floppy, booted with nothing poked: ANTIC and VBXE at 1088K, and a
+# 64K XL with a 4 MB Axlon -- what a tester's machine does with it
+test-g6: build/gem6502.atr
+	python3 tests/emu/g6_floppy.py
 
 # ---- step 5f: the control panel as a 6502 program --------------------------
 # src/apps/cpanel.c with General and Color built in (src/apps/cpanel6.c is

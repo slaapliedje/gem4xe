@@ -60,6 +60,9 @@ RUNAD:        .equ    0x02e0
 INITAD:       .equ    0x02e2
 COLDSV:       .equ    0xe477
 PORTB:        .equ    0xd301
+LMARGN:       .equ    0x0052          ; E:'s margins and cursor column
+RMARGN:       .equ    0x0053
+COLCRS:       .equ    0x0055
 BASICF:       .equ    0x03f8          ; the XL OS's: non-zero, BASIC is off
 CARTFG:       .equ    0xbffd          ; cartridge A's option byte
 
@@ -224,12 +227,12 @@ fd_install:   lda     PORTB
               sta     fd_wslot        ; nothing being written
               ldx     #.byte0 fd_boot
               ldy     #.byte1 fd_boot
-              lda     WARMST
+              lda     dp:WARMST
               beq     50$
               ldx     #.byte0 fd_dos
               ldy     #.byte1 fd_dos
-50$:          stx     DOSVEC
-              sty     DOSVEC+1
+50$:          stx     dp:DOSVEC
+              sty     dp:DOSVEC+1
               rts
 
 ;;; ---------------------------------------------------------------------------
@@ -2268,9 +2271,9 @@ fd_exec:      lda     #0xff           ; the shell's: one name, none after it
 ld_open:      stx     ICBAL+IOCB1
               sty     ICBAH+IOCB1
               lda     #.byte0 fd_dos
-              sta     DOSVEC
+              sta     dp:DOSVEC
               lda     #.byte1 fd_dos
-              sta     DOSVEC+1
+              sta     dp:DOSVEC+1
               lda     #4              ; to read (AUX2 is nothing to this DOS)
               sta     ICAX1+IOCB1
               lda     #3              ; OPEN
@@ -2340,7 +2343,12 @@ ld_go:        lda     ICBAL+IOCB1     ; the name, on the screen: PUT RECORD
 30$:          lda     #7
               jsr     ld_cio
               bmi     ld_bad
-              ldx     #.byte0 msg_dot
+              lda     dp:COLCRS          ; the dots never wrap: back to the
+              cmp     dp:RMARGN          ; left margin at the right one, as
+              bcc     40$             ; the editor would INSERT a line to
+              lda     dp:LMARGN          ; wrap, moving the screen's bytes
+              sta     dp:COLCRS          ; under a program loaded beneath it
+40$:          ldx     #.byte0 msg_dot
               ldy     #.byte1 msg_dot
               lda     #1
               jsr     fd_print

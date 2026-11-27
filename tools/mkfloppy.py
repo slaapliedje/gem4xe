@@ -42,7 +42,7 @@ Both stay double-sided, which the system alone no longer needs, so that
 the pair is one geometry: the XF551, every SIO emulator and every FAT
 loader read it, and SDX mounts it.
 
-  python3 tools/mkfloppy.py <out.atr> [--apps | --qed] [--add FILE PATH]...
+  python3 tools/mkfloppy.py <out.atr> [--apps | --qed | --g6502] [--add FILE PATH]...
   python3 tools/mkfloppy.py --batch system|apps <out.bat>
 
 The file tables and the batch files are tools/mkcf.py's own, so the pair
@@ -154,6 +154,28 @@ def build_app(out, program, adds=(), root=None, volname=None):
                  shell=False)
 
 
+# THE 6502 FLOPPY: G4DOS, and the 6502 system as GEM.COM -- A6 with its
+# go and the desktop in one more load segment (build/a6auto.xex,
+# tools/bsp6502/rules.mk) -- beside the desktop, the Control Panel and
+# their resources, all in the root, where A6 looks on D1: first.  One
+# disk: SDFS's 1440 sectors take what took two MyDOS floppies, and the
+# MyDOS that booted those is not gem4xe's to give away.
+G6502 = [("build/a6auto.xex", "GEM.COM"),
+         ("build/desktop.rsc", "DESKTOP.RSC"),
+         ("build/deskicon.rsc", "DESKICON.RSC"),
+         ("build/prefs.rsc", "PREFS.RSC"),
+         ("build/desk6.g6a", "P6PROG.G6A"),
+         ("build/p6mprog.g6a", "P6M.G6A"),
+         ("build/cpanel6.g6a", "CPANEL.G6A"),
+         ("build/cpanel.rsc", "CPANEL.RSC"),
+         ("build/general.rsc", "GENERAL.RSC"),
+         ("build/color.rsc", "COLOR.RSC")]
+
+
+def build_6502(out, root=None):
+    return build(out, (), None, root, G6502, [], (), "GEM6502", shell=False)
+
+
 def build_apps(out, root=None):
     return build(out, (), None, root, mkcf.APPS, mkcf.INSTALL_APPS,
                  mkcf.DIRS, "GEMAPPS", fdos=False)
@@ -177,6 +199,8 @@ def main(argv=None):
     ap.add_argument("out")
     ap.add_argument("--apps", action="store_true",
                     help="the applications floppy rather than the system's")
+    ap.add_argument("--g6502", action="store_true",
+                    help="the 6502 floppy (G6502): G4DOS and the 6502 system")
     ap.add_argument("--qed", action="store_true",
                     help="QED's floppy (mkcf.QED)")
     ap.add_argument("--app", metavar="PROGRAM",
@@ -194,6 +218,8 @@ def main(argv=None):
         return 0
     if a.app:
         build_app(a.out, a.app, a.add)
+    elif a.g6502:
+        build_6502(a.out)
     elif a.qed:
         build_qed(a.out)
     elif a.apps:
