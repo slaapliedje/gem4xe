@@ -52,7 +52,9 @@ OBJ_SIZE, OB_SPEC = 24, 12              # an OBJECT on the 6502
 # where the screen puts things (screen pixels; found from screenshots)
 AT = dict(W=320, H=192, DESK_T=(14, 3), ABOUT=(30, 13), VIEW_T=(100, 3),
           ICONS=(110, 11), TEXT=(110, 17), PARK=(200, 120),
-          TITLES=(0, 0, 180, 8), MIDDLE=(60, 60, 260, 140), OFF=(8, 24))
+          TITLES=(0, 0, 180, 8), MIDDLE=(60, 60, 260, 140), OFF=(8, 24),
+          D1=(34, 26), D2=(114, 26), FILE_T=(52, 3), OPEN=(62, 13),
+          T_BACK=(108, 38, 152, 43), T_FRONT=(108, 50, 152, 55), DIGIT=(6, 12))
 VBXE_AT = dict(W=640, H=240, DESK_T=(30, 4), ABOUT=(50, 15), VIEW_T=(135, 4),
                ICONS=(150, 15), TEXT=(150, 23), PARK=(400, 150),
                TITLES=(0, 0, 360, 10), MIDDLE=(120, 70, 520, 170), OFF=(16, 0))
@@ -245,6 +247,29 @@ def main(argv):
         d = differ(region("TITLES", "4-titles"), titles0)
         check(v2 == 0 and d == 0,
               f"View > Show as icons: g_iview {v1} -> {v2} (want 0), the title back ({d} pixels differ)")
+
+        # Two windows: D1's, then D2's in front of it
+        for n, icon in enumerate((at["D1"], at["D2"]) if not vbxe else ()):
+            move(icon)
+            click()                     # selected, then File > Open
+            b.frames(100)
+            before = region("MIDDLE", f"5-before{n}")
+            choose(at["FILE_T"], at["OPEN"],
+                   lambda: differ(region("MIDDLE", "5-poll"), before) > 2000)
+        if not vbxe:
+            # The back window's title must be READABLE: its text the
+            # same pixels as the front one's, but for the drive's digit.
+            # Dimmed (DISABLED: every other pixel lost), ANTIC's 6x6 face
+            # was noise -- seen first on a real 600XL.
+            back, front = region("T_BACK", "5-windows"), region("T_FRONT", "5-windows")
+            w = at["T_BACK"][2] - at["T_BACK"][0]
+            lo, hi = at["DIGIT"]
+            d = sum(1 for i, (p, q) in enumerate(zip(back, front))
+                    if p != q and not lo <= i % w < hi)
+            ink = sum(1 for p in back if p < 128)
+            check(d == 0 and ink > 40,
+                  f"two windows: the back one's title is drawn whole, like the front's "
+                  f"({d} pixels differ outside the digit, {ink} dark)")
 
         print(f"  (clicks it took, per choice: {tries})")
         bad, op = w16(sym("gem_bad")), w16(sym("gem_badop"))

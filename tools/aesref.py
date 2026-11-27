@@ -2742,6 +2742,11 @@ class AES:
         else:
             pwin.w_full = pt.copy()
 
+    def w_dimmed(self):
+        """wind.c's W_DIMMED: an untopped title is dimmed only in a face
+        of 8 lines or more; under that (ANTIC's 6x6) it is only hollow."""
+        return DISABLED if self.gl_hchar >= 8 else NORMAL
+
     def w_adjust(self, parent, obj, x, y, w, h):
         o = self.W_ACTIVE[obj]
         o.ob_x, o.ob_y, o.ob_width, o.ob_height = x, y, w, h
@@ -2980,7 +2985,7 @@ class AES:
                 tempw -= 2 * ADJ3DSTD
                 self.w_adjust(W_TITLE, W_NAME, t.x + ADJ3DSTD, t.y + ADJ3DSTD,
                               tempw, hb)
-                W[W_NAME].ob_state = NORMAL if istop else DISABLED
+                W[W_NAME].ob_state = NORMAL if istop else self.w_dimmed()
             t.x = 0
             t.y += hb3
             t.h -= hb3
@@ -3069,7 +3074,7 @@ class AES:
                               self.gl_wbox, self.gl_hbox)
             if kind & NAME:
                 self.w_adjust(W_TITLE, W_NAME, t.x, t.y, tempw, self.gl_hbox)
-                W[W_NAME].ob_state = NORMAL if istop else DISABLED
+                W[W_NAME].ob_state = NORMAL if istop else self.w_dimmed()
                 self.gl_aname.color = TOPPED_COLOR if istop else UNTOPPED_COLOR
             t.x = 0
             t.y += self.gl_hbox - 1

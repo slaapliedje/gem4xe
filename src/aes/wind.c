@@ -43,6 +43,11 @@
 
 #define TOPPED_COLOR    0x11a1      /* opaque, fill pattern 2, fill colour 1 */
 #define UNTOPPED_COLOR  0x1100      /* transparent, hollow, fill colour 0 */
+/* An untopped title is dimmed with DISABLED, which loses every other
+ * pixel (objc.c, IP_4PATT).  A face under 8 lines -- ANTIC's 6x6 -- is
+ * unreadable then, so there the title is only hollow, as TOS 1 and 2
+ * showed it; the 8-line face keeps the dimming. */
+#define W_DIMMED        (gl_hchar >= 8 ? DISABLED : NORMAL)
 #define DESK_SPEC       0x00001143L /* the desktop: a green, pattern 4 G_BOX */
 
 /* the frame's object types and colour words, one per W_* element */
@@ -743,7 +748,7 @@ static void w3_bldactive(const WINDOW *pw, WORD istop, WORD kind, GRECT t)
             tempw = (WORD)(tempw - 2 * ADJ3DSTD);
             w_adjust(W_TITLE, W_NAME, (WORD)(t.g_x + ADJ3DSTD),
                      (WORD)(t.g_y + ADJ3DSTD), tempw, gl_hbox);
-            OB_SET(W_ACTIVE, W_NAME, ob_state, istop ? NORMAL : DISABLED);
+            OB_SET(W_ACTIVE, W_NAME, ob_state, istop ? NORMAL : W_DIMMED);
         }
         t.g_x = 0;
         t.g_y = (WORD)(t.g_y + W3_HBOX);
@@ -871,7 +876,7 @@ void w_bldactive(WORD w_handle)
         }
         if (kind & NAME) {
             w_adjust(W_TITLE, W_NAME, t.g_x, t.g_y, tempw, gl_hbox);
-            OB_SET(W_ACTIVE, W_NAME, ob_state, istop ? NORMAL : DISABLED);
+            OB_SET(W_ACTIVE, W_NAME, ob_state, istop ? NORMAL : W_DIMMED);
             gl_aname.te_color = istop ? TOPPED_COLOR : UNTOPPED_COLOR;
             /* WITH A NAME THE BAR IS TILED: closer, name and fuller side
              * by side, each drawing every pixel of its own box in
