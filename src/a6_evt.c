@@ -419,6 +419,13 @@ static uint8_t prog_start(void)
         return st;
     }
     g6_own = own;
+    /* THE ARROW, read and before it runs: the hourglass the desktop put
+     * up to start it is one form for the one process, and stayed over
+     * the program for as long as it ran (the Control Panel on the 600XL,
+     * 2026-11-27).  The 65C816's shell does the same, src/aes/shel.c;
+     * here, after the load, so the hourglass covers the disk's seconds,
+     * and before its first turn, so a form it sets itself is its own. */
+    gr_mouse(ARROW, 0);
     p6_ven[5] = far_piece(p6_slot);     /* its veneer's bank byte */
     p = proc_new(prog_queue, ACC_MSGS);
     if (!p)

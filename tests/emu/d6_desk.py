@@ -20,7 +20,10 @@ D1:.  The gate holds it to:
     Fsnext into the far DTA and the FNODEs and was counted from there;
   - a desktop that does not load is read again until it does (D2: empty
     at the go, then the disk put in), and an application that does not
-    load gives way to the desktop.
+    load gives way to the desktop;
+  - the pointer is the arrow once the Control Panel is up: the VDI's form
+    (vdi.c's cur_xhot, cur_yhot, cur_data), not the hourglass the desktop
+    put up to start it, which stayed over the panel on the 600XL.
 
 With --vbxe (make test-d6v, docs/6502.md step 6) the machine has a VBXE,
 which A6 takes as its screen: the same desktop at 640x240 in colour, the
@@ -99,6 +102,11 @@ def main(argv):
 
     def sym(n, t=None):
         return int(re.search(rf"^\s+{n} = ([0-9a-f]+)\s*$", t or text, re.M).group(1), 16)
+
+    def static(n):                      # a file's static: placed, not listed
+        return int(re.search(rf"^{n} in section 'zdata'  placed at address "
+                             rf"([0-9a-f]+)-", text, re.M).group(1), 16)
+    ARROW_DATA1 = 0x4000                # tools/gemdata.py: ARROW's second row
     dtext = open(DMAP).read()
     ctext = open(CMAP).read()
 
@@ -332,6 +340,14 @@ def main(argv):
         check(b.peek(STATUS + 0x3E) == starts3 + 1 and runs == 1 and rows == 2,
               f"CPANEL.G6A ran from the desktop: its window up ({runs}), listing {rows} "
               f"modules; want 1, 2 (General, Color)")
+        # THE ARROW OVER IT (a6_evt.c, prog_start): the hot spot and the
+        # second row of the form the VDI has, ARROW's (0, 0) and $4000 --
+        # the HOURGLASS's are (8, 8) and $7FFE
+        hot = (w16(static("cur_xhot")), w16(static("cur_yhot")))
+        row1 = w16(static("cur_data") + 2)
+        check(hot == (0, 0) and row1 == ARROW_DATA1,
+              f"the pointer over the panel is the arrow: hot spot {hot}, row 1 "
+              f"${row1:04X}; want (0, 0), ${ARROW_DATA1:04X} (the hourglass: (8, 8), $7FFE)")
         # SELECTED, THEN RETURN, not a double-click: a press that lands
         # while the panel is between its waits -- its clock's tick, every
         # second -- is counted as one click, as GEM counts it, and one run

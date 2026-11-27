@@ -242,8 +242,11 @@ $(B6)/a6bank/%.o: $(B6)/pre/%.o $(B6)/a6.idx tools/bsp6502/bankasm.py tools/bsp6
 	python3 tools/bsp6502/bankcheck.py --asm $(B6)/a6asm/$*.b.s $(A6_BANKS6) --index $(B6)/a6.idx
 	$(AS6) --core 6502 $(B6)/a6asm/$*.b.s -o $@
 
+# exit=simplified, as the 65C816's system links: A6 never exits, and the
+# library's atexit table was 64 bytes of HiRam -- the room the SIO
+# clock's cache needed (src/sys/clock.c, 2026-11-27)
 build/a6.elf: $(A6_RES) $(A6_BANK) tools/bsp6502/a6.scm tools/bsp6502/bankcheck.py
-	$(LN6) tools/bsp6502/a6.scm $(A6_RES) $(A6_BANK) \
+	$(LN6) tools/bsp6502/a6.scm $(A6_RES) $(A6_BANK) --rtattr exit=simplified \
 	    -o $@ $(CAL6)/lib/clib-6502.a --verbose --list-file build/a6.map > /dev/null
 	python3 tools/bsp6502/bankcheck.py build/a6.map --elf $@ || { rm -f $@; exit 1; }
 
@@ -469,6 +472,25 @@ build/a6d-desk.atr: build/desk6.g6a build/p6mprog.g6a build/cpanel6.g6a build/cp
 	    --add build/p6mprog.g6a P6M.G6A --add build/cpanel6.g6a CPANEL.G6A \
 	    --add build/cpanel.rsc CPANEL.RSC --add build/general.rsc GENERAL.RSC \
 	    --add build/color.rsc COLOR.RSC
+
+# ---- the release pair: the same two floppies, starting by themselves ----
+# A gate pokes the go ($0606 = 1, src/a6_aes.c) and the desktop ($060C =
+# 2) in from the bridge; on a real machine nobody does, so the release
+# A6 carries them as one more load segment, $0606-$060C, ahead of its
+# RUNAD (the last 6 bytes).  The desktop floppy is the gates' own.
+build/a6auto.xex: build/a6.xex
+	python3 -c "import sys; d=open(sys.argv[1],'rb').read(); \
+	  assert d[-6:-2]==bytes([0xE0,2,0xE1,2]), 'no RUNAD at the end'; \
+	  open(sys.argv[2],'wb').write(d[:-6]+bytes([6,6,0x0C,6,1,0,0,0,0,0,2])+d[-6:])" $< $@
+build/gem6502-boot.atr: build/a6auto.xex build/desktop.rsc build/deskicon.rsc build/prefs.rsc
+	@test -n "$(SRC_MYDOS)" || { echo "no MyDOS fixture: set [dos].mydos in fixtures.toml"; exit 1; }
+	@rm -f $@
+	python3 tools/mkdisk.py "$(SRC_MYDOS)" $< $@ AUTORUN.SYS --sweep --compact \
+	    --add build/desktop.rsc DESKTOP.RSC --add build/deskicon.rsc DESKICON.RSC --add build/prefs.rsc PREFS.RSC
+build/gem6502-desk.atr: build/a6d-desk.atr
+	cp $< $@
+release6: build/gem6502-boot.atr build/gem6502-desk.atr
+.PHONY: release6
 
 # ---- step 5f: the control panel as a 6502 program --------------------------
 # src/apps/cpanel.c with General and Color built in (src/apps/cpanel6.c is

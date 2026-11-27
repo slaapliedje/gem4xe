@@ -11,6 +11,8 @@
  * registers say no, and before the DOS, as it is a real clock on any DOS
  * and the DOS may only have its software one.  It cannot be set: Tsetdate
  * says so.  Nobody on the bus costs one round of the OS's retries, once.
+ * Somebody there is asked once an hour, and the time counted between
+ * (sio_clock): asked every read, it clicked once a second.
  *
  * A MACHINE WITH NONE OF THOSE may still have a clock -- an IDE Plus 2, an
  * R-Time 8 -- and a SpartaDOS knows it, through whichever driver it
@@ -247,15 +249,101 @@ static uint8_t dos_clock(CLOCK *c)
     return binary_time(c, d, t);
 }
 
+/* ASKED ONCE AN HOUR, COUNTED BETWEEN.  Every read of the SIO clock was a
+ * bus transaction, and the Control Panel's header reads it every second:
+ * on a 600XL with a FujiNet that was one click a second from the OS's
+ * noisy I/O for as long as the panel was up (2026-11-27).  So the answer
+ * is kept with the second irq_clock said when it came, and a read adds
+ * the seconds since -- the timer is the crystal's, exact to 250 us -- and
+ * goes back to the bus once SIO_REASK of them have passed.  A bus that
+ * stops answering leaves the count running from the last answer.
+ * Not before the timer runs (irq_install): its count would stand still,
+ * and so would the time. */
+#define SIO_REASK 3600u                 /* seconds */
+
+/* WHERE THE 13 BYTES GO: the 65C816's direct page, which has room, as
+ * vdi.c's cur_drawn does -- LoRAM was 3 bytes over its floor of 256 free
+ * with them (test_memory), and the window has 2.  On the 6502 TINY is
+ * zero page, which is full; HiRam took them there.  Copied in and out,
+ * never addressed: the C has no business with a direct-page address. */
+#ifdef GEM4XE_BANKED
+#define SIO_KEEP
+#else
+#define SIO_KEEP TINY
+#endif
+static SIO_KEEP CLOCK sio_at;           /* the bus's last answer... */
+static SIO_KEEP uint32_t sio_sec;       /* ...and irq_clock's second then */
+static SIO_KEEP uint8_t sio_have;
+
+/* far on the 65C816, as month_key below: bank $00 has not the bytes */
+static const uint8_t FAR_816 month_len[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+static uint8_t month_days(uint16_t month, uint16_t year)
+{
+    if (month == 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)))
+        return 29;
+    return month_len[month - 1];
+}
+
+/* c moved on by n seconds, n up to SIO_REASK: a day at most, carried
+ * through the month and the year.  16-bit sums: the 6502's Calypsi keeps
+ * the wrong byte of a 32-bit value cast to a byte (cc6502 #93). */
+static void clock_add(CLOCK *c, uint16_t n)
+{
+    uint16_t t = (uint16_t)(c->second + n);
+
+    c->second = (uint8_t)(t % 60);
+    t = (uint16_t)(t / 60 + c->minute);
+    c->minute = (uint8_t)(t % 60);
+    t = (uint16_t)(t / 60 + c->hour);
+    c->hour = (uint8_t)(t % 24);
+    if (t >= 24) {
+        uint16_t d = (uint16_t)(c->day + 1), m = c->month;
+
+        if (d > month_days(m, c->year)) {
+            d = 1;
+            if (++m > 12) {
+                m = 1;
+                c->year++;
+            }
+        }
+        c->day = (uint8_t)d;
+        c->month = (uint8_t)m;
+    }
+}
+
 /* The SIO clock's time, into c: 1 if something on the bus answered with a
- * time that could be one.  On the stack, so in bank $00 as the OS needs. */
+ * time that could be one, now or within the hour.  The answer's buffer on
+ * the stack, so in bank $00 as the OS needs. */
 static uint8_t sio_clock(CLOCK *c)
 {
     uint8_t r[SIO_GETTIME_LEN];
+    uint32_t now, usec, d;
 
-    if (sio_gettime(r) != SIO_OK)
+    irq_clock(&now, &usec);
+    d = now - sio_sec;
+    if (sio_have && irq_timer && d < SIO_REASK) {
+        *c = sio_at;
+        clock_add(c, (uint16_t)d);
+        return 1;
+    }
+    if (sio_gettime(r) == SIO_OK && binary_time(c, r, r + 3)) {
+        sio_at = *c;
+        sio_sec = now;
+        sio_have = 1;
+        return 1;
+    }
+    if (!sio_have)
         return 0;
-    return binary_time(c, r, r + 3);
+    *c = sio_at;
+    while (d >= SIO_REASK) {            /* no answer: on from the last one */
+        clock_add(c, SIO_REASK);
+        d -= SIO_REASK;
+    }
+    clock_add(c, (uint16_t)d);
+    sio_at = *c;
+    sio_sec = now;
+    return 1;
 }
 
 /* Which register is a clock: the U1MB's, then the SIDE's, then the DOS,
