@@ -170,6 +170,8 @@ SYSTEM = [
     ("diskutil.rsc", "DISKUTIL.RSC"),
     ("dup.g4a", "DUP.PRG"),
     ("dup.rsc", "DUP.RSC"),
+    ("mines.g4a", "MINES.PRG"),
+    ("mines.rsc", "MINES.RSC"),
     ("clockacc.g4a", "CLOCK.ACC"),
     ("cpanelacc.g4a", "CONTROL.ACC"),
     ("cpanel.rsc", "CPANEL.RSC"),
@@ -249,6 +251,10 @@ WHAT_IT_IS = {
                "L runs a plain Atari program and B the cartridge or BASIC, "
                "and GEM comes back after them",
     "DUP.RSC": "its menu, and every line it prints",
+    "MINES.PRG": "a mine game: clear the field without opening a mine.  "
+                 "A click opens a square; the right button, or Shift and "
+                 "a click, flags one.  Three sizes, in colour on the VBXE",
+    "MINES.RSC": "its menus, alerts and words",
     "CLOCK.ACC": "THE SAME CLOCK AS A DESK ACCESSORY.  Put it beside "
                  "GEM.COM, with CLOCK.RSC, and it appears in the Desk "
                  "menu: the AES loads it once at start-up and it stays "
