@@ -45,7 +45,7 @@ instead.
 | | |
 |---|---|
 | **VBXE** | wanted, not required; an **FX core, version 1.26**.  gem4xe detects the core by the low nibble of `CORE_REVISION` and writes an overlay priority of `$FF`, because bits 6/7 changed meaning at 1.26 and a priority of `$00` makes the overlay vanish there.  **Without a VBXE you get 320 x 192 on ANTIC mode F instead** — one `GEM.COM` carries both drivers and picks at start-up, and `VIDEO=ANTIC` in `GEM4XE.CFG` forces the small screen on a machine that has a VBXE its monitor will not show |
-| **a 65C816 with linear RAM** | required. **Rapidus** is the one this is tested on; Antonia should qualify and is not emulated, so it is untested |
+| **a 65C816 with linear RAM** | required. **Rapidus** is the one this is tested on; an **Antonia 2** has been reported working by a user; the emulator has no Antonia, so no gate covers it |
 | **Ultimate 1MB** | optional. Its DS1305 is where file timestamps come from, and its flash can hold SpartaDOS X and the PBI BIOS that mounts a CF card |
 
 gem4xe **refuses a plain 6502** rather than corrupting it: writing the

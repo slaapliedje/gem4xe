@@ -237,6 +237,7 @@ uint8_t cio_xio(uint8_t cmd, const char *name, uint8_t aux1, uint8_t aux2)
 #define SIO_PERCOM_W 0x4F       /* 'O': the drive told the geometry to format */
 #define SIO_TIME   0x0F         /* DTIMLO, as the OS uses for a disk */
 #define SIO_CLOCK  0x45         /* DDEVIC of an APETime clock: a FujiNet's */
+#define SIO_FUJI   0x70         /* DDEVIC of the FujiNet itself */
 #define SIO_GETTIME 0x93        /* its date and time */
 #define SIO_GETAUX 0xA0EE       /* DAUX as APETime's callers send it */
 
@@ -326,6 +327,12 @@ uint8_t dsk_format(uint8_t unit, uint8_t cmd, void *buf, uint16_t len,
                    uint8_t secs)
 {
     return sio_devt(SIO_DISK, unit, cmd, SIO_FROM, 0, buf, len, secs);
+}
+
+uint8_t sio_fuji(uint8_t cmd, uint8_t dstats, uint16_t aux, void *buf,
+                 uint16_t len)
+{
+    return sio_dev(SIO_FUJI, 1, cmd, dstats, aux, buf, len);
 }
 
 uint8_t sio_gettime(void *buf)

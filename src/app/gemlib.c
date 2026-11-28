@@ -1763,6 +1763,18 @@ LONG Drwsec(WORD drive, WORD rw, UWORD sector, UWORD count, UWORD secsize,
     return dos(0x1FA);
 }
 
+LONG Dsio(WORD dev, WORD cmd, UWORD aux, WORD dir, UWORD len,
+          FA_PARAM(void) buf)
+{
+    dw(6, dev);
+    dw(8, cmd);
+    dw(10, (WORD)aux);
+    dw(12, dir);
+    dw(14, (WORD)len);
+    dl(16, (LONG)(uint32_t)buf);
+    return dos(0x1FB);
+}
+
 LONG Mclaim(LONG addr, LONG len)
 {
     dl(6, addr);

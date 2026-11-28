@@ -1381,6 +1381,7 @@ WORD objc_draw_grect(GEMTREE tree, WORD start, WORD depth, const GRECT *r);
  * each one can mean on this machine is written at its function in
  * src/sys/gemdos.c. */
 #define E_OK      0L
+#define ERROR    -1L                 /* TOS's generic error: Dsio's */
 /* The BIOS's, which Dformat and Drwsec answer with as TOS's floppy calls
  * do (phase 155). */
 #define EDRVNR  -2L
@@ -1590,6 +1591,21 @@ LONG Dformat(WORD drive, WORD density, FA_PARAM(void) bad);
 LONG Drwsec(WORD drive, WORD rw, UWORD sector, UWORD count, UWORD secsize,
             FA_PARAM(void) buf);
 
+/* gem4xe's own (0x1FB): one SIO frame to device `dev` -- DS_FUJI, the
+ * FujiNet, is the only one served -- with command `cmd` and DAUX `aux`
+ * (AUX1 its low byte).  `dir` DS_NONE sends no data, DS_READ has the device
+ * send `len` bytes into `buf`, DS_WRITE sends it `len` bytes from `buf`;
+ * at most DS_MAX.  0, or EDRVNR (nobody answered: no FujiNet), EUNCMD (it
+ * refused the command), ERROR (it answered with an error), EBADRQ, or
+ * EINVFN for any other device.  EINVFN on 0.19 and earlier. */
+#define DS_NONE     0
+#define DS_READ     1
+#define DS_WRITE    2
+#define DS_MAX      512
+#define DS_FUJI     0x70
+LONG Dsio(WORD dev, WORD cmd, UWORD aux, WORD dir, UWORD len,
+          FA_PARAM(void) buf);
+
 /* gem4xe's own (0x1F2): the `len` bytes at `addr` exactly, from the far
  * heap, the program's until it ends -- `addr` back (rounded down to 4), or
  * ENSMEM if any of it is not free heap.  For memory a program must find at
@@ -1719,6 +1735,7 @@ void Ptermres(LONG keep, WORD code);
 #define Dgeom(d, b)             (Dgeom)((d), FAR_ARG(b))
 #define Dformat(d, n, b)        (Dformat)((d), (n), FAR_ARG(b))
 #define Drwsec(d, r, s, c, z, b) (Drwsec)((d), (r), (s), (c), (z), FAR_ARG(b))
+#define Dsio(v, c, a, d, n, b)  (Dsio)((v), (c), (a), (d), (n), FAR_ARG(b))
 #define Cpxfile(o, i, a, b)     (Cpxfile)((o), (i), FAR_ARG(a), FAR_ARG(b))
 #endif
 #endif /* GEM4XE_APP_GEM_H */

@@ -253,6 +253,7 @@ EXPECT = [
     ("Dgeom",    DOS, 0x1F8, 0, 0, 0, 0),
     ("Dformat",  DOS, 0x1F9, 0, 0, 0, 0),
     ("Drwsec",   DOS, 0x1FA, 0, 0, 0, 0),
+    ("Dsio",     DOS, 0x1FB, 0, 0, 0, 0),
     ("Mclaim",   DOS, 0x1F2, 0, 0, 0, 0),
     ("Cpxload",  DOS, 0x1F3, 0, 0, 0, 0),
     ("Cpxfile",  DOS, 0x1F6, 0, 0, 0, 0),

@@ -301,6 +301,15 @@ extern uint16_t gd_termres;
 #define GD_DGEOM     0x1F8
 #define GD_DFORMAT   0x1F9
 #define GD_DRWSEC    0x1FA
+/* One SIO frame to a device that is not a disk (docs/fujinet-plan.md):
+ * the FujiNet's, $70, and nothing else yet.  GD_DS_ is the direction. */
+#define GD_DSIO      0x1FB
+#define GD_DS_NONE   0              /* no data */
+#define GD_DS_READ   1              /* the device sends `len` bytes */
+#define GD_DS_WRITE  2              /* it is sent them */
+#define GD_DS_MAX    512            /* the most one frame carries here: the
+                                     * FujiNet's device slots are 304 */
+#define GD_DS_FUJI   0x70           /* the one device Dsio serves */
 #define GD_DG_LEN    20             /* what Dgeom writes */
 #define GD_DG_FLOPPY 0x0001         /* a disk drive Dformat will format */
 #define GD_DG_PERCOM 0x0002         /* it takes a geometry: every density */

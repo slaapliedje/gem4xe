@@ -1,8 +1,8 @@
 # gem4xe — GEM for the Atari 8-bit
 
 GEM — the VDI, the AES and a desktop — on an Atari XL/XE with a
-**65C816 accelerator** with linear RAM (**Rapidus**, and in principle
-Antonia), drawn at **640 × 240 in 16 colours** on a **VBXE**, or at
+**65C816 accelerator** with linear RAM (**Rapidus**; an **Antonia 2**
+has been reported working), drawn at **640 × 240 in 16 colours** on a **VBXE**, or at
 320 × 192 on the machine's own ANTIC where there is none.  It is a port of
 the Caldera-GPL Digital Research sources by way of
 [EmuTOS](https://emutos.sourceforge.io/), and runs ST GEM programs ported

@@ -166,6 +166,11 @@ uint8_t dsk_format(uint8_t unit, uint8_t cmd, void *buf, uint16_t len,
  * after one round of the OS's retries.  Only src/sys/clock.c uses it. */
 #define SIO_GETTIME_LEN 6
 uint8_t sio_gettime(void *buf);
+/* One frame to the FujiNet (device $70, unit 1): `cmd`, DSTATS `dstats`
+ * ($40 it sends, $80 it is sent, $00 neither), DAUX `aux`, `len` bytes of
+ * `buf` in bank $00.  SIO's status.  Only Dsio (src/sys/gemdos.c) uses it. */
+uint8_t sio_fuji(uint8_t cmd, uint8_t dstats, uint16_t aux, void *buf,
+                 uint16_t len);
 SIMPLE_CALL uint16_t dsk_call(uint16_t unused);
 
 /* ---- the DOS's kernel, for what CIO has no call for ------------------- */

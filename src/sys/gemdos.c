@@ -1784,6 +1784,49 @@ static LONG gd_drwsec(WORD drv, WORD rw, uint16_t sector, uint16_t count,
     return e;
 }
 
+/* Dsio: one SIO frame to the FujiNet, for a program that browses its
+ * hosts and mounts its disks (docs/fujinet-plan.md).  Through the kernel's
+ * SIO call, which keeps the mouse's sampler quiet across it (cio.c), and
+ * through a bounce in the pool, so `buf` may be anywhere.  ONLY device
+ * $70: a program must not reach D1:-D8: around G4DOS, which keeps what it
+ * read of their disks, and nothing else has asked for one yet.  0, or
+ * EDRVNR (nobody answered), EUNCMD (it NAKed the command) or ERROR (it
+ * answered with an error: a folder that is not there, say). */
+static LONG gd_dsio(WORD dev, WORD cmd, uint16_t aux, WORD dir, uint16_t len,
+                    uint32_t buf)
+{
+    uint8_t *b = 0;
+    uint16_t mark;
+    uint8_t st;
+
+    if (dev != GD_DS_FUJI)
+        return GD_EINVFN;
+    if (cmd < 0 || cmd > 0xFF || dir < GD_DS_NONE || dir > GD_DS_WRITE
+        || len > GD_DS_MAX || (dir != GD_DS_NONE && !len))
+        return GD_EBADRQ;
+    if (dir == GD_DS_NONE)
+        len = 0;
+    mark = pool_mark();
+    if (len) {
+        b = (uint8_t *)pool_alloc(len, 2);
+        if (!b)
+            return GD_ENSMEM;
+        if (dir == GD_DS_WRITE)
+            far_get(b, buf, len);
+    }
+    st = sio_fuji((uint8_t)cmd, (uint8_t)(dir << 6), aux, b, len);   /* DSTATS: $00, $40 read, $80 write */
+    if (st == SIO_OK && dir == GD_DS_READ)
+        far_put(buf, b, len);
+    pool_release(mark);
+    if (st == SIO_OK)
+        return 0;
+    if (st == 138)
+        return GD_EDRVNR;
+    if (st == 139)
+        return GD_EUNCMD;
+    return GD_ERROR;
+}
+
 /* Dprobe: every drive asked, once, and the answer kept for every Dsetdrv
  * after.  A drive is there unless the answer says nobody is: a timeout
  * (138), and through the DOS also no such device (130) or a drive it
@@ -2572,6 +2615,10 @@ static LONG gd_nopath(WORD fn)
         r = gd_drwsec(arg_w(6), arg_w(8), (uint16_t)arg_w(10),
                       (uint16_t)arg_w(12), (uint16_t)arg_w(14),
                       (uint32_t)arg_p(16));
+        break;
+    case GD_DSIO:
+        r = gd_dsio(arg_w(6), arg_w(8), (uint16_t)arg_w(10), arg_w(12),
+                    (uint16_t)arg_w(14), (uint32_t)arg_p(16));
         break;
 #ifndef __CALYPSI_TARGET_6502__         /* no control panel, nor a DOS's
                                          * command line, on the 6502 yet */
